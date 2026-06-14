@@ -2889,19 +2889,26 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setSelectedDateKey(dateKey);
   };
 
-  const addWorkoutForDate = (patch = {}) => {
+  const addWorkoutForDate = async (patch = {}) => {
     const workout = makeWorkout(selectedDateKey, {
       title: patch.title || `Тренировка за ${parseDateKey(selectedDateKey).getDate()} ${months[parseDateKey(selectedDateKey).getMonth()]}`,
       durationMinutes: patch.durationMinutes ?? 45,
       totalVolumeKg: patch.totalVolumeKg ?? 0,
       calories: patch.calories ?? 0,
+      status: patch.status,
       templateId: patch.templateId,
+      exercises: patch.exercises,
     });
+
+    setIsAddMenuOpen(false);
+    if (canUseWorkoutApi) {
+      const id = await createWorkoutViaApi(workout, { createChildren: Boolean((workout.exercises || []).length), reload: true });
+      if (!id) return;
+      return;
+    }
 
     setWorkouts(prev => [workout, ...prev]);
     setSelectedWorkout(workout);
-    setIsAddMenuOpen(false);
-    createWorkoutViaApi(workout);
   };
 
   const getProgramSetCount = (program) => program.days.reduce((sum, day) => {
@@ -2915,7 +2922,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     note: exercise.note || "",
   }));
 
-  const addProgramToWorkouts = (program) => {
+  const addProgramToWorkouts = async (program) => {
     const createdWorkouts = program.days.map((day, index) => {
       const dateKey = toDateKey(addLocalDays(selectedDate, day.offsetDays ?? index * 2));
       return makeWorkout(dateKey, {
@@ -2932,12 +2939,22 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       });
     });
 
-    setWorkouts(prev => [...createdWorkouts, ...prev]);
-    setSelectedWorkout(null);
     setIsTemplatesOpen(false);
     setIsAddMenuOpen(false);
     setActiveTab("diary");
-    createdWorkouts.forEach(workout => createWorkoutViaApi(workout));
+
+    if (canUseWorkoutApi) {
+      for (const workout of createdWorkouts) {
+        await createWorkoutViaApi(workout, { createChildren: true, reload: false, programLog: true });
+      }
+      await loadWorkoutsFromApi({ preserveSelected: false });
+      console.log("Program workout fully saved");
+      setSelectedWorkout(null);
+      return;
+    }
+
+    setWorkouts(prev => [...createdWorkouts, ...prev]);
+    setSelectedWorkout(null);
   };
 
   const openWhatsNew = () => {
@@ -2946,7 +2963,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     try { localStorage.setItem("onlypump-seen-version", currentVersion); } catch {}
   };
 
-  const duplicateWorkout = (workout) => {
+  const duplicateWorkout = async (workout) => {
     const copy = makeWorkout(selectedDateKey, {
       title: `${workout.title} копия`,
       programDayNumber: workout.programDayNumber,
@@ -2957,16 +2974,27 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       notes: workout.notes,
       templateId: workout.templateId,
     });
-    setWorkouts(prev => [copy, ...prev]);
     setWeekMenuGroup(null);
-    createWorkoutViaApi(copy);
+    if (canUseWorkoutApi) {
+      await createWorkoutViaApi(copy, { createChildren: true, reload: true });
+      return;
+    }
+    setWorkouts(prev => [copy, ...prev]);
   };
 
-  const deleteWorkout = (id) => {
+  const deleteWorkout = async (id) => {
     const workout = workouts.find(item => item.id === id) || (selectedWorkout?.id === id ? selectedWorkout : null);
+    if (canUseWorkoutApi && workout?.supabaseId) {
+      const deleted = await deleteWorkoutViaApi(workout);
+      if (!deleted) return;
+      setWorkouts(prev => prev.filter(item => item.id !== id));
+      setSelectedWorkout(null);
+      setWeekMenuGroup(null);
+      await loadWorkoutsFromApi({ preserveSelected: false });
+      return;
+    }
     setWorkouts(prev => prev.filter(workout => workout.id !== id));
     setSelectedWorkout(null);
-    deleteWorkoutViaApi(workout);
   };
 
   const toggleWeek = (groupId) => {
@@ -2994,6 +3022,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const callWorkoutsApi = async (action, payload = {}) => {
     if (!canUseWorkoutApi) return null;
+    console.log("Calling workouts API:", { action, payload });
     try {
       const response = await fetch(ONLYPUMP_WORKOUTS_API_URL, {
         method: "POST",
@@ -3012,8 +3041,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       if (!response.ok || result?.ok === false || result?.error) {
         throw result?.error || result?.message || new Error(`onlypump-workouts-api ${action} failed with ${response.status}`);
       }
+      console.log("Workouts API response:", { action, result });
       return result;
     } catch (error) {
+      console.error("Workouts API error:", { action, error });
       console.error("onlypump-workouts-api error:", { action, error });
       return null;
     }
@@ -3031,6 +3062,16 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const pickApiId = (result, key) => {
     const record = pickApiRecord(result, key);
+    const idKeys = {
+      workout: ["workout_id", "workoutId"],
+      exercise: ["exercise_id", "workout_exercise_id", "exerciseId", "workoutExerciseId"],
+      set: ["set_id", "workout_set_id", "setId", "workoutSetId"],
+    }[key] || [];
+    for (const idKey of idKeys) {
+      if (result?.[idKey]) return result[idKey];
+      if (result?.data?.[idKey]) return result.data[idKey];
+      if (result?.payload?.[idKey]) return result.payload[idKey];
+    }
     return record?.id || result?.id || result?.data?.id || null;
   };
 
@@ -3043,6 +3084,17 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       result?.data,
     ];
     return candidates.find(Array.isArray) || [];
+  };
+
+  const readApiArray = (result, key, aliases = []) => {
+    const keys = [key, ...aliases];
+    const roots = [result, result?.data, result?.payload, result?.result].filter(Boolean);
+    for (const root of roots) {
+      for (const itemKey of keys) {
+        if (Array.isArray(root?.[itemKey])) return root[itemKey];
+      }
+    }
+    return [];
   };
 
   const safeWorkoutNumber = (value, fallback = 0) => {
@@ -3144,12 +3196,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
     const id = pickApiId(result, "set");
     if (id) patchSetInState(workoutId, exerciseId, set.id, item => ({ ...item, supabaseId: id }));
-    if (id) console.log("Set created", { id });
+    if (id) {
+      console.log("Set created", { id });
+      console.log("Created set:", { id, result });
+    }
     return id;
   };
 
   const updateSetViaApi = async (set, exerciseSupabaseId) => {
-    if (!canUseWorkoutApi || !set?.supabaseId || !exerciseSupabaseId) return;
+    if (!canUseWorkoutApi || !set?.supabaseId || !exerciseSupabaseId) return null;
     const setPayload = buildSetSupabasePayload(exerciseSupabaseId, set);
     const result = await callWorkoutsApi("update_set", {
       profile_id: profile.id,
@@ -3160,10 +3215,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       ...setPayload,
     });
     if (result) console.log("Set updated", { id: set.supabaseId });
+    return result;
   };
 
-  const createExerciseViaApi = async (workoutId, workoutSupabaseId, exercise) => {
+  const createExerciseViaApi = async (workoutId, workoutSupabaseId, exercise, options = {}) => {
     if (!canUseWorkoutApi || !workoutSupabaseId) return null;
+    const { programLog = false } = options;
     const exercisePayload = buildExerciseSupabasePayload(workoutSupabaseId, exercise);
     const result = await callWorkoutsApi("create_exercise", {
       profile_id: profile.id,
@@ -3173,15 +3230,23 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
     const id = pickApiId(result, "exercise");
     if (id) patchExerciseInState(workoutId, exercise.id, item => ({ ...item, supabaseId: id }));
-    if (id) console.log("Exercise created", { id });
-    await Promise.all((exercise.sets || []).map(set => createSetViaApi(workoutId, exercise.id, id, set)));
+    if (id) {
+      console.log("Exercise created", { id });
+      console.log("Created exercise:", { id, result });
+    }
+    if (id) {
+      for (const set of exercise.sets || []) {
+        if (programLog) console.log("Creating program set:", set);
+        await createSetViaApi(workoutId, exercise.id, id, set);
+      }
+    }
     return id;
   };
 
   const updateExerciseViaApi = async (workoutSupabaseId, exercise) => {
-    if (!canUseWorkoutApi || !workoutSupabaseId || !exercise?.supabaseId) return;
+    if (!canUseWorkoutApi || !workoutSupabaseId || !exercise?.supabaseId) return null;
     const exercisePayload = buildExerciseSupabasePayload(workoutSupabaseId, exercise);
-    await callWorkoutsApi("update_exercise", {
+    return await callWorkoutsApi("update_exercise", {
       profile_id: profile.id,
       workout_id: workoutSupabaseId,
       exercise_id: exercise.supabaseId,
@@ -3191,10 +3256,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
   };
 
-  const createWorkoutViaApi = async (workout) => {
+  const createWorkoutViaApi = async (workout, options = {}) => {
     if (!canUseWorkoutApi || !workout) return null;
+    const { createChildren = true, reload = false, programLog = false } = options;
     const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
     const workoutPayload = buildWorkoutSupabasePayload(normalizedWorkout);
+    if (programLog) console.log("Creating workout from program:", normalizedWorkout);
     const result = await callWorkoutsApi("create_workout", {
       profile_id: profile.id,
       workout: workoutPayload,
@@ -3202,16 +3269,25 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
     const id = pickApiId(result, "workout");
     if (id) patchWorkoutInState(normalizedWorkout.id, item => normalizeWorkoutSupersetMetadata({ ...item, supabaseId: id }));
-    if (id) console.log("Workout created", { id });
-    await Promise.all((normalizedWorkout.exercises || []).map(exercise => createExerciseViaApi(normalizedWorkout.id, id, exercise)));
+    if (id) {
+      console.log("Workout created", { id });
+      console.log("Created workout:", { id, result });
+    }
+    if (createChildren && id) {
+      for (const exercise of normalizedWorkout.exercises || []) {
+        if (programLog) console.log("Creating program exercise:", exercise);
+        await createExerciseViaApi(normalizedWorkout.id, id, exercise, { programLog });
+      }
+    }
+    if (id && reload) await loadWorkoutsFromApi({ selectedSupabaseId: id });
     return id;
   };
 
   const updateWorkoutViaApi = async (workout) => {
-    if (!canUseWorkoutApi || !workout?.supabaseId) return;
+    if (!canUseWorkoutApi || !workout?.supabaseId) return null;
     const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
     const workoutPayload = buildWorkoutSupabasePayload(normalizedWorkout);
-    await callWorkoutsApi("update_workout", {
+    return await callWorkoutsApi("update_workout", {
       profile_id: profile.id,
       workout_id: normalizedWorkout.supabaseId,
       workout: workoutPayload,
@@ -3231,32 +3307,38 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const deleteSetViaApi = async (set) => {
-    if (!canUseWorkoutApi || !set?.supabaseId) return;
-    await callWorkoutsApi("delete_set", {
+    if (!canUseWorkoutApi || !set?.supabaseId) return false;
+    const result = await callWorkoutsApi("delete_set", {
       profile_id: profile.id,
       set_id: set.supabaseId,
       workout_set_id: set.supabaseId,
     });
+    return Boolean(result);
   };
 
   const deleteExerciseViaApi = async (exercise) => {
-    if (!canUseWorkoutApi || !exercise?.supabaseId) return;
-    await callWorkoutsApi("delete_exercise", {
+    if (!canUseWorkoutApi || !exercise?.supabaseId) return false;
+    const result = await callWorkoutsApi("delete_exercise", {
       profile_id: profile.id,
       exercise_id: exercise.supabaseId,
       workout_exercise_id: exercise.supabaseId,
     });
+    return Boolean(result);
   };
 
   const deleteWorkoutViaApi = async (workout) => {
-    if (!canUseWorkoutApi || !workout?.supabaseId) return;
+    if (!canUseWorkoutApi || !workout?.supabaseId) return false;
     const result = await callWorkoutsApi("delete_workout", {
       profile_id: profile.id,
       workout_id: workout.supabaseId,
     });
     if (result) {
       console.log("Workout deleted", { id: workout.supabaseId });
+      return true;
     }
+    const error = { workout_id: workout.supabaseId, result };
+    console.error("delete_workout error:", error);
+    return false;
   };
 
   const mapSupabaseSet = (row = {}, index = 0) => {
@@ -3319,6 +3401,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const dateKey = row.workout_date || row.date || selectedDateKey;
     const date = parseDateKey(dateKey);
     const exercises = row.workout_exercises || row.exercises || row.workoutExercises || [];
+    const mappedExercises = [...exercises]
+      .sort((a, b) => safeWorkoutNumber(a.exercise_order ?? a.order) - safeWorkoutNumber(b.exercise_order ?? b.order))
+      .map(mapSupabaseExercise);
+    const derivedTotals = getWorkoutTotals({ exercises: mappedExercises });
     return normalizeWorkoutSupersetMetadata({
       id: `workout-supabase-${row.id || index}`,
       supabaseId: row.id || null,
@@ -3326,19 +3412,87 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       weekday: weekdayNames[date.getDay()] || "",
       title: row.title || "Новая тренировка",
       programDayNumber: index + 1,
-      durationMinutes: safeWorkoutNumber(row.durationMinutes, 60),
-      totalVolumeKg: safeWorkoutNumber(row.total_volume ?? row.totalVolumeKg),
+      durationMinutes: safeWorkoutNumber(row.duration_minutes ?? row.durationMinutes, 60),
+      totalVolumeKg: mappedExercises.length ? derivedTotals.totalVolume : 0,
       calories: 0,
       status: row.status || "completed",
       startedAt: null,
-      exercises: [...exercises]
-        .sort((a, b) => safeWorkoutNumber(a.exercise_order ?? a.order) - safeWorkoutNumber(b.exercise_order ?? b.order))
-        .map(mapSupabaseExercise),
+      exercises: mappedExercises,
       notes: row.notes || "",
       templateId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
+  };
+
+  const buildWorkoutTreeFromApi = (result) => {
+    const apiWorkouts = readApiArray(result, "workouts", ["workoutRows"]);
+    const apiExercises = readApiArray(result, "workout_exercises", ["exercises", "workoutExercises", "exerciseRows"]);
+    const apiSets = readApiArray(result, "workout_sets", ["sets", "workoutSets", "setRows"]);
+
+    console.log("API load response:", result);
+    console.log("Loaded workouts:", apiWorkouts);
+    console.log("Loaded exercises:", apiExercises);
+    console.log("Loaded sets:", apiSets);
+
+    if (!apiExercises.length && !apiSets.length) {
+      const nestedTree = apiWorkouts.map(mapSupabaseWorkout);
+      console.log("Built workout tree:", nestedTree);
+      return nestedTree;
+    }
+
+    const setsByExerciseId = apiSets.reduce((map, set) => {
+      const exerciseId = set?.workout_exercise_id || set?.workoutExerciseId || set?.exercise_id || set?.exerciseId;
+      if (!exerciseId) return map;
+      const key = String(exerciseId);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(set);
+      return map;
+    }, new Map());
+
+    const exercisesByWorkoutId = apiExercises.reduce((map, exercise) => {
+      const workoutId = exercise?.workout_id || exercise?.workoutId || exercise?.workout?.id;
+      if (!workoutId) return map;
+      const exerciseId = exercise?.id || exercise?.workout_exercise_id || exercise?.exercise_id;
+      const key = String(workoutId);
+      const setRows = exerciseId ? (setsByExerciseId.get(String(exerciseId)) || []) : [];
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push({
+        ...exercise,
+        workout_sets: setRows.length ? setRows : (exercise?.workout_sets || exercise?.sets || []),
+      });
+      return map;
+    }, new Map());
+
+    const tree = apiWorkouts.map((workout, index) => {
+      const workoutId = workout?.id || workout?.workout_id || workout?.workoutId;
+      const exerciseRows = workoutId ? (exercisesByWorkoutId.get(String(workoutId)) || []) : [];
+      return mapSupabaseWorkout({
+        ...workout,
+        workout_exercises: exerciseRows.length ? exerciseRows : (workout?.workout_exercises || workout?.exercises || []),
+      }, index);
+    });
+
+    console.log("Built workout tree:", tree);
+    return tree;
+  };
+
+  const loadWorkoutsFromApi = async ({ preserveSelected = true, selectedSupabaseId = null } = {}) => {
+    if (!canUseWorkoutApi) return null;
+    const result = await callWorkoutsApi("load", { profile_id: profile.id });
+    if (!result) {
+      loadedWorkoutProfileRef.current = null;
+      return null;
+    }
+    const loadedWorkouts = buildWorkoutTreeFromApi(result);
+    setWorkouts(loadedWorkouts);
+    setSelectedWorkout(prev => {
+      const targetSupabaseId = selectedSupabaseId || prev?.supabaseId;
+      if (!preserveSelected || !targetSupabaseId) return null;
+      return loadedWorkouts.find(workout => workout.supabaseId === targetSupabaseId) || null;
+    });
+    console.log("Workouts loaded", loadedWorkouts);
+    return loadedWorkouts;
   };
 
   useEffect(() => {
@@ -3348,28 +3502,17 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     loadedWorkoutProfileRef.current = profileId;
     let cancelled = false;
 
-    const loadWorkoutsFromApi = async () => {
+    const loadInitialWorkoutsFromApi = async () => {
       try {
-        const result = await callWorkoutsApi("load", { profile_id: profileId });
-        if (!result) {
-          loadedWorkoutProfileRef.current = null;
-          return;
-        }
         if (cancelled) return;
-        const loadedWorkouts = pickApiList(result, "workouts").map(mapSupabaseWorkout);
-        setWorkouts(loadedWorkouts);
-        setSelectedWorkout(prev => {
-          if (!prev?.supabaseId) return null;
-          return loadedWorkouts.find(workout => workout.supabaseId === prev.supabaseId) || null;
-        });
-        console.log("Workouts loaded", loadedWorkouts);
+        await loadWorkoutsFromApi();
       } catch (error) {
         loadedWorkoutProfileRef.current = null;
         logSupabaseRestSupersetError(error);
       }
     };
 
-    loadWorkoutsFromApi();
+    loadInitialWorkoutsFromApi();
 
     return () => {
       cancelled = true;
@@ -3414,7 +3557,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setWorkouts(prev => prev.map(workout => workout.id === id ? patch(workout) : workout));
     setSelectedWorkout(prev => prev?.id === id ? patch(prev) : prev);
     const workout = workouts.find(item => item.id === id) || selectedWorkout;
-    if (workout) updateWorkoutViaApi(patch(workout));
+    if (workout?.supabaseId) {
+      const nextWorkout = patch(workout);
+      console.log("Updating workout title:", { workout_id: workout.supabaseId, title });
+      updateWorkoutViaApi(nextWorkout).then(result => {
+        if (result) console.log("Updated workout result:", result);
+      });
+    }
   };
 
   const updateWorkoutSet = (workoutId, exerciseId, setId, field, value) => {
@@ -3723,9 +3872,25 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     if (selectedWorkout?.supabaseId && nextExercise?.supabaseId) updateExerciseViaApi(selectedWorkout.supabaseId, nextExercise);
   };
 
-  const removeActiveExercise = () => {
+  const removeActiveExercise = async () => {
     if (!selectedWorkout) return;
     const removedExercise = (selectedWorkout.exercises || [])[activeExerciseIndex];
+    if (canUseWorkoutApi && removedExercise?.supabaseId) {
+      const deleted = await deleteExerciseViaApi(removedExercise);
+      if (!deleted) return;
+      const nextExercises = (selectedWorkout.exercises || []).filter((_, index) => index !== activeExerciseIndex);
+      const nextIndex = Math.max(0, Math.min(activeExerciseIndex, nextExercises.length - 1));
+      setActiveExerciseIndex(nextIndex);
+      setActiveSetId(getFirstActiveSetId(nextExercises[nextIndex]));
+      setOpenMenu(null);
+      await updateWorkoutViaApi({
+        ...selectedWorkout,
+        exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
+        updatedAt: new Date().toISOString(),
+      });
+      await loadWorkoutsFromApi({ selectedSupabaseId: selectedWorkout.supabaseId });
+      return;
+    }
     const nextIndex = Math.max(0, activeExerciseIndex - 1);
     updateSelectedWorkoutModel(workout => ({
       ...workout,
@@ -3736,15 +3901,30 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setActiveExerciseIndex(nextIndex);
     setActiveSetId(getFirstActiveSetId(nextExercise));
     setOpenMenu(null);
-    deleteExerciseViaApi(removedExercise);
   };
 
-  const removeExerciseFromSelectedWorkout = (exerciseId) => {
+  const removeExerciseFromSelectedWorkout = async (exerciseId) => {
     if (!selectedWorkout) return;
     const currentExercises = selectedWorkout.exercises || [];
     const removedIndex = currentExercises.findIndex(exercise => exercise.id === exerciseId);
     const removedExercise = currentExercises.find(exercise => exercise.id === exerciseId);
     const nextExercises = currentExercises.filter(exercise => exercise.id !== exerciseId);
+    if (canUseWorkoutApi && removedExercise?.supabaseId) {
+      const deleted = await deleteExerciseViaApi(removedExercise);
+      if (!deleted) return;
+      const nextIndex = Math.max(0, Math.min(removedIndex, nextExercises.length - 1));
+      setActiveExerciseIndex(nextIndex);
+      setActiveSetId(getFirstActiveSetId(nextExercises[nextIndex]));
+      setSelectedExerciseIds(prev => prev.filter(id => id !== exerciseId));
+      setOpenMenu(null);
+      await updateWorkoutViaApi({
+        ...selectedWorkout,
+        exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
+        updatedAt: new Date().toISOString(),
+      });
+      await loadWorkoutsFromApi({ selectedSupabaseId: selectedWorkout.supabaseId });
+      return;
+    }
     updateSelectedWorkoutModel(workout => ({
       ...workout,
       exercises: (workout.exercises || []).filter(exercise => exercise.id !== exerciseId).map((exercise, index) => ({ ...exercise, order: index + 1 })),
@@ -3755,7 +3935,6 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setActiveSetId(getFirstActiveSetId(nextExercises[nextIndex]));
     setSelectedExerciseIds(prev => prev.filter(id => id !== exerciseId));
     setOpenMenu(null);
-    deleteExerciseViaApi(removedExercise);
   };
 
   const openReplaceForExercise = (exerciseId) => {
@@ -3785,7 +3964,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const insertIndexForStorage = afterSetId ? Math.max(0, afterIndex + 1) : sets.length;
     const newSet = { ...makeSet(Number(base?.weight || 0), Number(base?.reps || 0), sets.length, false, type), order: insertIndexForStorage + 1 };
 
-    updateSelectedWorkoutModel(workout => ({
+    const getWorkoutWithInsertedSet = (workout) => ({
       ...workout,
       exercises: (workout.exercises || []).map((exercise, exerciseIndex) => {
         if (exerciseIndex !== activeExerciseIndex) return exercise;
@@ -3795,16 +3974,47 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         return { ...exercise, sets: nextSets };
       }),
       updatedAt: new Date().toISOString(),
+    });
+
+    if (canUseWorkoutApi && currentExercise?.supabaseId) {
+      (async () => {
+        const id = await createSetViaApi(selectedWorkout.id, currentExercise.id, currentExercise.supabaseId, newSet);
+        if (!id) return;
+        setActiveSetId(`set-supabase-${id}`);
+        setOpenMenu(null);
+        await updateWorkoutViaApi(getWorkoutWithInsertedSet(selectedWorkout));
+        await loadWorkoutsFromApi({ selectedSupabaseId: selectedWorkout.supabaseId });
+      })();
+      return;
+    }
+
+    updateSelectedWorkoutModel(workout => ({
+      ...getWorkoutWithInsertedSet(workout),
     }));
     setActiveSetId(newSet.id);
     setOpenMenu(null);
-    if (currentExercise?.supabaseId) createSetViaApi(selectedWorkout.id, currentExercise.id, currentExercise.supabaseId, newSet);
   };
 
-  const removeSetFromActiveExercise = (setId) => {
+  const removeSetFromActiveExercise = async (setId) => {
     const currentExercise = (selectedWorkout?.exercises || [])[activeExerciseIndex];
     const removedSet = (currentExercise?.sets || []).find(set => set.id === setId);
     const remaining = (currentExercise?.sets || []).filter(set => set.id !== setId);
+    if (canUseWorkoutApi && removedSet?.supabaseId) {
+      const deleted = await deleteSetViaApi(removedSet);
+      if (!deleted) return;
+      setActiveSetId((remaining.find(set => getSetStatus(set) === "pending") || remaining[0] || null)?.id || null);
+      setOpenMenu(null);
+      await updateWorkoutViaApi({
+        ...selectedWorkout,
+        exercises: (selectedWorkout.exercises || []).map((exercise, exerciseIndex) => exerciseIndex === activeExerciseIndex ? {
+          ...exercise,
+          sets: (exercise.sets || []).filter(set => set.id !== setId).map((set, index) => ({ ...set, order: index + 1 })),
+        } : exercise),
+        updatedAt: new Date().toISOString(),
+      });
+      await loadWorkoutsFromApi({ selectedSupabaseId: selectedWorkout.supabaseId });
+      return;
+    }
     updateSelectedWorkoutModel(workout => ({
       ...workout,
       exercises: (workout.exercises || []).map((exercise, exerciseIndex) => exerciseIndex === activeExerciseIndex ? {
@@ -3815,7 +4025,6 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }));
     setActiveSetId((remaining.find(set => getSetStatus(set) === "pending") || remaining[0] || null)?.id || null);
     setOpenMenu(null);
-    deleteSetViaApi(removedSet);
   };
 
   const goToExercise = (nextIndex) => {
@@ -3867,13 +4076,27 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return `${m}:${String(sec).padStart(2, "0")}`;
   };
 
-  const addExerciseToSelectedWorkout = (name, muscleGroup) => {
-    addExercisesToSelectedWorkout([{ name, muscleGroup }]);
+  const addExerciseToSelectedWorkout = async (name, muscleGroup) => {
+    await addExercisesToSelectedWorkout([{ name, muscleGroup }]);
   };
 
-  const addExercisesToSelectedWorkout = (items = []) => {
+  const addExercisesToSelectedWorkout = async (items = []) => {
     if (!selectedWorkout) return;
     const additions = items.map((item, index) => makeExercise((selectedWorkout.exercises || []).length + index + 1, item.name, item.muscleGroup, [[0, 0], [0, 0], [0, 0]]));
+
+    if (canUseWorkoutApi && selectedWorkout.supabaseId) {
+      for (const exercise of additions) {
+        await createExerciseViaApi(selectedWorkout.id, selectedWorkout.supabaseId, exercise);
+      }
+      await updateWorkoutViaApi({
+        ...selectedWorkout,
+        exercises: [...(selectedWorkout.exercises || []), ...additions],
+        updatedAt: new Date().toISOString(),
+      });
+      await loadWorkoutsFromApi({ selectedSupabaseId: selectedWorkout.supabaseId });
+      return;
+    }
+
     const patch = (workout) => ({
       ...workout,
       exercises: [...(workout.exercises || []), ...additions],
@@ -3882,7 +4105,6 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
     setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? patch(workout) : workout));
     setSelectedWorkout(prev => prev ? patch(prev) : prev);
-    if (selectedWorkout?.supabaseId) additions.forEach(exercise => createExerciseViaApi(selectedWorkout.id, selectedWorkout.supabaseId, exercise));
   };
 
   const exercisePickerKey = (name, muscleGroup) => `${muscleGroup}::${name}`;
@@ -3894,9 +4116,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       : [...prev, { key, name, muscleGroup }]);
   };
 
-  const addPendingExercisesToWorkout = () => {
+  const addPendingExercisesToWorkout = async () => {
     if (!pendingExerciseAdds.length) return;
-    addExercisesToSelectedWorkout(pendingExerciseAdds);
+    await addExercisesToSelectedWorkout(pendingExerciseAdds);
     setPendingExerciseAdds([]);
     setIsExerciseBaseOpen(false);
   };
@@ -3916,7 +4138,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     updateWorkoutViaApi(patch(workout));
   };
 
-  const repeatWorkout = (workout) => {
+  const repeatWorkout = async (workout) => {
     const copy = makeWorkout(selectedDateKey, {
       title: workout.title,
       programDayNumber: workout.programDayNumber,
@@ -3930,9 +4152,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       templateId: workout.templateId,
     });
 
+    if (canUseWorkoutApi) {
+      const id = await createWorkoutViaApi(copy, { createChildren: true, reload: true });
+      const loadedWorkout = id ? workouts.find(item => item.supabaseId === id) : null;
+      if (loadedWorkout) openWorkoutDetails(loadedWorkout);
+      return;
+    }
+
     setWorkouts(prev => [copy, ...prev]);
     openWorkoutDetails(copy);
-    createWorkoutViaApi(copy);
   };
 
   const finishActiveWorkout = () => {
@@ -4705,7 +4933,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <h2 className="text-xl font-black tracking-[-0.03em]">Добавить на {formatDayMonth(selectedDate)}</h2>
         <div className="mt-5 space-y-2">
-          <button onClick={() => addWorkoutForDate({ title: "Пустая тренировка" })} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Начать пустую тренировку</button>
+          <button onClick={() => addWorkoutForDate({ title: "Пустая тренировка", exercises: [] })} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Начать пустую тренировку</button>
           <button onClick={() => { setIsAddMenuOpen(false); setIsTemplatesOpen(true); }} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Выбрать программу</button>
           <button onClick={() => addWorkoutForDate()} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить тренировку за выбранную дату</button>
           <button onClick={() => setIsAddMenuOpen(false)} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold text-zinc-500 transition hover:bg-white/8">Добавить заметку / замер</button>
