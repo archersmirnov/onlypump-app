@@ -3112,6 +3112,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const callWorkoutsApi = async (action, payload = {}) => {
     if (!canUseWorkoutApi) return null;
     console.log("callWorkoutsApi action", { action, payload });
+    console.log("Calling workouts API:", action, payload);
     try {
       const response = await fetch(ONLYPUMP_WORKOUTS_API_URL, {
         method: "POST",
@@ -3127,14 +3128,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         }),
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok || result?.ok === false || result?.error) {
+      if (!response.ok || result?.ok !== true || result?.error) {
         const message = result?.error || result?.message || `onlypump-workouts-api ${action} failed with ${response.status}`;
         throw new Error(typeof message === "string" ? message : JSON.stringify(message));
       }
-      console.log("Workouts API response:", { action, result });
+      console.log("Workouts API response:", result);
       return result;
     } catch (error) {
       console.error("API error:", { action, error });
+      console.error("Workouts API error:", error);
       console.error("onlypump-workouts-api error:", { action, error });
       throw error;
     }
@@ -3142,12 +3144,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const pickApiRecord = (result, key) => {
     if (!result) return null;
-    return result[key]
+    const record = result[key]
       || result.data?.[key]
       || result.payload?.[key]
       || result.record
       || result.data
       || null;
+    return Array.isArray(record) ? (record[0] || null) : record;
   };
 
   const pickApiId = (result, key) => {
@@ -3162,7 +3165,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       if (result?.data?.[idKey]) return result.data[idKey];
       if (result?.payload?.[idKey]) return result.payload[idKey];
     }
-    return record?.id || result?.id || result?.data?.id || null;
+    return record?.id
+      || record?.[`${key}_id`]
+      || record?.[`${key}Id`]
+      || result?.id
+      || result?.data?.id
+      || null;
   };
 
   const pickApiList = (result, key) => {
@@ -3369,13 +3377,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const sendWorkoutPatch = async (workoutId, patch) => {
-    console.log("save_workout_patch payload", patch);
+    const normalizedPatch = mergeWorkoutPatch({}, patch);
+    console.log("save_workout_patch payload", normalizedPatch);
     try {
-      const result = await callWorkoutsApi("save_workout_patch", patch);
+      const result = await callWorkoutsApi("save_workout_patch", normalizedPatch);
       console.log("save_workout_patch response", result);
       return result;
     } catch (error) {
-      console.error("save_workout_patch error", { workoutId, patch, error });
+      console.error("save_workout_patch error", { workoutId, patch: normalizedPatch, error });
       return null;
     }
   };
