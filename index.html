@@ -213,6 +213,7 @@ const telegramWebApp = initTelegramWebApp();
 const SUPABASE_URL = window.ONLYPUMP_SUPABASE_URL || window.SUPABASE_URL || "https://qehbgwnblebjahmytqca.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = window.ONLYPUMP_SUPABASE_PUBLISHABLE_KEY || window.SUPABASE_PUBLISHABLE_KEY || "sb_publishable_rZgTF88Cp6PGhKUpoD_O8A_aQi-1o_K";
 const VERIFY_TELEGRAM_USER_URL = "https://qehbgwnblebjahmytqca.supabase.co/functions/v1/verify-telegram-user";
+const ONLYPUMP_WORKOUTS_API_URL = "https://qehbgwnblebjahmytqca.supabase.co/functions/v1/onlypump-workouts-api";
 console.log("Supabase URL present", Boolean(SUPABASE_URL));
 console.log("Supabase key present", Boolean(SUPABASE_PUBLISHABLE_KEY));
 
@@ -2423,7 +2424,7 @@ function ExercisePickerSheet({ groups, activeGroup, setActiveGroup, search, setS
 }
 
 
-function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSetWorkouts, selectedDateKey: controlledSelectedDateKey, setSelectedDateKey: controlledSetSelectedDateKey, profile, supabaseClient }) {
+function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSetWorkouts, selectedDateKey: controlledSelectedDateKey, setSelectedDateKey: controlledSetSelectedDateKey, profile, telegramInitData }) {
   const localDateState = useState(formatDateKey(new Date()));
   const selectedDateKey = controlledSelectedDateKey || localDateState[0];
   const setSelectedDateKey = controlledSetSelectedDateKey || localDateState[1];
@@ -2900,7 +2901,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setWorkouts(prev => [workout, ...prev]);
     setSelectedWorkout(workout);
     setIsAddMenuOpen(false);
-    createWorkoutInSupabase(workout);
+    createWorkoutViaApi(workout);
   };
 
   const getProgramSetCount = (program) => program.days.reduce((sum, day) => {
@@ -2936,7 +2937,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setIsTemplatesOpen(false);
     setIsAddMenuOpen(false);
     setActiveTab("diary");
-    createdWorkouts.forEach(workout => createWorkoutInSupabase(workout));
+    createdWorkouts.forEach(workout => createWorkoutViaApi(workout));
   };
 
   const openWhatsNew = () => {
@@ -2958,14 +2959,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
     setWorkouts(prev => [copy, ...prev]);
     setWeekMenuGroup(null);
-    createWorkoutInSupabase(copy);
+    createWorkoutViaApi(copy);
   };
 
   const deleteWorkout = (id) => {
     const workout = workouts.find(item => item.id === id) || (selectedWorkout?.id === id ? selectedWorkout : null);
     setWorkouts(prev => prev.filter(workout => workout.id !== id));
     setSelectedWorkout(null);
-    deleteWorkoutFromSupabase(workout);
+    deleteWorkoutViaApi(workout);
   };
 
   const toggleWeek = (groupId) => {
@@ -2980,15 +2981,68 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return (sets.find(set => getSetStatus(set) === "pending") || sets[0] || null)?.id || null;
   };
 
-  const canUseWorkoutSupabase = Boolean(supabaseClient && profile?.id);
+  const canUseWorkoutApi = Boolean(telegramInitData && profile?.id);
 
   const logSupabaseWorkoutError = (error) => {
-    console.log("Supabase workout error", error);
+    console.error("onlypump-workouts-api error:", error);
   };
 
   const logSupabaseRestSupersetError = (error) => {
-    console.log("Supabase rest/superset error:", error);
+    console.error("Supabase rest/superset error:", error);
     logSupabaseWorkoutError(error);
+  };
+
+  const callWorkoutsApi = async (action, payload = {}) => {
+    if (!canUseWorkoutApi) return null;
+    try {
+      const response = await fetch(ONLYPUMP_WORKOUTS_API_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          initData: telegramInitData,
+          action,
+          payload,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result?.ok === false || result?.error) {
+        throw result?.error || result?.message || new Error(`onlypump-workouts-api ${action} failed with ${response.status}`);
+      }
+      return result;
+    } catch (error) {
+      console.error("onlypump-workouts-api error:", { action, error });
+      return null;
+    }
+  };
+
+  const pickApiRecord = (result, key) => {
+    if (!result) return null;
+    return result[key]
+      || result.data?.[key]
+      || result.payload?.[key]
+      || result.record
+      || result.data
+      || null;
+  };
+
+  const pickApiId = (result, key) => {
+    const record = pickApiRecord(result, key);
+    return record?.id || result?.id || result?.data?.id || null;
+  };
+
+  const pickApiList = (result, key) => {
+    const candidates = [
+      result?.[key],
+      result?.data?.[key],
+      result?.payload?.[key],
+      result?.records,
+      result?.data,
+    ];
+    return candidates.find(Array.isArray) || [];
   };
 
   const safeWorkoutNumber = (value, fallback = 0) => {
@@ -3079,173 +3133,129 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }));
   };
 
-  const createSetInSupabase = async (workoutId, exerciseId, exerciseSupabaseId, set) => {
-    if (!canUseWorkoutSupabase || !exerciseSupabaseId) return null;
-    try {
-      const { data, error } = await supabaseClient
-        .from("workout_sets")
-        .insert(buildSetSupabasePayload(exerciseSupabaseId, set))
-        .select("id")
-        .single();
-      if (error) throw error;
-      if (data?.id) patchSetInState(workoutId, exerciseId, set.id, item => ({ ...item, supabaseId: data.id }));
-      console.log("Set created", data);
-      return data?.id || null;
-    } catch (error) {
-      logSupabaseRestSupersetError(error);
-      return null;
-    }
+  const createSetViaApi = async (workoutId, exerciseId, exerciseSupabaseId, set) => {
+    if (!canUseWorkoutApi || !exerciseSupabaseId) return null;
+    const setPayload = buildSetSupabasePayload(exerciseSupabaseId, set);
+    const result = await callWorkoutsApi("create_set", {
+      profile_id: profile.id,
+      workout_exercise_id: exerciseSupabaseId,
+      set: setPayload,
+      ...setPayload,
+    });
+    const id = pickApiId(result, "set");
+    if (id) patchSetInState(workoutId, exerciseId, set.id, item => ({ ...item, supabaseId: id }));
+    if (id) console.log("Set created", { id });
+    return id;
   };
 
-  const updateSetInSupabase = async (set, exerciseSupabaseId) => {
-    if (!canUseWorkoutSupabase || !set?.supabaseId || !exerciseSupabaseId) return;
-    try {
-      const { error } = await supabaseClient
-        .from("workout_sets")
-        .update(buildSetSupabasePayload(exerciseSupabaseId, set))
-        .eq("id", set.supabaseId);
-      if (error) throw error;
-      console.log("Set updated", { id: set.supabaseId });
-    } catch (error) {
-      logSupabaseRestSupersetError(error);
-    }
+  const updateSetViaApi = async (set, exerciseSupabaseId) => {
+    if (!canUseWorkoutApi || !set?.supabaseId || !exerciseSupabaseId) return;
+    const setPayload = buildSetSupabasePayload(exerciseSupabaseId, set);
+    const result = await callWorkoutsApi("update_set", {
+      profile_id: profile.id,
+      workout_exercise_id: exerciseSupabaseId,
+      set_id: set.supabaseId,
+      workout_set_id: set.supabaseId,
+      set: setPayload,
+      ...setPayload,
+    });
+    if (result) console.log("Set updated", { id: set.supabaseId });
   };
 
-  const createExerciseInSupabase = async (workoutId, workoutSupabaseId, exercise) => {
-    if (!canUseWorkoutSupabase || !workoutSupabaseId) return null;
-    try {
-      const { data, error } = await supabaseClient
-        .from("workout_exercises")
-        .insert(buildExerciseSupabasePayload(workoutSupabaseId, exercise))
-        .select("id")
-        .single();
-      if (error) throw error;
-      if (data?.id) patchExerciseInState(workoutId, exercise.id, item => ({ ...item, supabaseId: data.id }));
-      console.log("Exercise created", data);
-      await Promise.all((exercise.sets || []).map(set => createSetInSupabase(workoutId, exercise.id, data?.id, set)));
-      return data?.id || null;
-    } catch (error) {
-      logSupabaseRestSupersetError(error);
-      return null;
-    }
+  const createExerciseViaApi = async (workoutId, workoutSupabaseId, exercise) => {
+    if (!canUseWorkoutApi || !workoutSupabaseId) return null;
+    const exercisePayload = buildExerciseSupabasePayload(workoutSupabaseId, exercise);
+    const result = await callWorkoutsApi("create_exercise", {
+      profile_id: profile.id,
+      workout_id: workoutSupabaseId,
+      exercise: exercisePayload,
+      ...exercisePayload,
+    });
+    const id = pickApiId(result, "exercise");
+    if (id) patchExerciseInState(workoutId, exercise.id, item => ({ ...item, supabaseId: id }));
+    if (id) console.log("Exercise created", { id });
+    await Promise.all((exercise.sets || []).map(set => createSetViaApi(workoutId, exercise.id, id, set)));
+    return id;
   };
 
-  const updateExerciseInSupabase = async (workoutSupabaseId, exercise) => {
-    if (!canUseWorkoutSupabase || !workoutSupabaseId || !exercise?.supabaseId) return;
-    try {
-      const { error } = await supabaseClient
-        .from("workout_exercises")
-        .update(buildExerciseSupabasePayload(workoutSupabaseId, exercise))
-        .eq("id", exercise.supabaseId);
-      if (error) throw error;
-    } catch (error) {
-      logSupabaseRestSupersetError(error);
-    }
+  const updateExerciseViaApi = async (workoutSupabaseId, exercise) => {
+    if (!canUseWorkoutApi || !workoutSupabaseId || !exercise?.supabaseId) return;
+    const exercisePayload = buildExerciseSupabasePayload(workoutSupabaseId, exercise);
+    await callWorkoutsApi("update_exercise", {
+      profile_id: profile.id,
+      workout_id: workoutSupabaseId,
+      exercise_id: exercise.supabaseId,
+      workout_exercise_id: exercise.supabaseId,
+      exercise: exercisePayload,
+      ...exercisePayload,
+    });
   };
 
-  const createWorkoutInSupabase = async (workout) => {
-    if (!canUseWorkoutSupabase || !workout) return null;
+  const createWorkoutViaApi = async (workout) => {
+    if (!canUseWorkoutApi || !workout) return null;
     const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
-    try {
-      const { data, error } = await supabaseClient
-        .from("workouts")
-        .insert(buildWorkoutSupabasePayload(normalizedWorkout))
-        .select("id")
-        .single();
-      if (error) throw error;
-      if (data?.id) patchWorkoutInState(normalizedWorkout.id, item => normalizeWorkoutSupersetMetadata({ ...item, supabaseId: data.id }));
-      console.log("Workout created", data);
-      await Promise.all((normalizedWorkout.exercises || []).map(exercise => createExerciseInSupabase(normalizedWorkout.id, data?.id, exercise)));
-      return data?.id || null;
-    } catch (error) {
-      logSupabaseWorkoutError(error);
-      return null;
-    }
+    const workoutPayload = buildWorkoutSupabasePayload(normalizedWorkout);
+    const result = await callWorkoutsApi("create_workout", {
+      profile_id: profile.id,
+      workout: workoutPayload,
+      ...workoutPayload,
+    });
+    const id = pickApiId(result, "workout");
+    if (id) patchWorkoutInState(normalizedWorkout.id, item => normalizeWorkoutSupersetMetadata({ ...item, supabaseId: id }));
+    if (id) console.log("Workout created", { id });
+    await Promise.all((normalizedWorkout.exercises || []).map(exercise => createExerciseViaApi(normalizedWorkout.id, id, exercise)));
+    return id;
   };
 
-  const updateWorkoutInSupabase = async (workout) => {
-    if (!canUseWorkoutSupabase || !workout?.supabaseId) return;
+  const updateWorkoutViaApi = async (workout) => {
+    if (!canUseWorkoutApi || !workout?.supabaseId) return;
     const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
-    try {
-      const { error } = await supabaseClient
-        .from("workouts")
-        .update(buildWorkoutSupabasePayload(normalizedWorkout))
-        .eq("id", normalizedWorkout.supabaseId);
-      if (error) throw error;
-    } catch (error) {
-      logSupabaseWorkoutError(error);
-    }
+    const workoutPayload = buildWorkoutSupabasePayload(normalizedWorkout);
+    await callWorkoutsApi("update_workout", {
+      profile_id: profile.id,
+      workout_id: normalizedWorkout.supabaseId,
+      workout: workoutPayload,
+      ...workoutPayload,
+    });
   };
 
-  const syncExistingWorkoutToSupabase = async (workout) => {
-    if (!canUseWorkoutSupabase || !workout?.supabaseId) return;
+  const syncExistingWorkoutViaApi = async (workout) => {
+    if (!canUseWorkoutApi || !workout?.supabaseId) return;
     const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
-    await updateWorkoutInSupabase(normalizedWorkout);
+    await updateWorkoutViaApi(normalizedWorkout);
     await Promise.all((normalizedWorkout.exercises || []).map(async (exercise) => {
       if (!exercise?.supabaseId) return;
-      await updateExerciseInSupabase(normalizedWorkout.supabaseId, exercise);
-      await Promise.all((exercise.sets || []).map(set => updateSetInSupabase(set, exercise.supabaseId)));
+      await updateExerciseViaApi(normalizedWorkout.supabaseId, exercise);
+      await Promise.all((exercise.sets || []).map(set => updateSetViaApi(set, exercise.supabaseId)));
     }));
   };
 
-  const deleteSetFromSupabase = async (set) => {
-    if (!canUseWorkoutSupabase || !set?.supabaseId) return;
-    try {
-      const { error } = await supabaseClient
-        .from("workout_sets")
-        .delete()
-        .eq("id", set.supabaseId);
-      if (error) throw error;
-    } catch (error) {
-      logSupabaseWorkoutError(error);
-    }
+  const deleteSetViaApi = async (set) => {
+    if (!canUseWorkoutApi || !set?.supabaseId) return;
+    await callWorkoutsApi("delete_set", {
+      profile_id: profile.id,
+      set_id: set.supabaseId,
+      workout_set_id: set.supabaseId,
+    });
   };
 
-  const deleteExerciseFromSupabase = async (exercise) => {
-    if (!canUseWorkoutSupabase || !exercise?.supabaseId) return;
-    try {
-      const { error: setError } = await supabaseClient
-        .from("workout_sets")
-        .delete()
-        .eq("workout_exercise_id", exercise.supabaseId);
-      if (setError) throw setError;
-
-      const { error } = await supabaseClient
-        .from("workout_exercises")
-        .delete()
-        .eq("id", exercise.supabaseId);
-      if (error) throw error;
-    } catch (error) {
-      logSupabaseWorkoutError(error);
-    }
+  const deleteExerciseViaApi = async (exercise) => {
+    if (!canUseWorkoutApi || !exercise?.supabaseId) return;
+    await callWorkoutsApi("delete_exercise", {
+      profile_id: profile.id,
+      exercise_id: exercise.supabaseId,
+      workout_exercise_id: exercise.supabaseId,
+    });
   };
 
-  const deleteWorkoutFromSupabase = async (workout) => {
-    if (!canUseWorkoutSupabase || !workout?.supabaseId) return;
-    try {
-      const exerciseIds = (workout.exercises || []).map(exercise => exercise.supabaseId).filter(Boolean);
-      if (exerciseIds.length) {
-        const { error: setError } = await supabaseClient
-          .from("workout_sets")
-          .delete()
-          .in("workout_exercise_id", exerciseIds);
-        if (setError) throw setError;
-      }
-
-      const { error: exerciseError } = await supabaseClient
-        .from("workout_exercises")
-        .delete()
-        .eq("workout_id", workout.supabaseId);
-      if (exerciseError) throw exerciseError;
-
-      const { error } = await supabaseClient
-        .from("workouts")
-        .delete()
-        .eq("id", workout.supabaseId);
-      if (error) throw error;
+  const deleteWorkoutViaApi = async (workout) => {
+    if (!canUseWorkoutApi || !workout?.supabaseId) return;
+    const result = await callWorkoutsApi("delete_workout", {
+      profile_id: profile.id,
+      workout_id: workout.supabaseId,
+    });
+    if (result) {
       console.log("Workout deleted", { id: workout.supabaseId });
-    } catch (error) {
-      logSupabaseWorkoutError(error);
     }
   };
 
@@ -3254,17 +3264,17 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const mappedSet = {
       id: `set-supabase-${row.id || index}`,
       supabaseId: row.id || null,
-      order: safeWorkoutNumber(row.set_order, index + 1),
-      weight: safeWorkoutNumber(row.weight_kg),
+      order: safeWorkoutNumber(row.set_order ?? row.order, index + 1),
+      weight: safeWorkoutNumber(row.weight_kg ?? row.weight),
       reps: safeWorkoutNumber(row.reps),
       rir: row.rir ?? null,
       rpe: row.rpe ?? null,
       tempo: row.tempo || "",
       type: "working",
-      status: completed ? "completed" : "pending",
+      status: row.status || (completed ? "completed" : "pending"),
       note: row.notes || "",
-      restSeconds: safeWorkoutNumber(row.rest_seconds, 120),
-      restAfterSeconds: safeWorkoutNumber(row.rest_after_seconds, 0),
+      restSeconds: safeWorkoutNumber(row.rest_seconds ?? row.restSeconds, 120),
+      restAfterSeconds: safeWorkoutNumber(row.rest_after_seconds ?? row.restAfterSeconds, 0),
       isCompleted: completed,
     };
     console.log("Loaded set rest fields:", {
@@ -3275,23 +3285,24 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const mapSupabaseExercise = (row = {}, index = 0) => {
-    const supersetGroupId = normalizeSupersetGroupId(row.superset_group_id);
+    const supersetGroupId = normalizeSupersetGroupId(row.superset_group_id || row.supersetGroupId || row.supersetId);
+    const sets = row.workout_sets || row.sets || row.workoutSets || [];
     const mappedExercise = {
       id: `exercise-supabase-${row.id || index}`,
       supabaseId: row.id || null,
-      order: safeWorkoutNumber(row.exercise_order, index + 1),
-      name: row.exercise_name || "Упражнение",
-      muscleGroup: row.muscle_group || "Другое",
+      order: safeWorkoutNumber(row.exercise_order ?? row.order, index + 1),
+      name: row.exercise_name || row.name || row.exerciseName || "Упражнение",
+      muscleGroup: row.muscle_group || row.muscleGroup || "Другое",
       blockType: "обычное",
-      restSeconds: safeWorkoutNumber(row.rest_between_seconds, 120),
-      restAfterSeconds: safeWorkoutNumber(row.rest_after_seconds, 0),
+      restSeconds: safeWorkoutNumber(row.rest_between_seconds ?? row.restSeconds, 120),
+      restAfterSeconds: safeWorkoutNumber(row.rest_after_seconds ?? row.restAfterSeconds, 0),
       supersetId: supersetGroupId,
       supersetGroupId,
-      supersetOrder: supersetGroupId ? safeWorkoutNumber(row.superset_order, index + 1) : null,
+      supersetOrder: supersetGroupId ? safeWorkoutNumber(row.superset_order ?? row.supersetOrder, index + 1) : null,
       isSuperset: Boolean(row.is_superset || supersetGroupId),
       note: row.notes || "",
-      sets: [...(row.workout_sets || [])]
-        .sort((a, b) => safeWorkoutNumber(a.set_order) - safeWorkoutNumber(b.set_order))
+      sets: [...sets]
+        .sort((a, b) => safeWorkoutNumber(a.set_order ?? a.order) - safeWorkoutNumber(b.set_order ?? b.order))
         .map(mapSupabaseSet),
     };
     console.log("Loaded exercise rest/superset fields:", {
@@ -3305,8 +3316,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const mapSupabaseWorkout = (row = {}, index = 0) => {
-    const dateKey = row.workout_date || selectedDateKey;
+    const dateKey = row.workout_date || row.date || selectedDateKey;
     const date = parseDateKey(dateKey);
+    const exercises = row.workout_exercises || row.exercises || row.workoutExercises || [];
     return normalizeWorkoutSupersetMetadata({
       id: `workout-supabase-${row.id || index}`,
       supabaseId: row.id || null,
@@ -3314,13 +3326,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       weekday: weekdayNames[date.getDay()] || "",
       title: row.title || "Новая тренировка",
       programDayNumber: index + 1,
-      durationMinutes: 60,
-      totalVolumeKg: safeWorkoutNumber(row.total_volume),
+      durationMinutes: safeWorkoutNumber(row.durationMinutes, 60),
+      totalVolumeKg: safeWorkoutNumber(row.total_volume ?? row.totalVolumeKg),
       calories: 0,
       status: row.status || "completed",
       startedAt: null,
-      exercises: [...(row.workout_exercises || [])]
-        .sort((a, b) => safeWorkoutNumber(a.exercise_order) - safeWorkoutNumber(b.exercise_order))
+      exercises: [...exercises]
+        .sort((a, b) => safeWorkoutNumber(a.exercise_order ?? a.order) - safeWorkoutNumber(b.exercise_order ?? b.order))
         .map(mapSupabaseExercise),
       notes: row.notes || "",
       templateId: null,
@@ -3330,56 +3342,21 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   useEffect(() => {
-    if (!canUseWorkoutSupabase) return;
+    if (!canUseWorkoutApi) return;
     const profileId = profile.id;
     if (loadedWorkoutProfileRef.current === profileId) return;
     loadedWorkoutProfileRef.current = profileId;
     let cancelled = false;
 
-    const loadWorkoutsFromSupabase = async () => {
+    const loadWorkoutsFromApi = async () => {
       try {
-        const { data, error } = await supabaseClient
-          .from("workouts")
-          .select(`
-            id,
-            workout_date,
-            title,
-            status,
-            notes,
-            total_sets,
-            total_volume,
-            workout_exercises (
-              id,
-              exercise_name,
-              muscle_group,
-              exercise_order,
-              rest_between_seconds,
-              rest_after_seconds,
-              superset_group_id,
-              superset_order,
-              is_superset,
-              notes,
-              workout_sets (
-                id,
-                set_order,
-                weight_kg,
-                reps,
-                rir,
-                rpe,
-                rest_seconds,
-                rest_after_seconds,
-                tempo,
-                is_completed,
-                notes
-              )
-            )
-          `)
-          .eq("profile_id", profileId)
-          .order("workout_date", { ascending: false });
-
-        if (error) throw error;
+        const result = await callWorkoutsApi("load", { profile_id: profileId });
+        if (!result) {
+          loadedWorkoutProfileRef.current = null;
+          return;
+        }
         if (cancelled) return;
-        const loadedWorkouts = (data || []).map(mapSupabaseWorkout);
+        const loadedWorkouts = pickApiList(result, "workouts").map(mapSupabaseWorkout);
         setWorkouts(loadedWorkouts);
         setSelectedWorkout(prev => {
           if (!prev?.supabaseId) return null;
@@ -3392,12 +3369,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       }
     };
 
-    loadWorkoutsFromSupabase();
+    loadWorkoutsFromApi();
 
     return () => {
       cancelled = true;
     };
-  }, [canUseWorkoutSupabase, profile?.id, supabaseClient]);
+  }, [canUseWorkoutApi, profile?.id, telegramInitData]);
 
   const openWorkoutDetails = (workout) => {
     const firstExercise = (workout.exercises || [])[0];
@@ -3437,7 +3414,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setWorkouts(prev => prev.map(workout => workout.id === id ? patch(workout) : workout));
     setSelectedWorkout(prev => prev?.id === id ? patch(prev) : prev);
     const workout = workouts.find(item => item.id === id) || selectedWorkout;
-    if (workout) updateWorkoutInSupabase(patch(workout));
+    if (workout) updateWorkoutViaApi(patch(workout));
   };
 
   const updateWorkoutSet = (workoutId, exerciseId, setId, field, value) => {
@@ -3455,8 +3432,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const workout = workouts.find(item => item.id === workoutId) || selectedWorkout;
     const exercise = (workout?.exercises || []).find(item => item.id === exerciseId);
     const set = (exercise?.sets || []).find(item => item.id === setId);
-    if (set && exercise?.supabaseId) updateSetInSupabase({ ...set, [field]: Number(value) }, exercise.supabaseId);
-    if (workout) updateWorkoutInSupabase(patch(workout));
+    if (set && exercise?.supabaseId) updateSetViaApi({ ...set, [field]: Number(value) }, exercise.supabaseId);
+    if (workout) updateWorkoutViaApi(patch(workout));
   };
 
   const updateSelectedWorkoutModel = (updater, options = {}) => {
@@ -3465,7 +3442,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const nextSelectedWorkout = applyUpdate(selectedWorkout);
     setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? applyUpdate(workout) : workout));
     setSelectedWorkout(nextSelectedWorkout);
-    if (options.sync !== false) syncExistingWorkoutToSupabase(nextSelectedWorkout);
+    if (options.sync !== false) syncExistingWorkoutViaApi(nextSelectedWorkout);
   };
 
   const toggleWorkoutEditMode = () => {
@@ -3732,7 +3709,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       } : exercise),
       updatedAt: new Date().toISOString(),
     }));
-    if (nextSet && currentExercise?.supabaseId) updateSetInSupabase(nextSet, currentExercise.supabaseId);
+    if (nextSet && currentExercise?.supabaseId) updateSetViaApi(nextSet, currentExercise.supabaseId);
   };
 
   const updateActiveExercise = (patch) => {
@@ -3743,7 +3720,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       exercises: (workout.exercises || []).map((exercise, exerciseIndex) => exerciseIndex === activeExerciseIndex ? applyExercisePatchWithRest(exercise, patch) : exercise),
       updatedAt: new Date().toISOString(),
     }));
-    if (selectedWorkout?.supabaseId && nextExercise?.supabaseId) updateExerciseInSupabase(selectedWorkout.supabaseId, nextExercise);
+    if (selectedWorkout?.supabaseId && nextExercise?.supabaseId) updateExerciseViaApi(selectedWorkout.supabaseId, nextExercise);
   };
 
   const removeActiveExercise = () => {
@@ -3759,7 +3736,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setActiveExerciseIndex(nextIndex);
     setActiveSetId(getFirstActiveSetId(nextExercise));
     setOpenMenu(null);
-    deleteExerciseFromSupabase(removedExercise);
+    deleteExerciseViaApi(removedExercise);
   };
 
   const removeExerciseFromSelectedWorkout = (exerciseId) => {
@@ -3778,7 +3755,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setActiveSetId(getFirstActiveSetId(nextExercises[nextIndex]));
     setSelectedExerciseIds(prev => prev.filter(id => id !== exerciseId));
     setOpenMenu(null);
-    deleteExerciseFromSupabase(removedExercise);
+    deleteExerciseViaApi(removedExercise);
   };
 
   const openReplaceForExercise = (exerciseId) => {
@@ -3821,7 +3798,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }));
     setActiveSetId(newSet.id);
     setOpenMenu(null);
-    if (currentExercise?.supabaseId) createSetInSupabase(selectedWorkout.id, currentExercise.id, currentExercise.supabaseId, newSet);
+    if (currentExercise?.supabaseId) createSetViaApi(selectedWorkout.id, currentExercise.id, currentExercise.supabaseId, newSet);
   };
 
   const removeSetFromActiveExercise = (setId) => {
@@ -3838,7 +3815,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }));
     setActiveSetId((remaining.find(set => getSetStatus(set) === "pending") || remaining[0] || null)?.id || null);
     setOpenMenu(null);
-    deleteSetFromSupabase(removedSet);
+    deleteSetViaApi(removedSet);
   };
 
   const goToExercise = (nextIndex) => {
@@ -3905,7 +3882,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
     setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? patch(workout) : workout));
     setSelectedWorkout(prev => prev ? patch(prev) : prev);
-    if (selectedWorkout?.supabaseId) additions.forEach(exercise => createExerciseInSupabase(selectedWorkout.id, selectedWorkout.supabaseId, exercise));
+    if (selectedWorkout?.supabaseId) additions.forEach(exercise => createExerciseViaApi(selectedWorkout.id, selectedWorkout.supabaseId, exercise));
   };
 
   const exercisePickerKey = (name, muscleGroup) => `${muscleGroup}::${name}`;
@@ -3936,7 +3913,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setWorkouts(prev => prev.map(item => item.id === workout.id ? patch(item) : item));
     setSelectedWorkout(prev => prev?.id === workout.id ? patch(prev) : prev);
     setRestTimer(null);
-    updateWorkoutInSupabase(patch(workout));
+    updateWorkoutViaApi(patch(workout));
   };
 
   const repeatWorkout = (workout) => {
@@ -3955,7 +3932,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
     setWorkouts(prev => [copy, ...prev]);
     openWorkoutDetails(copy);
-    createWorkoutInSupabase(copy);
+    createWorkoutViaApi(copy);
   };
 
   const finishActiveWorkout = () => {
@@ -3982,7 +3959,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setWorkoutViewMode("overview");
     setRestTimer(null);
     setOpenMenu(null);
-    updateWorkoutInSupabase(patch(selectedWorkout));
+    updateWorkoutViaApi(patch(selectedWorkout));
   };
 
   const openExerciseBase = (mode = "view") => {
@@ -5945,6 +5922,7 @@ function OnlyPumpPlatform() {
   const supabaseClientRef = useRef(null);
   const profileSaveReadyRef = useRef(false);
   const [supabaseClient, setSupabaseClient] = useState(null);
+  const [telegramInitData, setTelegramInitData] = useState("");
   const backLayerCount = useBackLayerCount();
   const [globalSelectedDateKey, setGlobalSelectedDateKey] = useState(formatDateKey(new Date()));
   const [workouts, setWorkouts] = useState(buildInitialWorkoutModels);
@@ -6141,6 +6119,7 @@ function OnlyPumpPlatform() {
         goal: progressGoal.title,
       });
       const initData = getTelegramInitData();
+      setTelegramInitData(initData || "");
       if (!initData) {
         const activeProfile = localDefaults;
         console.log("Using activeProfile:", activeProfile);
@@ -6209,7 +6188,7 @@ function OnlyPumpPlatform() {
 
   const page = useMemo(() => ({
     home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} profile={profile}/>,
-    workouts: <WorkoutsPage workouts={workouts} setWorkouts={setWorkouts} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} profile={profile} supabaseClient={supabaseClient}/>,
+    workouts: <WorkoutsPage workouts={workouts} setWorkouts={setWorkouts} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} profile={profile} telegramInitData={telegramInitData}/>,
     nutrition: <NutritionPage nutritionMeals={nutritionMeals} setNutritionMeals={setNutritionMeals} nutritionGoal={nutritionGoal} setNutritionGoal={setNutritionGoal}/>,
     calculators: <CalculatorsPage/>,
     education: <EducationPage/>,
@@ -6218,7 +6197,7 @@ function OnlyPumpPlatform() {
     analytics: <AnalyticsPage workouts={workouts}/>,
     community: <CommunityPage/>,
     profile: <ProfilePage profile={profile} profileStatus={profileStatus}/>,
-  }[active]), [active, workouts, nutritionMeals, nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient]);
+  }[active]), [active, workouts, nutritionMeals, nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData]);
 
   return <div className="onlypump-app-shell bg-black text-zinc-100 selection:bg-red-500/30">
     <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_5%,rgba(239,68,68,0.13),transparent_30%),radial-gradient(circle_at_30%_35%,rgba(255,255,255,0.05),transparent_30%)]"/>
