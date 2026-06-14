@@ -212,6 +212,7 @@ const telegramWebApp = initTelegramWebApp();
 
 const SUPABASE_URL = window.ONLYPUMP_SUPABASE_URL || window.SUPABASE_URL || "https://qehbgwnblebjahmytqca.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = window.ONLYPUMP_SUPABASE_PUBLISHABLE_KEY || window.SUPABASE_PUBLISHABLE_KEY || "sb_publishable_rZgTF88Cp6PGhKUpoD_O8A_aQi-1o_K";
+const VERIFY_TELEGRAM_USER_URL = "https://qehbgwnblebjahmytqca.supabase.co/functions/v1/verify-telegram-user";
 console.log("Supabase URL present", Boolean(SUPABASE_URL));
 console.log("Supabase key present", Boolean(SUPABASE_PUBLISHABLE_KEY));
 
@@ -256,26 +257,10 @@ function createOnlyPumpSupabaseClient() {
   }
 }
 
-function getTelegramProfileSeed() {
-  const user = telegramWebApp?.initDataUnsafe?.user || window.Telegram?.WebApp?.initDataUnsafe?.user;
-  if (!user?.id) return null;
-
-  const firstName = String(user.first_name || "").trim();
-  const lastName = String(user.last_name || "").trim();
-  const username = String(user.username || "").trim();
-  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
-  const telegramId = String(user.id);
-  const displayName = fullName || username || telegramId;
-  const seed = {
-    telegram_id: telegramId,
-    telegram_username: username || null,
-    first_name: firstName || null,
-    last_name: lastName || null,
-    display_name: displayName,
-  };
-
-  console.log("Telegram user detected", seed);
-  return seed;
+function getTelegramInitData() {
+  const initData = telegramWebApp?.initData || window.Telegram?.WebApp?.initData || "";
+  console.log("Raw Telegram initData present:", Boolean(initData));
+  return initData;
 }
 
 function safeProfileNumber(value, fallback) {
@@ -311,68 +296,31 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
   };
 }
 
-function buildProfilePayload(seed, fallback = DEFAULT_PROFILE) {
-  const base = normalizeProfileRecord({ ...fallback, ...seed }, fallback);
-  return {
-    telegram_id: base.telegram_id,
-    telegram_username: base.telegram_username,
-    first_name: base.first_name,
-    last_name: base.last_name,
-    display_name: base.display_name,
-    weight_kg: base.weight_kg,
-    height_cm: base.height_cm,
-    goal: base.goal,
-  };
-}
-
-function profileNeedsRefresh(record = {}, payload = {}) {
-  return ["telegram_username", "first_name", "last_name", "display_name", "weight_kg", "height_cm", "goal"]
-    .some(key => String(record[key] ?? "") !== String(payload[key] ?? ""));
-}
-
-async function loadOrCreateProfile(client, telegramSeed, fallback = DEFAULT_PROFILE) {
-  const localProfile = normalizeProfileRecord({ ...fallback, ...telegramSeed, source: "fallback" }, fallback);
-  if (!telegramSeed?.telegram_id || !client) {
-    return { profile: localProfile, status: "local" };
-  }
+async function verifyTelegramUserProfile(initData, fallback = DEFAULT_PROFILE) {
+  const localProfile = normalizeProfileRecord({ ...fallback, source: "fallback" }, fallback);
+  if (!initData) return { profile: localProfile, status: "local" };
 
   try {
-    const { data, error } = await client
-      .from("profiles")
-      .select("id, telegram_id, telegram_username, first_name, last_name, display_name, weight_kg, height_cm, goal")
-      .eq("telegram_id", telegramSeed.telegram_id)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    if (data) {
-      const merged = normalizeProfileRecord({ ...data, ...telegramSeed, source: "supabase" }, localProfile);
-      const payload = buildProfilePayload(merged, localProfile);
-      if (profileNeedsRefresh(data, payload)) {
-        const { error: updateError } = await client
-          .from("profiles")
-          .update(payload)
-          .eq("telegram_id", telegramSeed.telegram_id);
-        if (updateError) console.log("Supabase error", updateError);
-      }
-      console.log("Profile loaded", merged);
-      return { profile: merged, status: "loaded" };
+    console.log("Calling verify-telegram-user");
+    const response = await fetch(VERIFY_TELEGRAM_USER_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ initData }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result?.ok !== true || !result?.profile) {
+      throw result?.error || result?.message || new Error(`verify-telegram-user failed with ${response.status}`);
     }
 
-    const payload = buildProfilePayload(telegramSeed, localProfile);
-    const { data: created, error: insertError } = await client
-      .from("profiles")
-      .insert(payload)
-      .select("id, telegram_id, telegram_username, first_name, last_name, display_name, weight_kg, height_cm, goal")
-      .single();
-
-    if (insertError) throw insertError;
-
-    const createdProfile = normalizeProfileRecord({ ...created, source: "supabase" }, localProfile);
-    console.log("Profile created", createdProfile);
-    return { profile: createdProfile, status: "created" };
+    const profile = normalizeProfileRecord({ ...result.profile, source: "supabase" }, localProfile);
+    console.log("Verified profile:", profile);
+    return { profile, status: "verified" };
   } catch (error) {
-    console.log("Supabase error", error);
+    console.error("verify-telegram-user error:", error);
     return { profile: localProfile, status: "local" };
   }
 }
@@ -5969,7 +5917,7 @@ function CommunityPage() {
 function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local" }) {
   const displayName = profile?.display_name || DEFAULT_PROFILE.display_name;
   const telegramLabel = profile?.telegram_username ? `@${profile.telegram_username}` : profile?.telegram_id ? `ID ${profile.telegram_id}` : "Обычная web-версия";
-  const profileSource = profileStatus === "loaded" ? "Supabase: профиль загружен" : profileStatus === "created" ? "Supabase: профиль создан" : "Локальный fallback";
+  const profileSource = profileStatus === "verified" ? "Supabase: Telegram проверен" : profileStatus === "loaded" ? "Supabase: профиль загружен" : profileStatus === "created" ? "Supabase: профиль создан" : "Локальный fallback";
 
   return <><Header title="Личный кабинет" subtitle="Профиль, тариф, подписка, настройки, доступы и история платежей."/><PageGrid>
     <Card className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p></Card>
@@ -6192,26 +6140,31 @@ function OnlyPumpPlatform() {
         weight_kg: measurements.weight,
         goal: progressGoal.title,
       });
-      const telegramSeed = getTelegramProfileSeed();
-      if (!telegramSeed) {
+      const initData = getTelegramInitData();
+      if (!initData) {
+        const activeProfile = localDefaults;
+        console.log("Using activeProfile:", activeProfile);
         supabaseClientRef.current = null;
         setSupabaseClient(null);
-        setProfile(localDefaults);
+        setProfile(activeProfile);
         setProfileStatus("local");
+        profileSaveReadyRef.current = false;
         return;
       }
 
       const client = createOnlyPumpSupabaseClient();
       supabaseClientRef.current = client;
       setSupabaseClient(client);
-      const result = await loadOrCreateProfile(client, telegramSeed, localDefaults);
+      const result = await verifyTelegramUserProfile(initData, localDefaults);
 
       if (cancelled) return;
-      setProfile(result.profile);
+      const activeProfile = result.profile;
+      console.log("Using activeProfile:", activeProfile);
+      setProfile(activeProfile);
       setProfileStatus(result.status);
-      profileSaveReadyRef.current = result.status !== "local";
-      setMeasurements(prev => ({ ...prev, weight: result.profile.weight_kg || prev.weight }));
-      setProgressGoal(prev => ({ ...prev, title: result.profile.goal || prev.title }));
+      profileSaveReadyRef.current = result.status === "verified" && Boolean(activeProfile?.id);
+      setMeasurements(prev => ({ ...prev, weight: activeProfile.weight_kg || prev.weight }));
+      setProgressGoal(prev => ({ ...prev, title: activeProfile.goal || prev.title }));
     };
 
     bootstrapProfile();
@@ -6223,7 +6176,7 @@ function OnlyPumpPlatform() {
 
   useEffect(() => {
     const client = supabaseClientRef.current;
-    if (!profileSaveReadyRef.current || !client || !profile?.telegram_id || profileStatus === "local") return;
+    if (!profileSaveReadyRef.current || !client || !profile?.id || profileStatus !== "verified") return;
 
     const payload = {
       weight_kg: safeProfileNumber(measurements.weight, profile.weight_kg || DEFAULT_PROFILE.weight_kg),
@@ -6236,7 +6189,7 @@ function OnlyPumpPlatform() {
         const { error } = await client
           .from("profiles")
           .update(payload)
-          .eq("telegram_id", profile.telegram_id);
+          .eq("id", profile.id);
         if (error) {
           console.log("Supabase error", error);
           return;
@@ -6248,7 +6201,7 @@ function OnlyPumpPlatform() {
     }, 900);
 
     return () => clearTimeout(timer);
-  }, [measurements.weight, progressGoal.title, profile?.telegram_id, profile?.height_cm, profileStatus]);
+  }, [measurements.weight, progressGoal.title, profile?.id, profile?.height_cm, profileStatus]);
 
   useEffect(() => {
     localStorage.setItem("onlypump-home-widgets", JSON.stringify(homeWidgets));
