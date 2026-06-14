@@ -2753,6 +2753,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const reorderTargetRef = useRef(null);
   const workoutScrollRef = useRef(null);
   const loadedWorkoutProfileRef = useRef(null);
+  const workoutsRef = useRef(workouts);
+  const pendingWorkoutPatchesRef = useRef({});
+  const saveWorkoutTimersRef = useRef({});
   const [seenVersion, setSeenVersion] = useState(() => {
     try { return localStorage.getItem("onlypump-seen-version") || ""; } catch { return ""; }
   });
@@ -2766,6 +2769,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const date = addLocalDays(weekStart, index);
     return { date, key: toDateKey(date) };
   });
+
+  useEffect(() => {
+    workoutsRef.current = workouts;
+  }, [workouts]);
 
   useEffect(() => {
     if (!selectedWorkout) {
@@ -2958,7 +2965,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       const pendingWorkout = { ...workout, pending: true, isSaving: true, isSyncing: true };
       setWorkouts(prev => [pendingWorkout, ...prev]);
       setSelectedWorkout(pendingWorkout);
-      const id = await createWorkoutViaApi(pendingWorkout, { createChildren: Boolean((pendingWorkout.exercises || []).length), reload: false });
+      const id = await createWorkoutTreeViaApi(pendingWorkout);
       if (!id) {
         patchWorkoutInState(pendingWorkout.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
       }
@@ -3002,12 +3009,23 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setActiveTab("diary");
 
     if (canUseWorkoutApi) {
-      for (const workout of createdWorkouts) {
-        await createWorkoutViaApi(workout, { createChildren: true, reload: false, programLog: true });
-      }
-      await loadWorkoutsFromApi({ preserveSelected: false });
-      console.log("Program workout fully saved");
+      const pendingWorkouts = createdWorkouts.map(workout => normalizeWorkoutSupersetMetadata({
+        ...workout,
+        pending: true,
+        isSaving: true,
+        isSyncing: true,
+      }));
+      setWorkouts(prev => [...pendingWorkouts, ...prev]);
       setSelectedWorkout(null);
+      Promise.all(pendingWorkouts.map(async workout => {
+        const id = await createWorkoutTreeViaApi(workout, { programLog: true });
+        if (!id) patchWorkoutInState(workout.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
+        return id;
+      })).then(() => {
+        console.log("Program workout fully saved");
+      }).catch(error => {
+        console.error("Program workout save error", error);
+      });
       return;
     }
 
@@ -3034,22 +3052,32 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
     setWeekMenuGroup(null);
     if (canUseWorkoutApi) {
-      await createWorkoutViaApi(copy, { createChildren: true, reload: true });
+      const pendingWorkout = { ...copy, pending: true, isSaving: true, isSyncing: true };
+      setWorkouts(prev => [pendingWorkout, ...prev]);
+      const id = await createWorkoutTreeViaApi(pendingWorkout);
+      if (!id) patchWorkoutInState(pendingWorkout.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
       return;
     }
     setWorkouts(prev => [copy, ...prev]);
   };
 
   const deleteWorkout = async (id) => {
-    const workout = workouts.find(item => item.id === id) || (selectedWorkout?.id === id ? selectedWorkout : null);
+    const workout = workoutsRef.current.find(item => item.id === id) || (selectedWorkout?.id === id ? selectedWorkout : null);
     console.log("Deleting workout:", workout);
     if (canUseWorkoutApi && workout?.supabaseId) {
-      const deleted = await deleteWorkoutViaApi(workout);
-      if (!deleted) return;
+      const previousWorkouts = workoutsRef.current;
+      const previousSelectedWorkout = selectedWorkout;
+      clearWorkoutSaveQueue(id);
       setWorkouts(prev => prev.filter(item => item.id !== id));
       setSelectedWorkout(null);
       setWeekMenuGroup(null);
       setDetailMenuOpen(false);
+      const patchResult = await sendWorkoutPatch(id, { deleted_workout_ids: [workout.supabaseId] });
+      const deleted = patchResult || await deleteWorkoutViaApi(workout);
+      if (!deleted) {
+        setWorkouts(previousWorkouts);
+        setSelectedWorkout(previousSelectedWorkout);
+      }
       return;
     }
     setWorkouts(prev => prev.filter(workout => workout.id !== id));
@@ -3083,7 +3111,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const callWorkoutsApi = async (action, payload = {}) => {
     if (!canUseWorkoutApi) return null;
-    console.log("Calling workouts API:", { action, payload });
+    console.log("callWorkoutsApi action", { action, payload });
     try {
       const response = await fetch(ONLYPUMP_WORKOUTS_API_URL, {
         method: "POST",
@@ -3100,14 +3128,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || result?.ok === false || result?.error) {
-        throw result?.error || result?.message || new Error(`onlypump-workouts-api ${action} failed with ${response.status}`);
+        const message = result?.error || result?.message || `onlypump-workouts-api ${action} failed with ${response.status}`;
+        throw new Error(typeof message === "string" ? message : JSON.stringify(message));
       }
       console.log("Workouts API response:", { action, result });
       return result;
     } catch (error) {
-      console.error("Workouts API error:", { action, error });
+      console.error("API error:", { action, error });
       console.error("onlypump-workouts-api error:", { action, error });
-      return null;
+      throw error;
     }
   };
 
@@ -3228,6 +3257,88 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return payload;
   };
 
+  const mergeById = (items = []) => {
+    const map = new Map();
+    items.filter(Boolean).forEach(item => {
+      const id = item.id || item.workout_id || item.exercise_id || item.set_id;
+      if (!id) return;
+      map.set(String(id), { ...(map.get(String(id)) || {}), ...item, id });
+    });
+    return Array.from(map.values());
+  };
+
+  const uniqueIds = (ids = []) => Array.from(new Set(ids.filter(Boolean).map(String)));
+
+  const buildWorkoutPatchPayload = (workout) => {
+    if (!workout?.supabaseId) return null;
+    const totals = getWorkoutTotals(workout);
+    return {
+      id: workout.supabaseId,
+      title: workout.title || "Новая тренировка",
+      status: workout.status || "completed",
+      notes: workout.notes || "",
+      total_sets: totals.totalSets,
+      total_volume: totals.totalVolume || safeWorkoutNumber(workout.totalVolumeKg),
+      duration_seconds: Math.max(0, safeWorkoutNumber(workout.durationMinutes) * 60),
+    };
+  };
+
+  const buildExercisePatchPayload = (exercise) => {
+    if (!exercise?.supabaseId) return null;
+    const supersetGroupId = getExerciseSupersetGroupId(exercise);
+    const payload = {
+      id: exercise.supabaseId,
+      exercise_name: exercise.name || "Упражнение",
+      muscle_group: exercise.muscleGroup || "Другое",
+      exercise_order: safeWorkoutNumber(exercise.order, 1),
+      notes: exercise.note || exercise.notes || "",
+      rest_between_seconds: safeWorkoutNumber(exercise.restSeconds, 120),
+      rest_after_seconds: safeWorkoutNumber(exercise.restAfterSeconds, 0),
+      superset_group_id: supersetGroupId,
+      superset_order: supersetGroupId ? safeWorkoutNumber(exercise.supersetOrder, 1) : null,
+      is_superset: Boolean(supersetGroupId),
+    };
+    console.log("Saving exercise rest/superset fields:", {
+      rest_between_seconds: payload.rest_between_seconds,
+      rest_after_seconds: payload.rest_after_seconds,
+      superset_group_id: payload.superset_group_id,
+      superset_order: payload.superset_order,
+      is_superset: payload.is_superset,
+    });
+    return payload;
+  };
+
+  const buildSetPatchPayload = (set) => {
+    if (!set?.supabaseId) return null;
+    const payload = {
+      id: set.supabaseId,
+      set_order: safeWorkoutNumber(set.order, 1),
+      weight_kg: safeWorkoutNumber(set.weight),
+      reps: safeWorkoutNumber(set.reps),
+      rir: set.rir ?? null,
+      rpe: set.rpe ?? null,
+      rest_seconds: safeWorkoutNumber(set.restSeconds, 120),
+      rest_after_seconds: safeWorkoutNumber(set.restAfterSeconds, 0),
+      tempo: set.tempo || null,
+      is_completed: getSetStatus(set) === "completed",
+      notes: set.note || set.notes || "",
+    };
+    console.log("Saving set rest fields:", {
+      rest_seconds: payload.rest_seconds,
+      rest_after_seconds: payload.rest_after_seconds,
+    });
+    return payload;
+  };
+
+  const mergeWorkoutPatch = (base = {}, patch = {}) => ({
+    workout_updates: mergeById([...(base.workout_updates || []), ...(patch.workout_updates || [])]),
+    exercise_updates: mergeById([...(base.exercise_updates || []), ...(patch.exercise_updates || [])]),
+    set_updates: mergeById([...(base.set_updates || []), ...(patch.set_updates || [])]),
+    deleted_workout_ids: uniqueIds([...(base.deleted_workout_ids || []), ...(patch.deleted_workout_ids || [])]),
+    deleted_exercise_ids: uniqueIds([...(base.deleted_exercise_ids || []), ...(patch.deleted_exercise_ids || [])]),
+    deleted_set_ids: uniqueIds([...(base.deleted_set_ids || []), ...(patch.deleted_set_ids || [])]),
+  });
+
   const patchWorkoutInState = (workoutId, patcher) => {
     setWorkouts(prev => prev.map(workout => workout.id === workoutId ? patcher(workout) : workout));
     setSelectedWorkout(prev => prev?.id === workoutId ? patcher(prev) : prev);
@@ -3247,77 +3358,365 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }));
   };
 
+  const markWorkoutDirty = (workoutId, patch = {}) => {
+    patchWorkoutInState(workoutId, workout => ({
+      ...workout,
+      ...patch,
+      isDirty: true,
+      isSaving: patch.isSaving ?? workout.isSaving ?? false,
+      pendingPatch: pendingWorkoutPatchesRef.current[workoutId] || workout.pendingPatch || null,
+    }));
+  };
+
+  const sendWorkoutPatch = async (workoutId, patch) => {
+    console.log("save_workout_patch payload", patch);
+    try {
+      const result = await callWorkoutsApi("save_workout_patch", patch);
+      console.log("save_workout_patch response", result);
+      return result;
+    } catch (error) {
+      console.error("save_workout_patch error", { workoutId, patch, error });
+      return null;
+    }
+  };
+
+  const flushWorkoutPatch = async (workoutId) => {
+    const patch = pendingWorkoutPatchesRef.current[workoutId];
+    if (!canUseWorkoutApi || !patch) return null;
+    const hasChanges = [
+      patch.workout_updates,
+      patch.exercise_updates,
+      patch.set_updates,
+      patch.deleted_workout_ids,
+      patch.deleted_exercise_ids,
+      patch.deleted_set_ids,
+    ].some(items => items?.length);
+    if (!hasChanges) return null;
+
+    patchWorkoutInState(workoutId, workout => ({ ...workout, isSaving: true, pendingPatch: patch }));
+    const result = await sendWorkoutPatch(workoutId, patch);
+    if (!result) {
+      patchWorkoutInState(workoutId, workout => ({ ...workout, isSaving: false, syncError: true, pendingPatch: patch }));
+      return null;
+    }
+    if (pendingWorkoutPatchesRef.current[workoutId] === patch) {
+      delete pendingWorkoutPatchesRef.current[workoutId];
+      patchWorkoutInState(workoutId, workout => ({
+        ...workout,
+        isDirty: false,
+        isSaving: false,
+        pendingPatch: null,
+        lastSavedAt: new Date().toISOString(),
+        syncError: false,
+      }));
+    } else {
+      patchWorkoutInState(workoutId, workout => ({
+        ...workout,
+        isDirty: true,
+        isSaving: false,
+        pendingPatch: pendingWorkoutPatchesRef.current[workoutId],
+        lastSavedAt: new Date().toISOString(),
+        syncError: false,
+      }));
+      clearTimeout(saveWorkoutTimersRef.current[workoutId]);
+      saveWorkoutTimersRef.current[workoutId] = setTimeout(() => flushWorkoutPatch(workoutId), 700);
+    }
+    return result;
+  };
+
+  const queueWorkoutPatch = (workoutId, patch, options = {}) => {
+    if (!workoutId || !patch) return;
+    pendingWorkoutPatchesRef.current[workoutId] = mergeWorkoutPatch(pendingWorkoutPatchesRef.current[workoutId], patch);
+    markWorkoutDirty(workoutId);
+    clearTimeout(saveWorkoutTimersRef.current[workoutId]);
+    const delay = options.immediate ? 0 : (options.delay ?? 700);
+    saveWorkoutTimersRef.current[workoutId] = setTimeout(() => {
+      flushWorkoutPatch(workoutId);
+    }, delay);
+  };
+
+  const clearWorkoutSaveQueue = (workoutId) => {
+    clearTimeout(saveWorkoutTimersRef.current[workoutId]);
+    delete saveWorkoutTimersRef.current[workoutId];
+    delete pendingWorkoutPatchesRef.current[workoutId];
+  };
+
+  const buildWorkoutTreePatch = (workout) => {
+    if (!workout?.supabaseId) return null;
+    return {
+      workout_updates: [buildWorkoutPatchPayload(workout)],
+      exercise_updates: (workout.exercises || []).map(buildExercisePatchPayload).filter(Boolean),
+      set_updates: (workout.exercises || []).flatMap(exercise => (exercise.sets || []).map(buildSetPatchPayload).filter(Boolean)),
+    };
+  };
+
+  const buildWorkoutTreeCreatePayload = (workout) => {
+    const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
+    const { profile_id, ...workoutPayload } = buildWorkoutSupabasePayload(normalizedWorkout);
+    return {
+      workout: {
+        ...workoutPayload,
+        duration_seconds: Math.max(0, safeWorkoutNumber(normalizedWorkout.durationMinutes) * 60),
+      },
+      exercises: (normalizedWorkout.exercises || []).map(exercise => {
+        const { workout_id, ...exercisePayload } = buildExerciseSupabasePayload(null, exercise);
+        return {
+          client_id: exercise.id,
+          ...exercisePayload,
+          sets: (exercise.sets || []).map(set => {
+            const { workout_exercise_id, ...setPayload } = buildSetSupabasePayload(null, set);
+            return {
+              client_id: set.id,
+              ...setPayload,
+            };
+          }),
+        };
+      }),
+    };
+  };
+
+  const buildWorkoutTreeUpdatePayload = (workout) => {
+    const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
+    return {
+      workout: buildWorkoutPatchPayload(normalizedWorkout),
+      exercises: (normalizedWorkout.exercises || []).map(exercise => ({
+        client_id: exercise.id,
+        ...buildExercisePatchPayload(exercise),
+        sets: (exercise.sets || []).map(set => ({
+          client_id: set.id,
+          ...buildSetPatchPayload(set),
+        })),
+      })),
+    };
+  };
+
+  const mergeWorkoutTreeResponse = (localWorkout, result) => {
+    if (!localWorkout || !result) return localWorkout;
+    const serverWorkout = pickApiRecord(result, "workout") || {};
+    const apiExercises = readApiArray(result, "workout_exercises", ["exercises", "workoutExercises", "exerciseRows"]);
+    const apiSets = readApiArray(result, "workout_sets", ["sets", "workoutSets", "setRows"]);
+    const exerciseRows = apiExercises.length
+      ? apiExercises
+      : (serverWorkout.workout_exercises || serverWorkout.exercises || serverWorkout.workoutExercises || []);
+    const setsByExerciseId = apiSets.reduce((map, set) => {
+      const exerciseId = set?.workout_exercise_id || set?.workoutExerciseId || set?.exercise_id || set?.exerciseId;
+      if (!exerciseId) return map;
+      const key = String(exerciseId);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(set);
+      return map;
+    }, new Map());
+    const exerciseByClientId = new Map();
+    const exerciseByOrder = new Map();
+    exerciseRows.forEach(row => {
+      const clientId = row.client_id || row.clientId;
+      const order = row.exercise_order ?? row.order;
+      if (clientId) exerciseByClientId.set(String(clientId), row);
+      if (order !== undefined && order !== null) exerciseByOrder.set(String(order), row);
+    });
+
+    const nextWorkout = normalizeWorkoutSupersetMetadata({
+      ...localWorkout,
+      supabaseId: serverWorkout.id || serverWorkout.workout_id || pickApiId(result, "workout") || localWorkout.supabaseId,
+      pending: false,
+      isSaving: false,
+      isSyncing: false,
+      syncError: false,
+      isDirty: false,
+      lastSavedAt: new Date().toISOString(),
+      exercises: (localWorkout.exercises || []).map((exercise, exerciseIndex) => {
+        const exerciseRow = exerciseByClientId.get(String(exercise.id)) || exerciseByOrder.get(String(exercise.order ?? exerciseIndex + 1)) || {};
+        const nestedSets = exerciseRow.workout_sets || exerciseRow.sets || exerciseRow.workoutSets || [];
+        const setRows = nestedSets.length ? nestedSets : (exerciseRow.id ? (setsByExerciseId.get(String(exerciseRow.id)) || []) : []);
+        const setByClientId = new Map();
+        const setByOrder = new Map();
+        setRows.forEach(row => {
+          const clientId = row.client_id || row.clientId;
+          const order = row.set_order ?? row.order;
+          if (clientId) setByClientId.set(String(clientId), row);
+          if (order !== undefined && order !== null) setByOrder.set(String(order), row);
+        });
+        return {
+          ...exercise,
+          supabaseId: exerciseRow.id || exerciseRow.workout_exercise_id || exercise.supabaseId || null,
+          pending: false,
+          isSaving: false,
+          isSyncing: false,
+          syncError: false,
+          sets: (exercise.sets || []).map((set, setIndex) => {
+            const setRow = setByClientId.get(String(set.id)) || setByOrder.get(String(set.order ?? setIndex + 1)) || {};
+            return {
+              ...set,
+              supabaseId: setRow.id || setRow.workout_set_id || set.supabaseId || null,
+              pending: false,
+              isSaving: false,
+              isSyncing: false,
+              syncError: false,
+            };
+          }),
+        };
+      }),
+    });
+
+    return nextWorkout;
+  };
+
+  const applyWorkoutTreeResponse = (workout, result) => {
+    let nextWorkout = null;
+    patchWorkoutInState(workout.id, current => {
+      nextWorkout = mergeWorkoutTreeResponse(current, result);
+      return nextWorkout;
+    });
+    return nextWorkout;
+  };
+
+  const createWorkoutTreeViaApi = async (workout, options = {}) => {
+    if (!canUseWorkoutApi || !workout) return null;
+    const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
+    const payload = buildWorkoutTreeCreatePayload(normalizedWorkout);
+    if (options.programLog) console.log("Creating workout tree from program:", payload);
+    try {
+      const result = await callWorkoutsApi("create_workout_tree", payload);
+      console.log("create_workout_tree response", result);
+      const nextWorkout = applyWorkoutTreeResponse(normalizedWorkout, result) || normalizedWorkout;
+      const id = nextWorkout.supabaseId || pickApiId(result, "workout");
+      if (id) console.log("Workout created", { id });
+      return id;
+    } catch (error) {
+      console.error("create_workout_tree error", { workout: normalizedWorkout, error });
+      if (options.fallback === false) return null;
+      return await createWorkoutViaApi(normalizedWorkout, { createChildren: true, reload: false, programLog: options.programLog });
+    }
+  };
+
+  const updateWorkoutTreeViaApi = async (workout) => {
+    if (!canUseWorkoutApi || !workout?.supabaseId) return null;
+    const payload = buildWorkoutTreeUpdatePayload(workout);
+    try {
+      const result = await callWorkoutsApi("update_workout_tree", payload);
+      console.log("update_workout_tree response", result);
+      applyWorkoutTreeResponse(workout, result);
+      return result;
+    } catch (error) {
+      console.error("update_workout_tree error", { workout, error });
+      return null;
+    }
+  };
+
+  const mergeLoadedWorkoutsWithDirtyState = (loadedWorkouts = []) => {
+    const localBySupabaseId = new Map();
+    const localPending = [];
+    workoutsRef.current.forEach(workout => {
+      if (workout.supabaseId) localBySupabaseId.set(String(workout.supabaseId), workout);
+      else if (workout.pending || workout.isDirty || pendingWorkoutPatchesRef.current[workout.id]) localPending.push(workout);
+    });
+
+    const merged = loadedWorkouts.map(serverWorkout => {
+      const local = localBySupabaseId.get(String(serverWorkout.supabaseId || ""));
+      const hasDirtyPatch = local && (local.isDirty || local.isSaving || pendingWorkoutPatchesRef.current[local.id]);
+      if (!hasDirtyPatch) return serverWorkout;
+      return {
+        ...local,
+        supabaseId: serverWorkout.supabaseId || local.supabaseId,
+        isDirty: true,
+        pendingPatch: pendingWorkoutPatchesRef.current[local.id] || local.pendingPatch || null,
+      };
+    });
+
+    return [...localPending, ...merged];
+  };
+
   const createSetViaApi = async (workoutId, exerciseId, exerciseSupabaseId, set) => {
     if (!canUseWorkoutApi || !exerciseSupabaseId) return null;
     const setPayload = buildSetSupabasePayload(exerciseSupabaseId, set);
-    const result = await callWorkoutsApi("create_set", {
-      profile_id: profile.id,
-      workout_exercise_id: exerciseSupabaseId,
-      set: setPayload,
-      ...setPayload,
-    });
-    const id = pickApiId(result, "set");
-    if (id) patchSetInState(workoutId, exerciseId, set.id, item => ({ ...item, supabaseId: id, pending: false, isSaving: false, isSyncing: false, syncError: false }));
-    if (id) {
-      console.log("Set created", { id });
-      console.log("Created set:", { id, result });
+    try {
+      const result = await callWorkoutsApi("create_set", {
+        profile_id: profile.id,
+        workout_exercise_id: exerciseSupabaseId,
+        set: setPayload,
+        ...setPayload,
+      });
+      const id = pickApiId(result, "set");
+      if (id) patchSetInState(workoutId, exerciseId, set.id, item => ({ ...item, supabaseId: id, pending: false, isSaving: false, isSyncing: false, syncError: false }));
+      if (id) {
+        console.log("Set created", { id });
+        console.log("Created set:", { id, result });
+      }
+      return id;
+    } catch (error) {
+      logSupabaseWorkoutError({ action: "create_set", error });
+      return null;
     }
-    return id;
   };
 
   const updateSetViaApi = async (set, exerciseSupabaseId) => {
     if (!canUseWorkoutApi || !set?.supabaseId || !exerciseSupabaseId) return null;
     const setPayload = buildSetSupabasePayload(exerciseSupabaseId, set);
-    const result = await callWorkoutsApi("update_set", {
-      profile_id: profile.id,
-      workout_exercise_id: exerciseSupabaseId,
-      id: set.supabaseId,
-      set_id: set.supabaseId,
-      workout_set_id: set.supabaseId,
-      set: setPayload,
-      ...setPayload,
-    });
-    if (result) console.log("Set updated", { id: set.supabaseId });
-    return result;
+    try {
+      const result = await callWorkoutsApi("update_set", {
+        profile_id: profile.id,
+        workout_exercise_id: exerciseSupabaseId,
+        id: set.supabaseId,
+        set_id: set.supabaseId,
+        workout_set_id: set.supabaseId,
+        set: setPayload,
+        ...setPayload,
+      });
+      if (result) console.log("Set updated", { id: set.supabaseId });
+      return result;
+    } catch (error) {
+      logSupabaseWorkoutError({ action: "update_set", error });
+      return null;
+    }
   };
 
   const createExerciseViaApi = async (workoutId, workoutSupabaseId, exercise, options = {}) => {
     if (!canUseWorkoutApi || !workoutSupabaseId) return null;
     const { programLog = false } = options;
     const exercisePayload = buildExerciseSupabasePayload(workoutSupabaseId, exercise);
-    const result = await callWorkoutsApi("create_exercise", {
-      profile_id: profile.id,
-      workout_id: workoutSupabaseId,
-      exercise: exercisePayload,
-      ...exercisePayload,
-    });
-    const id = pickApiId(result, "exercise");
-    if (id) patchExerciseInState(workoutId, exercise.id, item => ({ ...item, supabaseId: id, pending: false, isSaving: false, isSyncing: false, syncError: false }));
-    if (id) {
-      console.log("Exercise created", { id });
-      console.log("Created exercise:", { id, result });
-    }
-    if (id) {
-      for (const set of exercise.sets || []) {
-        if (programLog) console.log("Creating program set:", set);
-        await createSetViaApi(workoutId, exercise.id, id, set);
+    try {
+      const result = await callWorkoutsApi("create_exercise", {
+        profile_id: profile.id,
+        workout_id: workoutSupabaseId,
+        exercise: exercisePayload,
+        ...exercisePayload,
+      });
+      const id = pickApiId(result, "exercise");
+      if (id) patchExerciseInState(workoutId, exercise.id, item => ({ ...item, supabaseId: id, pending: false, isSaving: false, isSyncing: false, syncError: false }));
+      if (id) {
+        console.log("Exercise created", { id });
+        console.log("Created exercise:", { id, result });
       }
+      if (id) {
+        for (const set of exercise.sets || []) {
+          if (programLog) console.log("Creating program set:", set);
+          await createSetViaApi(workoutId, exercise.id, id, set);
+        }
+      }
+      return id;
+    } catch (error) {
+      logSupabaseRestSupersetError({ action: "create_exercise", error });
+      return null;
     }
-    return id;
   };
 
   const updateExerciseViaApi = async (workoutSupabaseId, exercise) => {
     if (!canUseWorkoutApi || !workoutSupabaseId || !exercise?.supabaseId) return null;
     const exercisePayload = buildExerciseSupabasePayload(workoutSupabaseId, exercise);
-    return await callWorkoutsApi("update_exercise", {
-      profile_id: profile.id,
-      workout_id: workoutSupabaseId,
-      id: exercise.supabaseId,
-      exercise_id: exercise.supabaseId,
-      workout_exercise_id: exercise.supabaseId,
-      exercise: exercisePayload,
-      ...exercisePayload,
-    });
+    try {
+      return await callWorkoutsApi("update_exercise", {
+        profile_id: profile.id,
+        workout_id: workoutSupabaseId,
+        id: exercise.supabaseId,
+        exercise_id: exercise.supabaseId,
+        workout_exercise_id: exercise.supabaseId,
+        exercise: exercisePayload,
+        ...exercisePayload,
+      });
+    } catch (error) {
+      logSupabaseRestSupersetError({ action: "update_exercise", error });
+      return null;
+    }
   };
 
   const createWorkoutViaApi = async (workout, options = {}) => {
@@ -3326,49 +3725,54 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
     const workoutPayload = buildWorkoutSupabasePayload(normalizedWorkout);
     if (programLog) console.log("Creating workout from program:", normalizedWorkout);
-    const result = await callWorkoutsApi("create_workout", {
-      profile_id: profile.id,
-      workout: workoutPayload,
-      ...workoutPayload,
-    });
-    const id = pickApiId(result, "workout");
-    if (id) patchWorkoutInState(normalizedWorkout.id, item => normalizeWorkoutSupersetMetadata({ ...item, supabaseId: id, pending: false, isSaving: false, isSyncing: false, syncError: false }));
-    if (id) {
-      console.log("Workout created", { id });
-      console.log("Created workout:", { id, result });
-    }
-    if (createChildren && id) {
-      for (const exercise of normalizedWorkout.exercises || []) {
-        if (programLog) console.log("Creating program exercise:", exercise);
-        await createExerciseViaApi(normalizedWorkout.id, id, exercise, { programLog });
+    try {
+      const result = await callWorkoutsApi("create_workout", {
+        profile_id: profile.id,
+        workout: workoutPayload,
+        ...workoutPayload,
+      });
+      const id = pickApiId(result, "workout");
+      if (id) patchWorkoutInState(normalizedWorkout.id, item => normalizeWorkoutSupersetMetadata({ ...item, supabaseId: id, pending: false, isSaving: false, isSyncing: false, syncError: false }));
+      if (id) {
+        console.log("Workout created", { id });
+        console.log("Created workout:", { id, result });
       }
+      if (createChildren && id) {
+        for (const exercise of normalizedWorkout.exercises || []) {
+          if (programLog) console.log("Creating program exercise:", exercise);
+          await createExerciseViaApi(normalizedWorkout.id, id, exercise, { programLog });
+        }
+      }
+      if (id && reload) await loadWorkoutsFromApi({ selectedSupabaseId: id });
+      return id;
+    } catch (error) {
+      logSupabaseWorkoutError({ action: "create_workout", error });
+      return null;
     }
-    if (id && reload) await loadWorkoutsFromApi({ selectedSupabaseId: id });
-    return id;
   };
 
   const updateWorkoutViaApi = async (workout) => {
     if (!canUseWorkoutApi || !workout?.supabaseId) return null;
     const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
     const workoutPayload = buildWorkoutSupabasePayload(normalizedWorkout);
-    return await callWorkoutsApi("update_workout", {
-      profile_id: profile.id,
-      id: normalizedWorkout.supabaseId,
-      workout_id: normalizedWorkout.supabaseId,
-      workout: workoutPayload,
-      ...workoutPayload,
-    });
+    try {
+      return await callWorkoutsApi("update_workout", {
+        profile_id: profile.id,
+        id: normalizedWorkout.supabaseId,
+        workout_id: normalizedWorkout.supabaseId,
+        workout: workoutPayload,
+        ...workoutPayload,
+      });
+    } catch (error) {
+      logSupabaseWorkoutError({ action: "update_workout", error });
+      return null;
+    }
   };
 
   const syncExistingWorkoutViaApi = async (workout) => {
     if (!canUseWorkoutApi || !workout?.supabaseId) return;
     const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
-    await updateWorkoutViaApi(normalizedWorkout);
-    await Promise.all((normalizedWorkout.exercises || []).map(async (exercise) => {
-      if (!exercise?.supabaseId) return;
-      await updateExerciseViaApi(normalizedWorkout.supabaseId, exercise);
-      await Promise.all((exercise.sets || []).map(set => updateSetViaApi(set, exercise.supabaseId)));
-    }));
+    await updateWorkoutTreeViaApi(normalizedWorkout);
   };
 
   const deleteSetViaApi = async (set) => {
@@ -3380,10 +3784,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       set_id: set.supabaseId,
       workout_set_id: set.supabaseId,
     };
-    const result = await callWorkoutsApi("delete_set", payload);
-    if (result) console.log("delete_set response:", result);
-    else console.error("delete_set error:", { payload, result });
-    return Boolean(result);
+    try {
+      const result = await callWorkoutsApi("delete_set", payload);
+      if (result) console.log("delete_set response:", result);
+      else console.error("delete_set error:", { payload, result });
+      return Boolean(result);
+    } catch (error) {
+      console.error("delete_set error:", { payload, error });
+      return false;
+    }
   };
 
   const deleteExerciseViaApi = async (exercise) => {
@@ -3395,10 +3804,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       exercise_id: exercise.supabaseId,
       workout_exercise_id: exercise.supabaseId,
     };
-    const result = await callWorkoutsApi("delete_exercise", payload);
-    if (result) console.log("delete_exercise response:", result);
-    else console.error("delete_exercise error:", { payload, result });
-    return Boolean(result);
+    try {
+      const result = await callWorkoutsApi("delete_exercise", payload);
+      if (result) console.log("delete_exercise response:", result);
+      else console.error("delete_exercise error:", { payload, result });
+      return Boolean(result);
+    } catch (error) {
+      console.error("delete_exercise error:", { payload, error });
+      return false;
+    }
   };
 
   const deleteWorkoutViaApi = async (workout) => {
@@ -3409,15 +3823,20 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       workout_id: workout.supabaseId,
     };
     console.log("delete_workout payload:", payload);
-    const result = await callWorkoutsApi("delete_workout", payload);
-    if (result) {
-      console.log("delete_workout response:", result);
-      console.log("Workout deleted", { id: workout.supabaseId });
-      return true;
+    try {
+      const result = await callWorkoutsApi("delete_workout", payload);
+      if (result) {
+        console.log("delete_workout response:", result);
+        console.log("Workout deleted", { id: workout.supabaseId });
+        return true;
+      }
+      const error = { workout_id: workout.supabaseId, result };
+      console.error("delete_workout error:", error);
+      return false;
+    } catch (error) {
+      console.error("delete_workout error:", { workout_id: workout.supabaseId, error });
+      return false;
     }
-    const error = { workout_id: workout.supabaseId, result };
-    console.error("delete_workout error:", error);
-    return false;
   };
 
   const mapSupabaseSet = (row = {}, index = 0) => {
@@ -3496,7 +3915,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       weekday: weekdayNames[date.getDay()] || "",
       title: row.title || "Новая тренировка",
       programDayNumber: index + 1,
-      durationMinutes: safeWorkoutNumber(row.duration_minutes ?? row.durationMinutes, 60),
+      durationMinutes: safeWorkoutNumber(row.duration_minutes ?? row.durationMinutes ?? (row.duration_seconds !== undefined ? Number(row.duration_seconds) / 60 : undefined), 60),
       totalVolumeKg: mappedExercises.length ? derivedTotals.totalVolume : 0,
       calories: 0,
       status: row.status || "completed",
@@ -3583,20 +4002,24 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const loadWorkoutsFromApi = async ({ preserveSelected = true, selectedSupabaseId = null } = {}) => {
     if (!canUseWorkoutApi) return null;
-    const result = await callWorkoutsApi("load", { profile_id: profile.id });
-    if (!result) {
+    let result = null;
+    try {
+      result = await callWorkoutsApi("load", { profile_id: profile.id });
+    } catch (error) {
+      logSupabaseWorkoutError({ action: "load", error });
       loadedWorkoutProfileRef.current = null;
       return null;
     }
     const loadedWorkouts = buildWorkoutTreeFromApi(result);
-    setWorkouts(loadedWorkouts);
+    const mergedWorkouts = mergeLoadedWorkoutsWithDirtyState(loadedWorkouts);
+    setWorkouts(mergedWorkouts);
     setSelectedWorkout(prev => {
       const targetSupabaseId = selectedSupabaseId || prev?.supabaseId;
       if (!preserveSelected || !targetSupabaseId) return null;
-      return loadedWorkouts.find(workout => workout.supabaseId === targetSupabaseId) || null;
+      return mergedWorkouts.find(workout => workout.supabaseId === targetSupabaseId) || null;
     });
-    console.log("Workouts loaded", loadedWorkouts);
-    return loadedWorkouts;
+    console.log("Workouts loaded", mergedWorkouts);
+    return mergedWorkouts;
   };
 
   useEffect(() => {
@@ -3670,14 +4093,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     if (workout?.supabaseId) {
       const nextWorkout = patch(workout);
       console.log("Updating workout title:", { workout_id: workout.supabaseId, title });
-      updateWorkoutViaApi(nextWorkout).then(result => {
-        if (result) {
-          console.log("Updated workout result:", result);
-          console.log("update_workout response:", result);
-        } else {
-          console.error("update_workout error:", { workout_id: workout.supabaseId, title });
-        }
-      });
+      queueWorkoutPatch(id, {
+        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
+      }, { immediate: true });
     }
   };
 
@@ -3731,10 +4149,16 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setWorkouts(prev => prev.map(workout => workout.id === workoutId ? patch(workout) : workout));
     setSelectedWorkout(prev => prev?.id === workoutId ? patch(prev) : prev);
     const workout = workouts.find(item => item.id === workoutId) || selectedWorkout;
-    const exercise = (workout?.exercises || []).find(item => item.id === exerciseId);
+    if (!workout) return;
+    const nextWorkout = patch(workout);
+    const exercise = (nextWorkout.exercises || []).find(item => item.id === exerciseId);
     const set = (exercise?.sets || []).find(item => item.id === setId);
-    if (set && exercise?.supabaseId) updateSetViaApi({ ...set, [field]: Number(value) }, exercise.supabaseId);
-    if (workout) updateWorkoutViaApi(patch(workout));
+    if (set?.supabaseId) {
+      queueWorkoutPatch(workoutId, {
+        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
+        set_updates: [buildSetPatchPayload(set)],
+      });
+    }
   };
 
   const updateSelectedWorkoutModel = (updater, options = {}) => {
@@ -3743,7 +4167,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const nextSelectedWorkout = applyUpdate(selectedWorkout);
     setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? applyUpdate(workout) : workout));
     setSelectedWorkout(nextSelectedWorkout);
-    if (options.sync !== false) syncExistingWorkoutViaApi(nextSelectedWorkout);
+    if (options.sync !== false) {
+      const patch = buildWorkoutTreePatch(nextSelectedWorkout);
+      if (patch) queueWorkoutPatch(nextSelectedWorkout.id, patch, options);
+    }
   };
 
   const toggleWorkoutEditMode = () => {
@@ -4011,7 +4438,6 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const updateActiveSet = (setId, patch) => {
     const currentExercise = (selectedWorkout?.exercises || [])[activeExerciseIndex];
     const currentSet = (currentExercise?.sets || []).find(set => set.id === setId);
-    const nextSet = currentSet ? { ...currentSet, ...patch, isCompleted: (patch.status || currentSet.status) === "completed" } : null;
     updateSelectedWorkoutModel(workout => ({
       ...workout,
       exercises: (workout.exercises || []).map((exercise, exerciseIndex) => exerciseIndex === activeExerciseIndex ? {
@@ -4020,18 +4446,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       } : exercise),
       updatedAt: new Date().toISOString(),
     }));
-    if (nextSet && currentExercise?.supabaseId) updateSetViaApi(nextSet, currentExercise.supabaseId);
   };
 
   const updateActiveExercise = (patch) => {
-    const currentExercise = (selectedWorkout?.exercises || [])[activeExerciseIndex];
-    const nextExercise = currentExercise ? applyExercisePatchWithRest(currentExercise, patch) : null;
     updateSelectedWorkoutModel(workout => ({
       ...workout,
       exercises: (workout.exercises || []).map((exercise, exerciseIndex) => exerciseIndex === activeExerciseIndex ? applyExercisePatchWithRest(exercise, patch) : exercise),
       updatedAt: new Date().toISOString(),
     }));
-    if (selectedWorkout?.supabaseId && nextExercise?.supabaseId) updateExerciseViaApi(selectedWorkout.supabaseId, nextExercise);
   };
 
   const saveExerciseNameDraft = () => {
@@ -4046,28 +4468,30 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const removedExercise = (selectedWorkout.exercises || [])[activeExerciseIndex];
     if (canUseWorkoutApi && removedExercise?.supabaseId) {
       console.log("Delete exercise clicked:", removedExercise);
-      const deleted = await deleteExerciseViaApi(removedExercise);
-      if (!deleted) return;
+      const previousWorkouts = workoutsRef.current;
+      const previousSelectedWorkout = selectedWorkout;
       const nextExercises = (selectedWorkout.exercises || []).filter((_, index) => index !== activeExerciseIndex);
       const nextIndex = Math.max(0, Math.min(activeExerciseIndex, nextExercises.length - 1));
       setActiveExerciseIndex(nextIndex);
       setActiveSetId(getFirstActiveSetId(nextExercises[nextIndex]));
       setOpenMenu(null);
-      updateWorkoutViaApi({
+      const nextWorkout = {
         ...selectedWorkout,
         exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
         updatedAt: new Date().toISOString(),
+      };
+      setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? nextWorkout : workout));
+      setSelectedWorkout(nextWorkout);
+      const patchResult = await sendWorkoutPatch(selectedWorkout.id, {
+        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
+        exercise_updates: nextWorkout.exercises.map(buildExercisePatchPayload).filter(Boolean),
+        deleted_exercise_ids: [removedExercise.supabaseId],
       });
-      setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? {
-        ...workout,
-        exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
-        updatedAt: new Date().toISOString(),
-      } : workout));
-      setSelectedWorkout(prev => prev ? {
-        ...prev,
-        exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
-        updatedAt: new Date().toISOString(),
-      } : prev);
+      const deleted = patchResult || await deleteExerciseViaApi(removedExercise);
+      if (!deleted) {
+        setWorkouts(previousWorkouts);
+        setSelectedWorkout(previousSelectedWorkout);
+      }
       return;
     }
     const nextIndex = Math.max(0, activeExerciseIndex - 1);
@@ -4090,28 +4514,30 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const nextExercises = currentExercises.filter(exercise => exercise.id !== exerciseId);
     if (canUseWorkoutApi && removedExercise?.supabaseId) {
       console.log("Delete exercise clicked:", removedExercise);
-      const deleted = await deleteExerciseViaApi(removedExercise);
-      if (!deleted) return;
+      const previousWorkouts = workoutsRef.current;
+      const previousSelectedWorkout = selectedWorkout;
       const nextIndex = Math.max(0, Math.min(removedIndex, nextExercises.length - 1));
       setActiveExerciseIndex(nextIndex);
       setActiveSetId(getFirstActiveSetId(nextExercises[nextIndex]));
       setSelectedExerciseIds(prev => prev.filter(id => id !== exerciseId));
       setOpenMenu(null);
-      updateWorkoutViaApi({
+      const nextWorkout = {
         ...selectedWorkout,
         exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
         updatedAt: new Date().toISOString(),
+      };
+      setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? nextWorkout : workout));
+      setSelectedWorkout(nextWorkout);
+      const patchResult = await sendWorkoutPatch(selectedWorkout.id, {
+        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
+        exercise_updates: nextWorkout.exercises.map(buildExercisePatchPayload).filter(Boolean),
+        deleted_exercise_ids: [removedExercise.supabaseId],
       });
-      setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? {
-        ...workout,
-        exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
-        updatedAt: new Date().toISOString(),
-      } : workout));
-      setSelectedWorkout(prev => prev ? {
-        ...prev,
-        exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
-        updatedAt: new Date().toISOString(),
-      } : prev);
+      const deleted = patchResult || await deleteExerciseViaApi(removedExercise);
+      if (!deleted) {
+        setWorkouts(previousWorkouts);
+        setSelectedWorkout(previousSelectedWorkout);
+      }
       return;
     }
     updateSelectedWorkoutModel(workout => ({
@@ -4173,7 +4599,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     if (canUseWorkoutApi && currentExercise?.supabaseId) {
       createSetViaApi(selectedWorkout.id, currentExercise.id, currentExercise.supabaseId, { ...newSet, pending: true, isSaving: true, isSyncing: true }).then(id => {
         if (!id) patchSetInState(selectedWorkout.id, currentExercise.id, newSet.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
-        updateWorkoutViaApi(getWorkoutWithInsertedSet(selectedWorkout));
+        const nextWorkout = getWorkoutWithInsertedSet(selectedWorkout);
+        const nextExercise = (nextWorkout.exercises || []).find(exercise => exercise.id === currentExercise.id);
+        queueWorkoutPatch(selectedWorkout.id, {
+          workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
+          set_updates: (nextExercise?.sets || []).map(buildSetPatchPayload).filter(Boolean),
+        }, { immediate: true });
       });
     }
   };
@@ -4183,8 +4614,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const removedSet = (currentExercise?.sets || []).find(set => set.id === setId);
     const remaining = (currentExercise?.sets || []).filter(set => set.id !== setId);
     if (canUseWorkoutApi && removedSet?.supabaseId) {
-      const deleted = await deleteSetViaApi(removedSet);
-      if (!deleted) return;
+      const previousWorkouts = workoutsRef.current;
+      const previousSelectedWorkout = selectedWorkout;
       setActiveSetId((remaining.find(set => getSetStatus(set) === "pending") || remaining[0] || null)?.id || null);
       setOpenMenu(null);
       const nextWorkout = {
@@ -4197,7 +4628,18 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       };
       setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? nextWorkout : workout));
       setSelectedWorkout(nextWorkout);
-      updateWorkoutViaApi(nextWorkout);
+      const nextExercise = (nextWorkout.exercises || [])[activeExerciseIndex];
+      const patchResult = await sendWorkoutPatch(selectedWorkout.id, {
+        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
+        exercise_updates: [buildExercisePatchPayload(nextExercise)].filter(Boolean),
+        set_updates: (nextExercise?.sets || []).map(buildSetPatchPayload).filter(Boolean),
+        deleted_set_ids: [removedSet.supabaseId],
+      });
+      const deleted = patchResult || await deleteSetViaApi(removedSet);
+      if (!deleted) {
+        setWorkouts(previousWorkouts);
+        setSelectedWorkout(previousSelectedWorkout);
+      }
       return;
     }
     updateSelectedWorkoutModel(workout => ({
@@ -4286,7 +4728,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         const id = await createExerciseViaApi(selectedWorkout.id, selectedWorkout.supabaseId, exercise);
         if (!id) patchExerciseInState(selectedWorkout.id, exercise.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
       }
-      updateWorkoutViaApi(patch(selectedWorkout));
+      const nextWorkout = patch(selectedWorkout);
+      queueWorkoutPatch(selectedWorkout.id, {
+        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
+        exercise_updates: (nextWorkout.exercises || []).map(buildExercisePatchPayload).filter(Boolean),
+      }, { immediate: true });
       return;
     }
 
@@ -4328,7 +4774,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setWorkouts(prev => prev.map(item => item.id === workout.id ? patch(item) : item));
     setSelectedWorkout(prev => prev?.id === workout.id ? patch(prev) : prev);
     setRestTimer(null);
-    updateWorkoutViaApi(patch(workout));
+    const nextWorkout = patch(workout);
+    if (nextWorkout.supabaseId) {
+      queueWorkoutPatch(nextWorkout.id, {
+        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
+      }, { immediate: true });
+    }
   };
 
   const repeatWorkout = async (workout) => {
@@ -4346,9 +4797,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
 
     if (canUseWorkoutApi) {
-      const id = await createWorkoutViaApi(copy, { createChildren: true, reload: true });
-      const loadedWorkout = id ? workouts.find(item => item.supabaseId === id) : null;
-      if (loadedWorkout) openWorkoutDetails(loadedWorkout);
+      const pendingWorkout = { ...copy, pending: true, isSaving: true, isSyncing: true };
+      setWorkouts(prev => [pendingWorkout, ...prev]);
+      openWorkoutDetails(pendingWorkout);
+      const id = await createWorkoutTreeViaApi(pendingWorkout);
+      if (!id) patchWorkoutInState(pendingWorkout.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
       return;
     }
 
@@ -4380,7 +4833,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setWorkoutViewMode("overview");
     setRestTimer(null);
     setOpenMenu(null);
-    updateWorkoutViaApi(patch(selectedWorkout));
+    const nextWorkout = patch(selectedWorkout);
+    if (nextWorkout.supabaseId) {
+      queueWorkoutPatch(nextWorkout.id, {
+        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
+        set_updates: (nextWorkout.exercises || []).flatMap(exercise => (exercise.sets || []).map(buildSetPatchPayload).filter(Boolean)),
+      }, { immediate: true });
+    }
   };
 
   const openExerciseBase = (mode = "view") => {
