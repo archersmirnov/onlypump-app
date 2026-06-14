@@ -7,8 +7,12 @@
   <style>
     :root {
       color-scheme: dark;
-      --onlypump-safe-top: env(safe-area-inset-top, 0px);
-      --onlypump-safe-bottom: env(safe-area-inset-bottom, 0px);
+      --tg-safe-area-top: 0px;
+      --tg-safe-area-bottom: 0px;
+      --tg-content-safe-area-top: 0px;
+      --tg-content-safe-area-bottom: 0px;
+      --onlypump-safe-top: max(env(safe-area-inset-top, 0px), var(--tg-safe-area-top), var(--tg-content-safe-area-top));
+      --onlypump-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-bottom), var(--tg-content-safe-area-bottom));
       --tg-viewport-height: 100vh;
       --onlypump-app-height: var(--tg-viewport-height);
     }
@@ -78,6 +82,9 @@
     .onlypump-sheet-list {
       max-height: calc(var(--onlypump-app-height) * 0.56);
     }
+    .onlypump-sheet-panel {
+      will-change: transform;
+    }
     .onlypump-list-50 {
       max-height: calc(var(--onlypump-app-height) * 0.5);
     }
@@ -126,7 +133,7 @@
 <body>
   <div id="root"></div>
   <script type="text/babel" data-type="module">
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Home, Dumbbell, Apple, Calculator, GraduationCap, PlaySquare, TrendingUp,
@@ -144,6 +151,22 @@ function syncOnlyPumpViewportHeight(tg) {
     document.documentElement.style.setProperty("--tg-viewport-height", `${nextHeight}px`);
     document.documentElement.style.setProperty("--onlypump-app-height", `${nextHeight}px`);
   }
+}
+
+function syncOnlyPumpSafeArea(tg) {
+  const safeArea = tg?.safeAreaInset || {};
+  const contentSafeArea = tg?.contentSafeAreaInset || {};
+  const safeTop = Math.max(0, Number(safeArea.top || 0));
+  const safeBottom = Math.max(0, Number(safeArea.bottom || 0));
+  const contentTopRaw = Math.max(0, Number(contentSafeArea.top || 0));
+  const contentBottom = Math.max(0, Number(contentSafeArea.bottom || 0));
+  const telegramTopFallback = tg && Math.max(safeTop, contentTopRaw) === 0 ? 44 : 0;
+  const contentTop = Math.max(contentTopRaw, telegramTopFallback);
+
+  document.documentElement.style.setProperty("--tg-safe-area-top", `${safeTop}px`);
+  document.documentElement.style.setProperty("--tg-safe-area-bottom", `${safeBottom}px`);
+  document.documentElement.style.setProperty("--tg-content-safe-area-top", `${contentTop}px`);
+  document.documentElement.style.setProperty("--tg-content-safe-area-bottom", `${contentBottom}px`);
 }
 
 function initTelegramWebApp() {
@@ -170,9 +193,13 @@ function initTelegramWebApp() {
   }
 
   const updateViewport = () => syncOnlyPumpViewportHeight(tg);
+  const updateSafeArea = () => syncOnlyPumpSafeArea(tg);
   updateViewport();
+  updateSafeArea();
   if (typeof tg?.onEvent === "function") {
     safeCall(() => tg.onEvent("viewportChanged", updateViewport));
+    safeCall(() => tg.onEvent("safeAreaChanged", updateSafeArea));
+    safeCall(() => tg.onEvent("contentSafeAreaChanged", updateSafeArea));
   }
   window.visualViewport?.addEventListener("resize", updateViewport);
   window.addEventListener("resize", updateViewport);
@@ -181,6 +208,183 @@ function initTelegramWebApp() {
 }
 
 const telegramWebApp = initTelegramWebApp();
+
+const onlypumpBackLayers = new Map();
+let onlypumpBackLayerOrder = 0;
+
+function notifyOnlyPumpBackLayers() {
+  window.dispatchEvent(new CustomEvent("onlypump:back-layers-change", {
+    detail: { count: onlypumpBackLayers.size },
+  }));
+}
+
+function runOnlyPumpBackLayer() {
+  const layer = Array.from(onlypumpBackLayers.values())
+    .sort((a, b) => b.priority - a.priority || b.order - a.order)[0];
+  if (!layer) return false;
+  layer.onBack?.();
+  return true;
+}
+
+function useBackLayerCount() {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    const update = () => setCount(onlypumpBackLayers.size);
+    update();
+    window.addEventListener("onlypump:back-layers-change", update);
+    return () => window.removeEventListener("onlypump:back-layers-change", update);
+  }, []);
+  return count;
+}
+
+function useAppBackLayer(id, active, onBack, priority = 100) {
+  const handlerRef = useRef(onBack);
+  useEffect(() => {
+    handlerRef.current = onBack;
+  }, [onBack]);
+
+  useEffect(() => {
+    if (!active) {
+      if (onlypumpBackLayers.delete(id)) notifyOnlyPumpBackLayers();
+      return;
+    }
+
+    const order = ++onlypumpBackLayerOrder;
+    onlypumpBackLayers.set(id, {
+      id,
+      priority,
+      order,
+      onBack: () => handlerRef.current?.(),
+    });
+    notifyOnlyPumpBackLayers();
+
+    return () => {
+      const layer = onlypumpBackLayers.get(id);
+      if (layer?.order === order) {
+        onlypumpBackLayers.delete(id);
+        notifyOnlyPumpBackLayers();
+      }
+    };
+  }, [id, active, priority]);
+}
+
+function BackLayer({ id, onBack, priority = 100 }) {
+  const fallbackId = useRef(`back-layer-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  useAppBackLayer(id || fallbackId.current, true, onBack, priority);
+  return null;
+}
+
+function isSheetDragIgnored(target) {
+  return Boolean(target?.closest?.('input, textarea, select, button, [contenteditable="true"], [data-no-sheet-drag="true"]'));
+}
+
+function closestScrollableParent(target, boundary) {
+  let node = target;
+  while (node && node !== boundary) {
+    const style = window.getComputedStyle(node);
+    if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight) return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
+function BottomSheetPanel({ children, className = "", onClose, priority = 150, style = {}, ...props }) {
+  const idRef = useRef(`sheet-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const panelRef = useRef(null);
+  const dragRef = useRef(null);
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+
+  useAppBackLayer(idRef.current, true, onClose, priority);
+
+  const resetDrag = () => {
+    dragRef.current = null;
+    setDragging(false);
+    setDragY(0);
+  };
+
+  const startDrag = (event) => {
+    const panel = panelRef.current;
+    if (!panel || isSheetDragIgnored(event.target)) return;
+    const scrollable = closestScrollableParent(event.target, panel);
+    if (scrollable && scrollable.scrollTop > 0) return;
+
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastY: event.clientY,
+      startedAt: Date.now(),
+      scrollable,
+      active: false,
+    };
+    setDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const moveDrag = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    drag.lastY = event.clientY;
+
+    if (!drag.active) {
+      if (Math.abs(dx) > Math.abs(dy) + 8) {
+        resetDrag();
+        return;
+      }
+      if (dy < 8) return;
+      drag.active = true;
+    }
+
+    if (drag.scrollable && drag.scrollable.scrollTop > 0) {
+      resetDrag();
+      return;
+    }
+
+    event.preventDefault();
+    setDragY(Math.max(0, dy));
+  };
+
+  const endDrag = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dy = Math.max(0, event.clientY - drag.startY);
+    const elapsed = Math.max(1, Date.now() - drag.startedAt);
+    const velocity = dy / elapsed;
+    const shouldClose = dy > 100 || (dy > 45 && velocity > 0.55);
+
+    dragRef.current = null;
+    setDragging(false);
+    if (shouldClose) {
+      setDragY(0);
+      onClose?.();
+    } else {
+      setDragY(0);
+    }
+  };
+
+  return <div
+    {...props}
+    ref={panelRef}
+    data-no-edge-back="true"
+    data-sheet-panel="true"
+    onPointerDown={startDrag}
+    onPointerMove={moveDrag}
+    onPointerUp={endDrag}
+    onPointerCancel={resetDrag}
+    style={{
+      ...style,
+      transform: `translate3d(0, ${dragY}px, 0)`,
+      transition: dragging ? "none" : "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+      touchAction: dragging ? "none" : "pan-y",
+    }}
+    className={`onlypump-sheet-panel ${className}`}
+  >
+    {children}
+  </div>;
+}
 
 const red = "text-red-500";
 
@@ -976,6 +1180,7 @@ function DesktopSidebar({ active, setActive }) {
 
 function FloatingNavMenu({ active, setActive }) {
   const [open, setOpen] = useState(false);
+  useAppBackLayer("floating-nav-menu", open, () => setOpen(false), 140);
 
   const navigate = (id) => {
     setActive(id);
@@ -1070,7 +1275,7 @@ function CalendarHistoryModal({ initialDateKey, onClose }) {
   };
 
   return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[160] flex items-end justify-center bg-black/75 p-4 backdrop-blur-sm sm:items-center">
-    <Card onClick={(e) => e.stopPropagation()} className="onlypump-modal-scroll w-full max-w-4xl overflow-y-auto p-4 onlypump-scrollbar-none sm:p-6">
+    <BottomSheetPanel onClose={onClose} onClick={(e) => e.stopPropagation()} className="onlypump-modal-scroll min-w-0 w-full max-w-4xl overflow-y-auto rounded-2xl border border-white/10 bg-zinc-950/75 p-4 shadow-2xl shadow-black/40 backdrop-blur onlypump-scrollbar-none sm:p-6">
       <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-5">
         <div>
           <p className="text-xs uppercase tracking-wider text-red-500">Календарь истории</p>
@@ -1124,7 +1329,7 @@ function CalendarHistoryModal({ initialDateKey, onClose }) {
           </div>
         </div>
       </div>
-    </Card>
+    </BottomSheetPanel>
   </div>;
 }
 
@@ -1269,6 +1474,7 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
   const dragRef = useRef(null);
   const suppressCalendarClickRef = useRef(false);
   const suppressResetRef = useRef(null);
+  useAppBackLayer(`calendar-history-${title}`, historyOpen, () => setHistoryOpen(false), 130);
   const todayKey = formatDateKey(new Date());
   const days = Array.from({ length: 7 }, (_, i) => {
     const date = addDays(startOffset + i);
@@ -1337,6 +1543,7 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
     </button>
 
     <div
+      data-calendar-swipe="true"
       className="overflow-hidden touch-pan-y select-none"
       onPointerDown={startCalendarDrag}
       onPointerMove={moveCalendarDrag}
@@ -1401,7 +1608,7 @@ function DayDataModal({ dateKey, context = "home", onClose, setActive, workout, 
   };
 
   return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[175] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-    <Card onClick={(e) => e.stopPropagation()} className="w-full max-w-3xl rounded-t-[2rem] p-5 sm:rounded-2xl sm:p-6">
+    <BottomSheetPanel onClose={onClose} onClick={(e) => e.stopPropagation()} className="min-w-0 w-full max-w-3xl overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/75 p-5 shadow-2xl shadow-black/40 backdrop-blur sm:rounded-2xl sm:p-6">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
       <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-5">
         <div>
@@ -1453,7 +1660,7 @@ function DayDataModal({ dateKey, context = "home", onClose, setActive, workout, 
           </div>
         </div>}
       </div>
-    </Card>
+    </BottomSheetPanel>
   </div>;
 }
 
@@ -1566,7 +1773,7 @@ function HomeWidgetSettingsModal({ enabledWidgets, onAdd, onClose }) {
   const availableWidgets = homeWidgetCatalog.filter(widget => !enabledWidgets.includes(widget.id));
 
   return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-    <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg rounded-t-[2rem] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+    <BottomSheetPanel onClose={onClose} onClick={(e) => e.stopPropagation()} className="w-full max-w-lg rounded-t-[2rem] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -1586,7 +1793,7 @@ function HomeWidgetSettingsModal({ enabledWidgets, onAdd, onClose }) {
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-500 text-black">+</span>
         </button>) : <div className="rounded-2xl bg-white/[0.04] p-5 text-center text-sm text-zinc-500">Все виджеты уже добавлены.</div>}
       </div>
-    </div>
+    </BottomSheetPanel>
   </div>;
 }
 
@@ -1671,6 +1878,9 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, mea
   const [waterIntake, setWaterIntake] = useState(1250);
   const waterGoal = 2500;
   const mobileHiddenWidgetIds = [];
+
+  useAppBackLayer("home-widget-picker", widgetPickerOpen, () => setWidgetPickerOpen(false), 130);
+  useAppBackLayer("home-edit-mode", homeEditMode, () => setHomeEditMode(false), 30);
 
   const removeWidget = (id) => {
     setHomeWidgets(prev => buildHomeWidgetsAfterRemoving(prev, id));
@@ -2007,7 +2217,7 @@ function WorkoutFloatingActions({ open, setOpen, onOpenExercisePicker }) {
 
 function ExercisePickerSheet({ groups, activeGroup, setActiveGroup, search, setSearch, exercises, onAdd, onClose }) {
   return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[170] flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-    <div onClick={(e) => e.stopPropagation()} className="w-full max-w-3xl rounded-t-[2rem] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+    <BottomSheetPanel onClose={onClose} onClick={(e) => e.stopPropagation()} className="w-full max-w-3xl rounded-t-[2rem] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -2038,7 +2248,7 @@ function ExercisePickerSheet({ groups, activeGroup, setActiveGroup, search, setS
         </button>)}
         {exercises.length === 0 && <div className="rounded-2xl bg-white/[0.04] p-5 text-center text-sm text-zinc-500">Ничего не найдено.</div>}
       </div>
-    </div>
+    </BottomSheetPanel>
   </div>;
 }
 
@@ -2453,7 +2663,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       swiping.current = false;
     };
 
-    return <div className={`relative overflow-hidden rounded-[22px] ${className}`} style={{ touchAction: 'pan-y' }}>
+    return <div data-no-edge-back="true" className={`relative overflow-hidden rounded-[22px] ${className}`} style={{ touchAction: 'pan-y' }}>
       <div className="absolute inset-y-0 right-0 flex">
         {actions.map(action => <button
           key={action.label}
@@ -3120,6 +3330,22 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setPendingExerciseAdds([]);
   };
 
+  useAppBackLayer("workouts-edit-error", Boolean(editError), () => setEditError(null), 190);
+  useAppBackLayer("workouts-rest-editor", Boolean(restEditor), () => setRestEditor(null), 185);
+  useAppBackLayer("workouts-rest-menu", restMenuOpen, () => setRestMenuOpen(false), 180);
+  useAppBackLayer("workouts-open-menu", Boolean(openMenu), () => setOpenMenu(null), 175);
+  useAppBackLayer("workouts-detail-menu", detailMenuOpen, () => setDetailMenuOpen(false), 170);
+  useAppBackLayer("workouts-muscle-stats", muscleStatsOpen, () => setMuscleStatsOpen(false), 165);
+  useAppBackLayer("workouts-exercise-base", isExerciseBaseOpen, closeExerciseBase, 160);
+  useAppBackLayer("workouts-week-menu", Boolean(weekMenuGroup), () => setWeekMenuGroup(null), 155);
+  useAppBackLayer("workouts-week-stats", weekStatsOpen, () => setWeekStatsOpen(false), 150);
+  useAppBackLayer("workouts-templates", isTemplatesOpen, () => setIsTemplatesOpen(false), 145);
+  useAppBackLayer("workouts-add-menu", isAddMenuOpen, () => setIsAddMenuOpen(false), 140);
+  useAppBackLayer("workouts-edit-mode", Boolean(selectedWorkout && isEditingWorkout), () => setIsEditingWorkout(false), 90);
+  useAppBackLayer("workouts-exercise-screen", Boolean(selectedWorkout && workoutViewMode === "exercise"), () => { setWorkoutViewMode("overview"); setOpenMenu(null); }, 85);
+  useAppBackLayer("workouts-detail-screen", Boolean(selectedWorkout), closeWorkoutDetails, 80);
+  useAppBackLayer("workouts-secondary-tab", activeTab !== "diary", () => setActiveTab("diary"), 35);
+
   const diaryTabs = [
     { id: "diary", label: "Тренировки", icon: Dumbbell },
     { id: "results", label: "Результаты", icon: TrendingUp },
@@ -3248,7 +3474,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const ExerciseBaseSheet = () => <div onClick={closeExerciseBase} className="onlypump-fullscreen-layer fixed inset-0 z-[190] flex items-end bg-black/35 backdrop-blur-sm">
-    <div onClick={(e) => e.stopPropagation()} className="onlypump-bottom-sheet w-full rounded-t-[34px] border-t border-white/10 bg-zinc-950/92 px-5 pt-4 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+    <BottomSheetPanel onClose={closeExerciseBase} onClick={(e) => e.stopPropagation()} className="onlypump-bottom-sheet w-full rounded-t-[34px] border-t border-white/10 bg-zinc-950/92 px-5 pt-4 shadow-2xl shadow-black/70 backdrop-blur-2xl">
       <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
       <div className="mx-auto max-w-[430px]">
         <div className="flex items-start justify-between gap-4">
@@ -3317,7 +3543,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           </button>
         </div>}
       </div>
-    </div>
+    </BottomSheetPanel>
   </div>;
 
   const WorkoutDetailScreen = () => {
@@ -3349,7 +3575,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
     const WorkoutOverviewScreen = () => <div className="onlypump-fullscreen-layer fixed inset-0 z-[160] bg-black text-zinc-100">
       <div className="mx-auto flex h-full max-w-[430px] flex-col overflow-hidden bg-black">
-        <div className="relative shrink-0 overflow-hidden rounded-b-[38px] border-b border-white/10 bg-[radial-gradient(circle_at_70%_0%,rgba(239,68,68,0.35),transparent_34%),linear-gradient(160deg,#18181b,#050505)] px-5 pb-6 pt-[calc(env(safe-area-inset-top)+16px)]">
+        <div className="relative shrink-0 overflow-hidden rounded-b-[38px] border-b border-white/10 bg-[radial-gradient(circle_at_70%_0%,rgba(239,68,68,0.35),transparent_34%),linear-gradient(160deg,#18181b,#050505)] px-5 pb-6 pt-[calc(var(--onlypump-safe-top)+16px)]">
           <div className="flex items-center justify-between">
             <button onClick={closeWorkoutDetails} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.08] text-zinc-200 backdrop-blur">⌄</button>
             <div className="text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
@@ -3470,7 +3696,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           </div>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 z-[166] border-t border-white/10 bg-black/86 px-4 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-3 backdrop-blur-2xl">
+        <div className="fixed bottom-0 left-0 right-0 z-[166] border-t border-white/10 bg-black/86 px-4 pb-[calc(var(--onlypump-safe-bottom)+10px)] pt-3 backdrop-blur-2xl">
           <div className={`mx-auto grid h-[72px] max-w-[430px] items-center gap-2 ${isEditingWorkout ? 'grid-cols-[48px_48px_48px_48px_1fr_48px]' : 'grid-cols-[48px_1fr_48px_48px]'}`}>
             <button onClick={() => openExerciseBase("add")} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/8 text-zinc-200"><Plus size={24}/></button>
             {isEditingWorkout ? <>
@@ -3491,7 +3717,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       </div>
 
       {muscleStatsOpen && <div onClick={() => setMuscleStatsOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/35 p-4 backdrop-blur-sm">
-        <div onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+        <BottomSheetPanel onClose={() => setMuscleStatsOpen(false)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
           <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -3509,11 +3735,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               experiencedAt={volumeStandards.workoutMuscle}
             />) : <div className="rounded-2xl bg-white/[0.04] p-5 text-sm text-zinc-500">Нет упражнений для статистики.</div>}
           </div>
-        </div>
+        </BottomSheetPanel>
       </div>}
 
       {detailMenuOpen && <div onClick={() => setDetailMenuOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/35 p-4 backdrop-blur-sm">
-        <div onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/92 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+        <BottomSheetPanel onClose={() => setDetailMenuOpen(false)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/92 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
           <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
           <h2 className="text-xl font-black tracking-[-0.03em]">Действия тренировки</h2>
           <div className="mt-5 space-y-2">
@@ -3523,11 +3749,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             <button onClick={() => setDetailMenuOpen(false)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Поделиться</button>
             <button onClick={() => deleteWorkout(selectedWorkout.id)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           </div>
-        </div>
+        </BottomSheetPanel>
       </div>}
 
       {restMenuOpen && <div onClick={() => setRestMenuOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/35 p-4 backdrop-blur-sm">
-        <div onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/92 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+        <BottomSheetPanel onClose={() => setRestMenuOpen(false)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/92 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
           <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
           <h2 className="text-xl font-black tracking-[-0.03em]">Отдых</h2>
           <p className="mt-2 text-sm leading-6 text-zinc-500">{selectedExerciseCount ? "Настройка применится к выбранным упражнениям." : "Если упражнения не выбраны, настройка применится ко всем упражнениям тренировки."}</p>
@@ -3536,11 +3762,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             <button onClick={() => openRestEditor("after")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">После упражнения</button>
             <button onClick={() => openRestEditor("all")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Все интервалы</button>
           </div>
-        </div>
+        </BottomSheetPanel>
       </div>}
 
       {restEditor && <div onClick={() => setRestEditor(null)} className="onlypump-modal-layer fixed inset-0 z-[195] flex items-end bg-black/45 p-4 backdrop-blur-sm">
-        <div onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+        <BottomSheetPanel onClose={() => setRestEditor(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
           <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
           <p className="text-xs font-black uppercase tracking-[0.18em] text-red-400">Отдых</p>
           <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">{restEditor === "between" ? "Между подходами" : restEditor === "after" ? "После упражнения" : "Все интервалы"}</h2>
@@ -3558,7 +3784,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             <button onClick={() => setRestEditor(null)} className="h-12 rounded-full bg-white/8 font-bold text-zinc-300">Отмена</button>
             <button onClick={applyRestInterval} className="h-12 rounded-full bg-red-500 font-black text-black">Установить</button>
           </div>
-        </div>
+        </BottomSheetPanel>
       </div>}
 
       {editError && <div onClick={() => setEditError(null)} className="onlypump-modal-layer fixed inset-0 z-[195] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
@@ -3613,7 +3839,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
       return <div className="onlypump-fullscreen-layer fixed inset-0 z-[170] bg-black text-zinc-100">
         <div className="mx-auto flex h-full max-w-[430px] flex-col overflow-hidden bg-black">
-          <div className="shrink-0 px-5 pt-[calc(env(safe-area-inset-top)+18px)]">
+          <div className="shrink-0 px-5 pt-[calc(var(--onlypump-safe-top)+18px)]">
             <div className="grid grid-cols-3 items-start gap-3 text-center">
               <div className="rounded-2xl bg-white/[0.05] px-3 py-3 text-left">
                 <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-600">упражнение</div>
@@ -3700,7 +3926,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             </div> : <div className="rounded-[34px] border border-white/10 bg-white/[0.04] p-8 text-center text-zinc-500">В тренировке нет упражнений.</div>}
           </div>
 
-          <div className="fixed bottom-0 left-0 right-0 z-[176] border-t border-white/10 bg-black/86 px-4 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-3 backdrop-blur-2xl">
+          <div className="fixed bottom-0 left-0 right-0 z-[176] border-t border-white/10 bg-black/86 px-4 pb-[calc(var(--onlypump-safe-bottom)+10px)] pt-3 backdrop-blur-2xl">
             <div className="mx-auto grid h-[72px] max-w-[430px] grid-cols-[48px_48px_1fr_58px_48px] items-center gap-2">
               <button onClick={() => goToExercise(activeExerciseIndex - 1)} disabled={activeExerciseIndex <= 0} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/8 text-zinc-200 disabled:opacity-30">←</button>
               <button onClick={() => addSetToActiveExercise("working")} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/8 text-zinc-200"><Plus size={24}/></button>
@@ -3814,7 +4040,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       </div>
     </div>
 
-    <div className="fixed bottom-0 left-0 right-0 z-[95] border-t border-white/10 bg-black/70 px-3 pb-[calc(env(safe-area-inset-bottom)+8px)] pt-2 backdrop-blur-2xl lg:hidden">
+    <div className="fixed bottom-0 left-0 right-0 z-[95] border-t border-white/10 bg-black/70 px-3 pb-[calc(var(--onlypump-safe-bottom)+8px)] pt-2 backdrop-blur-2xl lg:hidden">
       <div className="mx-auto grid h-[72px] max-w-[430px] grid-cols-4">
         {diaryTabs.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => {
           if (id === "exercises") {
@@ -3830,7 +4056,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     </div>
 
     {isAddMenuOpen && <div onClick={() => setIsAddMenuOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
-      <div onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+      <BottomSheetPanel onClose={() => setIsAddMenuOpen(false)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <h2 className="text-xl font-black tracking-[-0.03em]">Добавить на {formatDayMonth(selectedDate)}</h2>
         <div className="mt-5 space-y-2">
@@ -3839,11 +4065,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           <button onClick={() => addWorkoutForDate()} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить тренировку за выбранную дату</button>
           <button onClick={() => setIsAddMenuOpen(false)} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold text-zinc-500 transition hover:bg-white/8">Добавить заметку / замер</button>
         </div>
-      </div>
+      </BottomSheetPanel>
     </div>}
 
     {isTemplatesOpen && <div onClick={() => setIsTemplatesOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
-      <div onClick={(e) => e.stopPropagation()} className="onlypump-modal-scroll mx-auto w-full max-w-[430px] overflow-y-auto rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl onlypump-scrollbar-none">
+      <BottomSheetPanel onClose={() => setIsTemplatesOpen(false)} onClick={(e) => e.stopPropagation()} className="onlypump-modal-scroll mx-auto w-full max-w-[430px] overflow-y-auto rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl onlypump-scrollbar-none">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <h2 className="text-xl font-black tracking-[-0.03em]">Доступные программы</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-500">Нажми программу — её тренировочные дни добавятся в календарь, начиная с {formatDayMonth(selectedDate)}.</p>
@@ -3876,7 +4102,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             </div>
           </button>)}
         </div>
-      </div>
+      </BottomSheetPanel>
     </div>}
 
     {selectedWorkout && <WorkoutDetailScreen />}
@@ -3884,7 +4110,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     {isExerciseBaseOpen && <ExerciseBaseSheet />}
 
     {weekStatsOpen && <div onClick={() => setWeekStatsOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
-      <div onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+      <BottomSheetPanel onClose={() => setWeekStatsOpen(false)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3915,11 +4141,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             </div>
           </div>) : <div className="rounded-2xl bg-white/[0.04] p-5 text-sm text-zinc-500">На выбранной неделе пока нет упражнений для анализа.</div>}
         </div>
-      </div>
+      </BottomSheetPanel>
     </div>}
 
     {weekMenuGroup && <div onClick={() => setWeekMenuGroup(null)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
-      <div onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+      <BottomSheetPanel onClose={() => setWeekMenuGroup(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         {weekMenuGroup.type === "week" ? <>
           <h2 className="text-xl font-black tracking-[-0.03em]">{formatWeekRange(weekMenuGroup.group.weekStart, weekMenuGroup.group.weekEnd)}</h2>
@@ -3938,7 +4164,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             <button onClick={() => deleteWorkout(weekMenuGroup.workout.id)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           </div>
         </>}
-      </div>
+      </BottomSheetPanel>
     </div>}
   </>;
 }
@@ -3948,6 +4174,12 @@ function NutritionPage({ nutritionMeals, setNutritionMeals, nutritionGoal, setNu
   const [editingMeal, setEditingMeal] = useState(null);
   const [goalModalOpen, setGoalModalOpen] = useState(false);
   const [selectedNutritionDateKey, setSelectedNutritionDateKey] = useState(formatDateKey(new Date()));
+
+  useAppBackLayer("nutrition-meal-modal", mealModalOpen && Boolean(editingMeal), () => {
+    setMealModalOpen(false);
+    setEditingMeal(null);
+  }, 130);
+  useAppBackLayer("nutrition-goal-modal", goalModalOpen, () => setGoalModalOpen(false), 130);
 
   const nutritionTotals = useMemo(() => {
     return nutritionMeals.reduce((acc, meal) => ({
@@ -4344,6 +4576,8 @@ function EducationPage() {
   const [showLocked, setShowLocked] = useState(false);
   const [activeLesson, setActiveLesson] = useState(null);
 
+  useAppBackLayer("education-active-lesson", Boolean(activeLesson), () => setActiveLesson(null), 130);
+
   const moduleStats = (module) => {
     const completed = module.lessons.filter(lesson => lesson.done).length;
     const total = module.lessons.length;
@@ -4653,6 +4887,8 @@ function LecturesPage({ lectureItems, setLectureItems }) {
   const safeLectureItems = lectureItems || [];
   const [activeLecture, setActiveLecture] = useState(null);
   const [lectureFilter, setLectureFilter] = useState("Все");
+
+  useAppBackLayer("lectures-active-lecture", Boolean(activeLecture), () => setActiveLecture(null), 130);
 
   const lectureCategories = ["Все", ...Array.from(new Set(safeLectureItems.map(item => item.category)))];
   const filteredLectures = lectureFilter === "Все" ? safeLectureItems : safeLectureItems.filter(item => item.category === lectureFilter);
@@ -5028,9 +5264,150 @@ function MobilePreview({ active }) {
 }
 
 function OnlyPumpPlatform() {
-  const [active, setActive] = useState("home");
+  const [active, setActiveState] = useState("home");
+  const [navigationStack, setNavigationStack] = useState([]);
+  const activeRef = useRef("home");
+  const navigationStackRef = useRef([]);
+  const canGoBackRef = useRef(false);
+  const backLayerCount = useBackLayerCount();
   const [globalSelectedDateKey, setGlobalSelectedDateKey] = useState(formatDateKey(new Date()));
   const [workouts, setWorkouts] = useState(buildInitialWorkoutModels);
+
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
+  useEffect(() => {
+    navigationStackRef.current = navigationStack;
+  }, [navigationStack]);
+
+  const setActive = useCallback((target, options = {}) => {
+    setActiveState(prev => {
+      const next = typeof target === "function" ? target(prev) : target;
+      if (!next || next === prev) return prev;
+      if (next === "home") {
+        setNavigationStack([]);
+      } else if (!options.replace) {
+        setNavigationStack(stack => [...stack, prev].slice(-24));
+      }
+      return next;
+    });
+  }, []);
+
+  const goBack = useCallback(() => {
+    if (runOnlyPumpBackLayer()) return true;
+
+    const stack = navigationStackRef.current;
+    if (stack.length) {
+      const previous = stack[stack.length - 1];
+      setNavigationStack(stack.slice(0, -1));
+      setActiveState(previous || "home");
+      return true;
+    }
+
+    if (activeRef.current !== "home") {
+      setActiveState("home");
+      setNavigationStack([]);
+      return true;
+    }
+
+    return false;
+  }, []);
+
+  const canGoBack = backLayerCount > 0 || navigationStack.length > 0 || active !== "home";
+
+  useEffect(() => {
+    canGoBackRef.current = canGoBack;
+  }, [canGoBack]);
+
+  useEffect(() => {
+    const backButton = telegramWebApp?.BackButton;
+    if (!backButton) return;
+
+    const handleBack = () => {
+      goBack();
+    };
+
+    try {
+      if (canGoBack) backButton.show();
+      else backButton.hide();
+      backButton.onClick(handleBack);
+    } catch (error) {}
+
+    return () => {
+      try { backButton.offClick?.(handleBack); } catch (error) {}
+    };
+  }, [canGoBack, goBack]);
+
+  useEffect(() => {
+    const shouldIgnoreEdgeBack = (target) => Boolean(target?.closest?.([
+      'input',
+      'textarea',
+      'select',
+      'button',
+      '[contenteditable="true"]',
+      '[data-no-edge-back="true"]',
+      '[data-calendar-swipe="true"]',
+      '.overflow-x-auto',
+      '.onlypump-bottom-sheet',
+      '.onlypump-sheet-panel'
+    ].join(',')));
+
+    const edge = {
+      active: false,
+      tracking: false,
+      pointerId: null,
+      startX: 0,
+      startY: 0,
+    };
+
+    const onPointerDown = (event) => {
+      if (event.pointerType === "mouse") return;
+      if (event.clientX > 32) return;
+      if (!canGoBackRef.current) return;
+      if (shouldIgnoreEdgeBack(event.target)) return;
+
+      edge.active = true;
+      edge.tracking = false;
+      edge.pointerId = event.pointerId;
+      edge.startX = event.clientX;
+      edge.startY = event.clientY;
+    };
+
+    const onPointerMove = (event) => {
+      if (!edge.active || edge.pointerId !== event.pointerId) return;
+      const dx = event.clientX - edge.startX;
+      const dy = event.clientY - edge.startY;
+      if (dx < -8 || Math.abs(dy) > 44) {
+        edge.active = false;
+        return;
+      }
+      if (dx > 12) {
+        edge.tracking = true;
+        event.preventDefault();
+      }
+    };
+
+    const onPointerUp = (event) => {
+      if (!edge.active || edge.pointerId !== event.pointerId) return;
+      const dx = event.clientX - edge.startX;
+      const dy = Math.abs(event.clientY - edge.startY);
+      edge.active = false;
+      if (dx > 72 && dy < 42) goBack();
+    };
+
+    window.addEventListener("pointerdown", onPointerDown, { passive: true });
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
+    window.addEventListener("pointerup", onPointerUp, { passive: true });
+    window.addEventListener("pointercancel", onPointerUp, { passive: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+    };
+  }, [goBack]);
 
   useEffect(() => {
     const handleNavigate = (event) => {
