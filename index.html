@@ -118,6 +118,7 @@
     }
   </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script type="importmap">
   {
@@ -208,6 +209,169 @@ function initTelegramWebApp() {
 }
 
 const telegramWebApp = initTelegramWebApp();
+
+const SUPABASE_URL = window.ONLYPUMP_SUPABASE_URL || window.SUPABASE_URL || "";
+const SUPABASE_PUBLISHABLE_KEY = window.ONLYPUMP_SUPABASE_PUBLISHABLE_KEY || window.SUPABASE_PUBLISHABLE_KEY || "";
+
+const DEFAULT_PROFILE = {
+  telegram_id: null,
+  telegram_username: null,
+  first_name: "Артур",
+  last_name: "",
+  display_name: "Артур",
+  weight_kg: 90,
+  height_cm: 180,
+  goal: "Рекомпозиция тела",
+  source: "fallback",
+};
+
+function createOnlyPumpSupabaseClient() {
+  try {
+    if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+      console.log("Supabase error", "Missing SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY");
+      return null;
+    }
+
+    const createClient = window.supabase?.createClient;
+    if (typeof createClient !== "function") {
+      console.log("Supabase error", "Supabase SDK not loaded");
+      return null;
+    }
+
+    const client = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
+    console.log("Supabase connected");
+    return client;
+  } catch (error) {
+    console.log("Supabase error", error);
+    return null;
+  }
+}
+
+function getTelegramProfileSeed() {
+  const user = telegramWebApp?.initDataUnsafe?.user || window.Telegram?.WebApp?.initDataUnsafe?.user;
+  if (!user?.id) return null;
+
+  const firstName = String(user.first_name || "").trim();
+  const lastName = String(user.last_name || "").trim();
+  const username = String(user.username || "").trim();
+  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+  const telegramId = String(user.id);
+  const displayName = fullName || username || telegramId;
+  const seed = {
+    telegram_id: telegramId,
+    telegram_username: username || null,
+    first_name: firstName || null,
+    last_name: lastName || null,
+    display_name: displayName,
+  };
+
+  console.log("Telegram user detected", seed);
+  return seed;
+}
+
+function safeProfileNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function buildFallbackProfile(overrides = {}) {
+  return {
+    ...DEFAULT_PROFILE,
+    ...overrides,
+    display_name: overrides.display_name || DEFAULT_PROFILE.display_name,
+    weight_kg: safeProfileNumber(overrides.weight_kg, DEFAULT_PROFILE.weight_kg),
+    height_cm: safeProfileNumber(overrides.height_cm, DEFAULT_PROFILE.height_cm),
+    goal: overrides.goal || DEFAULT_PROFILE.goal,
+    source: overrides.source || "fallback",
+  };
+}
+
+function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
+  return {
+    ...fallback,
+    telegram_id: record.telegram_id != null ? String(record.telegram_id) : fallback.telegram_id,
+    telegram_username: record.telegram_username !== undefined ? (record.telegram_username || null) : (fallback.telegram_username || null),
+    first_name: record.first_name !== undefined ? (record.first_name || null) : (fallback.first_name || null),
+    last_name: record.last_name !== undefined ? (record.last_name || null) : (fallback.last_name || null),
+    display_name: record.display_name || fallback.display_name || DEFAULT_PROFILE.display_name,
+    weight_kg: safeProfileNumber(record.weight_kg, fallback.weight_kg || DEFAULT_PROFILE.weight_kg),
+    height_cm: safeProfileNumber(record.height_cm, fallback.height_cm || DEFAULT_PROFILE.height_cm),
+    goal: record.goal || fallback.goal || DEFAULT_PROFILE.goal,
+    source: record.source || fallback.source || "supabase",
+  };
+}
+
+function buildProfilePayload(seed, fallback = DEFAULT_PROFILE) {
+  const base = normalizeProfileRecord({ ...fallback, ...seed }, fallback);
+  return {
+    telegram_id: base.telegram_id,
+    telegram_username: base.telegram_username,
+    first_name: base.first_name,
+    last_name: base.last_name,
+    display_name: base.display_name,
+    weight_kg: base.weight_kg,
+    height_cm: base.height_cm,
+    goal: base.goal,
+  };
+}
+
+function profileNeedsRefresh(record = {}, payload = {}) {
+  return ["telegram_username", "first_name", "last_name", "display_name", "weight_kg", "height_cm", "goal"]
+    .some(key => String(record[key] ?? "") !== String(payload[key] ?? ""));
+}
+
+async function loadOrCreateProfile(client, telegramSeed, fallback = DEFAULT_PROFILE) {
+  const localProfile = normalizeProfileRecord({ ...fallback, ...telegramSeed, source: "fallback" }, fallback);
+  if (!telegramSeed?.telegram_id || !client) {
+    return { profile: localProfile, status: "local" };
+  }
+
+  try {
+    const { data, error } = await client
+      .from("profiles")
+      .select("telegram_id, telegram_username, first_name, last_name, display_name, weight_kg, height_cm, goal")
+      .eq("telegram_id", telegramSeed.telegram_id)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+      const merged = normalizeProfileRecord({ ...data, ...telegramSeed, source: "supabase" }, localProfile);
+      const payload = buildProfilePayload(merged, localProfile);
+      if (profileNeedsRefresh(data, payload)) {
+        const { error: updateError } = await client
+          .from("profiles")
+          .update(payload)
+          .eq("telegram_id", telegramSeed.telegram_id);
+        if (updateError) console.log("Supabase error", updateError);
+      }
+      console.log("Profile loaded", merged);
+      return { profile: merged, status: "loaded" };
+    }
+
+    const payload = buildProfilePayload(telegramSeed, localProfile);
+    const { data: created, error: insertError } = await client
+      .from("profiles")
+      .insert(payload)
+      .select("telegram_id, telegram_username, first_name, last_name, display_name, weight_kg, height_cm, goal")
+      .single();
+
+    if (insertError) throw insertError;
+
+    const createdProfile = normalizeProfileRecord({ ...created, source: "supabase" }, localProfile);
+    console.log("Profile created", createdProfile);
+    return { profile: createdProfile, status: "created" };
+  } catch (error) {
+    console.log("Supabase error", error);
+    return { profile: localProfile, status: "local" };
+  }
+}
 
 const onlypumpBackLayers = new Map();
 let onlypumpBackLayerOrder = 0;
@@ -1169,12 +1333,14 @@ function MiniBars() {
   return <div className="mt-3 flex h-8 items-end gap-1">{[16,10,18,12,24,15,26,20,32,18,30,36,27,34,18,38,22].map((h, i) => <span key={i} style={{height:h}} className="w-1 rounded bg-zinc-600" />)}</div>;
 }
 
-function DesktopSidebar({ active, setActive }) {
+function DesktopSidebar({ active, setActive, profile }) {
+  const displayName = profile?.display_name || DEFAULT_PROFILE.display_name;
+
   return <aside className="hidden w-64 shrink-0 border-r border-white/10 bg-zinc-950/95 p-7 lg:block">
     <button onClick={() => setActive("home")} className="mb-10 text-left"><div className="text-3xl font-black tracking-tight">ONLY<span className="text-red-500">PUMP</span></div><div className="mt-1 text-xs uppercase tracking-[0.18em] text-zinc-500">фитнес-платформа</div></button>
     <nav className="space-y-2">{nav.map(({ icon: Icon, label, id }) => <button key={id} onClick={() => setActive(id)} className={`flex w-full items-center gap-4 rounded-lg px-4 py-3 text-left text-sm ${active === id ? "bg-white/8 text-red-500" : "text-zinc-400 hover:bg-white/5 hover:text-white"}`}><Icon size={18}/><span>{label}</span></button>)}</nav>
     <Card className="mt-16 p-5"><div className="text-2xl font-black text-red-500">1PM</div><div className="mt-1 text-sm font-bold">ПЕРСОНАЛЬНЫЙ КОУЧИНГ</div><p className="mt-3 text-xs leading-5 text-zinc-500">Программа, питание и поддержка 24/7</p><Button className="mt-5 w-full bg-gradient-to-r from-red-700 to-red-500">Подробнее</Button></Card>
-    <div className="mt-16 flex items-center gap-3"><div className="h-11 w-11 rounded-full border border-red-500/50 bg-[url('https://images.unsplash.com/photo-1568602471122-7832951cc4c5?q=80&w=200&auto=format&fit=crop')] bg-cover"/><div><div className="text-sm">Артур</div><div className="text-xs text-zinc-500">Тариф: <span className="text-red-500">PREMIUM</span></div></div></div>
+    <div className="mt-16 flex items-center gap-3"><div className="h-11 w-11 rounded-full border border-red-500/50 bg-[url('https://images.unsplash.com/photo-1568602471122-7832951cc4c5?q=80&w=200&auto=format&fit=crop')] bg-cover"/><div><div className="break-words text-sm">{displayName}</div><div className="text-xs text-zinc-500">Тариф: <span className="text-red-500">PREMIUM</span></div></div></div>
   </aside>;
 }
 
@@ -1839,7 +2005,7 @@ function MasonryGrid({ children, className = "" }) {
   return <div ref={gridRef} className={`onlypump-masonry-grid ${className}`}>{children}</div>;
 }
 
-function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, setHomeWidgets }) {
+function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, setHomeWidgets, profile }) {
   const nutritionTotals = useMemo(() => nutritionMeals.reduce((acc, meal) => ({
     calories: acc.calories + Number(meal.calories || 0),
     protein: acc.protein + Number(meal.protein || 0),
@@ -1869,6 +2035,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, mea
   const carbsPercent = Math.min(100, Math.round((selectedNutritionTotals.carbs / Math.max(1, nutritionGoal.carbs)) * 100));
   const recovery = 78;
   const weightDelta = selectedMeasurements?.weight ? Number((Number(selectedMeasurements.weight) - 90).toFixed(1)) : 0;
+  const displayName = profile?.display_name || DEFAULT_PROFILE.display_name;
 
   const [homeEditMode, setHomeEditMode] = useState(false);
   const [widgetPickerOpen, setWidgetPickerOpen] = useState(false);
@@ -2106,7 +2273,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, mea
   };
 
   return <>
-    <Header title={<>Добро пожаловать, <span className="text-red-500">Артур</span></>} subtitle="Продолжай работать. Результат — это система." />
+    <Header title={<>Добро пожаловать, <span className="text-red-500">{displayName}</span></>} subtitle="Продолжай работать. Результат — это система." />
     <div className="mt-5">
       <IOSWeekCalendar
         title="Календарь недели"
@@ -5246,9 +5413,14 @@ function CommunityPage() {
   </PageGrid></>;
 }
 
-function ProfilePage() {
+function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local" }) {
+  const displayName = profile?.display_name || DEFAULT_PROFILE.display_name;
+  const telegramLabel = profile?.telegram_username ? `@${profile.telegram_username}` : profile?.telegram_id ? `ID ${profile.telegram_id}` : "Обычная web-версия";
+  const profileSource = profileStatus === "loaded" ? "Supabase: профиль загружен" : profileStatus === "created" ? "Supabase: профиль создан" : "Локальный fallback";
+
   return <><Header title="Личный кабинет" subtitle="Профиль, тариф, подписка, настройки, доступы и история платежей."/><PageGrid>
-    <Card className="p-5"><User className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Артур</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 text-zinc-500">Цель: рекомпозиция тела</p></Card>
+    <Card className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p></Card>
+    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profile.weight_kg || DEFAULT_PROFILE.weight_kg} кг</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profile.height_cm || DEFAULT_PROFILE.height_cm} см</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profile.goal || DEFAULT_PROFILE.goal}</span></div></div></Card>
     <Card className="p-5"><CreditCard className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Подписка</h2><p className="mt-2 text-zinc-400">Активна до {new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</p><Button className="mt-5 w-full bg-white/8">Управлять</Button></Card>
     <Card className="p-5"><ShieldCheck className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Доступы</h2><p className="mt-2 text-zinc-400">Все модули открыты</p><div className="mt-5 flex gap-2 text-xs text-zinc-500"><Lock size={14}/> 1PM bonus locked</div></Card>
     <Card className="p-5"><Settings className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Настройки</h2>{["Уведомления", "Единицы измерения", "Интеграции", "Безопасность"].map(x=><div key={x} className="mt-3 rounded-lg bg-white/[0.03] p-3 text-sm">{x}</div>)}</Card>
@@ -5269,6 +5441,8 @@ function OnlyPumpPlatform() {
   const activeRef = useRef("home");
   const navigationStackRef = useRef([]);
   const canGoBackRef = useRef(false);
+  const supabaseClientRef = useRef(null);
+  const profileSaveReadyRef = useRef(false);
   const backLayerCount = useBackLayerCount();
   const [globalSelectedDateKey, setGlobalSelectedDateKey] = useState(formatDateKey(new Date()));
   const [workouts, setWorkouts] = useState(buildInitialWorkoutModels);
@@ -5438,6 +5612,8 @@ function OnlyPumpPlatform() {
     thigh: 61,
     calf: 39,
   });
+  const [profile, setProfile] = useState(() => buildFallbackProfile());
+  const [profileStatus, setProfileStatus] = useState("local");
   const [lectureItems, setLectureItems] = useState(initialLectures);
   const [homeWidgets, setHomeWidgets] = useState(() => {
     try {
@@ -5455,11 +5631,74 @@ function OnlyPumpPlatform() {
   });
 
   useEffect(() => {
+    let cancelled = false;
+
+    const bootstrapProfile = async () => {
+      const localDefaults = buildFallbackProfile({
+        weight_kg: measurements.weight,
+        goal: progressGoal.title,
+      });
+      const telegramSeed = getTelegramProfileSeed();
+      if (!telegramSeed) {
+        setProfile(localDefaults);
+        setProfileStatus("local");
+        return;
+      }
+
+      const client = createOnlyPumpSupabaseClient();
+      supabaseClientRef.current = client;
+      const result = await loadOrCreateProfile(client, telegramSeed, localDefaults);
+
+      if (cancelled) return;
+      setProfile(result.profile);
+      setProfileStatus(result.status);
+      profileSaveReadyRef.current = result.status !== "local";
+      setMeasurements(prev => ({ ...prev, weight: result.profile.weight_kg || prev.weight }));
+      setProgressGoal(prev => ({ ...prev, title: result.profile.goal || prev.title }));
+    };
+
+    bootstrapProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const client = supabaseClientRef.current;
+    if (!profileSaveReadyRef.current || !client || !profile?.telegram_id || profileStatus === "local") return;
+
+    const payload = {
+      weight_kg: safeProfileNumber(measurements.weight, profile.weight_kg || DEFAULT_PROFILE.weight_kg),
+      height_cm: safeProfileNumber(profile.height_cm, DEFAULT_PROFILE.height_cm),
+      goal: progressGoal.title || profile.goal || DEFAULT_PROFILE.goal,
+    };
+
+    const timer = setTimeout(async () => {
+      try {
+        const { error } = await client
+          .from("profiles")
+          .update(payload)
+          .eq("telegram_id", profile.telegram_id);
+        if (error) {
+          console.log("Supabase error", error);
+          return;
+        }
+        setProfile(prev => normalizeProfileRecord({ ...prev, ...payload, source: "supabase" }, prev));
+      } catch (error) {
+        console.log("Supabase error", error);
+      }
+    }, 900);
+
+    return () => clearTimeout(timer);
+  }, [measurements.weight, progressGoal.title, profile?.telegram_id, profile?.height_cm, profileStatus]);
+
+  useEffect(() => {
     localStorage.setItem("onlypump-home-widgets", JSON.stringify(homeWidgets));
   }, [homeWidgets]);
 
   const page = useMemo(() => ({
-    home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets}/>,
+    home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} profile={profile}/>,
     workouts: <WorkoutsPage workouts={workouts} setWorkouts={setWorkouts} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey}/>,
     nutrition: <NutritionPage nutritionMeals={nutritionMeals} setNutritionMeals={setNutritionMeals} nutritionGoal={nutritionGoal} setNutritionGoal={setNutritionGoal}/>,
     calculators: <CalculatorsPage/>,
@@ -5468,13 +5707,13 @@ function OnlyPumpPlatform() {
     progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal}/>,
     analytics: <AnalyticsPage workouts={workouts}/>,
     community: <CommunityPage/>,
-    profile: <ProfilePage/>,
-  }[active]), [active, workouts, nutritionMeals, nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey]);
+    profile: <ProfilePage profile={profile} profileStatus={profileStatus}/>,
+  }[active]), [active, workouts, nutritionMeals, nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus]);
 
   return <div className="onlypump-app-shell bg-black text-zinc-100 selection:bg-red-500/30">
     <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_5%,rgba(239,68,68,0.13),transparent_30%),radial-gradient(circle_at_30%_35%,rgba(255,255,255,0.05),transparent_30%)]"/>
     <div className="onlypump-app-frame relative mx-auto flex max-w-[1720px] rounded-3xl border border-white/10 bg-black/70">
-      <DesktopSidebar active={active} setActive={setActive}/>
+      <DesktopSidebar active={active} setActive={setActive} profile={profile}/>
       <main className="onlypump-main-scroll min-w-0 w-full px-4 md:px-8 lg:px-12">{page}</main>
       <MobilePreview active={active}/>
     </div>
