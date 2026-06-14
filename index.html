@@ -161,7 +161,7 @@ function syncOnlyPumpSafeArea(tg) {
   const safeBottom = Math.max(0, Number(safeArea.bottom || 0));
   const contentTopRaw = Math.max(0, Number(contentSafeArea.top || 0));
   const contentBottom = Math.max(0, Number(contentSafeArea.bottom || 0));
-  const telegramTopFallback = tg && Math.max(safeTop, contentTopRaw) === 0 ? 44 : 0;
+  const telegramTopFallback = tg && Math.max(safeTop, contentTopRaw) === 0 ? 72 : 0;
   const contentTop = Math.max(contentTopRaw, telegramTopFallback);
 
   document.documentElement.style.setProperty("--tg-safe-area-top", `${safeTop}px`);
@@ -1510,6 +1510,113 @@ function getCalendarDateLabel(dateKey) {
   return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', weekday: 'long' });
 }
 
+function SwipeActionRow({ children, actions = [], actionWidth = 68, className = "", rowId, swipedId, setSwipedId }) {
+  const [offset, setOffset] = useState(0);
+  const startX = useRef(0);
+  const startY = useRef(0);
+  const startOffset = useRef(0);
+  const latestOffset = useRef(0);
+  const dragging = useRef(false);
+  const didDrag = useRef(false);
+  const swiping = useRef(false);
+  const maxOffset = -Math.max(1, actions.length) * actionWidth;
+  const isExternallyOpen = rowId != null && swipedId === rowId;
+  const actionsVisible = offset < -4 || isExternallyOpen;
+
+  const setRowOffset = (value) => {
+    const next = Math.max(maxOffset, Math.min(0, value));
+    latestOffset.current = next;
+    setOffset(next);
+  };
+
+  useEffect(() => {
+    if (dragging.current) return;
+    setRowOffset(isExternallyOpen ? maxOffset : 0);
+  }, [isExternallyOpen, maxOffset]);
+
+  const handlePointerDown = (event) => {
+    if (rowId != null && swipedId && swipedId !== rowId) setSwipedId?.(null);
+    startX.current = event.clientX;
+    startY.current = event.clientY;
+    startOffset.current = latestOffset.current;
+    dragging.current = true;
+    didDrag.current = false;
+    swiping.current = false;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handlePointerMove = (event) => {
+    if (!dragging.current) return;
+    const dx = event.clientX - startX.current;
+    const dy = event.clientY - startY.current;
+    if (!swiping.current && Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+    if (swiping.current || Math.abs(dx) > Math.abs(dy) + 4) {
+      swiping.current = true;
+      didDrag.current = true;
+      if (dx < -8 && rowId != null) setSwipedId?.(rowId);
+      event.preventDefault();
+      setRowOffset(startOffset.current + dx);
+    }
+  };
+
+  const handlePointerUp = (event) => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    try { event?.currentTarget?.releasePointerCapture?.(event.pointerId); } catch {}
+    const shouldOpen = latestOffset.current < maxOffset * 0.35;
+    setRowOffset(shouldOpen ? maxOffset : 0);
+    if (rowId != null) setSwipedId?.(shouldOpen ? rowId : null);
+    setTimeout(() => { didDrag.current = false; }, 120);
+    swiping.current = false;
+  };
+
+  return <div data-no-edge-back="true" data-swipe-row="true" className={`relative overflow-hidden rounded-[22px] ${className}`} style={{ touchAction: 'pan-y' }}>
+    <div
+      className="absolute inset-y-0 right-0 z-0 flex transition-all duration-200"
+      style={{
+        pointerEvents: actionsVisible ? "auto" : "none",
+        opacity: actionsVisible ? 1 : 0,
+        visibility: actionsVisible ? "visible" : "hidden",
+        transform: actionsVisible ? "translateX(0)" : "translateX(100%)",
+      }}
+    >
+      {actions.map(action => <button
+        key={action.label}
+        type="button"
+        onClick={(event) => { event.stopPropagation(); setRowOffset(0); setSwipedId?.(null); action.onClick?.(); }}
+        className={`flex h-full items-center justify-center text-lg font-black text-white ${action.className || 'bg-red-500'}`}
+        style={{ width: actionWidth }}
+        aria-label={action.label}
+      >
+        {action.icon || action.label}
+      </button>)}
+    </div>
+    <div
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onClickCapture={(event) => {
+        if (didDrag.current) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        if (latestOffset.current < 0) {
+          event.preventDefault();
+          event.stopPropagation();
+          setRowOffset(0);
+          setSwipedId?.(null);
+        }
+      }}
+      style={{ transform: `translateX(${offset}px)`, transition: dragging.current ? 'none' : 'transform 180ms ease' }}
+      className="relative z-10 bg-zinc-950"
+    >
+      {children}
+    </div>
+  </div>;
+}
+
 
 const getDayOffsetFromToday = (dateKey) => {
   const today = new Date();
@@ -2638,9 +2745,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [workoutTitleDraft, setWorkoutTitleDraft] = useState("");
   const [exerciseNameDraft, setExerciseNameDraft] = useState("");
   const [setDrafts, setSetDrafts] = useState({});
+  const [swipedWorkoutId, setSwipedWorkoutId] = useState(null);
+  const [swipedExerciseId, setSwipedExerciseId] = useState(null);
+  const [swipedSetId, setSwipedSetId] = useState(null);
   const [reorderVisual, setReorderVisual] = useState(null);
   const reorderExerciseRef = useRef(null);
   const reorderTargetRef = useRef(null);
+  const workoutScrollRef = useRef(null);
   const loadedWorkoutProfileRef = useRef(null);
   const [seenVersion, setSeenVersion] = useState(() => {
     try { return localStorage.getItem("onlypump-seen-version") || ""; } catch { return ""; }
@@ -2690,6 +2801,23 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const currentExercise = (selectedWorkout?.exercises || [])[activeExerciseIndex];
     setExerciseNameDraft(currentExercise?.name || "");
   }, [selectedWorkout?.id, activeExerciseIndex, selectedWorkout?.exercises?.[activeExerciseIndex]?.id]);
+
+  useEffect(() => {
+    const closeOpenSwipeRows = (event) => {
+      if (event.target?.closest?.('[data-swipe-row="true"]')) return;
+      setSwipedWorkoutId(null);
+      setSwipedExerciseId(null);
+      setSwipedSetId(null);
+    };
+    document.addEventListener("pointerdown", closeOpenSwipeRows, true);
+    return () => document.removeEventListener("pointerdown", closeOpenSwipeRows, true);
+  }, []);
+
+  useEffect(() => {
+    setSwipedWorkoutId(null);
+    setSwipedExerciseId(null);
+    setSwipedSetId(null);
+  }, [activeTab, selectedWorkout?.id, workoutViewMode]);
 
   const sortedWorkouts = useMemo(() => {
     return [...workouts].sort((a, b) => parseDateKey(b.date) - parseDateKey(a.date));
@@ -2808,94 +2936,6 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${percent}%`, background: volumeGradient, backgroundSize: gradientSize, backgroundPosition: "left center" }} />
       </div>
     </Cmp>;
-  };
-
-  const SwipeActionRow = ({ children, actions = [], actionWidth = 68, className = "" }) => {
-    const [offset, setOffset] = useState(0);
-    const startX = useRef(0);
-    const startY = useRef(0);
-    const startOffset = useRef(0);
-    const latestOffset = useRef(0);
-    const dragging = useRef(false);
-    const didDrag = useRef(false);
-    const swiping = useRef(false);
-    const maxOffset = -Math.max(1, actions.length) * actionWidth;
-
-    const setRowOffset = (value) => {
-      const next = Math.max(maxOffset, Math.min(0, value));
-      latestOffset.current = next;
-      setOffset(next);
-    };
-
-    const handlePointerDown = (event) => {
-      startX.current = event.clientX;
-      startY.current = event.clientY;
-      startOffset.current = latestOffset.current;
-      dragging.current = true;
-      didDrag.current = false;
-      swiping.current = false;
-      event.currentTarget.setPointerCapture?.(event.pointerId);
-    };
-
-    const handlePointerMove = (event) => {
-      if (!dragging.current) return;
-      const dx = event.clientX - startX.current;
-      const dy = event.clientY - startY.current;
-      if (!swiping.current && Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
-      if (swiping.current || Math.abs(dx) > Math.abs(dy) + 4) {
-        swiping.current = true;
-        didDrag.current = true;
-        event.preventDefault();
-        setRowOffset(startOffset.current + dx);
-      }
-    };
-
-    const handlePointerUp = (event) => {
-      if (!dragging.current) return;
-      dragging.current = false;
-      try { event?.currentTarget?.releasePointerCapture?.(event.pointerId); } catch {}
-      const shouldOpen = latestOffset.current < maxOffset * 0.35;
-      setRowOffset(shouldOpen ? maxOffset : 0);
-      setTimeout(() => { didDrag.current = false; }, 120);
-      swiping.current = false;
-    };
-
-    return <div data-no-edge-back="true" className={`relative overflow-hidden rounded-[22px] ${className}`} style={{ touchAction: 'pan-y' }}>
-      <div className="absolute inset-y-0 right-0 z-20 flex" style={{ pointerEvents: offset < -8 ? "auto" : "none" }}>
-        {actions.map(action => <button
-          key={action.label}
-          type="button"
-          onClick={(event) => { event.stopPropagation(); setRowOffset(0); action.onClick?.(); }}
-          className={`flex h-full items-center justify-center text-lg font-black text-white ${action.className || 'bg-red-500'}`}
-          style={{ width: actionWidth }}
-          aria-label={action.label}
-        >
-          {action.icon || action.label}
-        </button>)}
-      </div>
-      <div
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        onClickCapture={(event) => {
-          if (didDrag.current) {
-            event.preventDefault();
-            event.stopPropagation();
-            return;
-          }
-          if (latestOffset.current < 0) {
-            event.preventDefault();
-            event.stopPropagation();
-            setRowOffset(0);
-          }
-        }}
-        style={{ transform: `translateX(${offset}px)`, transition: dragging.current ? 'none' : 'transform 180ms ease' }}
-        className="relative z-10 bg-zinc-950"
-      >
-        {children}
-      </div>
-    </div>;
   };
 
   const selectDate = (dateKey) => {
@@ -3163,6 +3203,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       superset_order: payload.superset_order,
       is_superset: payload.is_superset,
     });
+    if (supersetGroupId) console.log("Saving superset exercise:", payload);
     return payload;
   };
 
@@ -3432,6 +3473,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       superset_order: mappedExercise.supersetOrder,
       is_superset: mappedExercise.isSuperset,
     });
+    console.log("Loaded superset fields:", {
+      superset_group_id: mappedExercise.supersetGroupId,
+      superset_order: mappedExercise.supersetOrder,
+      is_superset: mappedExercise.isSuperset,
+    });
     return mappedExercise;
   };
 
@@ -3476,6 +3522,16 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     if (!apiExercises.length && !apiSets.length) {
       const nestedTree = apiWorkouts.map(mapSupabaseWorkout);
       console.log("Built workout tree:", nestedTree);
+      const nestedSupersetGroups = nestedTree.reduce((acc, workout) => {
+        (workout.exercises || []).forEach(exercise => {
+          const groupId = getExerciseSupersetGroupId(exercise);
+          if (!groupId) return;
+          if (!acc[groupId]) acc[groupId] = [];
+          acc[groupId].push({ workoutId: workout.supabaseId || workout.id, exerciseId: exercise.supabaseId || exercise.id, order: exercise.supersetOrder });
+        });
+        return acc;
+      }, {});
+      console.log("Built superset groups:", nestedSupersetGroups);
       return nestedTree;
     }
 
@@ -3512,6 +3568,16 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
 
     console.log("Built workout tree:", tree);
+    const supersetGroups = tree.reduce((acc, workout) => {
+      (workout.exercises || []).forEach(exercise => {
+        const groupId = getExerciseSupersetGroupId(exercise);
+        if (!groupId) return;
+        if (!acc[groupId]) acc[groupId] = [];
+        acc[groupId].push({ workoutId: workout.supabaseId || workout.id, exerciseId: exercise.supabaseId || exercise.id, order: exercise.supersetOrder });
+      });
+      return acc;
+    }, {});
+    console.log("Built superset groups:", supersetGroups);
     return tree;
   };
 
@@ -3593,7 +3659,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const saveWorkoutTitleDraft = () => {
     if (!selectedWorkout) return;
     const title = workoutTitleDraft.trim() || "Новая тренировка";
+    const titlePayload = { id: selectedWorkout.supabaseId, title };
     console.log("Saving workout title:", { workout_id: selectedWorkout.supabaseId, title });
+    console.log("Saving workout title payload:", titlePayload);
     const id = selectedWorkout.id;
     const patch = (workout) => ({ ...workout, title, updatedAt: new Date().toISOString() });
     setWorkouts(prev => prev.map(workout => workout.id === id ? patch(workout) : workout));
@@ -3614,6 +3682,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const updateWorkoutTitleDraft = (title) => {
+    console.log("Workout title draft:", title);
     console.log("Workout title draft changed:", title);
     setWorkoutTitleDraft(title);
   };
@@ -3689,9 +3758,18 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const toggleExerciseSelection = (exerciseId) => {
+    const scroller = workoutScrollRef.current;
+    const previousScrollTop = scroller?.scrollTop ?? 0;
+    console.log("Exercise checkbox changed:", { exerciseId });
+    console.log("Preserving scroll position:", previousScrollTop);
     setSelectedExerciseIds(prev => prev.includes(exerciseId)
       ? prev.filter(id => id !== exerciseId)
       : [...prev, exerciseId]);
+    requestAnimationFrame(() => {
+      if (!scroller) return;
+      scroller.scrollTop = previousScrollTop;
+      console.log("Restored scroll position:", previousScrollTop);
+    });
   };
 
   const createSupersetFromSelection = () => {
@@ -3704,6 +3782,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }
 
     const supersetGroupId = createOnlyPumpUuid();
+    console.log("Creating superset group:", { superset_group_id: supersetGroupId, exercise_ids: selectedExerciseIds });
     updateSelectedWorkoutModel(workout => ({
       ...workout,
       exercises: (() => {
@@ -4364,7 +4443,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       clearTimeout(pointerTimerRef.current);
     };
 
-    return <SwipeActionRow className="mb-4" actionWidth={74} actions={[
+    return <SwipeActionRow rowId={workout.id} swipedId={swipedWorkoutId} setSwipedId={setSwipedWorkoutId} className="mb-4" actionWidth={74} actions={[
       { label: "repeat", icon: <Repeat2 size={22}/>, className: "bg-zinc-700", onClick: () => repeatWorkout(workout) },
       { label: "delete", icon: "🗑", className: "bg-red-500", onClick: () => deleteWorkout(workout.id) },
     ]}>
@@ -4609,7 +4688,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           />
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 pb-32 pt-6 onlypump-scrollbar-none">
+        <div ref={workoutScrollRef} className="flex-1 overflow-y-auto px-5 pb-32 pt-6 onlypump-scrollbar-none">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-xl font-black tracking-[-0.04em]">Упражнения</h3>
@@ -4675,7 +4754,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                 return <div key={exercise.id} className="border-b border-white/10 last:border-b-0">{exerciseBody}</div>;
               }
 
-              return <SwipeActionRow key={exercise.id} className="border-b border-white/10 last:border-b-0" actions={[
+              return <SwipeActionRow key={exercise.id} rowId={exercise.id} swipedId={swipedExerciseId} setSwipedId={setSwipedExerciseId} className="border-b border-white/10 last:border-b-0" actions={[
                 { label: "replace", icon: "↔", className: "bg-orange-500", onClick: () => openReplaceForExercise(exercise.id) },
                 { label: "delete", icon: "🗑", className: "bg-red-500", onClick: () => removeExerciseFromSelectedWorkout(exercise.id) },
               ]}>
@@ -4845,7 +4924,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-5 pb-28 pt-5 onlypump-scrollbar-none">
+          <div ref={workoutScrollRef} className="flex-1 overflow-y-auto px-5 pb-28 pt-5 onlypump-scrollbar-none">
             {currentExercise ? <div className="relative min-h-[calc(var(--onlypump-app-height)-220px)] rounded-[34px] border border-white/10 bg-zinc-950/92 p-5 shadow-2xl shadow-black/60">
               <div className="flex items-center justify-between">
                 <button onClick={() => { setWorkoutViewMode("overview"); setOpenMenu(null); }} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200 backdrop-blur">⌄</button>
@@ -4879,7 +4958,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                 {currentSets.length ? currentSets.map((set, setIndex) => {
                   const status = getSetStatus(set);
                   const active = set.id === activeSetId;
-                  return <SwipeActionRow key={set.id} className="border-b border-white/10 last:border-b-0" actions={[
+                  return <SwipeActionRow key={set.id} rowId={set.id} swipedId={swipedSetId} setSwipedId={setSwipedSetId} className="border-b border-white/10 last:border-b-0" actions={[
                     { label: "delete", icon: "🗑", className: "bg-red-500", onClick: () => removeSetFromActiveExercise(set.id) },
                   ]}>
                     <div onClick={() => setActiveSetId(set.id)} className={`grid grid-cols-[48px_1fr_46px_1fr] items-center gap-2 px-3 py-4 transition ${active ? 'bg-red-500/10' : 'hover:bg-white/[0.03]'}`}>
@@ -4977,7 +5056,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       </div>;
     };
 
-    return workoutViewMode === "exercise" ? <ActiveExerciseScreen /> : <WorkoutOverviewScreen />;
+    return workoutViewMode === "exercise" ? ActiveExerciseScreen() : WorkoutOverviewScreen();
   };
 
   return <>
@@ -5110,9 +5189,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       </BottomSheetPanel>
     </div>}
 
-    {selectedWorkout && <WorkoutDetailScreen />}
+    {selectedWorkout && WorkoutDetailScreen()}
 
-    {isExerciseBaseOpen && <ExerciseBaseSheet />}
+    {isExerciseBaseOpen && ExerciseBaseSheet()}
 
     {weekStatsOpen && <div onClick={() => setWeekStatsOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
       <BottomSheetPanel onClose={() => setWeekStatsOpen(false)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
