@@ -210,8 +210,10 @@ function initTelegramWebApp() {
 
 const telegramWebApp = initTelegramWebApp();
 
-const SUPABASE_URL = window.ONLYPUMP_SUPABASE_URL || window.SUPABASE_URL || "";
-const SUPABASE_PUBLISHABLE_KEY = window.ONLYPUMP_SUPABASE_PUBLISHABLE_KEY || window.SUPABASE_PUBLISHABLE_KEY || "";
+const SUPABASE_URL = window.ONLYPUMP_SUPABASE_URL || window.SUPABASE_URL || "https://qehbgwnblebjahmytqca.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = window.ONLYPUMP_SUPABASE_PUBLISHABLE_KEY || window.SUPABASE_PUBLISHABLE_KEY || "sb_publishable_rZgTF88Cp6PGhKUpoD_O8A_aQi-1o_K";
+console.log("Supabase URL present", Boolean(SUPABASE_URL));
+console.log("Supabase key present", Boolean(SUPABASE_PUBLISHABLE_KEY));
 
 const DEFAULT_PROFILE = {
   telegram_id: null,
