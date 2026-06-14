@@ -1124,6 +1124,50 @@ const volumeStandards = {
 };
 const standardMuscleGroups = ["Грудь", "Спина", "Плечи", "Руки", "Ноги", "Ягодицы", "Пресс"];
 const supersetPalette = ["#ef4444", "#f97316", "#facc15", "#22c55e", "#38bdf8", "#6366f1", "#d946ef"];
+const onlypumpUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const createOnlyPumpUuid = () => {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === "function") return cryptoApi.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (cryptoApi?.getRandomValues) cryptoApi.getRandomValues(bytes);
+  else bytes.forEach((_, index) => { bytes[index] = Math.floor(Math.random() * 256); });
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map(byte => byte.toString(16).padStart(2, "0"));
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
+};
+const normalizeSupersetGroupId = (value) => {
+  const id = String(value || "").trim();
+  return onlypumpUuidPattern.test(id) ? id : null;
+};
+const getExerciseSupersetGroupId = (exercise = {}) => normalizeSupersetGroupId(exercise.supersetGroupId || exercise.supersetId || exercise.superset_group_id);
+const normalizeWorkoutSupersetMetadata = (workout) => {
+  if (!workout) return workout;
+  const exercises = workout.exercises || [];
+  const groupCounts = exercises.reduce((acc, exercise) => {
+    const groupId = getExerciseSupersetGroupId(exercise);
+    if (groupId) acc[groupId] = (acc[groupId] || 0) + 1;
+    return acc;
+  }, {});
+  const groupOrders = {};
+  return {
+    ...workout,
+    exercises: exercises.map(exercise => {
+      const groupId = getExerciseSupersetGroupId(exercise);
+      if (!groupId || groupCounts[groupId] < 2) {
+        return { ...exercise, supersetId: null, supersetGroupId: null, supersetOrder: null, isSuperset: false };
+      }
+      groupOrders[groupId] = (groupOrders[groupId] || 0) + 1;
+      return {
+        ...exercise,
+        supersetId: groupId,
+        supersetGroupId: groupId,
+        supersetOrder: groupOrders[groupId],
+        isSuperset: true,
+      };
+    }),
+  };
+};
 const getVolumeLoadLevel = (count, experiencedAt = volumeStandards.workoutTotal) => {
   const value = Number(count || 0);
   const base = Math.max(1, Number(experiencedAt || 1));
@@ -1151,6 +1195,7 @@ const createWorkoutSet = (weight, reps, index = 0, completed = true, type = "wor
   status: completed ? "completed" : "pending",
   note: "",
   restSeconds: 120,
+  restAfterSeconds: 0,
   isCompleted: completed,
 });
 
@@ -1161,6 +1206,11 @@ const createWorkoutExercise = (order, name, muscleGroup, sets = [], completed = 
   muscleGroup,
   blockType: "обычное",
   restSeconds: 120,
+  restAfterSeconds: 0,
+  supersetId: null,
+  supersetGroupId: null,
+  supersetOrder: null,
+  isSuperset: false,
   sets: sets.map(([weight, reps], index) => createWorkoutSet(weight, reps, index, completed)),
 });
 
@@ -1179,6 +1229,7 @@ const cloneWorkoutExercises = (exercises = [], emptySets = false) => exercises.m
     status: emptySets ? "pending" : (set.status || (set.isCompleted ?? set.done ?? true ? "completed" : "pending")),
     note: set.note || "",
     restSeconds: Number(set.restSeconds || 120),
+    restAfterSeconds: Number(set.restAfterSeconds || 0),
     isCompleted: !emptySets && Boolean(set.isCompleted ?? set.done ?? true),
   })),
 }));
@@ -2506,6 +2557,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     status: completed ? "completed" : "pending",
     note: "",
     restSeconds: 120,
+    restAfterSeconds: 0,
     isCompleted: completed,
   });
 
@@ -2517,6 +2569,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     muscleGroup,
     blockType: "обычное",
     restSeconds: 120,
+    restAfterSeconds: 0,
+    supersetId: null,
+    supersetGroupId: null,
+    supersetOrder: null,
+    isSuperset: false,
     sets: sets.map(([weight, reps], index) => makeSet(weight, reps, index, completed)),
   });
 
@@ -2536,6 +2593,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       status: emptySets ? "pending" : (set.status || (set.isCompleted ?? true ? "completed" : "pending")),
       note: set.note || "",
       restSeconds: Number(set.restSeconds || 120),
+      restAfterSeconds: Number(set.restAfterSeconds || 0),
       isCompleted: !emptySets && Boolean(set.isCompleted ?? true),
     })),
   }));
@@ -2980,6 +3038,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     console.log("Supabase workout error", error);
   };
 
+  const logSupabaseRestSupersetError = (error) => {
+    console.log("Supabase rest/superset error:", error);
+    logSupabaseWorkoutError(error);
+  };
+
   const safeWorkoutNumber = (value, fallback = 0) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -3004,26 +3067,50 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     };
   };
 
-  const buildExerciseSupabasePayload = (workoutSupabaseId, exercise) => ({
-    workout_id: workoutSupabaseId,
-    exercise_name: exercise?.name || "Упражнение",
-    muscle_group: exercise?.muscleGroup || "Другое",
-    exercise_order: safeWorkoutNumber(exercise?.order, 1),
-    notes: exercise?.note || exercise?.notes || "",
-  });
+  const buildExerciseSupabasePayload = (workoutSupabaseId, exercise) => {
+    const supersetGroupId = getExerciseSupersetGroupId(exercise);
+    const payload = {
+      workout_id: workoutSupabaseId,
+      exercise_name: exercise?.name || "Упражнение",
+      muscle_group: exercise?.muscleGroup || "Другое",
+      exercise_order: safeWorkoutNumber(exercise?.order, 1),
+      notes: exercise?.note || exercise?.notes || "",
+      rest_between_seconds: safeWorkoutNumber(exercise?.restSeconds, 120),
+      rest_after_seconds: safeWorkoutNumber(exercise?.restAfterSeconds, 0),
+      superset_group_id: supersetGroupId,
+      superset_order: supersetGroupId ? safeWorkoutNumber(exercise?.supersetOrder, 1) : null,
+      is_superset: Boolean(supersetGroupId),
+    };
+    console.log("Saving exercise rest/superset fields:", {
+      rest_between_seconds: payload.rest_between_seconds,
+      rest_after_seconds: payload.rest_after_seconds,
+      superset_group_id: payload.superset_group_id,
+      superset_order: payload.superset_order,
+      is_superset: payload.is_superset,
+    });
+    return payload;
+  };
 
-  const buildSetSupabasePayload = (exerciseSupabaseId, set) => ({
-    workout_exercise_id: exerciseSupabaseId,
-    set_order: safeWorkoutNumber(set?.order, 1),
-    weight_kg: safeWorkoutNumber(set?.weight),
-    reps: safeWorkoutNumber(set?.reps),
-    rir: set?.rir ?? null,
-    rpe: set?.rpe ?? null,
-    rest_seconds: safeWorkoutNumber(set?.restSeconds, 120),
-    tempo: set?.tempo || null,
-    is_completed: getSetStatus(set) === "completed",
-    notes: set?.note || set?.notes || "",
-  });
+  const buildSetSupabasePayload = (exerciseSupabaseId, set) => {
+    const payload = {
+      workout_exercise_id: exerciseSupabaseId,
+      set_order: safeWorkoutNumber(set?.order, 1),
+      weight_kg: safeWorkoutNumber(set?.weight),
+      reps: safeWorkoutNumber(set?.reps),
+      rir: set?.rir ?? null,
+      rpe: set?.rpe ?? null,
+      rest_seconds: safeWorkoutNumber(set?.restSeconds, 120),
+      rest_after_seconds: safeWorkoutNumber(set?.restAfterSeconds, 0),
+      tempo: set?.tempo || null,
+      is_completed: getSetStatus(set) === "completed",
+      notes: set?.note || set?.notes || "",
+    };
+    console.log("Saving set rest fields:", {
+      rest_seconds: payload.rest_seconds,
+      rest_after_seconds: payload.rest_after_seconds,
+    });
+    return payload;
+  };
 
   const patchWorkoutInState = (workoutId, patcher) => {
     setWorkouts(prev => prev.map(workout => workout.id === workoutId ? patcher(workout) : workout));
@@ -3057,7 +3144,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       console.log("Set created", data);
       return data?.id || null;
     } catch (error) {
-      logSupabaseWorkoutError(error);
+      logSupabaseRestSupersetError(error);
       return null;
     }
   };
@@ -3072,7 +3159,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       if (error) throw error;
       console.log("Set updated", { id: set.supabaseId });
     } catch (error) {
-      logSupabaseWorkoutError(error);
+      logSupabaseRestSupersetError(error);
     }
   };
 
@@ -3090,7 +3177,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       await Promise.all((exercise.sets || []).map(set => createSetInSupabase(workoutId, exercise.id, data?.id, set)));
       return data?.id || null;
     } catch (error) {
-      logSupabaseWorkoutError(error);
+      logSupabaseRestSupersetError(error);
       return null;
     }
   };
@@ -3104,22 +3191,23 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         .eq("id", exercise.supabaseId);
       if (error) throw error;
     } catch (error) {
-      logSupabaseWorkoutError(error);
+      logSupabaseRestSupersetError(error);
     }
   };
 
   const createWorkoutInSupabase = async (workout) => {
     if (!canUseWorkoutSupabase || !workout) return null;
+    const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
     try {
       const { data, error } = await supabaseClient
         .from("workouts")
-        .insert(buildWorkoutSupabasePayload(workout))
+        .insert(buildWorkoutSupabasePayload(normalizedWorkout))
         .select("id")
         .single();
       if (error) throw error;
-      if (data?.id) patchWorkoutInState(workout.id, item => ({ ...item, supabaseId: data.id }));
+      if (data?.id) patchWorkoutInState(normalizedWorkout.id, item => normalizeWorkoutSupersetMetadata({ ...item, supabaseId: data.id }));
       console.log("Workout created", data);
-      await Promise.all((workout.exercises || []).map(exercise => createExerciseInSupabase(workout.id, data?.id, exercise)));
+      await Promise.all((normalizedWorkout.exercises || []).map(exercise => createExerciseInSupabase(normalizedWorkout.id, data?.id, exercise)));
       return data?.id || null;
     } catch (error) {
       logSupabaseWorkoutError(error);
@@ -3129,11 +3217,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const updateWorkoutInSupabase = async (workout) => {
     if (!canUseWorkoutSupabase || !workout?.supabaseId) return;
+    const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
     try {
       const { error } = await supabaseClient
         .from("workouts")
-        .update(buildWorkoutSupabasePayload(workout))
-        .eq("id", workout.supabaseId);
+        .update(buildWorkoutSupabasePayload(normalizedWorkout))
+        .eq("id", normalizedWorkout.supabaseId);
       if (error) throw error;
     } catch (error) {
       logSupabaseWorkoutError(error);
@@ -3142,10 +3231,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const syncExistingWorkoutToSupabase = async (workout) => {
     if (!canUseWorkoutSupabase || !workout?.supabaseId) return;
-    await updateWorkoutInSupabase(workout);
-    await Promise.all((workout.exercises || []).map(async (exercise) => {
+    const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
+    await updateWorkoutInSupabase(normalizedWorkout);
+    await Promise.all((normalizedWorkout.exercises || []).map(async (exercise) => {
       if (!exercise?.supabaseId) return;
-      await updateExerciseInSupabase(workout.supabaseId, exercise);
+      await updateExerciseInSupabase(normalizedWorkout.supabaseId, exercise);
       await Promise.all((exercise.sets || []).map(set => updateSetInSupabase(set, exercise.supabaseId)));
     }));
   };
@@ -3213,7 +3303,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const mapSupabaseSet = (row = {}, index = 0) => {
     const completed = Boolean(row.is_completed);
-    return {
+    const mappedSet = {
       id: `set-supabase-${row.id || index}`,
       supabaseId: row.id || null,
       order: safeWorkoutNumber(row.set_order, index + 1),
@@ -3226,28 +3316,50 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       status: completed ? "completed" : "pending",
       note: row.notes || "",
       restSeconds: safeWorkoutNumber(row.rest_seconds, 120),
+      restAfterSeconds: safeWorkoutNumber(row.rest_after_seconds, 0),
       isCompleted: completed,
     };
+    console.log("Loaded set rest fields:", {
+      rest_seconds: mappedSet.restSeconds,
+      rest_after_seconds: mappedSet.restAfterSeconds,
+    });
+    return mappedSet;
   };
 
-  const mapSupabaseExercise = (row = {}, index = 0) => ({
-    id: `exercise-supabase-${row.id || index}`,
-    supabaseId: row.id || null,
-    order: safeWorkoutNumber(row.exercise_order, index + 1),
-    name: row.exercise_name || "Упражнение",
-    muscleGroup: row.muscle_group || "Другое",
-    blockType: "обычное",
-    restSeconds: 120,
-    note: row.notes || "",
-    sets: [...(row.workout_sets || [])]
-      .sort((a, b) => safeWorkoutNumber(a.set_order) - safeWorkoutNumber(b.set_order))
-      .map(mapSupabaseSet),
-  });
+  const mapSupabaseExercise = (row = {}, index = 0) => {
+    const supersetGroupId = normalizeSupersetGroupId(row.superset_group_id);
+    const mappedExercise = {
+      id: `exercise-supabase-${row.id || index}`,
+      supabaseId: row.id || null,
+      order: safeWorkoutNumber(row.exercise_order, index + 1),
+      name: row.exercise_name || "Упражнение",
+      muscleGroup: row.muscle_group || "Другое",
+      blockType: "обычное",
+      restSeconds: safeWorkoutNumber(row.rest_between_seconds, 120),
+      restAfterSeconds: safeWorkoutNumber(row.rest_after_seconds, 0),
+      supersetId: supersetGroupId,
+      supersetGroupId,
+      supersetOrder: supersetGroupId ? safeWorkoutNumber(row.superset_order, index + 1) : null,
+      isSuperset: Boolean(row.is_superset || supersetGroupId),
+      note: row.notes || "",
+      sets: [...(row.workout_sets || [])]
+        .sort((a, b) => safeWorkoutNumber(a.set_order) - safeWorkoutNumber(b.set_order))
+        .map(mapSupabaseSet),
+    };
+    console.log("Loaded exercise rest/superset fields:", {
+      rest_between_seconds: mappedExercise.restSeconds,
+      rest_after_seconds: mappedExercise.restAfterSeconds,
+      superset_group_id: mappedExercise.supersetGroupId,
+      superset_order: mappedExercise.supersetOrder,
+      is_superset: mappedExercise.isSuperset,
+    });
+    return mappedExercise;
+  };
 
   const mapSupabaseWorkout = (row = {}, index = 0) => {
     const dateKey = row.workout_date || selectedDateKey;
     const date = parseDateKey(dateKey);
-    return {
+    return normalizeWorkoutSupersetMetadata({
       id: `workout-supabase-${row.id || index}`,
       supabaseId: row.id || null,
       date: dateKey,
@@ -3266,7 +3378,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       templateId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    };
+    });
   };
 
   useEffect(() => {
@@ -3293,6 +3405,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               exercise_name,
               muscle_group,
               exercise_order,
+              rest_between_seconds,
+              rest_after_seconds,
+              superset_group_id,
+              superset_order,
+              is_superset,
               notes,
               workout_sets (
                 id,
@@ -3302,6 +3419,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                 rir,
                 rpe,
                 rest_seconds,
+                rest_after_seconds,
                 tempo,
                 is_completed,
                 notes
@@ -3322,7 +3440,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         console.log("Workouts loaded", loadedWorkouts);
       } catch (error) {
         loadedWorkoutProfileRef.current = null;
-        logSupabaseWorkoutError(error);
+        logSupabaseRestSupersetError(error);
       }
     };
 
@@ -3395,8 +3513,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const updateSelectedWorkoutModel = (updater, options = {}) => {
     if (!selectedWorkout) return;
-    const nextSelectedWorkout = updater(selectedWorkout);
-    setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? updater(workout) : workout));
+    const applyUpdate = (workout) => normalizeWorkoutSupersetMetadata(updater(workout));
+    const nextSelectedWorkout = applyUpdate(selectedWorkout);
+    setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? applyUpdate(workout) : workout));
     setSelectedWorkout(nextSelectedWorkout);
     if (options.sync !== false) syncExistingWorkoutToSupabase(nextSelectedWorkout);
   };
@@ -3427,7 +3546,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return;
     }
 
-    const supersetId = `superset-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const supersetGroupId = createOnlyPumpUuid();
     updateSelectedWorkoutModel(workout => ({
       ...workout,
       exercises: (() => {
@@ -3435,7 +3554,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         const ordered = [...(workout.exercises || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
         const firstSelectedIndex = ordered.findIndex(exercise => selectedSet.has(exercise.id));
         const insertIndex = ordered.slice(0, Math.max(0, firstSelectedIndex)).filter(exercise => !selectedSet.has(exercise.id)).length;
-        const selectedBlock = ordered.filter(exercise => selectedSet.has(exercise.id)).map(exercise => ({ ...exercise, supersetId }));
+        const selectedBlock = ordered.filter(exercise => selectedSet.has(exercise.id)).map((exercise, supersetIndex) => ({
+          ...exercise,
+          supersetId: supersetGroupId,
+          supersetGroupId,
+          supersetOrder: supersetIndex + 1,
+          isSuperset: true,
+        }));
         const remaining = ordered.filter(exercise => !selectedSet.has(exercise.id));
         return [
           ...remaining.slice(0, insertIndex),
@@ -3471,6 +3596,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           }
           if (restEditor === "after" || restEditor === "all") {
             nextExercise.restAfterSeconds = seconds;
+            const sourceSets = nextExercise.sets || exercise.sets || [];
+            const lastSetIndex = sourceSets.length - 1;
+            nextExercise.sets = sourceSets.map((set, setIndex) => {
+              if (restEditor === "all") return { ...set, restAfterSeconds: seconds };
+              return setIndex === lastSetIndex ? { ...set, restAfterSeconds: seconds } : set;
+            });
           }
           return nextExercise;
         }),
@@ -3488,13 +3619,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       const target = ordered.find(exercise => exercise.id === targetId);
       if (!source || !target) return workout;
 
-      const movingIds = source.supersetId
-        ? ordered.filter(exercise => exercise.supersetId === source.supersetId).map(exercise => exercise.id)
+      const sourceSupersetId = getExerciseSupersetGroupId(source);
+      const targetSupersetId = getExerciseSupersetGroupId(target);
+      const movingIds = sourceSupersetId
+        ? ordered.filter(exercise => getExerciseSupersetGroupId(exercise) === sourceSupersetId).map(exercise => exercise.id)
         : [source.id];
       if (movingIds.includes(target.id)) return workout;
 
-      const targetIds = target.supersetId
-        ? ordered.filter(exercise => exercise.supersetId === target.supersetId).map(exercise => exercise.id)
+      const targetIds = targetSupersetId
+        ? ordered.filter(exercise => getExerciseSupersetGroupId(exercise) === targetSupersetId).map(exercise => exercise.id)
         : [target.id];
       const movingBlock = ordered.filter(exercise => movingIds.includes(exercise.id));
       const remaining = ordered.filter(exercise => !movingIds.includes(exercise.id));
@@ -3536,8 +3669,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const beginExerciseReorder = (exerciseId, clientY) => {
     const ordered = [...(selectedWorkout?.exercises || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
     const source = ordered.find(exercise => exercise.id === exerciseId);
-    const movingIds = source?.supersetId
-      ? ordered.filter(exercise => exercise.supersetId === source.supersetId).map(exercise => exercise.id)
+    const sourceSupersetId = getExerciseSupersetGroupId(source);
+    const movingIds = sourceSupersetId
+      ? ordered.filter(exercise => getExerciseSupersetGroupId(exercise) === sourceSupersetId).map(exercise => exercise.id)
       : [exerciseId];
     reorderExerciseRef.current = { exerciseId, movingIds, startY: clientY };
     reorderTargetRef.current = null;
@@ -3623,6 +3757,21 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     document.addEventListener("mouseup", handleUp);
   };
 
+  const applyExercisePatchWithRest = (exercise, patch) => {
+    const nextExercise = { ...exercise, ...patch };
+    if (patch.restSeconds !== undefined) {
+      nextExercise.restSeconds = safeWorkoutNumber(patch.restSeconds, 120);
+      nextExercise.sets = (exercise.sets || []).map(set => ({ ...set, restSeconds: nextExercise.restSeconds }));
+    }
+    if (patch.restAfterSeconds !== undefined) {
+      nextExercise.restAfterSeconds = safeWorkoutNumber(patch.restAfterSeconds, 0);
+      const sourceSets = nextExercise.sets || exercise.sets || [];
+      const lastSetIndex = sourceSets.length - 1;
+      nextExercise.sets = sourceSets.map((set, setIndex) => setIndex === lastSetIndex ? { ...set, restAfterSeconds: nextExercise.restAfterSeconds } : set);
+    }
+    return nextExercise;
+  };
+
   const updateActiveSet = (setId, patch) => {
     const currentExercise = (selectedWorkout?.exercises || [])[activeExerciseIndex];
     const currentSet = (currentExercise?.sets || []).find(set => set.id === setId);
@@ -3640,10 +3789,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const updateActiveExercise = (patch) => {
     const currentExercise = (selectedWorkout?.exercises || [])[activeExerciseIndex];
-    const nextExercise = currentExercise ? { ...currentExercise, ...patch } : null;
+    const nextExercise = currentExercise ? applyExercisePatchWithRest(currentExercise, patch) : null;
     updateSelectedWorkoutModel(workout => ({
       ...workout,
-      exercises: (workout.exercises || []).map((exercise, exerciseIndex) => exerciseIndex === activeExerciseIndex ? { ...exercise, ...patch } : exercise),
+      exercises: (workout.exercises || []).map((exercise, exerciseIndex) => exerciseIndex === activeExerciseIndex ? applyExercisePatchWithRest(exercise, patch) : exercise),
       updatedAt: new Date().toISOString(),
     }));
     if (selectedWorkout?.supabaseId && nextExercise?.supabaseId) updateExerciseInSupabase(selectedWorkout.supabaseId, nextExercise);
@@ -4127,8 +4276,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const workoutIsPlanned = selectedWorkout.status === "planned";
     const selectedExerciseCount = selectedExerciseIds.length;
     const supersetColorMap = exercises.reduce((acc, exercise) => {
-      if (exercise.supersetId && !acc[exercise.supersetId]) {
-        acc[exercise.supersetId] = supersetPalette[Object.keys(acc).length % supersetPalette.length];
+      const supersetGroupId = getExerciseSupersetGroupId(exercise);
+      if (supersetGroupId && !acc[supersetGroupId]) {
+        acc[supersetGroupId] = supersetPalette[Object.keys(acc).length % supersetPalette.length];
       }
       return acc;
     }, {});
@@ -4206,7 +4356,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                 : 'подходы не добавлены';
               const exerciseDone = (exercise.sets || []).length > 0 && (exercise.sets || []).every(set => getSetStatus(set) !== "pending");
               const selectedForEdit = selectedExerciseIds.includes(exercise.id);
-              const supersetColor = exercise.supersetId ? supersetColorMap[exercise.supersetId] : null;
+              const supersetGroupId = getExerciseSupersetGroupId(exercise);
+              const supersetColor = supersetGroupId ? supersetColorMap[supersetGroupId] : null;
               const draggingBlock = Boolean(reorderVisual?.movingIds?.includes(exercise.id));
               const dropTarget = reorderVisual?.targetId === exercise.id;
               const rowStyle = {
@@ -4219,7 +4370,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
               const exerciseBody = isEditingWorkout ? <div data-workout-exercise-id={exercise.id} style={rowStyle} className="relative grid w-full grid-cols-[38px_1fr_38px] gap-3 px-4 py-5 text-left transition-transform duration-150">
                 <button type="button" onClick={(e) => { e.stopPropagation(); toggleExerciseSelection(exercise.id); }} className="relative mt-1 flex h-8 w-8 items-center justify-center">
-                  <span style={circleStyle} className={`relative z-10 flex h-7 w-7 items-center justify-center rounded-full border text-xs font-black transition ${selectedForEdit ? 'border-red-500 bg-red-500 text-black' : exercise.supersetId ? '' : 'border-white/20 bg-black text-zinc-500'}`}>{selectedForEdit ? "✓" : ""}</span>
+                  <span style={circleStyle} className={`relative z-10 flex h-7 w-7 items-center justify-center rounded-full border text-xs font-black transition ${selectedForEdit ? 'border-red-500 bg-red-500 text-black' : supersetGroupId ? '' : 'border-white/20 bg-black text-zinc-500'}`}>{selectedForEdit ? "✓" : ""}</span>
                 </button>
                 <div>
                   <h4 className="break-words text-[21px] font-black leading-tight tracking-[-0.04em]">{exercise.name}</h4>
