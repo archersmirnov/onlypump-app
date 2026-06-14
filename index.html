@@ -2635,6 +2635,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [restEditor, setRestEditor] = useState(null);
   const [restDraft, setRestDraft] = useState({ minutes: "2", seconds: "0" });
   const [pendingExerciseAdds, setPendingExerciseAdds] = useState([]);
+  const [workoutTitleDraft, setWorkoutTitleDraft] = useState("");
+  const [exerciseNameDraft, setExerciseNameDraft] = useState("");
+  const [setDrafts, setSetDrafts] = useState({});
   const [reorderVisual, setReorderVisual] = useState(null);
   const reorderExerciseRef = useRef(null);
   const reorderTargetRef = useRef(null);
@@ -2678,6 +2681,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }, 1000);
     return () => clearInterval(id);
   }, [restTimer]);
+
+  useEffect(() => {
+    setWorkoutTitleDraft(selectedWorkout?.title || "");
+  }, [selectedWorkout?.id]);
+
+  useEffect(() => {
+    const currentExercise = (selectedWorkout?.exercises || [])[activeExerciseIndex];
+    setExerciseNameDraft(currentExercise?.name || "");
+  }, [selectedWorkout?.id, activeExerciseIndex, selectedWorkout?.exercises?.[activeExerciseIndex]?.id]);
 
   const sortedWorkouts = useMemo(() => {
     return [...workouts].sort((a, b) => parseDateKey(b.date) - parseDateKey(a.date));
@@ -2838,9 +2850,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       }
     };
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (event) => {
       if (!dragging.current) return;
       dragging.current = false;
+      try { event?.currentTarget?.releasePointerCapture?.(event.pointerId); } catch {}
       const shouldOpen = latestOffset.current < maxOffset * 0.35;
       setRowOffset(shouldOpen ? maxOffset : 0);
       setTimeout(() => { didDrag.current = false; }, 120);
@@ -2848,7 +2861,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     };
 
     return <div data-no-edge-back="true" className={`relative overflow-hidden rounded-[22px] ${className}`} style={{ touchAction: 'pan-y' }}>
-      <div className="absolute inset-y-0 right-0 flex">
+      <div className="absolute inset-y-0 right-0 z-20 flex" style={{ pointerEvents: offset < -8 ? "auto" : "none" }}>
         {actions.map(action => <button
           key={action.label}
           type="button"
@@ -2878,7 +2891,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           }
         }}
         style={{ transform: `translateX(${offset}px)`, transition: dragging.current ? 'none' : 'transform 180ms ease' }}
-        className="relative bg-zinc-950"
+        className="relative z-10 bg-zinc-950"
       >
         {children}
       </div>
@@ -2902,8 +2915,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
     setIsAddMenuOpen(false);
     if (canUseWorkoutApi) {
-      const id = await createWorkoutViaApi(workout, { createChildren: Boolean((workout.exercises || []).length), reload: true });
-      if (!id) return;
+      const pendingWorkout = { ...workout, pending: true, isSaving: true, isSyncing: true };
+      setWorkouts(prev => [pendingWorkout, ...prev]);
+      setSelectedWorkout(pendingWorkout);
+      const id = await createWorkoutViaApi(pendingWorkout, { createChildren: Boolean((pendingWorkout.exercises || []).length), reload: false });
+      if (!id) {
+        patchWorkoutInState(pendingWorkout.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
+      }
       return;
     }
 
@@ -2984,17 +3002,20 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const deleteWorkout = async (id) => {
     const workout = workouts.find(item => item.id === id) || (selectedWorkout?.id === id ? selectedWorkout : null);
+    console.log("Deleting workout:", workout);
     if (canUseWorkoutApi && workout?.supabaseId) {
       const deleted = await deleteWorkoutViaApi(workout);
       if (!deleted) return;
       setWorkouts(prev => prev.filter(item => item.id !== id));
       setSelectedWorkout(null);
       setWeekMenuGroup(null);
-      await loadWorkoutsFromApi({ preserveSelected: false });
+      setDetailMenuOpen(false);
       return;
     }
     setWorkouts(prev => prev.filter(workout => workout.id !== id));
     setSelectedWorkout(null);
+    setWeekMenuGroup(null);
+    setDetailMenuOpen(false);
   };
 
   const toggleWeek = (groupId) => {
@@ -3195,7 +3216,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       ...setPayload,
     });
     const id = pickApiId(result, "set");
-    if (id) patchSetInState(workoutId, exerciseId, set.id, item => ({ ...item, supabaseId: id }));
+    if (id) patchSetInState(workoutId, exerciseId, set.id, item => ({ ...item, supabaseId: id, pending: false, isSaving: false, isSyncing: false, syncError: false }));
     if (id) {
       console.log("Set created", { id });
       console.log("Created set:", { id, result });
@@ -3209,6 +3230,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const result = await callWorkoutsApi("update_set", {
       profile_id: profile.id,
       workout_exercise_id: exerciseSupabaseId,
+      id: set.supabaseId,
       set_id: set.supabaseId,
       workout_set_id: set.supabaseId,
       set: setPayload,
@@ -3229,7 +3251,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       ...exercisePayload,
     });
     const id = pickApiId(result, "exercise");
-    if (id) patchExerciseInState(workoutId, exercise.id, item => ({ ...item, supabaseId: id }));
+    if (id) patchExerciseInState(workoutId, exercise.id, item => ({ ...item, supabaseId: id, pending: false, isSaving: false, isSyncing: false, syncError: false }));
     if (id) {
       console.log("Exercise created", { id });
       console.log("Created exercise:", { id, result });
@@ -3249,6 +3271,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return await callWorkoutsApi("update_exercise", {
       profile_id: profile.id,
       workout_id: workoutSupabaseId,
+      id: exercise.supabaseId,
       exercise_id: exercise.supabaseId,
       workout_exercise_id: exercise.supabaseId,
       exercise: exercisePayload,
@@ -3268,7 +3291,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       ...workoutPayload,
     });
     const id = pickApiId(result, "workout");
-    if (id) patchWorkoutInState(normalizedWorkout.id, item => normalizeWorkoutSupersetMetadata({ ...item, supabaseId: id }));
+    if (id) patchWorkoutInState(normalizedWorkout.id, item => normalizeWorkoutSupersetMetadata({ ...item, supabaseId: id, pending: false, isSaving: false, isSyncing: false, syncError: false }));
     if (id) {
       console.log("Workout created", { id });
       console.log("Created workout:", { id, result });
@@ -3289,6 +3312,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const workoutPayload = buildWorkoutSupabasePayload(normalizedWorkout);
     return await callWorkoutsApi("update_workout", {
       profile_id: profile.id,
+      id: normalizedWorkout.supabaseId,
       workout_id: normalizedWorkout.supabaseId,
       workout: workoutPayload,
       ...workoutPayload,
@@ -3308,31 +3332,45 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const deleteSetViaApi = async (set) => {
     if (!canUseWorkoutApi || !set?.supabaseId) return false;
-    const result = await callWorkoutsApi("delete_set", {
+    console.log("Deleting set:", set);
+    const payload = {
       profile_id: profile.id,
+      id: set.supabaseId,
       set_id: set.supabaseId,
       workout_set_id: set.supabaseId,
-    });
+    };
+    const result = await callWorkoutsApi("delete_set", payload);
+    if (result) console.log("delete_set response:", result);
+    else console.error("delete_set error:", { payload, result });
     return Boolean(result);
   };
 
   const deleteExerciseViaApi = async (exercise) => {
     if (!canUseWorkoutApi || !exercise?.supabaseId) return false;
-    const result = await callWorkoutsApi("delete_exercise", {
+    console.log("Deleting exercise:", exercise);
+    const payload = {
       profile_id: profile.id,
+      id: exercise.supabaseId,
       exercise_id: exercise.supabaseId,
       workout_exercise_id: exercise.supabaseId,
-    });
+    };
+    const result = await callWorkoutsApi("delete_exercise", payload);
+    if (result) console.log("delete_exercise response:", result);
+    else console.error("delete_exercise error:", { payload, result });
     return Boolean(result);
   };
 
   const deleteWorkoutViaApi = async (workout) => {
     if (!canUseWorkoutApi || !workout?.supabaseId) return false;
-    const result = await callWorkoutsApi("delete_workout", {
+    const payload = {
       profile_id: profile.id,
+      id: workout.supabaseId,
       workout_id: workout.supabaseId,
-    });
+    };
+    console.log("delete_workout payload:", payload);
+    const result = await callWorkoutsApi("delete_workout", payload);
     if (result) {
+      console.log("delete_workout response:", result);
       console.log("Workout deleted", { id: workout.supabaseId });
       return true;
     }
@@ -3552,7 +3590,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setEditError(null);
   };
 
-  const updateWorkoutTitle = (id, title) => {
+  const saveWorkoutTitleDraft = () => {
+    if (!selectedWorkout) return;
+    const title = workoutTitleDraft.trim() || "Новая тренировка";
+    console.log("Saving workout title:", { workout_id: selectedWorkout.supabaseId, title });
+    const id = selectedWorkout.id;
     const patch = (workout) => ({ ...workout, title, updatedAt: new Date().toISOString() });
     setWorkouts(prev => prev.map(workout => workout.id === id ? patch(workout) : workout));
     setSelectedWorkout(prev => prev?.id === id ? patch(prev) : prev);
@@ -3561,9 +3603,50 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       const nextWorkout = patch(workout);
       console.log("Updating workout title:", { workout_id: workout.supabaseId, title });
       updateWorkoutViaApi(nextWorkout).then(result => {
-        if (result) console.log("Updated workout result:", result);
+        if (result) {
+          console.log("Updated workout result:", result);
+          console.log("update_workout response:", result);
+        } else {
+          console.error("update_workout error:", { workout_id: workout.supabaseId, title });
+        }
       });
     }
+  };
+
+  const updateWorkoutTitleDraft = (title) => {
+    console.log("Workout title draft changed:", title);
+    setWorkoutTitleDraft(title);
+  };
+
+  const getSetDraftValue = (set, field) => {
+    const draft = setDrafts[set.id]?.[field];
+    return draft !== undefined ? draft : (set[field] ?? "");
+  };
+
+  const updateSetDraft = (setId, field, value) => {
+    setSetDrafts(prev => ({
+      ...prev,
+      [setId]: {
+        ...(prev[setId] || {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const commitSetDraft = (workoutId, exerciseId, setId, field) => {
+    const value = setDrafts[setId]?.[field];
+    if (value === undefined) return;
+    updateWorkoutSet(workoutId, exerciseId, setId, field, value);
+    setSetDrafts(prev => {
+      const nextFields = { ...(prev[setId] || {}) };
+      delete nextFields[field];
+      if (!Object.keys(nextFields).length) {
+        const next = { ...prev };
+        delete next[setId];
+        return next;
+      }
+      return { ...prev, [setId]: nextFields };
+    });
   };
 
   const updateWorkoutSet = (workoutId, exerciseId, setId, field, value) => {
@@ -3872,10 +3955,18 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     if (selectedWorkout?.supabaseId && nextExercise?.supabaseId) updateExerciseViaApi(selectedWorkout.supabaseId, nextExercise);
   };
 
+  const saveExerciseNameDraft = () => {
+    const currentExercise = (selectedWorkout?.exercises || [])[activeExerciseIndex];
+    if (!currentExercise) return;
+    const name = exerciseNameDraft.trim() || currentExercise.name || "Упражнение";
+    updateActiveExercise({ name });
+  };
+
   const removeActiveExercise = async () => {
     if (!selectedWorkout) return;
     const removedExercise = (selectedWorkout.exercises || [])[activeExerciseIndex];
     if (canUseWorkoutApi && removedExercise?.supabaseId) {
+      console.log("Delete exercise clicked:", removedExercise);
       const deleted = await deleteExerciseViaApi(removedExercise);
       if (!deleted) return;
       const nextExercises = (selectedWorkout.exercises || []).filter((_, index) => index !== activeExerciseIndex);
@@ -3883,12 +3974,21 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       setActiveExerciseIndex(nextIndex);
       setActiveSetId(getFirstActiveSetId(nextExercises[nextIndex]));
       setOpenMenu(null);
-      await updateWorkoutViaApi({
+      updateWorkoutViaApi({
         ...selectedWorkout,
         exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
         updatedAt: new Date().toISOString(),
       });
-      await loadWorkoutsFromApi({ selectedSupabaseId: selectedWorkout.supabaseId });
+      setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? {
+        ...workout,
+        exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
+        updatedAt: new Date().toISOString(),
+      } : workout));
+      setSelectedWorkout(prev => prev ? {
+        ...prev,
+        exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
+        updatedAt: new Date().toISOString(),
+      } : prev);
       return;
     }
     const nextIndex = Math.max(0, activeExerciseIndex - 1);
@@ -3910,6 +4010,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const removedExercise = currentExercises.find(exercise => exercise.id === exerciseId);
     const nextExercises = currentExercises.filter(exercise => exercise.id !== exerciseId);
     if (canUseWorkoutApi && removedExercise?.supabaseId) {
+      console.log("Delete exercise clicked:", removedExercise);
       const deleted = await deleteExerciseViaApi(removedExercise);
       if (!deleted) return;
       const nextIndex = Math.max(0, Math.min(removedIndex, nextExercises.length - 1));
@@ -3917,12 +4018,21 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       setActiveSetId(getFirstActiveSetId(nextExercises[nextIndex]));
       setSelectedExerciseIds(prev => prev.filter(id => id !== exerciseId));
       setOpenMenu(null);
-      await updateWorkoutViaApi({
+      updateWorkoutViaApi({
         ...selectedWorkout,
         exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
         updatedAt: new Date().toISOString(),
       });
-      await loadWorkoutsFromApi({ selectedSupabaseId: selectedWorkout.supabaseId });
+      setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? {
+        ...workout,
+        exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
+        updatedAt: new Date().toISOString(),
+      } : workout));
+      setSelectedWorkout(prev => prev ? {
+        ...prev,
+        exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
+        updatedAt: new Date().toISOString(),
+      } : prev);
       return;
     }
     updateSelectedWorkoutModel(workout => ({
@@ -3962,7 +4072,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const afterIndex = afterSetId ? sets.findIndex(set => set.id === afterSetId) : sets.length - 1;
     const base = afterIndex >= 0 ? sets[afterIndex] : sets[sets.length - 1];
     const insertIndexForStorage = afterSetId ? Math.max(0, afterIndex + 1) : sets.length;
-    const newSet = { ...makeSet(Number(base?.weight || 0), Number(base?.reps || 0), sets.length, false, type), order: insertIndexForStorage + 1 };
+    const newSet = { ...makeSet(Number(base?.weight || 0), Number(base?.reps || 0), sets.length, false, type), order: insertIndexForStorage + 1, pending: canUseWorkoutApi, isSaving: canUseWorkoutApi, isSyncing: canUseWorkoutApi };
 
     const getWorkoutWithInsertedSet = (workout) => ({
       ...workout,
@@ -3976,23 +4086,17 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       updatedAt: new Date().toISOString(),
     });
 
-    if (canUseWorkoutApi && currentExercise?.supabaseId) {
-      (async () => {
-        const id = await createSetViaApi(selectedWorkout.id, currentExercise.id, currentExercise.supabaseId, newSet);
-        if (!id) return;
-        setActiveSetId(`set-supabase-${id}`);
-        setOpenMenu(null);
-        await updateWorkoutViaApi(getWorkoutWithInsertedSet(selectedWorkout));
-        await loadWorkoutsFromApi({ selectedSupabaseId: selectedWorkout.supabaseId });
-      })();
-      return;
-    }
-
     updateSelectedWorkoutModel(workout => ({
       ...getWorkoutWithInsertedSet(workout),
-    }));
+    }), { sync: false });
     setActiveSetId(newSet.id);
     setOpenMenu(null);
+    if (canUseWorkoutApi && currentExercise?.supabaseId) {
+      createSetViaApi(selectedWorkout.id, currentExercise.id, currentExercise.supabaseId, { ...newSet, pending: true, isSaving: true, isSyncing: true }).then(id => {
+        if (!id) patchSetInState(selectedWorkout.id, currentExercise.id, newSet.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
+        updateWorkoutViaApi(getWorkoutWithInsertedSet(selectedWorkout));
+      });
+    }
   };
 
   const removeSetFromActiveExercise = async (setId) => {
@@ -4004,15 +4108,17 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       if (!deleted) return;
       setActiveSetId((remaining.find(set => getSetStatus(set) === "pending") || remaining[0] || null)?.id || null);
       setOpenMenu(null);
-      await updateWorkoutViaApi({
+      const nextWorkout = {
         ...selectedWorkout,
         exercises: (selectedWorkout.exercises || []).map((exercise, exerciseIndex) => exerciseIndex === activeExerciseIndex ? {
           ...exercise,
           sets: (exercise.sets || []).filter(set => set.id !== setId).map((set, index) => ({ ...set, order: index + 1 })),
         } : exercise),
         updatedAt: new Date().toISOString(),
-      });
-      await loadWorkoutsFromApi({ selectedSupabaseId: selectedWorkout.supabaseId });
+      };
+      setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? nextWorkout : workout));
+      setSelectedWorkout(nextWorkout);
+      updateWorkoutViaApi(nextWorkout);
       return;
     }
     updateSelectedWorkoutModel(workout => ({
@@ -4076,24 +4182,32 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return `${m}:${String(sec).padStart(2, "0")}`;
   };
 
-  const addExerciseToSelectedWorkout = async (name, muscleGroup) => {
-    await addExercisesToSelectedWorkout([{ name, muscleGroup }]);
+  const addExerciseToSelectedWorkout = (name, muscleGroup) => {
+    addExercisesToSelectedWorkout([{ name, muscleGroup }]);
   };
 
   const addExercisesToSelectedWorkout = async (items = []) => {
     if (!selectedWorkout) return;
-    const additions = items.map((item, index) => makeExercise((selectedWorkout.exercises || []).length + index + 1, item.name, item.muscleGroup, [[0, 0], [0, 0], [0, 0]]));
+    const additions = items.map((item, index) => ({
+      ...makeExercise((selectedWorkout.exercises || []).length + index + 1, item.name, item.muscleGroup, [[0, 0], [0, 0], [0, 0]]),
+      pending: canUseWorkoutApi,
+      isSaving: canUseWorkoutApi,
+      isSyncing: canUseWorkoutApi,
+    }));
 
     if (canUseWorkoutApi && selectedWorkout.supabaseId) {
-      for (const exercise of additions) {
-        await createExerciseViaApi(selectedWorkout.id, selectedWorkout.supabaseId, exercise);
-      }
-      await updateWorkoutViaApi({
-        ...selectedWorkout,
-        exercises: [...(selectedWorkout.exercises || []), ...additions],
+      const patch = (workout) => ({
+        ...workout,
+        exercises: [...(workout.exercises || []), ...additions],
         updatedAt: new Date().toISOString(),
       });
-      await loadWorkoutsFromApi({ selectedSupabaseId: selectedWorkout.supabaseId });
+      setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? patch(workout) : workout));
+      setSelectedWorkout(prev => prev ? patch(prev) : prev);
+      for (const exercise of additions) {
+        const id = await createExerciseViaApi(selectedWorkout.id, selectedWorkout.supabaseId, exercise);
+        if (!id) patchExerciseInState(selectedWorkout.id, exercise.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
+      }
+      updateWorkoutViaApi(patch(selectedWorkout));
       return;
     }
 
@@ -4118,7 +4232,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const addPendingExercisesToWorkout = async () => {
     if (!pendingExerciseAdds.length) return;
-    await addExercisesToSelectedWorkout(pendingExerciseAdds);
+    addExercisesToSelectedWorkout(pendingExerciseAdds);
     setPendingExerciseAdds([]);
     setIsExerciseBaseOpen(false);
   };
@@ -4458,8 +4572,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
           <div className="mt-8">
             {isEditingWorkout ? <input
-              value={selectedWorkout.title}
-              onChange={(e) => updateWorkoutTitle(selectedWorkout.id, e.target.value)}
+              value={workoutTitleDraft}
+              onChange={(e) => updateWorkoutTitleDraft(e.target.value)}
+              onBlur={saveWorkoutTitleDraft}
+              onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
               className="w-full rounded-2xl bg-white/[0.08] px-4 py-3 text-[34px] font-black leading-none tracking-[-0.07em] text-white outline-none"
             /> : <h2 className="break-words text-[36px] font-black leading-none tracking-[-0.07em] text-white">{selectedWorkout.title}</h2>}
             <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-zinc-400">
@@ -4741,8 +4857,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
               <div className="mt-10 text-center">
                 {isEditingWorkout ? <input
-                  value={currentExercise.name}
-                  onChange={(e) => updateActiveExercise({ name: e.target.value })}
+                  value={exerciseNameDraft}
+                  onChange={(e) => setExerciseNameDraft(e.target.value)}
+                  onBlur={saveExerciseNameDraft}
+                  onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                   className="w-full rounded-2xl bg-white/[0.06] px-4 py-3 text-center text-[32px] font-black leading-none tracking-[-0.07em] text-white outline-none"
                 /> : <h2 className="break-words text-[34px] font-black leading-none tracking-[-0.07em] text-white">{currentExercise.name}</h2>}
                 <p className="mt-3 text-sm font-semibold text-red-400">{currentExercise.muscleGroup}</p>
@@ -4770,14 +4888,28 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                       </button>
 
                       <label onClick={(e) => e.stopPropagation()} className="flex h-11 items-center rounded-2xl bg-white/[0.04] px-3">
-                        <input type="number" value={set.weight} onChange={(e) => updateWorkoutSet(selectedWorkout.id, currentExercise.id, set.id, 'weight', e.target.value)} className="w-full bg-transparent text-right text-lg font-black outline-none" />
+                        <input
+                          type="number"
+                          value={getSetDraftValue(set, "weight")}
+                          onChange={(e) => updateSetDraft(set.id, "weight", e.target.value)}
+                          onBlur={() => commitSetDraft(selectedWorkout.id, currentExercise.id, set.id, "weight")}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                          className="w-full bg-transparent text-right text-lg font-black outline-none"
+                        />
                         <span className="ml-1 text-xs text-zinc-500">кг</span>
                       </label>
 
                       <div className="text-center text-xl font-black text-zinc-600">×</div>
 
                       <label onClick={(e) => e.stopPropagation()} className="flex h-11 items-center rounded-2xl bg-white/[0.04] px-3">
-                        <input type="number" value={set.reps} onChange={(e) => updateWorkoutSet(selectedWorkout.id, currentExercise.id, set.id, 'reps', e.target.value)} className="w-full bg-transparent text-right text-lg font-black outline-none" />
+                        <input
+                          type="number"
+                          value={getSetDraftValue(set, "reps")}
+                          onChange={(e) => updateSetDraft(set.id, "reps", e.target.value)}
+                          onBlur={() => commitSetDraft(selectedWorkout.id, currentExercise.id, set.id, "reps")}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                          className="w-full bg-transparent text-right text-lg font-black outline-none"
+                        />
                         <span className="ml-1 text-xs text-zinc-500">повт</span>
                       </label>
                     </div>
@@ -6142,6 +6274,8 @@ function MobilePreview({ active }) {
 }
 
 function OnlyPumpPlatform() {
+  const telegramBootInitData = telegramWebApp?.initData || window.Telegram?.WebApp?.initData || "";
+  const isTelegramBootMode = Boolean(telegramBootInitData);
   const [active, setActiveState] = useState("home");
   const [navigationStack, setNavigationStack] = useState([]);
   const activeRef = useRef("home");
@@ -6150,10 +6284,12 @@ function OnlyPumpPlatform() {
   const supabaseClientRef = useRef(null);
   const profileSaveReadyRef = useRef(false);
   const [supabaseClient, setSupabaseClient] = useState(null);
-  const [telegramInitData, setTelegramInitData] = useState("");
+  const [telegramInitData, setTelegramInitData] = useState(telegramBootInitData);
+  const [appLoading, setAppLoading] = useState(isTelegramBootMode);
+  const [profileLoading, setProfileLoading] = useState(isTelegramBootMode);
   const backLayerCount = useBackLayerCount();
   const [globalSelectedDateKey, setGlobalSelectedDateKey] = useState(formatDateKey(new Date()));
-  const [workouts, setWorkouts] = useState(buildInitialWorkoutModels);
+  const [workouts, setWorkouts] = useState(() => isTelegramBootMode ? [] : buildInitialWorkoutModels());
 
   useEffect(() => {
     activeRef.current = active;
@@ -6320,7 +6456,7 @@ function OnlyPumpPlatform() {
     thigh: 61,
     calf: 39,
   });
-  const [profile, setProfile] = useState(() => buildFallbackProfile());
+  const [profile, setProfile] = useState(() => isTelegramBootMode ? null : buildFallbackProfile());
   const [profileStatus, setProfileStatus] = useState("local");
   const [lectureItems, setLectureItems] = useState(initialLectures);
   const [homeWidgets, setHomeWidgets] = useState(() => {
@@ -6342,11 +6478,14 @@ function OnlyPumpPlatform() {
     let cancelled = false;
 
     const bootstrapProfile = async () => {
+      console.log("Profile loading started");
       const localDefaults = buildFallbackProfile({
         weight_kg: measurements.weight,
         goal: progressGoal.title,
       });
       const initData = getTelegramInitData();
+      console.log("App boot mode:", initData ? "telegram" : "web-fallback");
+      console.log("Telegram initData present:", Boolean(initData));
       setTelegramInitData(initData || "");
       if (!initData) {
         const activeProfile = localDefaults;
@@ -6356,6 +6495,10 @@ function OnlyPumpPlatform() {
         setProfile(activeProfile);
         setProfileStatus("local");
         profileSaveReadyRef.current = false;
+        setProfileLoading(false);
+        setAppLoading(false);
+        console.log("Profile loaded", activeProfile);
+        console.log("Initial app data loaded");
         return;
       }
 
@@ -6365,13 +6508,19 @@ function OnlyPumpPlatform() {
       const result = await verifyTelegramUserProfile(initData, localDefaults);
 
       if (cancelled) return;
-      const activeProfile = result.profile;
+      const activeProfile = initData && result.status !== "verified"
+        ? normalizeProfileRecord({ ...result.profile, display_name: "Профиль", first_name: "", source: "fallback" }, { ...localDefaults, display_name: "Профиль", first_name: "" })
+        : result.profile;
       console.log("Using activeProfile:", activeProfile);
       setProfile(activeProfile);
       setProfileStatus(result.status);
       profileSaveReadyRef.current = result.status === "verified" && Boolean(activeProfile?.id);
       setMeasurements(prev => ({ ...prev, weight: activeProfile.weight_kg || prev.weight }));
       setProgressGoal(prev => ({ ...prev, title: activeProfile.goal || prev.title }));
+      setProfileLoading(false);
+      setAppLoading(false);
+      console.log("Profile loaded", activeProfile);
+      console.log("Initial app data loaded");
     };
 
     bootstrapProfile();
@@ -6426,6 +6575,16 @@ function OnlyPumpPlatform() {
     community: <CommunityPage/>,
     profile: <ProfilePage profile={profile} profileStatus={profileStatus}/>,
   }[active]), [active, workouts, nutritionMeals, nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData]);
+
+  if (appLoading || profileLoading) {
+    return <div className="onlypump-app-shell flex items-center justify-center bg-black px-6 text-zinc-100">
+      <div className="text-center">
+        <div className="mx-auto h-12 w-12 animate-pulse rounded-full bg-red-500/70" />
+        <h1 className="mt-5 text-2xl font-black tracking-[-0.04em]">ONLYPUMP</h1>
+        <p className="mt-2 text-sm text-zinc-500">Загрузка...</p>
+      </div>
+    </div>;
+  }
 
   return <div className="onlypump-app-shell bg-black text-zinc-100 selection:bg-red-500/30">
     <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_5%,rgba(239,68,68,0.13),transparent_30%),radial-gradient(circle_at_30%_35%,rgba(255,255,255,0.05),transparent_30%)]"/>
