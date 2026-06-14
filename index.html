@@ -2,12 +2,98 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>ONLYPUMP</title>
   <style>
+    :root {
+      color-scheme: dark;
+      --onlypump-safe-top: env(safe-area-inset-top, 0px);
+      --onlypump-safe-bottom: env(safe-area-inset-bottom, 0px);
+      --tg-viewport-height: 100vh;
+      --onlypump-app-height: var(--tg-viewport-height);
+    }
+    @supports (height: 100dvh) {
+      :root { --tg-viewport-height: 100dvh; }
+    }
+    html,
+    body,
+    #root {
+      width: 100%;
+      height: var(--onlypump-app-height);
+      min-height: var(--onlypump-app-height);
+      overflow: hidden;
+      background: #000;
+    }
+    html { overscroll-behavior: none; }
+    body {
+      position: fixed;
+      inset: 0;
+      margin: 0;
+      touch-action: manipulation;
+    }
+    #root { isolation: isolate; }
     @keyframes onlypump-wiggle {
       0%, 100% { transform: rotate(-0.35deg) translateY(0); }
       50% { transform: rotate(0.35deg) translateY(-1px); }
+    }
+    .onlypump-app-shell {
+      position: relative;
+      height: var(--onlypump-app-height);
+      min-height: 0;
+      overflow: hidden;
+    }
+    .onlypump-app-frame {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .onlypump-main-scroll {
+      height: 100%;
+      min-height: 0;
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+      padding-top: calc(var(--onlypump-safe-top) + 1.5rem);
+      padding-bottom: calc(var(--onlypump-safe-bottom) + 6.5rem);
+    }
+    .onlypump-fullscreen-layer {
+      height: var(--onlypump-app-height);
+      max-height: var(--onlypump-app-height);
+      overflow: hidden;
+    }
+    .onlypump-modal-layer {
+      height: var(--onlypump-app-height);
+      max-height: var(--onlypump-app-height);
+      padding-top: calc(var(--onlypump-safe-top) + 1rem) !important;
+      padding-bottom: calc(var(--onlypump-safe-bottom) + 1rem) !important;
+    }
+    .onlypump-bottom-sheet {
+      max-height: calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - 0.75rem);
+      padding-bottom: calc(var(--onlypump-safe-bottom) + 22px);
+    }
+    .onlypump-modal-scroll {
+      max-height: calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 2rem);
+    }
+    .onlypump-sheet-list {
+      max-height: calc(var(--onlypump-app-height) * 0.56);
+    }
+    .onlypump-list-50 {
+      max-height: calc(var(--onlypump-app-height) * 0.5);
+    }
+    .onlypump-list-55 {
+      max-height: calc(var(--onlypump-app-height) * 0.55);
+    }
+    .onlypump-list-58 {
+      max-height: calc(var(--onlypump-app-height) * 0.58);
+    }
+    .onlypump-list-62 {
+      max-height: calc(var(--onlypump-app-height) * 0.62);
+    }
+    @media (min-width: 1024px) {
+      .onlypump-main-scroll {
+        padding-bottom: calc(var(--onlypump-safe-bottom) + 1.5rem);
+      }
     }
     .onlypump-wiggle { animation: onlypump-wiggle 0.18s infinite ease-in-out; }
     .onlypump-scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
@@ -24,6 +110,7 @@
       will-change: transform;
     }
   </style>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script type="importmap">
   {
@@ -48,6 +135,52 @@ import {
   ShieldCheck, CreditCard, Scale, Ruler, Utensils, Clock3, CheckCircle2, Lock,
   Search, Plus, ExternalLink, Star, Zap, HeartPulse, Droplets, MoreHorizontal, Share2, Pencil, Repeat2
 } from "lucide-react";
+
+function syncOnlyPumpViewportHeight(tg) {
+  const telegramHeight = Number(tg?.viewportHeight || tg?.viewportStableHeight || 0);
+  const browserHeight = Number(window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0);
+  const nextHeight = Math.max(320, Math.round(telegramHeight || browserHeight));
+  if (nextHeight) {
+    document.documentElement.style.setProperty("--tg-viewport-height", `${nextHeight}px`);
+    document.documentElement.style.setProperty("--onlypump-app-height", `${nextHeight}px`);
+  }
+}
+
+function initTelegramWebApp() {
+  const tg = window.Telegram?.WebApp;
+  const safeCall = (callback) => {
+    try { callback(); } catch (error) {}
+  };
+
+  if (tg) {
+    safeCall(() => tg.ready());
+    safeCall(() => tg.expand());
+    if (typeof tg.requestFullscreen === "function") {
+      safeCall(() => tg.requestFullscreen());
+    }
+    if (typeof tg.disableVerticalSwipes === "function") {
+      safeCall(() => tg.disableVerticalSwipes());
+    }
+    if (typeof tg.setHeaderColor === "function") {
+      safeCall(() => tg.setHeaderColor("#000000"));
+    }
+    if (typeof tg.setBackgroundColor === "function") {
+      safeCall(() => tg.setBackgroundColor("#000000"));
+    }
+  }
+
+  const updateViewport = () => syncOnlyPumpViewportHeight(tg);
+  updateViewport();
+  if (typeof tg?.onEvent === "function") {
+    safeCall(() => tg.onEvent("viewportChanged", updateViewport));
+  }
+  window.visualViewport?.addEventListener("resize", updateViewport);
+  window.addEventListener("resize", updateViewport);
+
+  return tg;
+}
+
+const telegramWebApp = initTelegramWebApp();
 
 const red = "text-red-500";
 
@@ -850,9 +983,12 @@ function FloatingNavMenu({ active, setActive }) {
   };
 
   return <>
-    <div className={`fixed inset-0 z-[110] lg:hidden ${open ? "pointer-events-auto" : "pointer-events-none"}`}>
+    <div className={`onlypump-fullscreen-layer fixed inset-0 z-[110] lg:hidden ${open ? "pointer-events-auto" : "pointer-events-none"}`}>
       <div onClick={() => setOpen(false)} className={`absolute inset-0 bg-black/45 backdrop-blur-sm transition-opacity duration-300 ${open ? "opacity-100" : "opacity-0"}`}/>
-      <aside className={`absolute right-0 top-0 flex h-full w-[min(86vw,320px)] flex-col border-l border-white/10 bg-zinc-950/70 p-6 shadow-2xl shadow-black/70 backdrop-blur-2xl transition-all duration-300 ease-out ${open ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"}`}>
+      <aside
+        style={{ paddingTop: "calc(var(--onlypump-safe-top) + 1.5rem)", paddingBottom: "calc(var(--onlypump-safe-bottom) + 1.5rem)" }}
+        className={`absolute right-0 top-0 flex h-full w-[min(86vw,320px)] flex-col border-l border-white/10 bg-zinc-950/70 px-6 shadow-2xl shadow-black/70 backdrop-blur-2xl transition-all duration-300 ease-out ${open ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"}`}
+      >
         <div className="mb-8 flex items-center justify-between">
           <div className="text-2xl font-black tracking-tight">ONLY<span className="text-red-500">PUMP</span></div>
           <button onClick={() => setOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-zinc-300 transition hover:bg-white/10 hover:text-white">×</button>
@@ -873,6 +1009,7 @@ function FloatingNavMenu({ active, setActive }) {
       type="button"
       aria-label={open ? "Закрыть меню" : "Открыть меню"}
       onClick={() => setOpen(prev => !prev)}
+      style={{ bottom: "calc(var(--onlypump-safe-bottom) + 6rem)" }}
       className={`fixed bottom-24 right-6 z-[120] flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-red-700 to-red-500 text-black shadow-2xl shadow-red-500/40 transition duration-300 hover:scale-105 lg:hidden ${open ? "rotate-45" : ""}`}
     >
       <Plus size={28}/>
@@ -932,8 +1069,8 @@ function CalendarHistoryModal({ initialDateKey, onClose }) {
     onClose();
   };
 
-  return <div onClick={onClose} className="fixed inset-0 z-[160] flex items-end justify-center bg-black/75 p-4 backdrop-blur-sm sm:items-center">
-    <Card onClick={(e) => e.stopPropagation()} className="max-h-[calc(100vh-2rem)] w-full max-w-4xl overflow-y-auto p-4 onlypump-scrollbar-none sm:p-6">
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[160] flex items-end justify-center bg-black/75 p-4 backdrop-blur-sm sm:items-center">
+    <Card onClick={(e) => e.stopPropagation()} className="onlypump-modal-scroll w-full max-w-4xl overflow-y-auto p-4 onlypump-scrollbar-none sm:p-6">
       <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-5">
         <div>
           <p className="text-xs uppercase tracking-wider text-red-500">Календарь истории</p>
@@ -1263,7 +1400,7 @@ function DayDataModal({ dateKey, context = "home", onClose, setActive, workout, 
     onClose();
   };
 
-  return <div onClick={onClose} className="fixed inset-0 z-[175] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[175] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <Card onClick={(e) => e.stopPropagation()} className="w-full max-w-3xl rounded-t-[2rem] p-5 sm:rounded-2xl sm:p-6">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
       <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-5">
@@ -1428,7 +1565,7 @@ function WaterWidget({ waterIntake, waterGoal, onAdd, onRemove }) {
 function HomeWidgetSettingsModal({ enabledWidgets, onAdd, onClose }) {
   const availableWidgets = homeWidgetCatalog.filter(widget => !enabledWidgets.includes(widget.id));
 
-  return <div onClick={onClose} className="fixed inset-0 z-[150] flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg rounded-t-[2rem] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
       <div className="flex items-start justify-between gap-4">
@@ -1440,7 +1577,7 @@ function HomeWidgetSettingsModal({ enabledWidgets, onAdd, onClose }) {
         <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-full bg-white/5 text-zinc-300 transition hover:bg-white/10 hover:text-white">×</button>
       </div>
 
-      <div className="mt-6 max-h-[55vh] space-y-2 overflow-y-auto pr-1">
+      <div className="onlypump-list-55 mt-6 space-y-2 overflow-y-auto pr-1">
         {availableWidgets.length ? availableWidgets.map(widget => <button key={widget.id} type="button" onClick={() => onAdd(widget.id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-4 text-left transition hover:bg-white/[0.08]">
           <div>
             <h3 className="text-sm font-semibold">{widget.label}</h3>
@@ -1869,7 +2006,7 @@ function WorkoutFloatingActions({ open, setOpen, onOpenExercisePicker }) {
 }
 
 function ExercisePickerSheet({ groups, activeGroup, setActiveGroup, search, setSearch, exercises, onAdd, onClose }) {
-  return <div onClick={onClose} className="fixed inset-0 z-[170] flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[170] flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <div onClick={(e) => e.stopPropagation()} className="w-full max-w-3xl rounded-t-[2rem] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
       <div className="flex items-start justify-between gap-4">
@@ -1891,7 +2028,7 @@ function ExercisePickerSheet({ groups, activeGroup, setActiveGroup, search, setS
         </button>)}
       </div>
 
-      <div className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto pr-1">
+      <div className="onlypump-list-50 mt-4 space-y-2 overflow-y-auto pr-1">
         {exercises.map(item => <button key={`${item.group}-${item.name}`} onClick={() => onAdd(item.name, item.group)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-4 text-left transition hover:bg-red-500/10">
           <div>
             <h3 className="text-sm font-semibold">{item.name}</h3>
@@ -3110,8 +3247,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setIsExerciseBaseOpen(false);
   };
 
-  const ExerciseBaseSheet = () => <div onClick={closeExerciseBase} className="fixed inset-0 z-[190] flex items-end bg-black/35 backdrop-blur-sm">
-    <div onClick={(e) => e.stopPropagation()} className="max-h-[88vh] w-full rounded-t-[34px] border-t border-white/10 bg-zinc-950/92 px-5 pb-[calc(env(safe-area-inset-bottom)+22px)] pt-4 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+  const ExerciseBaseSheet = () => <div onClick={closeExerciseBase} className="onlypump-fullscreen-layer fixed inset-0 z-[190] flex items-end bg-black/35 backdrop-blur-sm">
+    <div onClick={(e) => e.stopPropagation()} className="onlypump-bottom-sheet w-full rounded-t-[34px] border-t border-white/10 bg-zinc-950/92 px-5 pt-4 shadow-2xl shadow-black/70 backdrop-blur-2xl">
       <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
       <div className="mx-auto max-w-[430px]">
         <div className="flex items-start justify-between gap-4">
@@ -3144,7 +3281,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           </button>)}
         </div>
 
-        <div className="mt-4 max-h-[56vh] space-y-6 overflow-y-auto pr-1 onlypump-scrollbar-none">
+        <div className="onlypump-sheet-list mt-4 space-y-6 overflow-y-auto pr-1 onlypump-scrollbar-none">
           {filteredExerciseGroups.length ? filteredExerciseGroups.map(section => <div key={section.group}>
             <h3 className="text-sm font-bold uppercase tracking-[0.16em] text-zinc-500">{section.group}</h3>
             <div className="mt-3 space-y-2">
@@ -3210,7 +3347,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       setDetailMenuOpen(false);
     };
 
-    const WorkoutOverviewScreen = () => <div className="fixed inset-0 z-[160] bg-black text-zinc-100">
+    const WorkoutOverviewScreen = () => <div className="onlypump-fullscreen-layer fixed inset-0 z-[160] bg-black text-zinc-100">
       <div className="mx-auto flex h-full max-w-[430px] flex-col overflow-hidden bg-black">
         <div className="relative shrink-0 overflow-hidden rounded-b-[38px] border-b border-white/10 bg-[radial-gradient(circle_at_70%_0%,rgba(239,68,68,0.35),transparent_34%),linear-gradient(160deg,#18181b,#050505)] px-5 pb-6 pt-[calc(env(safe-area-inset-top)+16px)]">
           <div className="flex items-center justify-between">
@@ -3353,7 +3490,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         </div>
       </div>
 
-      {muscleStatsOpen && <div onClick={() => setMuscleStatsOpen(false)} className="fixed inset-0 z-[190] flex items-end bg-black/35 p-4 backdrop-blur-sm">
+      {muscleStatsOpen && <div onClick={() => setMuscleStatsOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/35 p-4 backdrop-blur-sm">
         <div onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
           <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
           <div className="flex items-start justify-between gap-3">
@@ -3363,7 +3500,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             </div>
             <button onClick={() => setMuscleStatsOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
           </div>
-          <div className="mt-5 max-h-[62vh] space-y-3 overflow-y-auto onlypump-scrollbar-none">
+          <div className="onlypump-list-62 mt-5 space-y-3 overflow-y-auto onlypump-scrollbar-none">
             {getMuscleSetStats(selectedWorkout).length ? getMuscleSetStats(selectedWorkout).map(stat => <VolumeLoadBar
               key={stat.muscleGroup}
               count={stat.sets}
@@ -3375,7 +3512,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         </div>
       </div>}
 
-      {detailMenuOpen && <div onClick={() => setDetailMenuOpen(false)} className="fixed inset-0 z-[190] flex items-end bg-black/35 p-4 backdrop-blur-sm">
+      {detailMenuOpen && <div onClick={() => setDetailMenuOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/35 p-4 backdrop-blur-sm">
         <div onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/92 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
           <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
           <h2 className="text-xl font-black tracking-[-0.03em]">Действия тренировки</h2>
@@ -3389,7 +3526,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         </div>
       </div>}
 
-      {restMenuOpen && <div onClick={() => setRestMenuOpen(false)} className="fixed inset-0 z-[190] flex items-end bg-black/35 p-4 backdrop-blur-sm">
+      {restMenuOpen && <div onClick={() => setRestMenuOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/35 p-4 backdrop-blur-sm">
         <div onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/92 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
           <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
           <h2 className="text-xl font-black tracking-[-0.03em]">Отдых</h2>
@@ -3402,7 +3539,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         </div>
       </div>}
 
-      {restEditor && <div onClick={() => setRestEditor(null)} className="fixed inset-0 z-[195] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+      {restEditor && <div onClick={() => setRestEditor(null)} className="onlypump-modal-layer fixed inset-0 z-[195] flex items-end bg-black/45 p-4 backdrop-blur-sm">
         <div onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
           <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
           <p className="text-xs font-black uppercase tracking-[0.18em] text-red-400">Отдых</p>
@@ -3424,7 +3561,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         </div>
       </div>}
 
-      {editError && <div onClick={() => setEditError(null)} className="fixed inset-0 z-[195] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      {editError && <div onClick={() => setEditError(null)} className="onlypump-modal-layer fixed inset-0 z-[195] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
         <div onClick={(e) => e.stopPropagation()} className="w-full max-w-[360px] rounded-[30px] border border-red-500/30 bg-zinc-950/95 p-6 text-center shadow-2xl shadow-black/70">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-500 text-2xl font-black text-black">!</div>
           <h2 className="mt-5 text-2xl font-black tracking-[-0.04em]">{editError.title}</h2>
@@ -3474,7 +3611,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         });
       };
 
-      return <div className="fixed inset-0 z-[170] bg-black text-zinc-100">
+      return <div className="onlypump-fullscreen-layer fixed inset-0 z-[170] bg-black text-zinc-100">
         <div className="mx-auto flex h-full max-w-[430px] flex-col overflow-hidden bg-black">
           <div className="shrink-0 px-5 pt-[calc(env(safe-area-inset-top)+18px)]">
             <div className="grid grid-cols-3 items-start gap-3 text-center">
@@ -3494,7 +3631,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 pb-28 pt-5 onlypump-scrollbar-none">
-            {currentExercise ? <div className="relative min-h-[calc(100vh-220px)] rounded-[34px] border border-white/10 bg-zinc-950/92 p-5 shadow-2xl shadow-black/60">
+            {currentExercise ? <div className="relative min-h-[calc(var(--onlypump-app-height)-220px)] rounded-[34px] border border-white/10 bg-zinc-950/92 p-5 shadow-2xl shadow-black/60">
               <div className="flex items-center justify-between">
                 <button onClick={() => { setWorkoutViewMode("overview"); setOpenMenu(null); }} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200 backdrop-blur">⌄</button>
                 <div className="text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
@@ -3576,7 +3713,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           </div>
         </div>
 
-        {openMenu && <div onClick={() => setOpenMenu(null)} className="fixed inset-0 z-[190] bg-black/20 backdrop-blur-[1px]">
+        {openMenu && <div onClick={() => setOpenMenu(null)} className="onlypump-fullscreen-layer fixed inset-0 z-[190] bg-black/20 backdrop-blur-[1px]">
           {openMenu.type === "exercise" && <div onClick={(e) => e.stopPropagation()} style={{ top: openMenu.top, right: openMenu.right, width: 'min(65vw, 280px)' }} className="fixed rounded-[26px] border border-white/10 bg-zinc-950/92 p-3 shadow-2xl shadow-black/70 backdrop-blur-2xl">
             <div className="px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-red-400">Упражнение</div>
             {[
@@ -3692,7 +3829,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       </div>
     </div>
 
-    {isAddMenuOpen && <div onClick={() => setIsAddMenuOpen(false)} className="fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+    {isAddMenuOpen && <div onClick={() => setIsAddMenuOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
       <div onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <h2 className="text-xl font-black tracking-[-0.03em]">Добавить на {formatDayMonth(selectedDate)}</h2>
@@ -3705,8 +3842,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       </div>
     </div>}
 
-    {isTemplatesOpen && <div onClick={() => setIsTemplatesOpen(false)} className="fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
-      <div onClick={(e) => e.stopPropagation()} className="mx-auto max-h-[88vh] w-full max-w-[430px] overflow-y-auto rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl onlypump-scrollbar-none">
+    {isTemplatesOpen && <div onClick={() => setIsTemplatesOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+      <div onClick={(e) => e.stopPropagation()} className="onlypump-modal-scroll mx-auto w-full max-w-[430px] overflow-y-auto rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl onlypump-scrollbar-none">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <h2 className="text-xl font-black tracking-[-0.03em]">Доступные программы</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-500">Нажми программу — её тренировочные дни добавятся в календарь, начиная с {formatDayMonth(selectedDate)}.</p>
@@ -3746,7 +3883,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
     {isExerciseBaseOpen && <ExerciseBaseSheet />}
 
-    {weekStatsOpen && <div onClick={() => setWeekStatsOpen(false)} className="fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+    {weekStatsOpen && <div onClick={() => setWeekStatsOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
       <div onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <div className="flex items-start justify-between gap-3">
@@ -3769,7 +3906,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           </div>
         </div>
 
-        <div className="mt-5 max-h-[58vh] space-y-3 overflow-y-auto onlypump-scrollbar-none">
+        <div className="onlypump-list-58 mt-5 space-y-3 overflow-y-auto onlypump-scrollbar-none">
           {weeklyMuscleStats.length ? weeklyMuscleStats.map(stat => <div key={stat.muscleGroup} className="rounded-[24px] border border-white/10 bg-white/[0.035] p-4">
             <VolumeLoadBar count={stat.sets} title={stat.muscleGroup} subtitle="подходов" experiencedAt={volumeStandards.weeklyMuscle} />
             <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs">
@@ -3781,7 +3918,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       </div>
     </div>}
 
-    {weekMenuGroup && <div onClick={() => setWeekMenuGroup(null)} className="fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+    {weekMenuGroup && <div onClick={() => setWeekMenuGroup(null)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
       <div onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         {weekMenuGroup.type === "week" ? <>
@@ -3996,7 +4133,7 @@ function NutritionPage({ nutritionMeals, setNutritionMeals, nutritionGoal, setNu
       </Card>
     </PageGrid>
 
-    {mealModalOpen && editingMeal && <div onClick={() => setMealModalOpen(false)} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+    {mealModalOpen && editingMeal && <div onClick={() => setMealModalOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
       <Card onClick={(e) => e.stopPropagation()} className="w-full max-w-xl p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -4034,7 +4171,7 @@ function NutritionPage({ nutritionMeals, setNutritionMeals, nutritionGoal, setNu
       </Card>
     </div>}
 
-    {goalModalOpen && <div onClick={() => setGoalModalOpen(false)} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+    {goalModalOpen && <div onClick={() => setGoalModalOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
       <Card onClick={(e) => e.stopPropagation()} className="w-full max-w-lg p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -4376,7 +4513,7 @@ function EducationPage() {
       </Card>
     </div>
 
-    {activeLesson && <div onClick={closeLesson} className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+    {activeLesson && <div onClick={closeLesson} className="onlypump-modal-layer fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
       <Card onClick={(e) => e.stopPropagation()} className="w-full max-w-4xl overflow-hidden">
         <div className="flex items-start justify-between gap-4 border-b border-white/10 p-6">
           <div>
@@ -4618,7 +4755,7 @@ function LecturesPage({ lectureItems, setLectureItems }) {
       </Card>
     </div>
 
-    {activeLecture && <div onClick={closeLecture} className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+    {activeLecture && <div onClick={closeLecture} className="onlypump-modal-layer fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
       <Card onClick={(e) => e.stopPropagation()} className="w-full max-w-4xl overflow-hidden">
         <div className="flex items-start justify-between gap-4 border-b border-white/10 p-6">
           <div>
@@ -4957,11 +5094,11 @@ function OnlyPumpPlatform() {
     profile: <ProfilePage/>,
   }[active]), [active, workouts, nutritionMeals, nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey]);
 
-  return <div className="min-h-screen overflow-hidden bg-black pb-24 text-zinc-100 selection:bg-red-500/30 lg:pb-0">
+  return <div className="onlypump-app-shell bg-black text-zinc-100 selection:bg-red-500/30">
     <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_5%,rgba(239,68,68,0.13),transparent_30%),radial-gradient(circle_at_30%_35%,rgba(255,255,255,0.05),transparent_30%)]"/>
-    <div className="relative mx-auto flex min-h-screen max-w-[1720px] rounded-3xl border border-white/10 bg-black/70">
+    <div className="onlypump-app-frame relative mx-auto flex max-w-[1720px] rounded-3xl border border-white/10 bg-black/70">
       <DesktopSidebar active={active} setActive={setActive}/>
-      <main className="min-w-0 w-full px-4 py-6 md:px-8 lg:px-12">{page}</main>
+      <main className="onlypump-main-scroll min-w-0 w-full px-4 md:px-8 lg:px-12">{page}</main>
       <MobilePreview active={active}/>
     </div>
     <FloatingNavMenu active={active} setActive={setActive}/>
