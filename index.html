@@ -240,6 +240,7 @@ const SUPABASE_URL = window.ONLYPUMP_SUPABASE_URL || window.SUPABASE_URL || "htt
 const SUPABASE_PUBLISHABLE_KEY = window.ONLYPUMP_SUPABASE_PUBLISHABLE_KEY || window.SUPABASE_PUBLISHABLE_KEY || "sb_publishable_rZgTF88Cp6PGhKUpoD_O8A_aQi-1o_K";
 const VERIFY_TELEGRAM_USER_URL = "https://qehbgwnblebjahmytqca.supabase.co/functions/v1/verify-telegram-user";
 const ONLYPUMP_WORKOUTS_API_URL = "https://qehbgwnblebjahmytqca.supabase.co/functions/v1/onlypump-workouts-api";
+const ONLYPUMP_NUTRITION_API_URL = "https://qehbgwnblebjahmytqca.supabase.co/functions/v1/onlypump-nutrition-api";
 console.log("Supabase URL present", Boolean(SUPABASE_URL));
 console.log("Supabase key present", Boolean(SUPABASE_PUBLISHABLE_KEY));
 
@@ -1534,6 +1535,31 @@ const writeCachedWorkoutsForProfile = (profile, workouts = []) => {
   }
 };
 
+const getNutritionCacheKey = (profile, dateKey) => {
+  const telegramId = profile?.telegram_id || profile?.telegramId || profile?.id || "local";
+  return `onlypump_nutrition_cache_${telegramId}_${dateKey}`;
+};
+
+const readCachedNutritionForProfile = (profile, dateKey) => {
+  try {
+    const raw = localStorage.getItem(getNutritionCacheKey(profile, dateKey));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (error) {
+    console.log("Nutrition cache error", error);
+    return null;
+  }
+};
+
+const writeCachedNutritionForProfile = (profile, dateKey, nutritionDay) => {
+  try {
+    localStorage.setItem(getNutritionCacheKey(profile, dateKey), JSON.stringify(nutritionDay));
+  } catch (error) {
+    console.log("Nutrition cache error", error);
+  }
+};
+
 const callOnlyPumpWorkoutsApi = async (initData, action, payload = {}) => {
   const response = await fetch(ONLYPUMP_WORKOUTS_API_URL, {
     method: "POST",
@@ -1547,6 +1573,23 @@ const callOnlyPumpWorkoutsApi = async (initData, action, payload = {}) => {
   const result = await response.json().catch(() => ({}));
   if (!response.ok || result?.ok === false || result?.error) {
     throw result?.error || result?.message || new Error(`onlypump-workouts-api ${action} failed with ${response.status}`);
+  }
+  return result;
+};
+
+const callOnlyPumpNutritionApi = async (initData, action, payload = {}) => {
+  const response = await fetch(ONLYPUMP_NUTRITION_API_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ initData, action, payload }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result?.ok === false || result?.error) {
+    throw result?.error || result?.message || new Error(`onlypump-nutrition-api ${action} failed with ${response.status}`);
   }
   return result;
 };
@@ -7459,261 +7502,705 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   </>;
 }
 
-function NutritionPage({ nutritionMeals, setNutritionMeals, nutritionGoal, setNutritionGoal }) {
-  const [mealModalOpen, setMealModalOpen] = useState(false);
-  const [editingMeal, setEditingMeal] = useState(null);
-  const [goalModalOpen, setGoalModalOpen] = useState(false);
-  const [selectedNutritionDateKey, setSelectedNutritionDateKey] = useState(formatDateKey(new Date()));
+const nutritionMealTypes = [
+  { type: "breakfast", title: "Завтрак", order: 1 },
+  { type: "lunch", title: "Обед", order: 2 },
+  { type: "dinner", title: "Ужин", order: 3 },
+  { type: "snack", title: "Перекус", order: 4 },
+];
 
-  useAppBackLayer("nutrition-meal-modal", mealModalOpen && Boolean(editingMeal), () => {
-    setMealModalOpen(false);
-    setEditingMeal(null);
-  }, 130);
-  useAppBackLayer("nutrition-goal-modal", goalModalOpen, () => setGoalModalOpen(false), 130);
+const roundMacro = (value) => Math.round(Number(value || 0) * 10) / 10;
+const roundCalories = (value) => Math.round(Number(value || 0));
+const normalizeFoodKey = (name) => String(name || "").toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9]+/gi, "-").replace(/^-|-$/g, "");
+const modifierPresets = {
+  burger: [
+    { id: "double_patty", label: "Двойная котлета", calories: 240, protein: 18, fat: 18, carbs: 1 },
+    { id: "bacon", label: "Бекон", calories: 90, protein: 6, fat: 7, carbs: 1 },
+    { id: "extra_cheese", label: "Дополнительный сыр", calories: 75, protein: 5, fat: 6, carbs: 1 },
+    { id: "extra_sauce", label: "Дополнительный соус", calories: 80, protein: 0, fat: 8, carbs: 3 },
+    { id: "no_sauce", label: "Без соуса", calories: -70, protein: 0, fat: -7, carbs: -2 },
+  ],
+  shawarma: [
+    { id: "double_meat", label: "Двойное мясо", calories: 210, protein: 24, fat: 11, carbs: 1 },
+    { id: "fries_inside", label: "Картофель фри внутри", calories: 160, protein: 3, fat: 7, carbs: 22 },
+    { id: "extra_sauce", label: "Дополнительный соус", calories: 90, protein: 1, fat: 8, carbs: 4 },
+    { id: "extra_cheese", label: "Дополнительный сыр", calories: 90, protein: 6, fat: 7, carbs: 1 },
+    { id: "no_sauce", label: "Без соуса", calories: -80, protein: 0, fat: -7, carbs: -3 },
+  ],
+  pizza: [
+    { id: "thick_dough", label: "Толстое тесто", calories: 120, protein: 4, fat: 2, carbs: 23 },
+    { id: "cheese_crust", label: "Сырный бортик", calories: 180, protein: 9, fat: 10, carbs: 15 },
+    { id: "extra_cheese", label: "Дополнительный сыр", calories: 110, protein: 7, fat: 8, carbs: 2 },
+    { id: "extra_meat", label: "Дополнительное мясо", calories: 130, protein: 12, fat: 8, carbs: 2 },
+    { id: "cream_sauce", label: "Сливочный соус", calories: 90, protein: 1, fat: 9, carbs: 2 },
+  ],
+  coffee: [
+    { id: "sugar", label: "Сахар", calories: 32, protein: 0, fat: 0, carbs: 8 },
+    { id: "syrup", label: "Сироп", calories: 65, protein: 0, fat: 0, carbs: 16 },
+    { id: "cream", label: "Сливки", calories: 70, protein: 1, fat: 7, carbs: 1 },
+    { id: "skim_milk", label: "Обезжиренное молоко", calories: -25, protein: 1, fat: -3, carbs: 1 },
+  ],
+  salad: [
+    { id: "oil", label: "Масло", calories: 90, protein: 0, fat: 10, carbs: 0 },
+    { id: "mayo", label: "Майонезный соус", calories: 120, protein: 0, fat: 12, carbs: 2 },
+    { id: "cheese", label: "Сыр", calories: 80, protein: 5, fat: 6, carbs: 1 },
+    { id: "chicken", label: "Курица", calories: 120, protein: 22, fat: 2, carbs: 0 },
+    { id: "croutons", label: "Сухарики", calories: 70, protein: 2, fat: 2, carbs: 12 },
+  ],
+  sauce: [
+    { id: "extra_sauce", label: "Больше соуса", calories: 70, protein: 0, fat: 6, carbs: 4 },
+    { id: "light", label: "Лёгкая версия", calories: -40, protein: 0, fat: -4, carbs: -1 },
+  ],
+};
 
-  const nutritionTotals = useMemo(() => {
-    return nutritionMeals.reduce((acc, meal) => ({
-      calories: acc.calories + Number(meal.calories || 0),
-      protein: acc.protein + Number(meal.protein || 0),
-      fat: acc.fat + Number(meal.fat || 0),
-      carbs: acc.carbs + Number(meal.carbs || 0),
+const food = (name, category, calories, protein, fat, carbs, defaultGrams = 100, synonyms = [], modifiers = []) => ({
+  key: normalizeFoodKey(`${category}-${name}`),
+  name,
+  category,
+  synonyms,
+  calories_per_100: calories,
+  protein_per_100: protein,
+  fat_per_100: fat,
+  carbs_per_100: carbs,
+  default_grams: defaultGrams,
+  modifiers,
+});
+
+const nutritionFoodLibrary = [
+  food("Куриная грудка", "Белковые продукты", 165, 31, 3.6, 0, 180, ["курица", "грудка", "chicken"]),
+  food("Куриное бедро", "Белковые продукты", 210, 24, 12, 0, 200, ["курица", "бедро"]),
+  food("Куриные крылья", "Белковые продукты", 290, 23, 21, 0, 180, ["крылышки", "курица"]),
+  food("Индейка", "Белковые продукты", 145, 29, 2, 0, 180, ["индейка", "филе"]),
+  food("Говядина постная", "Белковые продукты", 190, 27, 9, 0, 170, ["говядина", "мясо"]),
+  food("Стейк рибай", "Белковые продукты", 290, 24, 22, 0, 220, ["стейк", "ribeye"]),
+  food("Стейк филе", "Белковые продукты", 210, 29, 10, 0, 200, ["стейк", "говядина"]),
+  food("Фарш говяжий", "Белковые продукты", 250, 26, 17, 0, 160, ["фарш"]),
+  food("Фарш индейки", "Белковые продукты", 165, 24, 7, 0, 160, ["фарш", "индейка"]),
+  food("Свинина", "Белковые продукты", 270, 22, 20, 0, 180, ["свинина", "мясо"]),
+  food("Котлеты домашние", "Белковые продукты", 240, 16, 15, 10, 160, ["котлеты"]),
+  food("Сосиски", "Белковые продукты", 300, 12, 27, 2, 120, ["сосиска"]),
+  food("Колбаса вареная", "Белковые продукты", 260, 13, 22, 2, 80, ["колбаса"]),
+  food("Колбаса сырокопченая", "Белковые продукты", 440, 22, 38, 1, 50, ["колбаса"]),
+  food("Тунец", "Белковые продукты", 130, 29, 1, 0, 120, ["рыба", "tuna"]),
+  food("Лосось", "Белковые продукты", 208, 20, 13, 0, 180, ["семга", "рыба"]),
+  food("Белая рыба", "Белковые продукты", 100, 22, 1.5, 0, 180, ["треска", "хек", "рыба"]),
+  food("Креветки", "Белковые продукты", 99, 24, 0.3, 0.2, 150, ["морепродукты"]),
+  food("Кальмар", "Белковые продукты", 92, 18, 1.4, 3, 150, ["морепродукты"]),
+  food("Яйца", "Белковые продукты", 155, 13, 11, 1, 120, ["яйцо"]),
+  food("Омлет", "Белковые продукты", 180, 12, 13, 2, 180, ["яйца"]),
+  food("Творог 5%", "Белковые продукты", 121, 17, 5, 3, 200, ["творог"]),
+  food("Творог 0%", "Белковые продукты", 80, 16, 0.5, 3, 200, ["творог"]),
+  food("Творожок сладкий", "Белковые продукты", 145, 8, 5, 17, 150, ["творожок"]),
+  food("Греческий йогурт", "Белковые продукты", 95, 9, 5, 4, 200, ["йогурт"]),
+  food("Йогурт питьевой", "Белковые продукты", 75, 3, 2, 11, 250, ["йогурт"]),
+  food("Протеиновый йогурт", "Белковые продукты", 80, 12, 1, 6, 200, ["йогурт", "protein"]),
+  food("Протеиновый батончик", "Белковые продукты", 360, 32, 12, 28, 60, ["батончик", "protein bar"]),
+  food("Сыр твердый", "Белковые продукты", 360, 25, 28, 2, 40, ["сыр"]),
+  food("Моцарелла", "Белковые продукты", 280, 18, 22, 3, 60, ["сыр"]),
+  food("Рис белый", "Гарниры", 130, 2.7, 0.3, 28, 180, ["рис"]),
+  food("Рис бурый", "Гарниры", 125, 2.6, 1, 26, 180, ["рис"]),
+  food("Гречка", "Гарниры", 110, 3.6, 1.1, 21, 180, ["греча"]),
+  food("Картофель отварной", "Гарниры", 87, 2, 0.1, 20, 250, ["картошка"]),
+  food("Картофель жареный", "Гарниры", 190, 3, 10, 24, 220, ["картошка"]),
+  food("Пюре", "Гарниры", 115, 2, 4, 17, 220, ["картофель"]),
+  food("Макароны", "Гарниры", 150, 5, 1, 30, 200, ["паста"]),
+  food("Паста с соусом", "Гарниры", 190, 6, 7, 27, 250, ["паста", "макароны"], modifierPresets.sauce),
+  food("Булгур", "Гарниры", 83, 3, 0.2, 19, 180, ["булгур"]),
+  food("Киноа", "Гарниры", 120, 4.4, 1.9, 21, 180, ["quinoa"]),
+  food("Овсянка", "Гарниры", 110, 4, 2, 19, 220, ["геркулес"]),
+  food("Перловка", "Гарниры", 109, 3.1, 0.4, 23, 180, ["крупа"]),
+  food("Плов", "Гарниры", 210, 8, 9, 24, 250, ["рис", "мясо"]),
+  food("Лапша удон", "Гарниры", 145, 5, 1, 29, 220, ["лапша"]),
+  food("Хлеб белый", "Гарниры", 265, 8, 3, 49, 50, ["хлеб"]),
+  food("Хлеб цельнозерновой", "Гарниры", 245, 9, 4, 41, 60, ["хлеб"]),
+  food("Лаваш", "Гарниры", 275, 8, 1.5, 56, 80, ["лаваш"]),
+  food("Банан", "Фрукты", 89, 1.1, 0.3, 23, 120, ["banana"]),
+  food("Яблоко", "Фрукты", 52, 0.3, 0.2, 14, 180, ["apple"]),
+  food("Апельсин", "Фрукты", 47, 0.9, 0.1, 12, 180, ["orange"]),
+  food("Манго", "Фрукты", 60, 0.8, 0.4, 15, 200, ["mango"]),
+  food("Арбуз", "Фрукты", 30, 0.6, 0.2, 8, 300, ["арбуз"]),
+  food("Виноград", "Фрукты", 69, 0.7, 0.2, 18, 180, ["виноград"]),
+  food("Клубника", "Фрукты", 32, 0.7, 0.3, 8, 200, ["ягоды"]),
+  food("Черника", "Фрукты", 57, 0.7, 0.3, 14, 150, ["ягоды"]),
+  food("Груша", "Фрукты", 57, 0.4, 0.1, 15, 180, ["груша"]),
+  food("Ананас", "Фрукты", 50, 0.5, 0.1, 13, 200, ["ананас"]),
+  food("Огурцы", "Овощи", 15, 0.7, 0.1, 3.6, 150, ["огурец"]),
+  food("Помидоры", "Овощи", 18, 0.9, 0.2, 3.9, 180, ["томат"]),
+  food("Брокколи", "Овощи", 35, 2.4, 0.4, 7, 180, ["брокколи"]),
+  food("Салат листовой", "Овощи", 16, 1.4, 0.2, 2.9, 120, ["салат"], modifierPresets.salad),
+  food("Морковь", "Овощи", 41, 0.9, 0.2, 10, 120, ["морковь"]),
+  food("Овощной салат", "Овощи", 55, 1.5, 3, 6, 220, ["салат"], modifierPresets.salad),
+  food("Цезарь с курицей", "Овощи", 190, 12, 13, 8, 260, ["салат", "цезарь"], modifierPresets.salad),
+  food("Греческий салат", "Овощи", 150, 5, 12, 5, 250, ["салат"], modifierPresets.salad),
+  food("Суп куриный", "Супы", 55, 4, 2, 5, 350, ["суп"]),
+  food("Борщ", "Супы", 65, 4, 3, 7, 350, ["суп"]),
+  food("Том-ям", "Супы", 95, 6, 5, 7, 350, ["суп"]),
+  food("Солянка", "Супы", 90, 5, 6, 5, 350, ["суп"]),
+  food("Гороховый суп", "Супы", 75, 4, 3, 9, 350, ["суп"]),
+  food("Крем-суп грибной", "Супы", 82, 3, 5, 7, 300, ["суп", "грибы"]),
+  food("Бургер", "Фастфуд", 260, 13, 13, 24, 220, ["burger"], modifierPresets.burger),
+  food("Чизбургер", "Фастфуд", 290, 15, 16, 25, 220, ["burger", "сыр"], modifierPresets.burger),
+  food("Биг Мак", "Фастфуд", 250, 12, 13, 21, 220, ["big mac", "мак"], modifierPresets.burger),
+  food("Шаурма", "Фастфуд", 210, 12, 9, 21, 350, ["шаверма"], modifierPresets.shawarma),
+  food("Кебаб", "Фастфуд", 230, 14, 11, 20, 320, ["кебаб"], modifierPresets.shawarma),
+  food("Хот-дог", "Фастфуд", 280, 10, 16, 25, 180, ["hot dog"], modifierPresets.burger),
+  food("Картофель фри", "Фастфуд", 312, 3.4, 15, 41, 120, ["фри"]),
+  food("Наггетсы", "Фастфуд", 295, 15, 19, 16, 150, ["нагетсы", "курица"]),
+  food("Тако", "Фастфуд", 220, 11, 10, 22, 180, ["taco"]),
+  food("Пицца Маргарита", "Пицца", 240, 10, 8, 32, 250, ["маргарита"], modifierPresets.pizza),
+  food("Пицца Пепперони", "Пицца", 290, 13, 14, 30, 250, ["pepperoni"], modifierPresets.pizza),
+  food("Пицца 4 сыра", "Пицца", 310, 14, 16, 29, 250, ["четыре сыра"], modifierPresets.pizza),
+  food("Пицца мясная", "Пицца", 320, 16, 17, 28, 250, ["мясная"], modifierPresets.pizza),
+  food("Ролл Филадельфия", "Суши", 170, 7, 7, 20, 240, ["роллы", "суши", "philadelphia"]),
+  food("Ролл Калифорния", "Суши", 150, 6, 5, 22, 220, ["роллы", "суши"]),
+  food("Запеченные роллы", "Суши", 210, 8, 10, 22, 260, ["роллы", "суши"]),
+  food("Суши с лососем", "Суши", 145, 8, 3, 22, 120, ["суши"]),
+  food("Поке с лососем", "Кафе и рестораны", 160, 10, 6, 18, 350, ["поке", "рис"]),
+  food("Поке с курицей", "Кафе и рестораны", 150, 11, 5, 17, 350, ["поке", "рис", "курица"]),
+  food("Боул с говядиной", "Кафе и рестораны", 185, 13, 8, 16, 360, ["боул", "рис", "говядина"]),
+  food("Завтрак в кафе", "Кафе и рестораны", 210, 10, 11, 18, 350, ["кафе", "завтрак"]),
+  food("Сырники", "Кафе и рестораны", 230, 14, 10, 22, 200, ["творог"]),
+  food("Круассан", "Кафе и рестораны", 406, 8, 21, 46, 80, ["выпечка"]),
+  food("Авокадо-тост", "Кафе и рестораны", 230, 7, 14, 20, 180, ["тост", "авокадо"]),
+  food("Блины", "Кафе и рестораны", 210, 6, 7, 31, 180, ["панкейки"]),
+  food("Панкейки", "Кафе и рестораны", 230, 6, 8, 34, 200, ["блины"]),
+  food("Паста карбонара", "Кафе и рестораны", 280, 12, 16, 23, 300, ["паста"]),
+  food("Паста болоньезе", "Кафе и рестораны", 210, 10, 8, 24, 300, ["паста", "фарш"]),
+  food("Рамен", "Кафе и рестораны", 95, 5, 4, 11, 450, ["суп", "лапша"]),
+  food("Шоколад", "Сладости", 540, 6, 33, 55, 40, ["шоколадка"]),
+  food("Печенье", "Сладости", 480, 6, 22, 64, 50, ["cookies"]),
+  food("Торт", "Сладости", 350, 5, 18, 42, 120, ["десерт"]),
+  food("Чизкейк", "Сладости", 320, 6, 21, 27, 130, ["десерт"]),
+  food("Мороженое", "Сладости", 210, 4, 11, 24, 120, ["ice cream"]),
+  food("Шоколадный батончик", "Сладости", 500, 7, 25, 62, 55, ["сникерс", "марс"]),
+  food("Попкорн", "Сладости", 380, 8, 14, 56, 80, ["popcorn"]),
+  food("Чипсы", "Сладости", 520, 6, 32, 53, 90, ["chips"]),
+  food("Орехи микс", "Сладости", 600, 18, 52, 16, 35, ["орехи"]),
+  food("Миндаль", "Сладости", 579, 21, 50, 22, 30, ["орехи"]),
+  food("Фисташки", "Сладости", 560, 20, 45, 28, 35, ["орехи"]),
+  food("Арахисовая паста", "Сладости", 590, 25, 50, 20, 30, ["паста", "арахис"]),
+  food("Масло сливочное", "Сладости", 748, 0.5, 82, 0.8, 10, ["масло"]),
+  food("Кола", "Напитки", 42, 0, 0, 10.6, 330, ["coca cola", "cola"]),
+  food("Кола zero", "Напитки", 1, 0, 0, 0, 330, ["zero", "cola"]),
+  food("Сок", "Напитки", 46, 0.5, 0, 11, 250, ["juice"]),
+  food("Капучино", "Напитки", 45, 2, 2, 4, 250, ["кофе"], modifierPresets.coffee),
+  food("Латте", "Напитки", 55, 2.5, 2.5, 5, 300, ["кофе"], modifierPresets.coffee),
+  food("Американо", "Напитки", 2, 0, 0, 0, 250, ["кофе"], modifierPresets.coffee),
+  food("Энергетик", "Напитки", 45, 0, 0, 11, 450, ["energy"]),
+  food("Кефир", "Напитки", 50, 3, 2.5, 4, 250, ["кефир"]),
+  food("Айран", "Напитки", 35, 2, 1.5, 3, 250, ["айран"]),
+  food("Молоко", "Напитки", 60, 3, 3.2, 4.7, 250, ["milk"]),
+  food("Чай с сахаром", "Напитки", 32, 0, 0, 8, 250, ["чай"]),
+  food("Майонез", "Соусы", 680, 1, 75, 1, 20, ["соус"]),
+  food("Кетчуп", "Соусы", 110, 1, 0.2, 26, 25, ["соус"]),
+  food("Соус BBQ", "Соусы", 170, 1, 1, 40, 25, ["барбекю"]),
+  food("Оливковое масло", "Соусы", 884, 0, 100, 0, 10, ["масло"]),
+];
+
+const getFoodByKey = (key) => nutritionFoodLibrary.find(item => item.key === key) || null;
+const getFoodSearchText = (foodItem) => [foodItem.name, foodItem.category, ...(foodItem.synonyms || [])].join(" ").toLowerCase().replace(/ё/g, "е");
+const calculateNutritionItemTotals = (foodItem, grams = foodItem?.default_grams || 100, selectedModifierIds = []) => {
+  const ratio = Math.max(0, Number(grams || 0)) / 100;
+  const selected = new Set(selectedModifierIds || []);
+  const modifierTotals = (foodItem?.modifiers || []).filter(modifier => selected.has(modifier.id)).reduce((acc, modifier) => ({
+    calories: acc.calories + Number(modifier.calories || 0),
+    protein: acc.protein + Number(modifier.protein || 0),
+    fat: acc.fat + Number(modifier.fat || 0),
+    carbs: acc.carbs + Number(modifier.carbs || 0),
+  }), { calories: 0, protein: 0, fat: 0, carbs: 0 });
+  return {
+    calories: Math.max(0, roundCalories(Number(foodItem?.calories_per_100 || 0) * ratio + modifierTotals.calories)),
+    protein: Math.max(0, roundMacro(Number(foodItem?.protein_per_100 || 0) * ratio + modifierTotals.protein)),
+    fat: Math.max(0, roundMacro(Number(foodItem?.fat_per_100 || 0) * ratio + modifierTotals.fat)),
+    carbs: Math.max(0, roundMacro(Number(foodItem?.carbs_per_100 || 0) * ratio + modifierTotals.carbs)),
+  };
+};
+
+const buildNutritionPayloadFromFood = (foodItem, grams, selectedModifierIds, notes = "") => {
+  const totals = calculateNutritionItemTotals(foodItem, grams, selectedModifierIds);
+  return {
+    food_key: foodItem.key,
+    food_name: foodItem.name,
+    food_category: foodItem.category,
+    serving_grams: Number(grams || 0),
+    base_calories_per_100: Number(foodItem.calories_per_100 || 0),
+    base_protein_per_100: Number(foodItem.protein_per_100 || 0),
+    base_fat_per_100: Number(foodItem.fat_per_100 || 0),
+    base_carbs_per_100: Number(foodItem.carbs_per_100 || 0),
+    selected_modifiers: (foodItem.modifiers || []).filter(modifier => selectedModifierIds.includes(modifier.id)),
+    calories_total: totals.calories,
+    protein_total: totals.protein,
+    fat_total: totals.fat,
+    carbs_total: totals.carbs,
+    notes,
+  };
+};
+
+const mapNutritionItem = (row = {}) => ({
+  id: row.id || `local-item-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  foodKey: row.food_key || row.foodKey || row.key,
+  foodName: row.food_name || row.foodName || row.name || "Продукт",
+  foodCategory: row.food_category || row.foodCategory || row.category || "На глаз",
+  servingGrams: Number(row.serving_grams ?? row.servingGrams ?? 100),
+  baseCaloriesPer100: Number(row.base_calories_per_100 ?? row.baseCaloriesPer100 ?? row.calories_per_100 ?? 0),
+  baseProteinPer100: Number(row.base_protein_per_100 ?? row.baseProteinPer100 ?? row.protein_per_100 ?? 0),
+  baseFatPer100: Number(row.base_fat_per_100 ?? row.baseFatPer100 ?? row.fat_per_100 ?? 0),
+  baseCarbsPer100: Number(row.base_carbs_per_100 ?? row.baseCarbsPer100 ?? row.carbs_per_100 ?? 0),
+  selectedModifiers: Array.isArray(row.selected_modifiers) ? row.selected_modifiers : (Array.isArray(row.selectedModifiers) ? row.selectedModifiers : []),
+  calories: roundCalories(row.calories_total ?? row.caloriesTotal ?? row.calories ?? 0),
+  protein: roundMacro(row.protein_total ?? row.proteinTotal ?? row.protein ?? 0),
+  fat: roundMacro(row.fat_total ?? row.fatTotal ?? row.fat ?? 0),
+  carbs: roundMacro(row.carbs_total ?? row.carbsTotal ?? row.carbs ?? 0),
+  itemOrder: Number(row.item_order ?? row.itemOrder ?? 0),
+  notes: row.notes || "",
+  createdAt: row.created_at || row.createdAt || null,
+});
+
+const mapNutritionMeal = (row = {}) => ({
+  id: row.id || `local-meal-${row.meal_type || row.type || Date.now()}`,
+  type: row.meal_type || row.type || "snack",
+  title: row.meal_title || row.title || row.name || nutritionMealTypes.find(item => item.type === row.meal_type)?.title || "Прием пищи",
+  order: Number(row.meal_order ?? row.order ?? 0),
+  calories: roundCalories(row.calories_total ?? row.calories ?? 0),
+  protein: roundMacro(row.protein_total ?? row.protein ?? 0),
+  fat: roundMacro(row.fat_total ?? row.fat ?? 0),
+  carbs: roundMacro(row.carbs_total ?? row.carbs ?? 0),
+  items: (row.nutrition_items || row.items || []).map(mapNutritionItem).sort((a, b) => a.itemOrder - b.itemOrder),
+});
+
+const getNutritionDayTotalsFromMeals = (meals = []) => meals.reduce((acc, meal) => ({
+  calories: acc.calories + Number(meal.calories || 0),
+  protein: acc.protein + Number(meal.protein || 0),
+  fat: acc.fat + Number(meal.fat || 0),
+  carbs: acc.carbs + Number(meal.carbs || 0),
+}), { calories: 0, protein: 0, fat: 0, carbs: 0 });
+
+const normalizeNutritionDay = (result = {}, fallbackDate = formatDateKey(new Date()), fallbackGoal = initialNutritionGoal) => {
+  const day = result.nutrition_day || result.day || result || {};
+  const rawMeals = result.nutrition_meals || result.meals || [];
+  const mealsByType = new Map(rawMeals.map(meal => [meal.meal_type || meal.type, mapNutritionMeal(meal)]));
+  const meals = nutritionMealTypes.map(def => mealsByType.get(def.type) || mapNutritionMeal({
+    meal_type: def.type,
+    meal_title: def.title,
+    meal_order: def.order,
+    nutrition_items: [],
+  }));
+  const computedTotals = getNutritionDayTotalsFromMeals(meals);
+  return {
+    id: day.id || null,
+    date: day.nutrition_date || day.date || fallbackDate,
+    goal: {
+      calories: Number(day.calories_target ?? day.goal?.calories ?? fallbackGoal.calories ?? initialNutritionGoal.calories),
+      protein: Number(day.protein_target ?? day.goal?.protein ?? fallbackGoal.protein ?? initialNutritionGoal.protein),
+      fat: Number(day.fat_target ?? day.goal?.fat ?? fallbackGoal.fat ?? initialNutritionGoal.fat),
+      carbs: Number(day.carbs_target ?? day.goal?.carbs ?? fallbackGoal.carbs ?? initialNutritionGoal.carbs),
+    },
+    totals: {
+      calories: roundCalories(day.calories_total ?? day.totals?.calories ?? computedTotals.calories),
+      protein: roundMacro(day.protein_total ?? day.totals?.protein ?? computedTotals.protein),
+      fat: roundMacro(day.fat_total ?? day.totals?.fat ?? computedTotals.fat),
+      carbs: roundMacro(day.carbs_total ?? day.totals?.carbs ?? computedTotals.carbs),
+    },
+    meals,
+    favorites: (result.favorites || []).map(favorite => ({ id: favorite.id, foodKey: favorite.food_key, foodSnapshot: favorite.food_snapshot || {} })),
+    recentFoods: (result.recent_foods || []).map(mapNutritionItem),
+    frequentFoods: (result.frequent_foods || []).map(item => ({ ...mapNutritionItem(item), useCount: item.use_count || item.useCount || 0 })),
+  };
+};
+
+const buildLocalNutritionDay = (dateKey = formatDateKey(new Date()), goal = initialNutritionGoal) => normalizeNutritionDay({
+  nutrition_day: {
+    nutrition_date: dateKey,
+    calories_target: goal.calories,
+    protein_target: goal.protein,
+    fat_target: goal.fat,
+    carbs_target: goal.carbs,
+  },
+  nutrition_meals: nutritionMealTypes.map(def => ({ meal_type: def.type, meal_title: def.title, meal_order: def.order, nutrition_items: [] })),
+}, dateKey, goal);
+
+const recalculateNutritionDayLocal = (day) => {
+  const meals = (day?.meals || []).map(meal => {
+    const totals = (meal.items || []).reduce((acc, item) => ({
+      calories: acc.calories + Number(item.calories || 0),
+      protein: acc.protein + Number(item.protein || 0),
+      fat: acc.fat + Number(item.fat || 0),
+      carbs: acc.carbs + Number(item.carbs || 0),
     }), { calories: 0, protein: 0, fat: 0, carbs: 0 });
-  }, [nutritionMeals]);
+    return { ...meal, calories: roundCalories(totals.calories), protein: roundMacro(totals.protein), fat: roundMacro(totals.fat), carbs: roundMacro(totals.carbs) };
+  });
+  const totals = getNutritionDayTotalsFromMeals(meals);
+  return {
+    ...day,
+    meals,
+    totals: {
+      calories: roundCalories(totals.calories),
+      protein: roundMacro(totals.protein),
+      fat: roundMacro(totals.fat),
+      carbs: roundMacro(totals.carbs),
+    },
+  };
+};
 
-  const nutritionPercent = (value, goal) => Math.min(100, goal ? Math.round((Number(value || 0) / Number(goal || 1)) * 100) : 0);
+const snapshotFoodFromPayload = (item = {}) => ({
+  key: item.food_key || item.foodKey || item.key || normalizeFoodKey(item.food_name || item.foodName || item.name || "product"),
+  name: item.food_name || item.foodName || item.name || "Продукт",
+  category: item.food_category || item.foodCategory || item.category || "На глаз",
+  calories_per_100: Number(item.base_calories_per_100 ?? item.baseCaloriesPer100 ?? item.calories_per_100 ?? 0),
+  protein_per_100: Number(item.base_protein_per_100 ?? item.baseProteinPer100 ?? item.protein_per_100 ?? 0),
+  fat_per_100: Number(item.base_fat_per_100 ?? item.baseFatPer100 ?? item.fat_per_100 ?? 0),
+  carbs_per_100: Number(item.base_carbs_per_100 ?? item.baseCarbsPer100 ?? item.carbs_per_100 ?? 0),
+  default_grams: Number(item.serving_grams ?? item.servingGrams ?? item.default_grams ?? 100),
+  modifiers: Array.isArray(item.modifiers) ? item.modifiers : (item.selected_modifiers || item.selectedModifiers || []),
+  defaultSelectedModifierIds: item.defaultSelectedModifierIds || (item.selected_modifiers || item.selectedModifiers || []).map(modifier => modifier.id || modifier).filter(Boolean),
+  synonyms: [],
+});
 
-  const openNewMeal = () => {
-    setEditingMeal({
-      id: Date.now(),
-      name: "Новый прием",
-      food: "Впиши продукты",
-      calories: 0,
-      protein: 0,
-      fat: 0,
-      carbs: 0,
-      isNew: true,
+const buildNutritionItemFromPayload = (payload = {}) => mapNutritionItem({
+  id: `local-nutrition-item-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  created_at: new Date().toISOString(),
+  item_order: payload.item_order || payload.itemOrder || 0,
+  ...payload,
+});
+
+const applyLocalNutritionAction = (day, action, payload = {}) => {
+  let next = day || buildLocalNutritionDay(payload.date || formatDateKey(new Date()));
+  if (action === "add_item" || action === "copy_recent_item") {
+    const item = buildNutritionItemFromPayload(payload.item || payload);
+    next = {
+      ...next,
+      meals: next.meals.map(meal => meal.type === payload.meal_type
+        ? { ...meal, items: [...(meal.items || []), { ...item, itemOrder: (meal.items || []).length + 1 }] }
+        : meal),
+      recentFoods: [item, ...(next.recentFoods || []).filter(food => food.foodKey !== item.foodKey)].slice(0, 20),
+      frequentFoods: [item, ...(next.frequentFoods || []).filter(food => food.foodKey !== item.foodKey)].slice(0, 20),
+    };
+  }
+  if (action === "update_item") {
+    const item = buildNutritionItemFromPayload({ ...(payload.item || payload), id: payload.id || payload.item_id });
+    next = {
+      ...next,
+      meals: next.meals.map(meal => ({
+        ...meal,
+        items: (meal.items || []).map(existing => existing.id === item.id ? { ...existing, ...item } : existing),
+      })),
+    };
+  }
+  if (action === "delete_item") {
+    const id = payload.id || payload.item_id;
+    next = {
+      ...next,
+      meals: next.meals.map(meal => ({ ...meal, items: (meal.items || []).filter(item => item.id !== id) })),
+    };
+  }
+  if (action === "toggle_favorite") {
+    const key = payload.food_key || payload.foodKey;
+    const exists = (next.favorites || []).some(favorite => favorite.foodKey === key);
+    next = {
+      ...next,
+      favorites: exists
+        ? (next.favorites || []).filter(favorite => favorite.foodKey !== key)
+        : [{ id: `local-favorite-${key}`, foodKey: key, foodSnapshot: payload.food_snapshot || payload.foodSnapshot || {} }, ...(next.favorites || [])],
+    };
+  }
+  return recalculateNutritionDayLocal(next);
+};
+
+const deriveHomeMealsFromNutritionDay = (day) => (day?.meals || []).map(meal => ({
+  id: meal.id,
+  name: meal.title,
+  food: meal.items?.length ? meal.items.map(item => item.foodName).join(", ") : "ничего не добавлено",
+  calories: meal.calories,
+  protein: meal.protein,
+  fat: meal.fat,
+  carbs: meal.carbs,
+}));
+
+function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutritionGoal, selectedDateKey, setSelectedDateKey, profile, telegramInitData, onNutritionAction, nutritionLoading }) {
+  const day = nutritionDay || buildLocalNutritionDay(selectedDateKey, nutritionGoal);
+  const [mealChoiceOpen, setMealChoiceOpen] = useState(false);
+  const [foodPickerOpen, setFoodPickerOpen] = useState(false);
+  const [targetMealType, setTargetMealType] = useState(null);
+  const [activeFoodTab, setActiveFoodTab] = useState("eyeball");
+  const [foodSearch, setFoodSearch] = useState("");
+  const [foodDraft, setFoodDraft] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [swipedItemId, setSwipedItemId] = useState(null);
+
+  useAppBackLayer("nutrition-meal-choice", mealChoiceOpen, () => setMealChoiceOpen(false), 142);
+  useAppBackLayer("nutrition-food-picker", foodPickerOpen && !foodDraft, () => setFoodPickerOpen(false), 143);
+  useAppBackLayer("nutrition-food-draft", Boolean(foodDraft), () => setFoodDraft(null), 144);
+
+  const totals = day.totals || { calories: 0, protein: 0, fat: 0, carbs: 0 };
+  const goal = day.goal || nutritionGoal || initialNutritionGoal;
+  const percent = (value, target) => Math.min(100, Math.round((Number(value || 0) / Math.max(1, Number(target || 1))) * 100));
+  const caloriesPercent = percent(totals.calories, goal.calories);
+  const markedDateKeys = (day.meals || []).some(meal => meal.items?.length) ? [selectedDateKey] : [];
+
+  useEffect(() => {
+    if (day.goal) setNutritionGoal(day.goal);
+  }, [day.goal?.calories, day.goal?.protein, day.goal?.fat, day.goal?.carbs]);
+
+  const showSoon = () => {
+    setNotice("Функция появится позже");
+    setTimeout(() => setNotice(null), 1800);
+  };
+
+  const openMealChoice = () => {
+    setMealChoiceOpen(true);
+  };
+
+  const openFoodPicker = (mealType) => {
+    setTargetMealType(mealType);
+    setMealChoiceOpen(false);
+    setFoodPickerOpen(true);
+    setActiveFoodTab("eyeball");
+    setFoodSearch("");
+    setFoodDraft(null);
+  };
+
+  const foodFromItem = (item) => {
+    const fromLibrary = getFoodByKey(item.foodKey);
+    const selectedModifierIds = item.selectedModifiers?.map(modifier => modifier.id || modifier).filter(Boolean) || [];
+    if (fromLibrary) return {
+      ...fromLibrary,
+      default_grams: item.servingGrams || fromLibrary.default_grams,
+      defaultSelectedModifierIds: selectedModifierIds,
+    };
+    return {
+      key: item.foodKey,
+      name: item.foodName,
+      category: item.foodCategory,
+      synonyms: [],
+      calories_per_100: item.baseCaloriesPer100,
+      protein_per_100: item.baseProteinPer100,
+      fat_per_100: item.baseFatPer100,
+      carbs_per_100: item.baseCarbsPer100,
+      default_grams: item.servingGrams,
+      modifiers: item.selectedModifiers || [],
+      defaultSelectedModifierIds: selectedModifierIds,
+    };
+  };
+
+  const openFoodDraft = (foodItem, mealType = targetMealType, item = null) => {
+    const selectedModifierIds = item?.selectedModifiers?.map(modifier => modifier.id || modifier).filter(Boolean) || foodItem.defaultSelectedModifierIds || [];
+    setFoodDraft({
+      mode: item ? "edit" : "add",
+      itemId: item?.id || null,
+      mealType,
+      food: foodItem,
+      grams: item?.servingGrams || foodItem.default_grams || 100,
+      selectedModifierIds,
+      notes: item?.notes || "",
     });
-    setMealModalOpen(true);
   };
 
-  const openMeal = (meal) => {
-    setEditingMeal({ ...meal, isNew: false });
-    setMealModalOpen(true);
-  };
+  const filteredFoods = useMemo(() => {
+    const query = foodSearch.trim().toLowerCase().replace(/ё/g, "е");
+    if (!query) return nutritionFoodLibrary.slice(0, 80);
+    return nutritionFoodLibrary.filter(item => getFoodSearchText(item).includes(query)).slice(0, 90);
+  }, [foodSearch]);
 
-  const updateEditingMeal = (field, value) => {
-    setEditingMeal(prev => ({
-      ...prev,
-      [field]: ["calories", "protein", "fat", "carbs"].includes(field) ? Number(value) : value,
-    }));
-  };
+  const favoriteKeys = new Set((day.favorites || []).map(item => item.foodKey));
+  const draftTotals = foodDraft ? calculateNutritionItemTotals(foodDraft.food, foodDraft.grams, foodDraft.selectedModifierIds) : null;
 
-  const saveMeal = () => {
-    if (!editingMeal) return;
-
-    const { isNew, ...mealToSave } = editingMeal;
-    setNutritionMeals(prev => {
-      if (isNew) return [...prev, mealToSave];
-      return prev.map(meal => meal.id === mealToSave.id ? mealToSave : meal);
+  const saveFoodDraft = async () => {
+    if (!foodDraft?.food) return;
+    const payload = buildNutritionPayloadFromFood(foodDraft.food, foodDraft.grams, foodDraft.selectedModifierIds, foodDraft.notes);
+    const action = foodDraft.mode === "edit" ? "update_item" : "add_item";
+    const result = await onNutritionAction(action, {
+      date: selectedDateKey,
+      meal_type: foodDraft.mealType,
+      id: foodDraft.itemId,
+      item: payload,
     });
-    setMealModalOpen(false);
-    setEditingMeal(null);
+    if (result) {
+      setFoodDraft(null);
+      setFoodPickerOpen(false);
+      setMealChoiceOpen(false);
+    }
   };
 
-  const removeMeal = (id) => {
-    setNutritionMeals(prev => prev.filter(meal => meal.id !== id));
-    setMealModalOpen(false);
-    setEditingMeal(null);
+  const deleteFoodItem = async (itemId) => {
+    await onNutritionAction("delete_item", { date: selectedDateKey, id: itemId });
+    setSwipedItemId(null);
   };
 
-  const duplicateMeal = (meal) => {
-    setNutritionMeals(prev => {
-      const baseName = meal.name.replace(/\s\d+$/, "");
-      const existingCopies = prev.filter(item => item.name === baseName || item.name.startsWith(baseName + " "));
-      const nextNumber = existingCopies.length;
-
-      return [
-        ...prev,
-        {
-          ...meal,
-          id: Date.now(),
-          name: baseName + " " + nextNumber,
-        }
-      ];
+  const toggleFavorite = async (foodItem) => {
+    await onNutritionAction("toggle_favorite", {
+      date: selectedDateKey,
+      food_key: foodItem.key,
+      food_snapshot: foodItem,
     });
   };
 
-  const handleMealContextMenu = (event, meal) => {
-    event.preventDefault();
-    duplicateMeal(meal);
+  const renderFoodButton = (foodItem, source = "") => {
+    const foodCard = snapshotFoodFromPayload(foodItem || {});
+    return <button key={`${source}-${foodCard.key}`} onClick={() => openFoodDraft(foodCard)} className="w-full rounded-2xl bg-white/[0.04] p-4 text-left transition active:scale-[0.99] hover:bg-white/[0.07]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="break-words text-base font-black text-zinc-100">{foodCard.name}</div>
+          <div className="mt-1 text-xs font-semibold text-red-400">{foodCard.category}</div>
+        </div>
+        <div className="shrink-0 text-right text-xs text-zinc-500">{foodCard.default_grams || 100} г</div>
+      </div>
+      <div className="mt-3 text-xs text-zinc-500">{foodCard.calories_per_100} ккал · {foodCard.protein_per_100} Б · {foodCard.fat_per_100} Ж · {foodCard.carbs_per_100} У</div>
+    </button>;
   };
 
-  const updateGoal = (field, value) => {
-    setNutritionGoal(prev => ({ ...prev, [field]: Number(value) }));
-  };
-
-  const selectedNutritionTotals = useMemo(() => buildNutritionTotalsForDate(selectedNutritionDateKey, nutritionTotals), [selectedNutritionDateKey, nutritionTotals]);
-  const selectedNutritionMeals = useMemo(() => buildMealsForDate(selectedNutritionDateKey, nutritionMeals), [selectedNutritionDateKey, nutritionMeals]);
-
-  const openNutritionCalendarDay = (dateKey) => {
-    setSelectedNutritionDateKey(dateKey);
-  };
-
-  return <><Header title="Питание" subtitle="Дневник, калории, БЖУ, шаблоны приемов пищи и контроль недели."/>
+  return <><Header title="Питание" subtitle="Добавляй еду на глаз: порции, дополнения, избранное и быстрый поиск."/>
     <div className="mt-6">
-      <IOSWeekCalendar
-        title="Неделя питания"
-        selectedDateKey={selectedNutritionDateKey}
-        onSelect={openNutritionCalendarDay}
-        markedDateKeys={[formatDateKey(new Date()), formatDateKey(addDays(-1)), formatDateKey(addDays(-2)), formatDateKey(addDays(1))]}
-      />
+      <IOSWeekCalendar title="Неделя питания" selectedDateKey={selectedDateKey} onSelect={setSelectedDateKey} markedDateKeys={markedDateKeys}/>
     </div>
-    <InlineDateDataCard
-      context="nutrition"
-      dateKey={selectedNutritionDateKey}
-      nutritionMeals={selectedNutritionMeals}
-      nutritionTotals={selectedNutritionTotals}
-      nutritionGoal={nutritionGoal}
-    />
-    <PageGrid>
-      <Card className="p-5 xl:col-span-2">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-xl font-semibold">Дневник питания</h2>
-          <button
-            onClick={openNewMeal}
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-red-500 transition hover:bg-white/10"
-          >
-            +
-          </button>
-        </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          {selectedNutritionMeals.map(meal => (
-            <div
-              key={meal.id}
-              onContextMenu={(e) => handleMealContextMenu(e, meal)}
-              onClick={() => openMeal(meal)}
-              className="cursor-pointer rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:border-red-500/40 hover:bg-red-500/5"
-              title="ПКМ — дублировать прием"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <h3>{meal.name}</h3>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      duplicateMeal(meal);
-                    }}
-                    className="flex h-5 w-5 items-center justify-center rounded-full bg-white/5 text-[10px] text-zinc-400 transition hover:bg-white/10"
-                    title="Дублировать"
-                  >
-                    ⧉
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeMeal(meal.id);
-                    }}
-                    className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500/10 text-[10px] text-red-400 transition hover:bg-red-500/20"
-                    title="Удалить"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-              <p className="mt-2 break-words text-sm text-zinc-400">{meal.food}</p>
-              <p className="mt-3 text-sm">{meal.calories} ккал</p>
-              <p className="mt-1 break-words text-xs text-zinc-500">{meal.protein} Б / {meal.fat} Ж / {meal.carbs} У</p>
+    <div className="mt-5 rounded-[28px] border border-white/10 bg-white/[0.035] p-4">
+      <div className="grid grid-cols-[126px_1fr] gap-4">
+        <div className="flex flex-col items-center justify-center">
+          <div className="relative h-[86px] w-32 overflow-hidden">
+            <div className="absolute left-0 top-0 h-32 w-32 rounded-full" style={{ background: `conic-gradient(from 270deg, #ef4444 0deg ${Math.round(caloriesPercent * 1.8)}deg, #27272a ${Math.round(caloriesPercent * 1.8)}deg 180deg, transparent 180deg 360deg)` }} />
+            <div className="absolute left-[10px] top-[10px] flex h-28 w-28 flex-col items-center justify-center rounded-full bg-zinc-950">
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Ккал</span>
+              <span className="mt-1 text-2xl font-black">{roundCalories(totals.calories)}</span>
+              <span className="text-[10px] text-zinc-500">/ {goal.calories}</span>
             </div>
-          ))}
-        </div>
-      </Card>
-
-      <Card className="p-5">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-xl font-semibold">Цель дня</h2>
-          <button onClick={() => setGoalModalOpen(true)} className="rounded-lg bg-white/5 px-3 py-2 text-xs text-zinc-400 transition hover:bg-white/10">Изменить</button>
-        </div>
-        <div className="mt-5 flex justify-center"><NutritionRing calories={selectedNutritionTotals.calories} goal={nutritionGoal.calories}/></div>
-        <div className="mt-6 space-y-4 text-sm">
-          <div>Белки <span className="float-right">{selectedNutritionTotals.protein} / {nutritionGoal.protein}г</span><Progress value={nutritionPercent(selectedNutritionTotals.protein, nutritionGoal.protein)}/></div>
-          <div>Жиры <span className="float-right">{selectedNutritionTotals.fat} / {nutritionGoal.fat}г</span><Progress value={nutritionPercent(selectedNutritionTotals.fat, nutritionGoal.fat)}/></div>
-          <div>Углеводы <span className="float-right">{selectedNutritionTotals.carbs} / {nutritionGoal.carbs}г</span><Progress value={nutritionPercent(selectedNutritionTotals.carbs, nutritionGoal.carbs)}/></div>
-          <div>Калории <span className="float-right">{selectedNutritionTotals.calories} / {nutritionGoal.calories}</span><Progress value={nutritionPercent(selectedNutritionTotals.calories, nutritionGoal.calories)}/></div>
-        </div>
-      </Card>
-
-      <Card className="p-5">
-        <h2 className="text-xl font-semibold">Шаблоны</h2>
-        {["Рекомпозиция", "Сушка", "Набор мышц", "Питание на бегу"].map(x => <button key={x} onClick={() => {
-          if (x === "Сушка") setNutritionGoal({ calories: 2300, protein: 190, fat: 60, carbs: 245 });
-          if (x === "Набор мышц") setNutritionGoal({ calories: 3300, protein: 190, fat: 90, carbs: 430 });
-          if (x === "Рекомпозиция") setNutritionGoal({ calories: 2800, protein: 190, fat: 70, carbs: 260 });
-          if (x === "Питание на бегу") setNutritionGoal({ calories: 2600, protein: 170, fat: 75, carbs: 300 });
-        }} className="mt-3 w-full rounded-lg bg-white/[0.03] p-3 text-left text-sm transition hover:bg-white/8">{x}</button>)}
-        <Button as="a" href={calculatorLinks.macros} className="mt-5 w-full bg-white/8">Рассчитать БЖУ <ExternalLink size={14}/></Button>
-      </Card>
-    </PageGrid>
-
-    {mealModalOpen && editingMeal && <div onClick={() => setMealModalOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <Card onClick={(e) => e.stopPropagation()} className="w-full max-w-xl p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-semibold">{editingMeal.isNew ? "Добавить прием" : "Изменить прием"}</h2>
-            <p className="mt-2 text-sm text-zinc-500">Внеси данные вручную. После сохранения цель дня пересчитается.</p>
-          </div>
-          <button onClick={() => setMealModalOpen(false)} className="flex h-7 w-7 items-center justify-center rounded-full bg-red-500/10 text-red-400 transition hover:bg-red-500/20">×</button>
-        </div>
-
-        <div className="mt-6 space-y-3">
-          <label className="block rounded-xl bg-white/[0.03] p-3">
-            <span className="text-[10px] uppercase tracking-wider text-zinc-500">Название приема</span>
-            <input value={editingMeal.name} onChange={(e) => updateEditingMeal("name", e.target.value)} className="mt-1 w-full bg-transparent text-lg outline-none" />
-          </label>
-          <label className="block rounded-xl bg-white/[0.03] p-3">
-            <span className="text-[10px] uppercase tracking-wider text-zinc-500">Продукты / описание</span>
-            <input value={editingMeal.food} onChange={(e) => updateEditingMeal("food", e.target.value)} className="mt-1 w-full bg-transparent text-sm text-zinc-300 outline-none" />
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            {[["calories", "Ккал"], ["protein", "Белки"], ["fat", "Жиры"], ["carbs", "Углеводы"]].map(([field, label]) => <label key={field} className="rounded-xl bg-white/[0.03] p-3">
-              <span className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</span>
-              <input type="number" value={editingMeal[field]} onChange={(e) => updateEditingMeal(field, e.target.value)} className="mt-1 w-full bg-transparent text-lg outline-none" />
-            </label>)}
           </div>
         </div>
-
-        <div className="mt-6 flex flex-wrap justify-between gap-3">
-          {!editingMeal.isNew && <Button onClick={() => removeMeal(editingMeal.id)} className="bg-red-500/10 text-red-400 hover:bg-red-500/20">Удалить</Button>}
-          <div className="ml-auto flex gap-3">
-            <Button onClick={() => setMealModalOpen(false)} className="bg-white/8">Отмена</Button>
-            <Button onClick={saveMeal} className="bg-gradient-to-r from-red-700 to-red-500">Сохранить</Button>
-          </div>
+        <div className="space-y-3">
+          {[["Белки", totals.protein, goal.protein], ["Жиры", totals.fat, goal.fat], ["Углеводы", totals.carbs, goal.carbs]].map(([label, value, target]) => <div key={label}>
+            <div className="flex justify-between gap-3 text-xs"><span className="font-bold text-zinc-400">{label}</span><span className="text-zinc-500">{roundMacro(value)} / {target} г</span></div>
+            <div className="mt-2"><Progress value={percent(value, target)}/></div>
+          </div>)}
         </div>
-      </Card>
+      </div>
+      {nutritionLoading && <div className="mt-3 text-xs text-zinc-600">Синхронизация питания...</div>}
+    </div>
+
+    <div className="mt-5 flex items-center justify-between gap-3">
+      <h2 className="text-xl font-black tracking-[-0.03em]">Приемы пищи</h2>
+      <button onClick={openMealChoice} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/8 text-red-400"><Plus size={22}/></button>
+    </div>
+
+    <div className="mt-3 space-y-3 pb-24">
+      {(day.meals || []).map(meal => <div key={meal.type} className="overflow-hidden rounded-[26px] border border-white/10 bg-zinc-950/80">
+        <button onClick={openMealChoice} className="w-full p-4 text-left">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-black">{meal.title}</h3>
+              <p className="mt-1 text-xs text-zinc-500">{roundCalories(meal.calories)} ккал · {roundMacro(meal.protein)} Б / {roundMacro(meal.fat)} Ж / {roundMacro(meal.carbs)} У</p>
+            </div>
+            <span className="rounded-full bg-white/[0.06] px-3 py-1 text-xs font-bold text-zinc-400">{meal.items?.length || 0}</span>
+          </div>
+          {!meal.items?.length && <p className="mt-4 rounded-2xl bg-white/[0.03] p-4 text-sm text-zinc-500">ничего не добавлено</p>}
+        </button>
+        {!!meal.items?.length && <div className="border-t border-white/10">
+          {meal.items.map(item => <SwipeActionRow key={item.id} rowId={item.id} swipedId={swipedItemId} setSwipedId={setSwipedItemId} className="border-b border-white/10 last:border-b-0" actions={[
+            { label: "delete", icon: "🗑", className: "bg-red-500", onClick: () => deleteFoodItem(item.id) },
+          ]}>
+            <button onClick={() => openFoodDraft(foodFromItem(item), meal.type, item)} className="grid w-full grid-cols-[1fr_auto] gap-3 bg-zinc-950 px-4 py-4 text-left transition hover:bg-white/[0.03]">
+              <div className="min-w-0">
+                <div className="break-words font-black text-zinc-100">{item.foodName}</div>
+                <div className="mt-1 text-xs font-semibold text-red-400">{item.servingGrams} г · {item.foodCategory}</div>
+              </div>
+              <div className="shrink-0 text-right">
+                <div className="font-black">{item.calories}</div>
+                <div className="mt-1 text-[10px] text-zinc-500">{item.protein} Б · {item.fat} Ж · {item.carbs} У</div>
+              </div>
+            </button>
+          </SwipeActionRow>)}
+        </div>}
+      </div>)}
+    </div>
+
+    {notice && <div className="fixed left-1/2 top-[calc(var(--onlypump-safe-top)+22px)] z-[220] -translate-x-1/2 rounded-full bg-white px-4 py-2 text-sm font-black text-black shadow-2xl">{notice}</div>}
+
+    {mealChoiceOpen && <div onClick={() => setMealChoiceOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[180] flex items-end bg-black/55 p-4 backdrop-blur-sm">
+      <BottomSheetPanel onClose={() => setMealChoiceOpen(false)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+        <div className="flex items-start justify-between gap-3">
+          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Добавить еду</p><h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Выбери прием</h2></div>
+          <button onClick={() => setMealChoiceOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+        </div>
+        <div className="mt-5 space-y-2">
+          {nutritionMealTypes.map(meal => <button key={meal.type} onClick={() => openFoodPicker(meal.type)} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">{meal.title}</button>)}
+          <button onClick={() => setMealChoiceOpen(false)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
+        </div>
+      </BottomSheetPanel>
     </div>}
 
-    {goalModalOpen && <div onClick={() => setGoalModalOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <Card onClick={(e) => e.stopPropagation()} className="w-full max-w-lg p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-semibold">Цель дня</h2>
-            <p className="mt-2 text-sm text-zinc-500">Измени плановые калории и БЖУ.</p>
+    {foodPickerOpen && !foodDraft && <div onClick={() => setFoodPickerOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[185] flex items-end bg-black/55 p-3 backdrop-blur-sm">
+      <BottomSheetPanel onClose={() => setFoodPickerOpen(false)} onClick={(e) => e.stopPropagation()} className="mx-auto flex max-h-[calc(var(--onlypump-app-height)-24px)] w-full max-w-[520px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+        <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20" />
+        <div className="flex items-start justify-between gap-3">
+          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">{nutritionMealTypes.find(item => item.type === targetMealType)?.title || "Прием"}</p><h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Добавить продукт</h2></div>
+          <button onClick={() => setFoodPickerOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+        </div>
+        <div className="mt-5 grid grid-cols-3 gap-2">
+          {[["products", "Продукты"], ["recipes", "Рецепты"], ["eyeball", "На глаз"]].map(([id, label]) => <button key={id} onClick={() => id === "eyeball" ? setActiveFoodTab(id) : (setActiveFoodTab(id), showSoon())} className={`h-11 rounded-full text-sm font-black ${activeFoodTab === id ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-400"}`}>{label}</button>)}
+        </div>
+        {activeFoodTab !== "eyeball" ? <div className="mt-5 rounded-3xl bg-white/[0.04] p-8 text-center text-zinc-500">В разработке</div> : <>
+          <div className="mt-5 flex-1 overflow-y-auto pr-1 onlypump-scrollbar-none">
+            {(day.favorites || []).length > 0 && <div className="mb-6"><h3 className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Избранное</h3><div className="space-y-2">{day.favorites.slice(0, 8).map(favorite => renderFoodButton(getFoodByKey(favorite.foodKey) || favorite.foodSnapshot, "favorite"))}</div></div>}
+            {(day.recentFoods || []).length > 0 && <div className="mb-6"><h3 className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Недавние</h3><div className="space-y-2">{day.recentFoods.slice(0, 8).map(item => renderFoodButton(foodFromItem(item), "recent"))}</div></div>}
+            {(day.frequentFoods || []).length > 0 && <div className="mb-6"><h3 className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Частые</h3><div className="space-y-2">{day.frequentFoods.slice(0, 8).map(item => renderFoodButton(foodFromItem(item), "frequent"))}</div></div>}
+            <h3 className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">На глаз</h3>
+            <div className="space-y-2">{filteredFoods.length ? filteredFoods.map(item => renderFoodButton(item, "library")) : <div className="rounded-3xl bg-white/[0.04] p-8 text-center text-sm text-zinc-500">Ничего не найдено. Попробуй другое название.</div>}</div>
           </div>
-          <button onClick={() => setGoalModalOpen(false)} className="flex h-7 w-7 items-center justify-center rounded-full bg-red-500/10 text-red-400 transition hover:bg-red-500/20">×</button>
-        </div>
+          <div className="mt-4 rounded-2xl bg-white/[0.05] px-4 py-3">
+            <input value={foodSearch} onChange={(e) => setFoodSearch(e.target.value)} placeholder="Поиск: курица, роллы, мороженое..." className="w-full bg-transparent text-base outline-none placeholder:text-zinc-600" />
+          </div>
+        </>}
+      </BottomSheetPanel>
+    </div>}
 
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          {[["calories", "Ккал"], ["protein", "Белки"], ["fat", "Жиры"], ["carbs", "Углеводы"]].map(([field, label]) => <label key={field} className="rounded-xl bg-white/[0.03] p-3">
-            <span className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</span>
-            <input type="number" value={nutritionGoal[field]} onChange={(e) => updateGoal(field, e.target.value)} className="mt-1 w-full bg-transparent text-lg outline-none" />
-          </label>)}
+    {foodDraft && <div onClick={() => setFoodDraft(null)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/60 p-3 backdrop-blur-sm">
+      <BottomSheetPanel onClose={() => setFoodDraft(null)} onClick={(e) => e.stopPropagation()} className="mx-auto flex max-h-[calc(var(--onlypump-app-height)-24px)] w-full max-w-[500px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+        <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20" />
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">{foodDraft.food.category}</p><h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{foodDraft.food.name}</h2></div>
+          <button onClick={() => setFoodDraft(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
         </div>
-
-        <div className="mt-6 flex justify-end gap-3">
-          <Button onClick={() => setGoalModalOpen(false)} className="bg-gradient-to-r from-red-700 to-red-500">Готово</Button>
+        <div className="mt-4 grid grid-cols-4 gap-2 rounded-3xl bg-white/[0.04] p-3 text-center text-xs">
+          <div><b className="block text-lg text-white">{foodDraft.food.calories_per_100}</b><span className="text-zinc-500">ккал</span></div>
+          <div><b className="block text-lg text-white">{foodDraft.food.protein_per_100}</b><span className="text-zinc-500">Б</span></div>
+          <div><b className="block text-lg text-white">{foodDraft.food.fat_per_100}</b><span className="text-zinc-500">Ж</span></div>
+          <div><b className="block text-lg text-white">{foodDraft.food.carbs_per_100}</b><span className="text-zinc-500">У</span></div>
         </div>
-      </Card>
+        <div className="mt-4 flex-1 overflow-y-auto pr-1 onlypump-scrollbar-none">
+          <div className="rounded-3xl bg-black/28 p-4">
+            <div className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Порция</div>
+            <div className="grid grid-cols-3 gap-2">
+              {[50, 100, 150, 200, 250, 300].map(grams => <button key={grams} onClick={() => setFoodDraft(prev => ({ ...prev, grams }))} className={`h-10 rounded-full text-sm font-black ${Number(foodDraft.grams) === grams ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-300"}`}>{grams} г</button>)}
+            </div>
+            <label className="mt-3 flex items-center rounded-2xl bg-white/[0.05] px-4 py-3">
+              <input type="number" value={foodDraft.grams} onChange={(e) => setFoodDraft(prev => ({ ...prev, grams: e.target.value }))} className="w-full bg-transparent text-lg font-black outline-none" />
+              <span className="text-sm text-zinc-500">г</span>
+            </label>
+          </div>
+          {!!foodDraft.food.modifiers?.length && <div className="mt-4 rounded-3xl bg-black/28 p-4">
+            <div className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Дополнения</div>
+            <div className="space-y-2">{foodDraft.food.modifiers.map(modifier => {
+              const active = foodDraft.selectedModifierIds.includes(modifier.id);
+              return <button key={modifier.id} onClick={() => setFoodDraft(prev => ({ ...prev, selectedModifierIds: active ? prev.selectedModifierIds.filter(id => id !== modifier.id) : [...prev.selectedModifierIds, modifier.id] }))} className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left ${active ? "bg-red-500/18 text-red-200" : "bg-white/[0.04] text-zinc-300"}`}>
+                <span className="font-bold">{modifier.label}</span>
+                <span className="text-xs text-zinc-500">{modifier.calories > 0 ? "+" : ""}{modifier.calories} ккал</span>
+              </button>;
+            })}</div>
+          </div>}
+          <div className="mt-4 rounded-3xl border border-red-500/20 bg-red-500/10 p-4">
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div><b className="block text-2xl text-white">{draftTotals.calories}</b><span className="text-xs text-zinc-500">ккал</span></div>
+              <div><b className="block text-2xl text-white">{draftTotals.protein}</b><span className="text-xs text-zinc-500">Б</span></div>
+              <div><b className="block text-2xl text-white">{draftTotals.fat}</b><span className="text-xs text-zinc-500">Ж</span></div>
+              <div><b className="block text-2xl text-white">{draftTotals.carbs}</b><span className="text-xs text-zinc-500">У</span></div>
+            </div>
+          </div>
+        </div>
+        <div className="mt-5 grid grid-cols-[48px_1fr_1fr] gap-3 pb-[var(--onlypump-safe-bottom)]">
+          <button onClick={() => toggleFavorite(foodDraft.food)} className={`flex h-12 items-center justify-center rounded-full ${favoriteKeys.has(foodDraft.food.key) ? "bg-red-500 text-black" : "bg-white/8 text-zinc-200"}`}><Star size={20}/></button>
+          <button onClick={() => setFoodDraft(null)} className="h-12 rounded-full bg-white/8 font-black text-zinc-200">Отмена</button>
+          <button onClick={saveFoodDraft} className="h-12 rounded-full bg-red-500 font-black text-black">{foodDraft.mode === "edit" ? "Сохранить" : "Добавить"}</button>
+        </div>
+      </BottomSheetPanel>
     </div>}
   </>;
 }
@@ -8569,6 +9056,7 @@ function OnlyPumpPlatform() {
   const canGoBackRef = useRef(false);
   const supabaseClientRef = useRef(null);
   const profileSaveReadyRef = useRef(false);
+  const nutritionLoadingKeyRef = useRef("");
   const [supabaseClient, setSupabaseClient] = useState(null);
   const [telegramInitData, setTelegramInitData] = useState(telegramBootInitData);
   const [appLoading, setAppLoading] = useState(isTelegramBootMode);
@@ -8577,6 +9065,9 @@ function OnlyPumpPlatform() {
   const [globalSelectedDateKey, setGlobalSelectedDateKey] = useState(formatDateKey(new Date()));
   const [workouts, setWorkouts] = useState(() => isTelegramBootMode ? [] : buildInitialWorkoutModels());
   const [workoutsRefreshing, setWorkoutsRefreshing] = useState(false);
+  const [nutritionGoal, setNutritionGoal] = useState(initialNutritionGoal);
+  const [nutritionDay, setNutritionDay] = useState(() => buildLocalNutritionDay(formatDateKey(new Date()), initialNutritionGoal));
+  const [nutritionRefreshing, setNutritionRefreshing] = useState(false);
 
   useEffect(() => {
     activeRef.current = active;
@@ -8748,13 +9239,6 @@ function OnlyPumpPlatform() {
     }
   }, [globalSelectedDateKey]);
 
-  useEffect(() => {
-    if (!profile) return;
-    writeCachedWorkoutsForProfile(profile, workouts);
-  }, [profile?.telegram_id, profile?.id, workouts]);
-
-  const [nutritionMeals, setNutritionMeals] = useState(initialMeals);
-  const [nutritionGoal, setNutritionGoal] = useState(initialNutritionGoal);
   const [progressGoal, setProgressGoal] = useState({
     title: "Рекомпозиция тела",
     targetWeight: 76,
@@ -8792,6 +9276,76 @@ function OnlyPumpPlatform() {
     }
   });
 
+  const loadNutritionForProfile = useCallback(async (activeProfile, initData, dateKey = globalSelectedDateKey, options = {}) => {
+    if (!activeProfile) return null;
+    const cached = readCachedNutritionForProfile(activeProfile, dateKey);
+    if (cached && options.useCache !== false) {
+      const cachedDay = normalizeNutritionDay(cached, dateKey, nutritionGoal);
+      console.log("Nutrition cache loaded", { key: getNutritionCacheKey(activeProfile, dateKey), date: dateKey });
+      setNutritionDay(cachedDay);
+      setNutritionGoal(cachedDay.goal);
+    } else if (!cached && options.seedLocal !== false) {
+      setNutritionDay(prev => prev?.date === dateKey ? prev : buildLocalNutritionDay(dateKey, nutritionGoal));
+    }
+
+    if (!initData || !activeProfile.id) return cached;
+    const loadingKey = `${activeProfile.telegram_id || activeProfile.id || "local"}:${dateKey}:remote`;
+    if (nutritionLoadingKeyRef.current === loadingKey) return cached;
+    nutritionLoadingKeyRef.current = loadingKey;
+    setNutritionRefreshing(true);
+    try {
+      const result = await callOnlyPumpNutritionApi(initData, "load", { date: dateKey });
+      const loaded = normalizeNutritionDay(result, dateKey, nutritionGoal);
+      console.log("Nutrition loaded", { date: loaded.date, totals: loaded.totals });
+      setNutritionDay(loaded);
+      setNutritionGoal(loaded.goal);
+      writeCachedNutritionForProfile(activeProfile, loaded.date || dateKey, loaded);
+      return loaded;
+    } catch (error) {
+      console.error("Supabase nutrition error", { action: "load", error });
+      return cached;
+    } finally {
+      if (nutritionLoadingKeyRef.current === loadingKey) nutritionLoadingKeyRef.current = "";
+      setNutritionRefreshing(false);
+    }
+  }, [globalSelectedDateKey, nutritionGoal]);
+
+  const handleNutritionAction = useCallback(async (action, payload = {}) => {
+    const dateKey = payload.date || nutritionDay?.date || globalSelectedDateKey;
+    const payloadWithDate = { ...payload, date: dateKey };
+    const canUseRemoteNutrition = profileStatus === "verified" && Boolean(telegramInitData && profile?.id);
+
+    if (canUseRemoteNutrition) {
+      setNutritionRefreshing(true);
+      try {
+        const result = await callOnlyPumpNutritionApi(telegramInitData, action, payloadWithDate);
+        const updatedDay = normalizeNutritionDay(result, dateKey, nutritionGoal);
+        console.log("Nutrition updated", { action, date: updatedDay.date, totals: updatedDay.totals });
+        setNutritionDay(updatedDay);
+        setNutritionGoal(updatedDay.goal);
+        writeCachedNutritionForProfile(profile, updatedDay.date || dateKey, updatedDay);
+        return result;
+      } catch (error) {
+        console.error("Supabase nutrition error", { action, error });
+      } finally {
+        setNutritionRefreshing(false);
+      }
+    }
+
+    const localDay = applyLocalNutritionAction(nutritionDay, action, payloadWithDate);
+    setNutritionDay(localDay);
+    setNutritionGoal(localDay.goal);
+    if (profile) writeCachedNutritionForProfile(profile, localDay.date || dateKey, localDay);
+    return { ok: true, ...localDay };
+  }, [globalSelectedDateKey, nutritionDay, nutritionGoal, profile, profileStatus, telegramInitData]);
+
+  const nutritionMeals = useMemo(() => deriveHomeMealsFromNutritionDay(nutritionDay), [nutritionDay]);
+
+  useEffect(() => {
+    if (!profile) return;
+    writeCachedWorkoutsForProfile(profile, workouts);
+  }, [profile?.telegram_id, profile?.id, workouts]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -8815,6 +9369,7 @@ function OnlyPumpPlatform() {
         profileSaveReadyRef.current = false;
         const cached = readCachedWorkoutsForProfile(activeProfile);
         if (cached.length) setWorkouts(cached);
+        loadNutritionForProfile(activeProfile, "", globalSelectedDateKey, { useCache: true });
         setProfileLoading(false);
         setAppLoading(false);
         console.log("Profile loaded", activeProfile);
@@ -8836,6 +9391,7 @@ function OnlyPumpPlatform() {
       setProfileStatus(result.status);
       profileSaveReadyRef.current = result.status === "verified" && Boolean(activeProfile?.id);
       loadWorkoutsForProfile(activeProfile, result.status === "verified" ? initData : "", { useCache: true });
+      loadNutritionForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey, { useCache: true });
       setMeasurements(prev => ({ ...prev, weight: activeProfile.weight_kg || prev.weight }));
       setProgressGoal(prev => ({ ...prev, title: activeProfile.goal || prev.title }));
       setProfileLoading(false);
@@ -8850,6 +9406,17 @@ function OnlyPumpPlatform() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!profile) return;
+    const canUseRemoteNutrition = profileStatus === "verified" && Boolean(telegramInitData && profile?.id);
+    loadNutritionForProfile(profile, canUseRemoteNutrition ? telegramInitData : "", globalSelectedDateKey, { useCache: true });
+  }, [globalSelectedDateKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData]);
+
+  useEffect(() => {
+    if (!profile || !nutritionDay?.date) return;
+    writeCachedNutritionForProfile(profile, nutritionDay.date, nutritionDay);
+  }, [profile?.id, profile?.telegram_id, nutritionDay]);
 
   useEffect(() => {
     const client = supabaseClientRef.current;
@@ -8888,7 +9455,7 @@ function OnlyPumpPlatform() {
   const page = useMemo(() => ({
     home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} profile={profile}/>,
     workouts: <WorkoutsPage workouts={workouts} setWorkouts={setWorkouts} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} profile={profile} telegramInitData={telegramInitData}/>,
-    nutrition: <NutritionPage nutritionMeals={nutritionMeals} setNutritionMeals={setNutritionMeals} nutritionGoal={nutritionGoal} setNutritionGoal={setNutritionGoal}/>,
+    nutrition: <NutritionPage nutritionDay={nutritionDay} setNutritionDay={setNutritionDay} nutritionGoal={nutritionGoal} setNutritionGoal={setNutritionGoal} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} profile={profile} telegramInitData={telegramInitData} onNutritionAction={handleNutritionAction} nutritionLoading={nutritionRefreshing}/>,
     calculators: <CalculatorsPage/>,
     education: <EducationPage/>,
     lectures: <LecturesPage lectureItems={lectureItems} setLectureItems={setLectureItems}/>,
@@ -8896,7 +9463,7 @@ function OnlyPumpPlatform() {
     analytics: <AnalyticsPage workouts={workouts} profile={profile}/>,
     community: <CommunityPage/>,
     profile: <ProfilePage profile={profile} profileStatus={profileStatus}/>,
-  }[active]), [active, workouts, nutritionMeals, nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData]);
+  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, handleNutritionAction]);
 
   if (appLoading || profileLoading) {
     return <div className="onlypump-app-shell flex items-center justify-center bg-black px-6 text-zinc-100">
