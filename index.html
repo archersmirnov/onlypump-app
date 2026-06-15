@@ -1127,7 +1127,10 @@ const normalizeSupersetGroupId = (value) => {
   const id = String(value || "").trim();
   return onlypumpUuidPattern.test(id) ? id : null;
 };
-const normalizeWeightUnit = (value) => String(value || "kg").toLowerCase() === "lb" ? "lb" : "kg";
+const normalizeWeightUnit = (value) => {
+  const normalized = String(value ?? "kg").trim().toLowerCase();
+  return normalized === "lb" || normalized === "lbs" || normalized === "pound" || normalized === "pounds" ? "lb" : "kg";
+};
 const kgToLb = (value) => Number(value || 0) * 2.2046226218;
 const lbToKg = (value) => Number(value || 0) / 2.2046226218;
 const normalizeExerciseMeasurementSettings = (exercise = {}) => ({
@@ -1189,6 +1192,14 @@ const addLocalDaysToDate = (date, days) => {
   const next = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   next.setDate(next.getDate() + days);
   return next;
+};
+
+const startOfWeekMondayDate = (date = new Date()) => {
+  const safeDate = date instanceof Date ? date : parseDateKeyLocal(date);
+  const start = new Date(safeDate.getFullYear(), safeDate.getMonth(), safeDate.getDate());
+  const day = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - day);
+  return start;
 };
 
 const getSetStatusGlobal = (set) => set?.status || (set?.isCompleted ? "completed" : "pending");
@@ -1336,6 +1347,30 @@ const summarizeWorkouts = (items = []) => {
     plannedVolume,
     progress: totalSets ? Math.round((completedSets.length / totalSets) * 100) : 0,
     exerciseCount: items.reduce((sum, workout) => sum + (workout.exercises || []).length, 0),
+  };
+};
+
+const summarizeCurrentWeekWorkouts = (items = [], anchorDate = new Date()) => {
+  const start = startOfWeekMondayDate(anchorDate).getTime();
+  const end = addLocalDaysToDate(startOfWeekMondayDate(anchorDate), 7).getTime();
+  const weekWorkouts = items.filter(workout => {
+    const time = parseDateKeyLocal(workout.date).getTime();
+    return time >= start && time < end;
+  });
+  const plannedWorkouts = weekWorkouts.filter(workout => ["planned", "active", "completed"].includes(workout.status || "completed"));
+  const completedWorkouts = weekWorkouts.filter(workout => workout.status === "completed");
+  const plannedSets = plannedWorkouts.flatMap(getWorkoutSets);
+  const completedSets = completedWorkouts.flatMap(getWorkoutSets).filter(set => getSetStatusGlobal(set) === "completed");
+  const completedVolume = completedSets.reduce((sum, set) => sum + getSetVolumeForExercise(set, set.__exercise), 0);
+  const totalSets = plannedSets.length;
+  return {
+    completedSets: completedSets.length,
+    totalSets,
+    plannedSets: totalSets,
+    completedVolume,
+    plannedVolume: plannedSets.reduce((sum, set) => sum + getSetVolumeForExercise(set, set.__exercise), 0),
+    progress: totalSets ? Math.round((completedSets.length / totalSets) * 100) : 0,
+    exerciseCount: plannedWorkouts.reduce((sum, workout) => sum + (workout.exercises || []).length, 0),
   };
 };
 
@@ -2379,6 +2414,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, mea
   const selectedNutritionTotals = useMemo(() => buildNutritionTotalsForDate(selectedDateKey, nutritionTotals), [selectedDateKey, nutritionTotals]);
   const selectedNutritionMeals = useMemo(() => buildMealsForDate(selectedDateKey, nutritionMeals), [selectedDateKey, nutritionMeals]);
   const selectedWorkoutSummary = useMemo(() => summarizeWorkouts(selectedDateWorkouts), [selectedDateWorkouts]);
+  const currentWeekWorkoutSummary = useMemo(() => summarizeCurrentWeekWorkouts(workouts, new Date()), [workouts]);
   const selectedMeasurements = useMemo(() => buildMeasurementsForDate(selectedDateKey, measurements), [selectedDateKey, measurements]);
   const caloriesPercent = Math.min(100, Math.round((selectedNutritionTotals.calories / Math.max(1, nutritionGoal.calories)) * 100));
   const proteinPercent = Math.min(100, Math.round((selectedNutritionTotals.protein / Math.max(1, nutritionGoal.protein)) * 100));
@@ -2392,6 +2428,10 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, mea
     const value = homeVolumeUnit === "lb" ? kgToLb(valueKg) : Number(valueKg || 0);
     const rounded = Math.round(value * 10) / 10;
     return `${rounded.toLocaleString("ru-RU")} ${homeVolumeUnit === "lb" ? "lb" : "кг"}`;
+  };
+  const formatHomeVolumeKg = (valueKg) => {
+    const rounded = Math.round(Number(valueKg || 0) * 10) / 10;
+    return `${rounded.toLocaleString("ru-RU")} кг`;
   };
 
   const [homeEditMode, setHomeEditMode] = useState(false);
@@ -2462,9 +2502,9 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, mea
       case "metricBodyFat":
         return <MetricWidgetCard title="Процент жира" value={`${selectedMeasurements?.bodyFat || 12.6}%`} delta="−0,3% за неделю" progress={Math.max(0, 100 - Number(selectedMeasurements?.bodyFat || 12.6) * 4)} icon={Ruler} onClick={() => setActive("progress")}/>;
       case "metricTonnage":
-        return <MetricWidgetCard title="Тоннаж" value={formatHomeVolume(selectedWorkoutSummary.completedVolume)} sub={`${selectedWorkoutSummary.completedSets}/${selectedWorkoutSummary.totalSets} подходов`} progress={selectedWorkoutSummary.progress} icon={Dumbbell} onClick={() => setActive("workouts")}/>;
+        return <MetricWidgetCard title="Тоннаж" value={formatHomeVolumeKg(currentWeekWorkoutSummary.completedVolume)} sub={`${currentWeekWorkoutSummary.completedSets}/${currentWeekWorkoutSummary.plannedSets} подходов`} progress={currentWeekWorkoutSummary.progress} icon={Dumbbell} onClick={() => setActive("workouts")}/>;
       case "metricSets":
-        return <MetricWidgetCard title="Подходы" value={selectedWorkoutSummary.completedSets} sub={`из ${selectedWorkoutSummary.totalSets} запланировано`} progress={selectedWorkoutSummary.progress} icon={CheckCircle2} onClick={() => setActive("workouts")}/>;
+        return <MetricWidgetCard title="Подходы" value={currentWeekWorkoutSummary.completedSets} sub={`из ${currentWeekWorkoutSummary.plannedSets} запланировано`} progress={currentWeekWorkoutSummary.progress} icon={CheckCircle2} onClick={() => setActive("workouts")}/>;
       case "metricCalories":
         return <MetricWidgetCard title="Калории" value={selectedNutritionTotals.calories} sub={`/ ${nutritionGoal.calories} ккал`} delta={`${caloriesPercent}% цели`} progress={caloriesPercent} icon={Apple} onClick={() => setActive("nutrition")}/>;
       case "metricProtein":
@@ -3230,17 +3270,21 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const addWorkoutForDate = async (patch = {}) => {
-    const workout = makeWorkout(selectedDateKey, {
-      title: patch.title || `Тренировка за ${parseDateKey(selectedDateKey).getDate()} ${months[parseDateKey(selectedDateKey).getMonth()]}`,
+    const targetDateKey = patch.dateKey || selectedDateKey;
+    const targetDate = parseDateKey(targetDateKey);
+    const workout = makeWorkout(targetDateKey, {
+      title: patch.title || `Тренировка за ${targetDate.getDate()} ${months[targetDate.getMonth()]}`,
       durationMinutes: patch.durationMinutes ?? 45,
       totalVolumeKg: patch.totalVolumeKg ?? 0,
       calories: patch.calories ?? 0,
       status: patch.status,
+      startedAt: patch.startedAt,
       templateId: patch.templateId,
       exercises: patch.exercises,
     });
 
     setIsAddMenuOpen(false);
+    setWorkoutViewMode("overview");
     if (canUseWorkoutApi) {
       const pendingWorkout = { ...workout, pending: true, isSaving: true, isSyncing: true };
       setWorkouts(prev => [pendingWorkout, ...prev]);
@@ -5436,11 +5480,67 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setRepeatScheduler({
       workout,
       mode,
-      dateKey: selectedDateKey || formatDateKey(now),
+      dateKey: formatDateKey(now),
       hour: String(now.getHours()).padStart(2, "0"),
       minute: String(Math.round(now.getMinutes() / 5) * 5 % 60).padStart(2, "0"),
       durationHours: String(Math.floor(Number(workout?.durationMinutes || 60) / 60)),
       durationMinutes: String(Number(workout?.durationMinutes || 60) % 60),
+    });
+  };
+
+  const openPlanWorkoutScheduler = () => {
+    const now = new Date();
+    setIsAddMenuOpen(false);
+    setRepeatScheduler({
+      workout: null,
+      mode: "new_planned",
+      dateKey: formatDateKey(now),
+      hour: String(now.getHours()).padStart(2, "0"),
+      minute: String(Math.round(now.getMinutes() / 5) * 5 % 60).padStart(2, "0"),
+      durationHours: "0",
+      durationMinutes: "45",
+    });
+  };
+
+  const getSchedulerActionLabel = (mode) => {
+    if (mode === "completed") return "Добавить выполненную";
+    if (mode === "new_planned" || mode === "planned") return "Запланировать";
+    return "Начать";
+  };
+
+  const getSchedulerEyebrow = (mode) => {
+    if (mode === "completed") return "Выполненная";
+    if (mode === "new_planned") return "Новая тренировка";
+    return "План";
+  };
+
+  const createPlannedWorkoutFromScheduler = async (scheduler) => {
+    if (!scheduler) return;
+    const startedAt = buildWorkoutDateTimeIso(scheduler.dateKey, scheduler.hour, scheduler.minute);
+    setRepeatScheduler(null);
+    await addWorkoutForDate({
+      dateKey: scheduler.dateKey,
+      title: "Запланированная тренировка",
+      status: "planned",
+      durationMinutes: 0,
+      calories: 0,
+      exercises: [],
+      startedAt,
+    });
+  };
+
+  const confirmRepeatScheduler = () => {
+    if (!repeatScheduler) return;
+    if (repeatScheduler.mode === "new_planned") {
+      createPlannedWorkoutFromScheduler(repeatScheduler);
+      return;
+    }
+    repeatWorkout(repeatScheduler.workout, {
+      mode: repeatScheduler.mode,
+      dateKey: repeatScheduler.dateKey,
+      hour: repeatScheduler.hour,
+      minute: repeatScheduler.minute,
+      durationMinutes: Number(repeatScheduler.durationHours || 0) * 60 + Number(repeatScheduler.durationMinutes || 0),
     });
   };
 
@@ -5453,13 +5553,16 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       : buildWorkoutDateTimeIso(targetDateKey, options.hour, options.minute);
     const durationMinutes = mode === "completed"
       ? Math.max(1, safeWorkoutNumber(options.durationMinutes, workout.durationMinutes || 60))
+      : mode === "planned"
+        ? Math.max(0, safeWorkoutNumber(workout.durationMinutes, 60))
       : 0;
     const estimatedCalories = mode === "completed" ? estimateWorkoutCalories(durationMinutes * 60) : 0;
+    const sourceTotals = recalculateWorkoutTotals(workout);
     const copy = makeWorkout(targetDateKey, {
       title: workout.title,
       programDayNumber: workout.programDayNumber,
       durationMinutes,
-      totalVolumeKg: 0,
+      totalVolumeKg: sourceTotals.totalVolume,
       calories: estimatedCalories,
       estimatedCaloriesBurned: estimatedCalories,
       status,
@@ -6344,6 +6447,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         <h2 className="text-xl font-black tracking-[-0.03em]">Добавить на {formatDayMonth(selectedDate)}</h2>
         <div className="mt-5 space-y-2">
           <button onClick={() => addWorkoutForDate({ title: "Пустая тренировка", exercises: [] })} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Начать пустую тренировку</button>
+          <button onClick={openPlanWorkoutScheduler} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Запланировать тренировку</button>
           <button onClick={() => { setIsAddMenuOpen(false); setIsTemplatesOpen(true); }} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Выбрать программу</button>
           <button onClick={() => addWorkoutForDate()} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить тренировку за выбранную дату</button>
           <button onClick={() => setIsAddMenuOpen(false)} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold text-zinc-500 transition hover:bg-white/8">Добавить заметку / замер</button>
@@ -6373,8 +6477,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       <BottomSheetPanel onClose={() => setRepeatScheduler(null)} onClick={(e) => e.stopPropagation()} className="mx-auto flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-[430px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">{repeatScheduler.mode === "completed" ? "Выполненная" : "План"}</p>
+          <button onClick={() => setRepeatScheduler(null)} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отменить</button>
+          <div className="min-w-0 text-center">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">{getSchedulerEyebrow(repeatScheduler.mode)}</p>
             <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Дата и время</h2>
           </div>
           <button onClick={() => setRepeatScheduler(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
@@ -6389,8 +6494,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               onChange={(e) => setRepeatScheduler(prev => ({ ...prev, dateKey: e.target.value }))}
               className="h-56 w-full bg-transparent text-center text-base font-black outline-none onlypump-scrollbar-none"
             >
-              {Array.from({ length: 61 }, (_, index) => {
-                const offset = repeatScheduler.mode === "completed" ? index - 60 : index;
+              {Array.from({ length: 121 }, (_, index) => {
+                const offset = index - 60;
                 const date = addLocalDays(parseDateKey(formatDateKey(new Date())), offset);
                 const key = toDateKey(date);
                 return <option key={key} value={key}>{formatDayMonth(date)}</option>;
@@ -6421,7 +6526,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           </label>
         </div>
 
-        {repeatScheduler.mode === "completed" && <div className="mt-4 grid grid-cols-2 gap-3">
+        {repeatScheduler.mode === "completed" && <div className="mt-4">
+          <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">Длительность</div>
+          <div className="grid grid-cols-2 gap-3">
           <label className="rounded-[24px] bg-black/28 p-3">
             <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Часы</div>
             <select
@@ -6444,17 +6551,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               {Array.from({ length: 12 }, (_, index) => String(index * 5)).map(minute => <option key={minute} value={minute}>{minute}</option>)}
             </select>
           </label>
+          </div>
         </div>}
 
         <div className="mt-5 grid grid-cols-2 gap-3 pb-[var(--onlypump-safe-bottom)]">
           <button onClick={() => setRepeatScheduler(null)} className="h-12 rounded-full bg-white/8 font-black text-zinc-200">Отмена</button>
-          <button onClick={() => repeatWorkout(repeatScheduler.workout, {
-            mode: repeatScheduler.mode,
-            dateKey: repeatScheduler.dateKey,
-            hour: repeatScheduler.hour,
-            minute: repeatScheduler.minute,
-            durationMinutes: Number(repeatScheduler.durationHours || 0) * 60 + Number(repeatScheduler.durationMinutes || 0),
-          })} className="h-12 rounded-full bg-red-500 font-black text-black">Готово</button>
+          <button onClick={confirmRepeatScheduler} className="h-12 rounded-full bg-red-500 font-black text-black">{getSchedulerActionLabel(repeatScheduler.mode)}</button>
         </div>
       </BottomSheetPanel>
     </div>}
