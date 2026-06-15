@@ -2422,6 +2422,9 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, mea
   const selectedNutritionMeals = useMemo(() => buildMealsForDate(selectedDateKey, nutritionMeals), [selectedDateKey, nutritionMeals]);
   const selectedWorkoutSummary = useMemo(() => summarizeWorkouts(selectedDateWorkouts), [selectedDateWorkouts]);
   const currentWeekWorkoutSummary = useMemo(() => summarizeCurrentWeekWorkouts(workouts, new Date()), [workouts]);
+  const currentWeekTonnageProgress = currentWeekWorkoutSummary.plannedVolume
+    ? Math.min(100, Math.round((currentWeekWorkoutSummary.completedVolume / Math.max(1, currentWeekWorkoutSummary.plannedVolume)) * 100))
+    : 0;
   const selectedMeasurements = useMemo(() => buildMeasurementsForDate(selectedDateKey, measurements), [selectedDateKey, measurements]);
   const caloriesPercent = Math.min(100, Math.round((selectedNutritionTotals.calories / Math.max(1, nutritionGoal.calories)) * 100));
   const proteinPercent = Math.min(100, Math.round((selectedNutritionTotals.protein / Math.max(1, nutritionGoal.protein)) * 100));
@@ -2509,7 +2512,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, mea
       case "metricBodyFat":
         return <MetricWidgetCard title="Процент жира" value={`${selectedMeasurements?.bodyFat || 12.6}%`} delta="−0,3% за неделю" progress={Math.max(0, 100 - Number(selectedMeasurements?.bodyFat || 12.6) * 4)} icon={Ruler} onClick={() => setActive("progress")}/>;
       case "metricTonnage":
-        return <MetricWidgetCard title="Тоннаж" value={formatHomeVolumeKg(currentWeekWorkoutSummary.completedVolume)} sub={`${currentWeekWorkoutSummary.completedSets}/${currentWeekWorkoutSummary.plannedSets} подходов`} progress={currentWeekWorkoutSummary.progress} icon={Dumbbell} onClick={() => setActive("workouts")}/>;
+        return <MetricWidgetCard title="Тоннаж" value={formatHomeVolumeKg(currentWeekWorkoutSummary.completedVolume)} sub={`из ${formatHomeVolumeKg(currentWeekWorkoutSummary.plannedVolume)} запланировано`} progress={currentWeekTonnageProgress} icon={Dumbbell} onClick={() => setActive("workouts")}/>;
       case "metricSets":
         return <MetricWidgetCard title="Подходы" value={currentWeekWorkoutSummary.completedSets} sub={`из ${currentWeekWorkoutSummary.plannedSets} запланировано`} progress={currentWeekWorkoutSummary.progress} icon={CheckCircle2} onClick={() => setActive("workouts")}/>;
       case "metricCalories":
@@ -3080,6 +3083,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [workoutTitleDraft, setWorkoutTitleDraft] = useState("");
   const [exerciseNameDraft, setExerciseNameDraft] = useState("");
   const [setDrafts, setSetDrafts] = useState({});
+  const [activeSetInput, setActiveSetInput] = useState(null);
   const [swipedWorkoutId, setSwipedWorkoutId] = useState(null);
   const [swipedExerciseId, setSwipedExerciseId] = useState(null);
   const [swipedSetId, setSwipedSetId] = useState(null);
@@ -3171,6 +3175,23 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setSwipedExerciseId(null);
     setSwipedSetId(null);
   }, [activeTab, selectedWorkout?.id, workoutViewMode]);
+
+  useEffect(() => {
+    if (!activeSetInput) return;
+    if (workoutViewMode !== "exercise" || !selectedWorkout || openMenu || detailMenuOpen || restMenuOpen || restEditor || isExerciseBaseOpen || exerciseMeasurementSheet || exerciseNotesSheet || exerciseStatsSheet || finishChoiceSheet || completionSummarySheet) {
+      setActiveSetInput(null);
+    }
+  }, [activeSetInput, workoutViewMode, selectedWorkout?.id, openMenu, detailMenuOpen, restMenuOpen, restEditor, isExerciseBaseOpen, exerciseMeasurementSheet, exerciseNotesSheet, exerciseStatsSheet, finishChoiceSheet, completionSummarySheet]);
+
+  useEffect(() => {
+    if (!activeSetInput) return;
+    const closeKeyboardOnOutsideTap = (event) => {
+      if (event.target?.closest?.('[data-custom-set-keyboard="true"], [data-custom-set-field="true"]')) return;
+      setActiveSetInput(null);
+    };
+    document.addEventListener("pointerdown", closeKeyboardOnOutsideTap, true);
+    return () => document.removeEventListener("pointerdown", closeKeyboardOnOutsideTap, true);
+  }, [activeSetInput]);
 
   const sortedWorkouts = useMemo(() => {
     return [...workouts].sort((a, b) => parseDateKey(b.date) - parseDateKey(a.date));
@@ -4665,6 +4686,144 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
   };
 
+  const getCustomSetFieldId = (setId, field) => `custom-${setId}-${field}`;
+
+  const getActiveSetInputContext = (input = activeSetInput) => {
+    if (!input || !selectedWorkout) return null;
+    const exerciseIndex = (selectedWorkout.exercises || []).findIndex(exercise => exercise.id === input.exerciseId);
+    const exercise = exerciseIndex >= 0 ? selectedWorkout.exercises[exerciseIndex] : null;
+    const setIndex = (exercise?.sets || []).findIndex(set => set.id === input.setId);
+    const set = setIndex >= 0 ? exercise.sets[setIndex] : null;
+    if (!exercise || !set) return null;
+    return { workout: selectedWorkout, exercise, exerciseIndex, set, setIndex, field: input.field };
+  };
+
+  const scrollCustomSetInputIntoView = (input = activeSetInput) => {
+    if (!input) return;
+    requestAnimationFrame(() => {
+      const field = document.querySelector(`[data-custom-set-field-id="${getCustomSetFieldId(input.setId, input.field)}"]`);
+      field?.scrollIntoView?.({ block: "center", inline: "nearest", behavior: "smooth" });
+    });
+  };
+
+  const openCustomSetInput = (exercise, set, field) => {
+    if (!selectedWorkout || !exercise || !set || !["weight", "reps"].includes(field)) return;
+    const input = { workoutId: selectedWorkout.id, exerciseId: exercise.id, setId: set.id, field };
+    setActiveSetId(set.id);
+    setActiveSetInput(input);
+    setSetDrafts(prev => ({
+      ...prev,
+      [set.id]: {
+        ...(prev[set.id] || {}),
+        [field]: getSetDraftValue(set, field, exercise),
+      },
+    }));
+    scrollCustomSetInputIntoView(input);
+  };
+
+  const closeCustomSetKeyboard = () => {
+    setActiveSetInput(null);
+  };
+
+  const sanitizeCustomSetInputValue = (field, value) => {
+    const raw = String(value ?? "");
+    if (field === "reps") return raw.replace(/[^\d]/g, "").replace(/^0+(?=\d)/, "");
+    const parts = raw.replace(/[^\d.]/g, "").split(".");
+    const integer = (parts[0] || "").replace(/^0+(?=\d)/, "");
+    const decimal = parts.slice(1).join("");
+    return parts.length > 1 ? `${integer || "0"}.${decimal}` : integer;
+  };
+
+  const setCustomSetInputValue = (value) => {
+    const context = getActiveSetInputContext();
+    if (!context) return;
+    const cleanValue = sanitizeCustomSetInputValue(context.field, value);
+    setSetDrafts(prev => ({
+      ...prev,
+      [context.set.id]: {
+        ...(prev[context.set.id] || {}),
+        [context.field]: cleanValue,
+      },
+    }));
+    updateWorkoutSet(context.workout.id, context.exercise.id, context.set.id, context.field, cleanValue);
+    scrollCustomSetInputIntoView(activeSetInput);
+  };
+
+  const getCustomSetInputDisplayValue = () => {
+    const context = getActiveSetInputContext();
+    if (!context) return "";
+    return String(getSetDraftValue(context.set, context.field, context.exercise) ?? "");
+  };
+
+  const pressCustomSetInputKey = (key) => {
+    const context = getActiveSetInputContext();
+    if (!context) return;
+    const current = getCustomSetInputDisplayValue();
+    if (key === "backspace") {
+      setCustomSetInputValue(current.slice(0, -1));
+      return;
+    }
+    if (key === "." && context.field !== "weight") return;
+    if (key === "." && current.includes(".")) return;
+    const next = key === "."
+      ? `${current || "0"}.`
+      : (!current || current === "0" ? key : `${current}${key}`);
+    setCustomSetInputValue(next);
+  };
+
+  const getCustomSetInputOrder = (exercise) => {
+    const settings = normalizeExerciseMeasurementSettings(exercise || {});
+    const fields = [
+      settings.measureWeightEnabled ? "weight" : null,
+      settings.measureRepsEnabled ? "reps" : null,
+    ].filter(Boolean);
+    return (exercise?.sets || []).flatMap(set => fields.map(field => ({
+      workoutId: selectedWorkout?.id,
+      exerciseId: exercise.id,
+      setId: set.id,
+      field,
+    })));
+  };
+
+  const moveToNextCustomSetInput = () => {
+    const context = getActiveSetInputContext();
+    if (!context) return closeCustomSetKeyboard();
+    const order = getCustomSetInputOrder(context.exercise);
+    const currentIndex = order.findIndex(item => item.setId === context.set.id && item.field === context.field);
+    const next = order[currentIndex + 1];
+    if (!next) {
+      closeCustomSetKeyboard();
+      return;
+    }
+    setActiveSetId(next.setId);
+    setActiveSetInput(next);
+    scrollCustomSetInputIntoView(next);
+  };
+
+  const copyCustomSetInputDown = () => {
+    const context = getActiveSetInputContext();
+    if (!context) return;
+    const displayValue = sanitizeCustomSetInputValue(context.field, getCustomSetInputDisplayValue());
+    const storedValue = coerceSetFieldValue(context.field, displayValue, context.exercise);
+    const belowSets = (context.exercise.sets || []).slice(context.setIndex + 1);
+    if (!belowSets.length) return;
+    updateSelectedWorkoutModel(workout => ({
+      ...workout,
+      exercises: (workout.exercises || []).map(exercise => exercise.id === context.exercise.id ? {
+        ...exercise,
+        sets: (exercise.sets || []).map((set, setIndex) => setIndex > context.setIndex ? { ...set, [context.field]: storedValue } : set),
+      } : exercise),
+      updatedAt: new Date().toISOString(),
+    }));
+    setSetDrafts(prev => {
+      const next = { ...prev };
+      belowSets.forEach(set => {
+        next[set.id] = { ...(next[set.id] || {}), [context.field]: displayValue };
+      });
+      return next;
+    });
+  };
+
   const updateWorkoutSet = (workoutId, exerciseId, setId, field, value) => {
     const workoutForSettings = workouts.find(item => item.id === workoutId) || selectedWorkout;
     const exerciseForSettings = (workoutForSettings?.exercises || []).find(item => item.id === exerciseId);
@@ -5376,7 +5535,19 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const nextExercise = exercises[clamped];
     setActiveExerciseIndex(clamped);
     setActiveSetId(getFirstActiveSetId(nextExercise));
+    closeCustomSetKeyboard();
     setOpenMenu(null);
+  };
+
+  const goToNextExerciseOrOverview = (fromIndex = activeExerciseIndex) => {
+    const exerciseCount = (selectedWorkout?.exercises || []).length;
+    closeCustomSetKeyboard();
+    if (!exerciseCount || fromIndex >= exerciseCount - 1) {
+      setWorkoutViewMode("overview");
+      setOpenMenu(null);
+      return;
+    }
+    goToExercise(fromIndex + 1);
   };
 
   const findNextPendingSetTarget = (workout, exerciseIndex, currentSetId = null) => {
@@ -5401,7 +5572,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const currentSet = sets.find(set => set.id === activeSetId) || sets.find(set => getSetStatus(set) === "pending") || sets[0];
 
     if (!currentSet) {
-      goToExercise(activeExerciseIndex + 1);
+      goToNextExerciseOrOverview(activeExerciseIndex);
       return;
     }
 
@@ -5435,7 +5606,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return;
     }
 
-    goToExercise(activeExerciseIndex + 1);
+    goToNextExerciseOrOverview(activeExerciseIndex);
   };
 
   const formatSecondsTimer = (seconds) => {
@@ -5876,6 +6047,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   useAppBackLayer("workouts-exercise-measurement", Boolean(exerciseMeasurementSheet), () => setExerciseMeasurementSheet(null), 182);
   useAppBackLayer("workouts-superset-cancel", Boolean(supersetCancelPrompt), () => setSupersetCancelPrompt(null), 181);
   useAppBackLayer("workouts-rest-menu", restMenuOpen, () => setRestMenuOpen(false), 180);
+  useAppBackLayer("workouts-custom-set-keyboard", Boolean(activeSetInput), closeCustomSetKeyboard, 179);
   useAppBackLayer("workouts-open-menu", Boolean(openMenu), () => setOpenMenu(null), 175);
   useAppBackLayer("workouts-finish-choice", Boolean(finishChoiceSheet), () => setFinishChoiceSheet(null), 178);
   useAppBackLayer("workouts-completion-summary", Boolean(completionSummarySheet), () => setCompletionSummarySheet(null), 177);
@@ -6379,6 +6551,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       const showRirField = Boolean(measurementSettings.measureRirEnabled);
       const showRpeField = Boolean(measurementSettings.measureRpeEnabled);
       const weightUnitLabel = measurementSettings.weightUnit === "lb" ? "lb" : "кг";
+      const isCustomSetFieldActive = (set, field) => activeSetInput?.setId === set?.id && activeSetInput?.field === field;
+      const keyboardContext = getActiveSetInputContext();
 
       const openExerciseMenu = (event) => {
         if (!currentExercise) return;
@@ -6405,7 +6579,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
       return <div className="onlypump-fullscreen-layer fixed inset-0 z-[170] bg-black text-zinc-100">
         <div className="relative mx-auto h-full max-w-[430px] overflow-hidden bg-black">
-          <div ref={workoutScrollRef} className="onlypump-workout-scroll px-5 pt-[calc(var(--onlypump-safe-top)+var(--onlypump-telegram-internal-top-offset)+18px)] onlypump-scrollbar-none">
+          <div ref={workoutScrollRef} style={{ paddingBottom: activeSetInput ? "calc(var(--onlypump-safe-bottom) + 300px)" : undefined }} className="onlypump-workout-scroll px-5 pt-[calc(var(--onlypump-safe-top)+var(--onlypump-telegram-internal-top-offset)+18px)] onlypump-scrollbar-none">
           <div>
             <div className="grid grid-cols-3 items-start gap-3 text-center">
               <div className="rounded-2xl bg-white/[0.05] px-3 py-3 text-left">
@@ -6469,31 +6643,29 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                           {status === "completed" ? "✓" : (set.order || setIndex + 1)}
                         </button>
 
-                        {showWeightField && <label onClick={(e) => e.stopPropagation()} className="flex h-11 items-center rounded-2xl bg-white/[0.04] px-3">
-                          <input
-                            type="number"
-                            value={getSetDraftValue(set, "weight", currentExercise)}
-                            onChange={(e) => updateSetDraft(set.id, "weight", e.target.value)}
-                            onBlur={() => commitSetDraft(selectedWorkout.id, currentExercise.id, set.id, "weight")}
-                            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
-                            className="w-full bg-transparent text-right text-lg font-black outline-none"
-                          />
+                        {showWeightField && <button
+                          type="button"
+                          data-custom-set-field="true"
+                          data-custom-set-field-id={getCustomSetFieldId(set.id, "weight")}
+                          onClick={(e) => { e.stopPropagation(); openCustomSetInput(currentExercise, set, "weight"); }}
+                          className={`flex h-11 items-center rounded-2xl px-3 text-right transition ${isCustomSetFieldActive(set, "weight") ? 'bg-red-500/18 ring-1 ring-red-500/50' : 'bg-white/[0.04] hover:bg-white/[0.07]'}`}
+                        >
+                          <span className="w-full text-right text-lg font-black">{getSetDraftValue(set, "weight", currentExercise) || "0"}</span>
                           <span className="ml-1 text-xs text-zinc-500">{weightUnitLabel}</span>
-                        </label>}
+                        </button>}
 
                         {showWeightField && (showRepsField || showTimeField) && <div className="text-center text-xl font-black text-zinc-600">×</div>}
 
-                        {showRepsField && <label onClick={(e) => e.stopPropagation()} className="flex h-11 items-center rounded-2xl bg-white/[0.04] px-3">
-                          <input
-                            type="number"
-                            value={getSetDraftValue(set, "reps", currentExercise)}
-                            onChange={(e) => updateSetDraft(set.id, "reps", e.target.value)}
-                            onBlur={() => commitSetDraft(selectedWorkout.id, currentExercise.id, set.id, "reps")}
-                            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
-                            className="w-full bg-transparent text-right text-lg font-black outline-none"
-                          />
+                        {showRepsField && <button
+                          type="button"
+                          data-custom-set-field="true"
+                          data-custom-set-field-id={getCustomSetFieldId(set.id, "reps")}
+                          onClick={(e) => { e.stopPropagation(); openCustomSetInput(currentExercise, set, "reps"); }}
+                          className={`flex h-11 items-center rounded-2xl px-3 text-right transition ${isCustomSetFieldActive(set, "reps") ? 'bg-red-500/18 ring-1 ring-red-500/50' : 'bg-white/[0.04] hover:bg-white/[0.07]'}`}
+                        >
+                          <span className="w-full text-right text-lg font-black">{getSetDraftValue(set, "reps", currentExercise) || "0"}</span>
                           <span className="ml-1 text-xs text-zinc-500">повт</span>
-                        </label>}
+                        </button>}
 
                         {showTimeField && <label onClick={(e) => e.stopPropagation()} className="flex h-11 items-center rounded-2xl bg-white/[0.04] px-3">
                           <input
@@ -6563,6 +6735,38 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               <button onClick={() => goToExercise(activeExerciseIndex + 1)} disabled={activeExerciseIndex >= exercises.length - 1} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/8 text-zinc-200 disabled:opacity-30">→</button>
             </div>
           </div>
+
+          {activeSetInput && keyboardContext && <div data-custom-set-keyboard="true" className="fixed bottom-0 left-0 right-0 z-[184] border-t border-white/10 bg-zinc-950/96 px-3 pb-[calc(var(--onlypump-safe-bottom)+10px)] pt-3 shadow-2xl shadow-black/80 backdrop-blur-2xl">
+            <div className="mx-auto max-w-[430px]">
+              <div className="mb-2 flex items-center justify-between gap-3 px-1">
+                <div className="text-xs font-black uppercase tracking-[0.16em] text-red-400">
+                  {keyboardContext.field === "weight" ? `Вес · подход ${keyboardContext.set.order || keyboardContext.setIndex + 1}` : `Повторы · подход ${keyboardContext.set.order || keyboardContext.setIndex + 1}`}
+                </div>
+                <div className="text-sm font-black text-zinc-100">{getCustomSetInputDisplayValue() || "0"}</div>
+              </div>
+              <div className="grid grid-cols-[1fr_74px] gap-2">
+                <div className="grid grid-cols-3 gap-2">
+                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "backspace"].map(key => {
+                    const disabled = key === "." && keyboardContext.field !== "weight";
+                    return <button
+                      key={key}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => pressCustomSetInputKey(key)}
+                      className={`h-14 rounded-2xl text-2xl font-black transition active:scale-[0.97] ${disabled ? 'bg-white/[0.025] text-zinc-800' : 'bg-white/[0.07] text-white hover:bg-white/[0.11]'}`}
+                    >
+                      {key === "backspace" ? "⌫" : key}
+                    </button>;
+                  })}
+                </div>
+                <div className="grid grid-rows-3 gap-2">
+                  <button type="button" onClick={moveToNextCustomSetInput} className="rounded-2xl bg-red-500 px-2 text-xs font-black uppercase leading-tight text-black transition active:scale-[0.97]">След.</button>
+                  <button type="button" onClick={copyCustomSetInputDown} className="rounded-2xl bg-white text-xs font-black uppercase leading-tight text-black transition active:scale-[0.97]">Вниз</button>
+                  <button type="button" onClick={closeCustomSetKeyboard} className="rounded-2xl bg-white/[0.08] px-2 text-xs font-black uppercase leading-tight text-zinc-200 transition active:scale-[0.97]">Скрыть</button>
+                </div>
+              </div>
+            </div>
+          </div>}
         </div>
 
         {openMenu && <div onClick={() => setOpenMenu(null)} className="onlypump-fullscreen-layer fixed inset-0 z-[190] bg-black/20 backdrop-blur-[1px]">
