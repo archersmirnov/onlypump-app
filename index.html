@@ -3678,6 +3678,37 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return payload;
   };
 
+  const buildExerciseMeasurementSettingsPatchPayload = (exercise, settingsPatch = {}) => {
+    if (!exercise?.supabaseId) return null;
+    const measurementSettings = normalizeExerciseMeasurementSettings({
+      ...exercise,
+      ...settingsPatch,
+    });
+    const payload = {
+      id: exercise.supabaseId,
+      notes: exercise.note || exercise.notes || "",
+      measure_weight_enabled: Boolean(measurementSettings.measureWeightEnabled),
+      measure_reps_enabled: Boolean(measurementSettings.measureRepsEnabled),
+      measure_time_enabled: Boolean(measurementSettings.measureTimeEnabled),
+      measure_rir_enabled: Boolean(measurementSettings.measureRirEnabled),
+      measure_rpe_enabled: Boolean(measurementSettings.measureRpeEnabled),
+      weight_unit: measurementSettings.weightUnit,
+      double_weight_in_stats: Boolean(measurementSettings.doubleWeightInStats),
+    };
+    console.log("Saving measurement settings:", {
+      exerciseId: exercise.id,
+      supabaseExerciseId: exercise.supabaseId,
+      measure_weight_enabled: payload.measure_weight_enabled,
+      measure_reps_enabled: payload.measure_reps_enabled,
+      measure_time_enabled: payload.measure_time_enabled,
+      measure_rir_enabled: payload.measure_rir_enabled,
+      measure_rpe_enabled: payload.measure_rpe_enabled,
+      weight_unit: payload.weight_unit,
+      double_weight_in_stats: payload.double_weight_in_stats,
+    });
+    return payload;
+  };
+
   const buildSetPatchPayload = (set) => {
     if (!set?.supabaseId) return null;
     const payload = {
@@ -4960,8 +4991,36 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const saveExerciseMeasurementSettings = () => {
     if (!exerciseMeasurementSheet?.exerciseId) return;
     const draft = normalizeExerciseMeasurementSettings(exerciseMeasurementSheet.draft || {});
-    console.log("Saving exercise measurement settings:", draft);
-    updateExerciseById(exerciseMeasurementSheet.exerciseId, draft, { immediate: true });
+    const exerciseId = exerciseMeasurementSheet.exerciseId;
+    const currentWorkout = selectedWorkout;
+    const currentExercise = (currentWorkout?.exercises || []).find(exercise => exercise.id === exerciseId);
+    if (!currentWorkout || !currentExercise) {
+      setExerciseMeasurementSheet(null);
+      return;
+    }
+    const nextWorkout = normalizeWorkoutSupersetMetadata({
+      ...currentWorkout,
+      exercises: (currentWorkout.exercises || []).map(exercise => exercise.id === exerciseId
+        ? applyExercisePatchWithRest(exercise, draft)
+        : exercise),
+      updatedAt: new Date().toISOString(),
+    });
+    const nextExercise = (nextWorkout.exercises || []).find(exercise => exercise.id === exerciseId);
+    const measurementPayload = buildExerciseMeasurementSettingsPatchPayload(nextExercise, draft);
+
+    setWorkouts(prev => prev.map(workout => workout.id === currentWorkout.id ? nextWorkout : workout));
+    setSelectedWorkout(nextWorkout);
+
+    if (measurementPayload && nextWorkout.supabaseId) {
+      queueWorkoutPatch(nextWorkout.id, {
+        workout_updates: [buildWorkoutTotalsPatchPayload(nextWorkout)].filter(Boolean),
+        exercise_updates: [measurementPayload],
+        set_updates: [],
+        deleted_workout_ids: [],
+        deleted_exercise_ids: [],
+        deleted_set_ids: [],
+      }, { immediate: true });
+    }
     setExerciseMeasurementSheet(null);
   };
 
