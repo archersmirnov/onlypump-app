@@ -5883,7 +5883,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setRepeatScheduler({
       workout: null,
       mode: "new_planned",
-      dateKey: formatDateKey(now),
+      dateKey: selectedDateKey || formatDateKey(now),
       hour: String(now.getHours()).padStart(2, "0"),
       minute: String(Math.round(now.getMinutes() / 5) * 5 % 60).padStart(2, "0"),
       durationHours: "0",
@@ -5907,7 +5907,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const getSchedulerActionLabel = (mode) => {
     if (mode === "completed" || mode === "new_completed") return "Добавить выполненную";
-    if (mode === "new_planned" || mode === "planned") return "Запланировать";
+    if (mode === "new_planned") return "Добавить запланированную";
+    if (mode === "planned") return "Запланировать";
     return "Начать";
   };
 
@@ -6997,8 +6998,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         <h2 className="text-xl font-black tracking-[-0.03em]">Добавить на {formatDayMonth(selectedDate)}</h2>
         <div className="mt-5 space-y-2">
           <button onClick={() => addWorkoutForDate({ title: "Пустая тренировка", status: "active", durationMinutes: 0, totalVolumeKg: 0, calories: 0, estimatedCaloriesBurned: 0, exercises: [], startedAt: new Date().toISOString() })} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Начать пустую тренировку</button>
+          <button onClick={openPlanWorkoutScheduler} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить запланированную</button>
           <button onClick={openCompletedWorkoutScheduler} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить выполненную</button>
-          <button onClick={() => { setIsAddMenuOpen(false); setIsTemplatesOpen(true); }} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Доступные программы</button>
         </div>
       </BottomSheetPanel>
     </div>}
