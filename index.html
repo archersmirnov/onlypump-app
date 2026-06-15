@@ -246,6 +246,7 @@ const DEFAULT_PROFILE = {
   weight_kg: 90,
   height_cm: 180,
   goal: "Рекомпозиция тела",
+  default_weight_unit: "kg",
   source: "fallback",
 };
 
@@ -296,6 +297,7 @@ function buildFallbackProfile(overrides = {}) {
     weight_kg: safeProfileNumber(overrides.weight_kg, DEFAULT_PROFILE.weight_kg),
     height_cm: safeProfileNumber(overrides.height_cm, DEFAULT_PROFILE.height_cm),
     goal: overrides.goal || DEFAULT_PROFILE.goal,
+    default_weight_unit: normalizeWeightUnit(overrides.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
     source: overrides.source || "fallback",
   };
 }
@@ -312,6 +314,7 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     weight_kg: safeProfileNumber(record.weight_kg, fallback.weight_kg || DEFAULT_PROFILE.weight_kg),
     height_cm: safeProfileNumber(record.height_cm, fallback.height_cm || DEFAULT_PROFILE.height_cm),
     goal: record.goal || fallback.goal || DEFAULT_PROFILE.goal,
+    default_weight_unit: normalizeWeightUnit(record.default_weight_unit || fallback.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
     source: record.source || fallback.source || "supabase",
   };
 }
@@ -1093,9 +1096,9 @@ const volumeStandards = {
 const standardMuscleGroups = ["Грудь", "Спина", "Плечи", "Руки", "Ноги", "Ягодицы", "Пресс"];
 const supersetPalette = ["#ef4444", "#f97316", "#facc15", "#22c55e", "#38bdf8", "#6366f1", "#d946ef"];
 const workoutStatusColors = {
-  completed: "#ef4444",
-  planned: "#22c55e",
-  active: "#ef4444",
+  completed: "#22c55e",
+  planned: "#ef4444",
+  active: "#16a34a",
   skipped: "#71717a",
   pending: "#22c55e",
 };
@@ -2644,9 +2647,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return `${m} мин`;
   };
 
-  const formatVolume = (value) => {
-    return `${Number(value || 0).toLocaleString('en-US')} кг`;
+  const getProfileWeightUnit = () => normalizeWeightUnit(profile?.default_weight_unit || DEFAULT_PROFILE.default_weight_unit);
+  const convertKgVolumeForDisplay = (valueKg, unit = getProfileWeightUnit()) => unit === "lb" ? kgToLb(valueKg) : Number(valueKg || 0);
+  const formatVolume = (valueKg, unit = getProfileWeightUnit()) => {
+    const value = convertKgVolumeForDisplay(valueKg, unit);
+    const rounded = Math.round(value * 10) / 10;
+    return `${rounded.toLocaleString('en-US')} ${unit === "lb" ? "lb" : "кг"}`;
   };
+  const formatVolumeNumber = (valueKg, unit = getProfileWeightUnit()) => formatVolume(valueKg, unit).replace(/\s(?:кг|lb)$/u, "");
 
   const pluralizeWorkout = (count) => {
     const mod10 = count % 10;
@@ -2822,6 +2830,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [restDraft, setRestDraft] = useState({ minutes: "2", seconds: "0" });
   const [repeatSheetWorkout, setRepeatSheetWorkout] = useState(null);
   const [repeatScheduler, setRepeatScheduler] = useState(null);
+  const [supersetCancelPrompt, setSupersetCancelPrompt] = useState(null);
   const [exerciseMeasurementSheet, setExerciseMeasurementSheet] = useState(null);
   const [exerciseNotesSheet, setExerciseNotesSheet] = useState(null);
   const [exerciseStatsSheet, setExerciseStatsSheet] = useState(null);
@@ -3363,6 +3372,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       weight_unit: payload.weight_unit,
       double_weight_in_stats: payload.double_weight_in_stats,
     });
+    console.log("Saving exercise measurement settings:", payload);
     if (supersetGroupId) console.log("Saving superset exercise:", payload);
     return payload;
   };
@@ -3386,6 +3396,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       rest_seconds: payload.rest_seconds,
       rest_after_seconds: payload.rest_after_seconds,
     });
+    console.log("Saving set time fields:", payload);
     return payload;
   };
 
@@ -3467,6 +3478,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       weight_unit: payload.weight_unit,
       double_weight_in_stats: payload.double_weight_in_stats,
     });
+    console.log("Saving exercise measurement settings:", payload);
     return payload;
   };
 
@@ -3490,6 +3502,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       rest_seconds: payload.rest_seconds,
       rest_after_seconds: payload.rest_after_seconds,
     });
+    console.log("Saving set time fields:", payload);
     return payload;
   };
 
@@ -4406,10 +4419,26 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const createSupersetFromSelection = () => {
     if (selectedExerciseIds.length < 2) {
-      setEditError({
-        title: "невозможно создать суперсет",
-        description: "Выбери минимум два упражнения пустыми кружками, затем нажми кнопку суперсета ещё раз.",
-      });
+      const selectedExercise = (selectedWorkout?.exercises || []).find(exercise => selectedExerciseIds.includes(exercise.id));
+      const groupId = getExerciseSupersetGroupId(selectedExercise);
+      if (groupId) {
+        setSupersetCancelPrompt({ groupId, selectedIds: selectedExerciseIds, wholeGroup: false });
+      } else {
+        setEditError({
+          title: "невозможно создать суперсет",
+          description: "Выбери минимум два упражнения пустыми кружками, затем нажми кнопку суперсета ещё раз.",
+        });
+      }
+      return;
+    }
+
+    const selectedExercises = (selectedWorkout?.exercises || []).filter(exercise => selectedExerciseIds.includes(exercise.id));
+    const selectedGroupIds = Array.from(new Set(selectedExercises.map(getExerciseSupersetGroupId).filter(Boolean)));
+    if (selectedGroupIds.length === 1 && selectedExercises.every(exercise => getExerciseSupersetGroupId(exercise) === selectedGroupIds[0])) {
+      const groupId = selectedGroupIds[0];
+      const groupIds = (selectedWorkout?.exercises || []).filter(exercise => getExerciseSupersetGroupId(exercise) === groupId).map(exercise => exercise.id);
+      const wholeGroup = groupIds.every(id => selectedExerciseIds.includes(id));
+      setSupersetCancelPrompt({ groupId, selectedIds: selectedExerciseIds, wholeGroup });
       return;
     }
 
@@ -4440,6 +4469,32 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }));
     setSelectedExerciseIds([]);
     setEditError(null);
+  };
+
+  const clearSupersetFields = (exercise) => ({
+    ...exercise,
+    supersetId: null,
+    supersetGroupId: null,
+    supersetOrder: null,
+    isSuperset: false,
+  });
+
+  const applySupersetCancel = (scope = "selected") => {
+    if (!supersetCancelPrompt) return;
+    const { groupId, selectedIds = [] } = supersetCancelPrompt;
+    const selectedSet = new Set(selectedIds);
+    updateSelectedWorkoutModel(workout => ({
+      ...workout,
+      exercises: (workout.exercises || []).map(exercise => {
+        const exerciseGroupId = getExerciseSupersetGroupId(exercise);
+        if (scope === "group" && exerciseGroupId === groupId) return clearSupersetFields(exercise);
+        if (scope === "selected" && selectedSet.has(exercise.id)) return clearSupersetFields(exercise);
+        return exercise;
+      }),
+      updatedAt: new Date().toISOString(),
+    }), { immediate: true });
+    setSupersetCancelPrompt(null);
+    setSelectedExerciseIds([]);
   };
 
   const openRestEditor = (type) => {
@@ -4661,7 +4716,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }));
   };
 
-  const updateExerciseById = (exerciseId, patchOrUpdater) => {
+  const updateExerciseById = (exerciseId, patchOrUpdater, options = {}) => {
     updateSelectedWorkoutModel(workout => ({
       ...workout,
       exercises: (workout.exercises || []).map(exercise => {
@@ -4670,34 +4725,47 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         return applyExercisePatchWithRest(exercise, patch);
       }),
       updatedAt: new Date().toISOString(),
-    }));
+    }), options);
   };
 
   const openExerciseMeasurementEditor = (exercise) => {
     if (!exercise) return;
-    setExerciseMeasurementSheet({ exerciseId: exercise.id });
+    setExerciseMeasurementSheet({ exerciseId: exercise.id, draft: normalizeExerciseMeasurementSettings(exercise) });
     setOpenMenu(null);
   };
 
-  const setExerciseMeasurementMode = (exerciseId, mode) => {
+  const updateExerciseMeasurementDraft = (updater) => {
+    setExerciseMeasurementSheet(prev => {
+      if (!prev) return prev;
+      const draft = typeof updater === "function" ? updater(prev.draft || exerciseMeasurementDefaults) : updater;
+      return { ...prev, draft: normalizeExerciseMeasurementSettings({ ...(prev.draft || {}), ...draft }) };
+    });
+  };
+
+  const setExerciseMeasurementMode = (mode) => {
     const modes = {
       weight_reps: { measureWeightEnabled: true, measureRepsEnabled: true, measureTimeEnabled: false },
       weight_time: { measureWeightEnabled: true, measureRepsEnabled: false, measureTimeEnabled: true },
       reps: { measureWeightEnabled: false, measureRepsEnabled: true, measureTimeEnabled: false },
       weight: { measureWeightEnabled: true, measureRepsEnabled: false, measureTimeEnabled: false },
     };
-    updateExerciseById(exerciseId, modes[mode] || modes.weight_reps);
+    updateExerciseMeasurementDraft(modes[mode] || modes.weight_reps);
   };
 
-  const toggleExerciseMeasurementSetting = (exerciseId, field) => {
-    updateExerciseById(exerciseId, exercise => {
-      const settings = normalizeExerciseMeasurementSettings(exercise);
-      return { [field]: !settings[field] };
-    });
+  const toggleExerciseMeasurementSetting = (field) => {
+    updateExerciseMeasurementDraft(draft => ({ [field]: !Boolean(draft?.[field]) }));
   };
 
-  const setExerciseWeightUnit = (exerciseId, weightUnit) => {
-    updateExerciseById(exerciseId, { weightUnit: normalizeWeightUnit(weightUnit) });
+  const setExerciseWeightUnit = (weightUnit) => {
+    updateExerciseMeasurementDraft({ weightUnit: normalizeWeightUnit(weightUnit) });
+  };
+
+  const saveExerciseMeasurementSettings = () => {
+    if (!exerciseMeasurementSheet?.exerciseId) return;
+    const draft = normalizeExerciseMeasurementSettings(exerciseMeasurementSheet.draft || {});
+    console.log("Saving exercise measurement settings:", draft);
+    updateExerciseById(exerciseMeasurementSheet.exerciseId, draft, { immediate: true });
+    setExerciseMeasurementSheet(null);
   };
 
   const openExerciseNotesEditor = (exercise) => {
@@ -4722,10 +4790,24 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           workout_status: workout.status,
           exercise_name: item.name,
           muscle_group: item.muscleGroup,
+          notes: item.note || item.notes || "",
+          ...normalizeExerciseMeasurementSettings(item),
           sets: item.sets || [],
         })))
       .sort((a, b) => String(b.workout_date || "").localeCompare(String(a.workout_date || "")));
   };
+
+  const getHistoryRecordSettings = (record = {}) => normalizeExerciseMeasurementSettings(record);
+  const getHistorySetWeightKg = (set = {}) => safeWorkoutNumber(set.weight ?? set.weight_kg, 0);
+  const formatHistorySetWeight = (set = {}, record = {}) => {
+    const settings = getHistoryRecordSettings(record);
+    const displayWeight = settings.weightUnit === "lb" ? kgToLb(getHistorySetWeightKg(set)) : getHistorySetWeightKg(set);
+    return `${formatWorkoutInputNumber(displayWeight)} ${settings.weightUnit === "lb" ? "lb" : "кг"}`;
+  };
+  const getHistorySetVolumeKg = (set = {}, record = {}) => getSetVolumeForExercise({
+    ...set,
+    weight: getHistorySetWeightKg(set),
+  }, getHistoryRecordSettings(record));
 
   const openExerciseStats = async (exercise) => {
     if (!exercise) return;
@@ -5186,6 +5268,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   useAppBackLayer("workouts-exercise-stats", Boolean(exerciseStatsSheet), () => setExerciseStatsSheet(null), 184);
   useAppBackLayer("workouts-exercise-notes", Boolean(exerciseNotesSheet), () => setExerciseNotesSheet(null), 183);
   useAppBackLayer("workouts-exercise-measurement", Boolean(exerciseMeasurementSheet), () => setExerciseMeasurementSheet(null), 182);
+  useAppBackLayer("workouts-superset-cancel", Boolean(supersetCancelPrompt), () => setSupersetCancelPrompt(null), 181);
   useAppBackLayer("workouts-rest-menu", restMenuOpen, () => setRestMenuOpen(false), 180);
   useAppBackLayer("workouts-open-menu", Boolean(openMenu), () => setOpenMenu(null), 175);
   useAppBackLayer("workouts-repeat-scheduler", Boolean(repeatScheduler), () => setRepeatScheduler(null), 174);
@@ -5226,7 +5309,6 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const WorkoutCard = ({ workout }) => {
     const pointerTimerRef = useRef(null);
     const statusColor = workoutStatusColors[workout.status] || workoutStatusColors.completed;
-    const statusLabel = workout.status === "active" ? "идёт" : workout.status === "planned" ? "план" : workout.status === "skipped" ? "пропуск" : "готово";
 
     const startLongPress = () => {
       clearTimeout(pointerTimerRef.current);
@@ -5251,10 +5333,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         onContextMenu={(event) => { event.preventDefault(); setWeekMenuGroup({ type: "workout", workout }); }}
         className="block w-full rounded-[22px] border border-white/10 bg-white/[0.04] p-4 text-left transition active:scale-[0.98] hover:border-red-500/40 hover:bg-red-500/5"
       >
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-[17px] font-semibold text-zinc-100">{workout.weekday}</div>
-          <span className="rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-black" style={{ backgroundColor: statusColor }}>{statusLabel}</span>
-        </div>
+        <div className="text-[17px] font-semibold text-zinc-100">{workout.weekday}</div>
         <div className="mt-4 flex items-center gap-4">
           <div className="h-12 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: statusColor }} />
           <div className="min-w-0">
@@ -5456,7 +5535,6 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               className="w-full rounded-2xl bg-white/[0.08] px-4 py-3 text-[34px] font-black leading-none tracking-[-0.07em] text-white outline-none"
             /> : <h2 className="break-words text-[36px] font-black leading-none tracking-[-0.07em] text-white">{selectedWorkout.title}</h2>}
             <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-zinc-400">
-              <span className={`rounded-full px-3 py-2 ${workoutIsActive ? 'bg-red-500/20 text-red-300' : workoutIsPlanned ? 'bg-white/12 text-zinc-200' : 'bg-white/[0.08]'}`}>{workoutIsActive ? 'Активная тренировка' : workoutIsPlanned ? 'Запланированная тренировка' : 'Завершённая тренировка'}</span>
               <span className="rounded-full bg-white/[0.08] px-3 py-2">{completedSets}/{totalSets} подходов</span>
             </div>
           </div>
@@ -5468,7 +5546,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             </div>
             <div className="rounded-2xl bg-black/32 px-3 py-4">
               <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Объем</div>
-              <div className="mt-2 text-xl font-black">{formatVolume(totalVolume).replace(' кг','')}</div>
+              <div className="mt-2 text-xl font-black">{formatVolumeNumber(totalVolume)}</div>
             </div>
             <div className="rounded-2xl bg-black/32 px-3 py-4">
               <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Калории</div>
@@ -5497,24 +5575,26 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
           <div className="overflow-hidden rounded-[28px] border border-white/10 bg-zinc-950/80">
             {exercises.length ? exercises.map((exercise, index) => {
+              const exerciseUnit = getExerciseWeightUnit(exercise);
               const setMetrics = (exercise.sets || []).length
-                ? (exercise.sets || []).map(set => `${Number(set.weight || 0)} кг × ${Number(set.reps || 0)}`).join(', ')
+                ? (exercise.sets || []).map(set => `${formatWorkoutInputNumber(getDisplayWeight(set.weight || 0, exercise))} ${exerciseUnit === "lb" ? "lb" : "кг"} × ${Number(set.reps || 0)}`).join(', ')
                 : 'подходы не добавлены';
-              const exerciseDone = (exercise.sets || []).length > 0 && (exercise.sets || []).every(set => getSetStatus(set) !== "pending");
-              const exerciseSkipped = (exercise.sets || []).length > 0 && (exercise.sets || []).every(set => getSetStatus(set) === "skipped");
-              const exerciseStatusColor = exerciseSkipped ? workoutStatusColors.skipped : exerciseDone ? workoutStatusColors.completed : workoutStatusColors.pending;
+              const completedExerciseSets = (exercise.sets || []).filter(set => getSetStatus(set) === "completed").length;
+              const exerciseDone = (exercise.sets || []).length > 0 && completedExerciseSets === (exercise.sets || []).length;
+              const exercisePartial = completedExerciseSets > 0 && !exerciseDone;
               const selectedForEdit = selectedExerciseIds.includes(exercise.id);
               const supersetGroupId = getExerciseSupersetGroupId(exercise);
               const supersetColor = supersetGroupId ? supersetColorMap[supersetGroupId] : null;
               const draggingBlock = Boolean(reorderVisual?.movingIds?.includes(exercise.id));
               const dropTarget = reorderVisual?.targetId === exercise.id;
               const rowStyle = {
-                ...((supersetColor || exerciseStatusColor) ? { boxShadow: `inset 4px 0 0 ${supersetColor || exerciseStatusColor}`, backgroundColor: supersetColor ? `${supersetColor}12` : `${exerciseStatusColor}10` } : {}),
+                ...(supersetColor ? { boxShadow: `inset 4px 0 0 ${supersetColor}`, backgroundColor: `${supersetColor}10` } : {}),
+                ...(exerciseDone ? { backgroundColor: "rgba(34,197,94,0.10)", outline: "1px solid rgba(34,197,94,0.24)", outlineOffset: "-1px" } : exercisePartial ? { backgroundColor: "rgba(34,197,94,0.055)" } : {}),
                 ...(draggingBlock ? { transform: `translate3d(0, ${reorderVisual.dy}px, 0)`, opacity: 0.72, zIndex: 30 } : {}),
                 ...(dropTarget ? { outline: `1px solid ${supersetColor || "#ef4444"}`, outlineOffset: "-1px" } : {}),
               };
               const circleStyle = supersetColor && !selectedForEdit ? { borderColor: supersetColor, backgroundColor: `${supersetColor}20`, color: supersetColor } : undefined;
-              const numberStyle = supersetColor ? { backgroundColor: `${supersetColor}24`, color: supersetColor } : { backgroundColor: `${exerciseStatusColor}24`, color: exerciseStatusColor };
+              const numberStyle = supersetColor ? { backgroundColor: `${supersetColor}24`, color: supersetColor } : undefined;
 
               const exerciseBody = isEditingWorkout ? <div data-workout-exercise-id={exercise.id} style={rowStyle} className="relative grid w-full grid-cols-[38px_1fr_38px] gap-3 px-4 py-5 text-left transition-transform duration-150">
                 <button type="button" onClick={(e) => { e.stopPropagation(); toggleExerciseSelection(exercise.id); }} className="relative mt-1 flex h-8 w-8 items-center justify-center">
@@ -5541,8 +5621,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                   <span className="h-0.5 w-4 rounded-full bg-current" />
                   <span className="h-0.5 w-4 rounded-full bg-current" />
                 </button>
-              </div> : <button onClick={() => openExerciseFromOverview(index)} style={{ boxShadow: `inset 4px 0 0 ${supersetColor || exerciseStatusColor}`, backgroundColor: supersetColor ? `${supersetColor}10` : `${exerciseStatusColor}08` }} className="grid w-full grid-cols-[34px_1fr] gap-3 px-4 py-5 text-left transition active:scale-[0.99] hover:bg-white/[0.04]">
-                <div style={numberStyle} className="mt-1 flex h-7 w-7 items-center justify-center rounded-full text-xs font-black">{exercise.order || index + 1}</div>
+              </div> : <button onClick={() => openExerciseFromOverview(index)} style={rowStyle} className="grid w-full grid-cols-[34px_1fr] gap-3 px-4 py-5 text-left transition active:scale-[0.99] hover:bg-white/[0.04]">
+                <div style={numberStyle} className={`mt-1 flex h-7 w-7 items-center justify-center rounded-full text-xs font-black ${supersetColor ? '' : 'bg-white/[0.08] text-zinc-400'}`}>{exercise.order || index + 1}</div>
                 <div>
                   <h4 className="break-words text-[21px] font-black leading-tight tracking-[-0.04em]">{exercise.name}</h4>
                   <p className="mt-1 text-xs font-semibold text-red-400">{exercise.muscleGroup}</p>
@@ -5775,10 +5855,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                   return <SwipeActionRow key={set.id} rowId={set.id} swipedId={swipedSetId} setSwipedId={setSwipedSetId} className="border-b border-white/10 last:border-b-0" actions={[
                     { label: "delete", icon: "🗑", className: "bg-red-500", onClick: () => removeSetFromActiveExercise(set.id) },
                   ]}>
-                    <div onClick={() => setActiveSetId(set.id)} className={`px-3 py-4 transition ${active ? 'bg-red-500/10' : 'hover:bg-white/[0.03]'}`}>
+                    <div onClick={() => setActiveSetId(set.id)} className={`px-3 py-4 transition ${status === 'completed' ? 'bg-emerald-500/10' : active ? 'bg-red-500/10' : 'hover:bg-white/[0.03]'}`}>
                       <div className={`grid items-center gap-2 ${(showWeightField && (showRepsField || showTimeField)) ? 'grid-cols-[48px_1fr_34px_1fr]' : 'grid-cols-[48px_1fr]'}`}>
-                        <button onClick={(e) => { e.stopPropagation(); openSetMenu(e, set); }} className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-black transition ${status === 'completed' ? 'bg-red-500 text-black' : status === 'skipped' ? 'bg-zinc-700 text-zinc-400' : active ? 'bg-white text-black' : 'bg-emerald-500/18 text-emerald-300'}`}>
-                          {set.order || setIndex + 1}
+                        <button onClick={(e) => { e.stopPropagation(); openSetMenu(e, set); }} className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-black transition ${status === 'completed' ? 'bg-emerald-500 text-black' : status === 'skipped' ? 'bg-zinc-700 text-zinc-400' : active ? 'bg-white text-black' : 'bg-white/[0.08] text-zinc-300'}`}>
+                          {status === "completed" ? "✓" : (set.order || setIndex + 1)}
                         </button>
 
                         {showWeightField && <label onClick={(e) => e.stopPropagation()} className="flex h-11 items-center rounded-2xl bg-white/[0.04] px-3">
@@ -5900,7 +5980,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             <div className="mb-2 grid grid-cols-3 gap-1 rounded-2xl bg-black/30 p-1">
               {[["warmup", "Разм."], ["working", "Рабочий"], ["drop", "Дроп"]].map(([type, label]) => <button key={type} onClick={() => updateActiveSet(menuSet.id, { type })} className={`rounded-xl px-2 py-2 text-xs font-bold ${menuSet.type === type ? 'bg-red-500 text-black' : 'text-zinc-500 hover:bg-white/8'}`}>{label}</button>)}
             </div>
-            <button onClick={() => { updateActiveSet(menuSet.id, { status: "completed", completedAt: new Date().toISOString() }); setOpenMenu(null); }} className="block w-full rounded-2xl px-3 py-3 text-left text-sm font-semibold text-zinc-200 hover:bg-white/8">Выполненный {getSetStatus(menuSet) === "completed" && <span className="float-right text-red-400">✓</span>}</button>
+            <button onClick={() => { updateActiveSet(menuSet.id, { status: "completed", completedAt: new Date().toISOString() }); setOpenMenu(null); }} className="block w-full rounded-2xl px-3 py-3 text-left text-sm font-semibold text-zinc-200 hover:bg-white/8">Выполненный {getSetStatus(menuSet) === "completed" && <span className="float-right text-emerald-400">✓</span>}</button>
             <button onClick={() => { updateActiveSet(menuSet.id, { status: "skipped" }); setOpenMenu(null); }} className="block w-full rounded-2xl px-3 py-3 text-left text-sm font-semibold text-zinc-200 hover:bg-white/8">Пропущенный {getSetStatus(menuSet) === "skipped" && <span className="float-right text-zinc-500">✓</span>}</button>
             <button onClick={() => addSetToActiveExercise("drop", menuSet.id)} className="block w-full rounded-2xl px-3 py-3 text-left text-sm font-semibold text-zinc-200 hover:bg-white/8">Добавить дроп-сет</button>
             <button onClick={() => { const note = prompt('Заметка к подходу', menuSet.note || ''); if (note !== null) updateActiveSet(menuSet.id, { note }); setOpenMenu(null); }} className="block w-full rounded-2xl px-3 py-3 text-left text-sm font-semibold text-zinc-200 hover:bg-white/8">Добавить заметку</button>
@@ -5939,7 +6019,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         {activeTab === "results" && <SecondaryContent title="Результаты" description="Здесь будут графики тоннажа, частоты тренировок, среднего RIR и прогресса по упражнениям.">
           <div className="mt-6 grid grid-cols-2 gap-3">
             <div className="rounded-2xl bg-black/25 p-4"><div className="text-xs text-zinc-500">Тренировок</div><div className="mt-2 text-3xl font-black">{workouts.length}</div></div>
-            <div className="rounded-2xl bg-black/25 p-4"><div className="text-xs text-zinc-500">Тоннаж</div><div className="mt-2 text-3xl font-black">{formatVolume(workouts.reduce((sum, w) => sum + Number(getWorkoutVolume(w)), 0)).replace(' кг','')}</div></div>
+            <div className="rounded-2xl bg-black/25 p-4"><div className="text-xs text-zinc-500">Тоннаж</div><div className="mt-2 text-3xl font-black">{formatVolumeNumber(workouts.reduce((sum, w) => sum + Number(getWorkoutVolume(w)), 0))}</div></div>
           </div>
         </SecondaryContent>}
         {activeTab === "exercises" && <SecondaryContent title="Упражнения" description="Полная база упражнений: поиск по названию и сортировка по мышечным группам.">
@@ -6155,9 +6235,28 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
     {isExerciseBaseOpen && ExerciseBaseSheet()}
 
+    {supersetCancelPrompt && <div onClick={() => setSupersetCancelPrompt(null)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+      <BottomSheetPanel onClose={() => setSupersetCancelPrompt(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Суперсет</p>
+            <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Отменить связь</h2>
+          </div>
+          <button onClick={() => setSupersetCancelPrompt(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-zinc-500">Упражнения, подходы, веса, заметки и отдых останутся на месте. Изменится только связь суперсета.</p>
+        <div className="mt-5 space-y-2">
+          <button onClick={() => applySupersetCancel("group")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black transition active:scale-[0.98]">Отменить суперсет</button>
+          {!supersetCancelPrompt.wholeGroup && <button onClick={() => applySupersetCancel("selected")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Убрать выбранное из суперсета</button>}
+          <button onClick={() => setSupersetCancelPrompt(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Оставить как есть</button>
+        </div>
+      </BottomSheetPanel>
+    </div>}
+
     {exerciseMeasurementSheet && (() => {
       const exercise = (selectedWorkout?.exercises || []).find(item => item.id === exerciseMeasurementSheet.exerciseId);
-      const settings = normalizeExerciseMeasurementSettings(exercise || {});
+      const settings = normalizeExerciseMeasurementSettings(exerciseMeasurementSheet.draft || exercise || {});
       const currentMode = settings.measureWeightEnabled && settings.measureRepsEnabled
         ? "weight_reps"
         : settings.measureWeightEnabled && settings.measureTimeEnabled
@@ -6185,7 +6284,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           <div className="mt-5 grid grid-cols-2 gap-2">
             {modeItems.map(([mode, label]) => <button
               key={mode}
-              onClick={() => setExerciseMeasurementMode(exerciseMeasurementSheet.exerciseId, mode)}
+              onClick={() => setExerciseMeasurementMode(mode)}
               className={`rounded-2xl px-3 py-3 text-left text-sm font-black transition ${currentMode === mode ? 'bg-red-500 text-black' : 'bg-white/[0.05] text-zinc-300 hover:bg-white/10'}`}
             >
               {label}
@@ -6197,7 +6296,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               ["measureRirEnabled", "RIR"],
               ["measureRpeEnabled", "RPE"],
               ["doubleWeightInStats", "Считать вес в статистике ×2"],
-            ].map(([field, label]) => <button key={field} onClick={() => toggleExerciseMeasurementSetting(exerciseMeasurementSheet.exerciseId, field)} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
+            ].map(([field, label]) => <button key={field} onClick={() => toggleExerciseMeasurementSetting(field)} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
               <span>{label}</span>
               <span className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-black ${settings[field] ? 'border-red-500 bg-red-500 text-black' : 'border-white/20 text-zinc-600'}`}>{settings[field] ? "✓" : ""}</span>
             </button>)}
@@ -6205,9 +6304,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
           <div className="mt-5 rounded-[24px] bg-white/[0.04] p-2">
             <div className="grid grid-cols-2 gap-2">
-              {["kg", "lb"].map(unit => <button key={unit} onClick={() => setExerciseWeightUnit(exerciseMeasurementSheet.exerciseId, unit)} className={`h-11 rounded-2xl text-sm font-black uppercase transition ${settings.weightUnit === unit ? 'bg-white text-black' : 'text-zinc-500 hover:bg-white/8'}`}>{unit}</button>)}
+              {["kg", "lb"].map(unit => <button key={unit} onClick={() => setExerciseWeightUnit(unit)} className={`h-11 rounded-2xl text-sm font-black uppercase transition ${settings.weightUnit === unit ? 'bg-white text-black' : 'text-zinc-500 hover:bg-white/8'}`}>{unit}</button>)}
             </div>
           </div>
+          <button onClick={saveExerciseMeasurementSettings} className="mt-5 h-12 w-full rounded-full bg-red-500 font-black text-black">Сохранить</button>
         </BottomSheetPanel>
       </div>;
     })()}
@@ -6256,7 +6356,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {sets.map((set, setIndex) => <span key={set.id || setIndex} className="rounded-full bg-black/30 px-3 py-1.5 text-xs font-bold text-zinc-300">
-                  {formatWorkoutInputNumber(set.weight ?? set.weight_kg)} кг × {set.reps ?? 0}{set.rir !== null && set.rir !== undefined ? ` · RIR ${set.rir}` : ""}{set.rpe !== null && set.rpe !== undefined ? ` · RPE ${set.rpe}` : ""}
+                  {formatHistorySetWeight(set, record)} × {set.reps ?? 0}
+                  {set.work_time_seconds || set.workTimeSeconds ? ` · ${set.work_time_seconds || set.workTimeSeconds} сек` : ""}
+                  {set.rir !== null && set.rir !== undefined ? ` · RIR ${set.rir}` : ""}
+                  {set.rpe !== null && set.rpe !== undefined ? ` · RPE ${set.rpe}` : ""}
+                  {` · ${formatVolume(getHistorySetVolumeKg(set, record))}`}
                 </span>)}
               </div>
             </div>;
@@ -6284,7 +6388,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           </div>
           <div className="rounded-2xl bg-white/[0.04] p-4">
             <div className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Тоннаж</div>
-            <div className="mt-2 text-3xl font-black">{formatVolume(weeklyVolume).replace(' кг','')}</div>
+            <div className="mt-2 text-3xl font-black">{formatVolumeNumber(weeklyVolume)}</div>
           </div>
         </div>
 
@@ -7689,6 +7793,7 @@ function OnlyPumpPlatform() {
       weight_kg: safeProfileNumber(measurements.weight, profile.weight_kg || DEFAULT_PROFILE.weight_kg),
       height_cm: safeProfileNumber(profile.height_cm, DEFAULT_PROFILE.height_cm),
       goal: progressGoal.title || profile.goal || DEFAULT_PROFILE.goal,
+      default_weight_unit: normalizeWeightUnit(profile.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
     };
 
     const timer = setTimeout(async () => {
