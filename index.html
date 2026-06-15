@@ -113,6 +113,9 @@
     .onlypump-list-62 {
       max-height: calc(var(--onlypump-app-height) * 0.62);
     }
+    .onlypump-list-78 {
+      max-height: calc(var(--onlypump-app-height) * 0.78);
+    }
     @media (min-width: 1024px) {
       .onlypump-main-scroll {
         padding-bottom: calc(var(--onlypump-safe-bottom) + 1.5rem);
@@ -1099,8 +1102,12 @@ const workoutStatusColors = {
   completed: "#22c55e",
   planned: "#ef4444",
   active: "#16a34a",
-  skipped: "#71717a",
-  pending: "#22c55e",
+};
+const normalizeWorkoutStatus = (status) => {
+  const value = String(status || "").trim().toLowerCase();
+  if (["planned", "scheduled", "plan"].includes(value)) return "planned";
+  if (["active", "started", "in_progress", "in-progress"].includes(value)) return "active";
+  return "completed";
 };
 const exerciseMeasurementDefaults = {
   measureWeightEnabled: true,
@@ -1299,8 +1306,8 @@ const createWorkoutModel = (dateKey, patch = {}) => {
     totalVolumeKg: patch.totalVolumeKg ?? 0,
     calories: patch.calories ?? 0,
     estimatedCaloriesBurned: patch.estimatedCaloriesBurned ?? patch.estimated_calories_burned ?? patch.calories ?? 0,
-    status: patch.status || "completed",
-    startedAt: patch.startedAt || new Date().toISOString(),
+    status: normalizeWorkoutStatus(patch.status),
+    startedAt: patch.startedAt !== undefined ? patch.startedAt : new Date().toISOString(),
     exercises: patch.exercises ? cloneWorkoutExercises(patch.exercises) : defaultWorkoutExercisesForTitle(title),
     notes: patch.notes || "",
     templateId: patch.templateId,
@@ -1322,7 +1329,7 @@ const buildInitialWorkoutModels = () => {
 
 const getWorkoutSets = (workout) => (workout?.exercises || []).flatMap(exercise => (exercise.sets || []).map(set => ({ ...set, __exercise: exercise })));
 const getWorkoutSetCountGlobal = (workout) => getWorkoutSets(workout).length;
-const getWorkoutVolume = (workout, completedOnly = false) => {
+const getWorkoutVolume = (workout, completedOnly = true) => {
   const sets = completedOnly ? getWorkoutSets(workout).filter(set => getSetStatusGlobal(set) === "completed") : getWorkoutSets(workout);
   return sets.reduce((sum, set) => sum + getSetVolumeForExercise(set, set.__exercise), 0);
 };
@@ -1457,7 +1464,7 @@ const mapWorkoutFromApi = (row = {}, index = 0, fallbackDateKey = formatDateKey(
     serverTotalVolume: safeWorkoutModelNumber(row.total_volume ?? row.totalVolume ?? row.totalVolumeKg, 0),
     calories: getWorkoutCaloriesFromRecord(row),
     estimatedCaloriesBurned: getWorkoutCaloriesFromRecord(row),
-    status: row.status || "completed",
+    status: normalizeWorkoutStatus(row.status),
     startedAt: row.started_at || row.startedAt || null,
     finishedAt: row.finished_at || row.finishedAt || null,
     exercises: mappedExercises,
@@ -2954,7 +2961,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     })),
   }));
 
-  const cloneExercisesForRepeat = (exercises = []) => cloneExercises(exercises, false).map(exercise => ({
+  const cloneExercisesForRepeat = (exercises = [], completed = false) => cloneExercises(exercises, false).map(exercise => ({
     ...exercise,
     pending: false,
     isSaving: false,
@@ -2962,9 +2969,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     syncError: false,
     sets: (exercise.sets || []).map(set => ({
       ...set,
-      status: "pending",
-      isCompleted: false,
-      completedAt: null,
+      status: completed ? "completed" : "pending",
+      isCompleted: completed,
+      completedAt: completed ? new Date().toISOString() : null,
       pending: false,
       isSaving: false,
       isSyncing: false,
@@ -3012,8 +3019,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       totalVolumeKg: patch.totalVolumeKg ?? 0,
       calories: patch.calories ?? 0,
       estimatedCaloriesBurned: patch.estimatedCaloriesBurned ?? patch.estimated_calories_burned ?? patch.calories ?? 0,
-      status: patch.status || "completed",
-      startedAt: patch.startedAt || new Date().toISOString(),
+      status: normalizeWorkoutStatus(patch.status),
+      startedAt: patch.startedAt !== undefined ? patch.startedAt : new Date().toISOString(),
       exercises: patch.exercises ? cloneExercises(patch.exercises) : defaultExercisesForTitle(title),
       notes: patch.notes || "",
       templateId: patch.templateId,
@@ -3062,6 +3069,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [restDraft, setRestDraft] = useState({ minutes: "2", seconds: "0" });
   const [repeatSheetWorkout, setRepeatSheetWorkout] = useState(null);
   const [repeatScheduler, setRepeatScheduler] = useState(null);
+  const [finishChoiceSheet, setFinishChoiceSheet] = useState(null);
+  const [completionSummarySheet, setCompletionSummarySheet] = useState(null);
+  const [completionDetailsOpen, setCompletionDetailsOpen] = useState(false);
   const [supersetCancelPrompt, setSupersetCancelPrompt] = useState(null);
   const [exerciseMeasurementSheet, setExerciseMeasurementSheet] = useState(null);
   const [exerciseNotesSheet, setExerciseNotesSheet] = useState(null);
@@ -3077,6 +3087,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const reorderExerciseRef = useRef(null);
   const reorderTargetRef = useRef(null);
   const workoutScrollRef = useRef(null);
+  const restAdvanceRef = useRef(null);
   const loadedWorkoutProfileRef = useRef(null);
   const workoutsRef = useRef(workouts);
   const pendingWorkoutPatchesRef = useRef({});
@@ -3124,6 +3135,16 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }, 1000);
     return () => clearInterval(id);
   }, [restTimer]);
+
+  useEffect(() => {
+    if (restTimer !== 0 || !restAdvanceRef.current) return;
+    const target = restAdvanceRef.current;
+    restAdvanceRef.current = null;
+    if (target.workoutId && selectedWorkout?.id && target.workoutId !== selectedWorkout.id) return;
+    setActiveExerciseIndex(target.exerciseIndex);
+    setActiveSetId(target.setId || null);
+    setOpenMenu(null);
+  }, [restTimer, selectedWorkout?.id]);
 
   useEffect(() => {
     setWorkoutTitleDraft(selectedWorkout?.title || "");
@@ -3182,7 +3203,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
       const group = groups.get(key);
       group.workouts.push(workout);
-      group.totalVolume += Number(getWorkoutVolume(workout));
+      if (workout.status === "completed") group.totalVolume += Number(getWorkoutVolume(workout));
       group.totalDuration += Number(workout.durationMinutes || 0);
       group.totalCalories += Number(workout.calories || 0);
     });
@@ -3241,7 +3262,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const weeklyMuscleStats = useMemo(() => getMuscleSetStatsForWorkouts(weeklyWorkouts), [weeklyWorkouts]);
-  const weeklyVolume = useMemo(() => weeklyWorkouts.reduce((sum, workout) => sum + Number(getWorkoutVolume(workout)), 0), [weeklyWorkouts]);
+  const weeklyVolume = useMemo(() => weeklyWorkouts.filter(workout => workout.status === "completed").reduce((sum, workout) => sum + Number(getWorkoutVolume(workout)), 0), [weeklyWorkouts]);
 
   const VolumeLoadBar = ({ count = 0, title = "Объем", subtitle = "подходы", experiencedAt = volumeStandards.workoutTotal, onClick, className = "" }) => {
     const level = getVolumeLoadLevel(count, experiencedAt);
@@ -3277,6 +3298,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       durationMinutes: patch.durationMinutes ?? 45,
       totalVolumeKg: patch.totalVolumeKg ?? 0,
       calories: patch.calories ?? 0,
+      estimatedCaloriesBurned: patch.estimatedCaloriesBurned ?? patch.estimated_calories_burned ?? patch.calories ?? 0,
       status: patch.status,
       startedAt: patch.startedAt,
       templateId: patch.templateId,
@@ -3317,9 +3339,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return makeWorkout(dateKey, {
         title: day.title,
         programDayNumber: index + 1,
-        durationMinutes: day.durationMinutes,
+        durationMinutes: 0,
         totalVolumeKg: 0,
-        calories: day.calories || 0,
+        calories: 0,
+        estimatedCaloriesBurned: 0,
         status: "planned",
         startedAt: null,
         exercises: buildProgramExercises(day.exercises),
@@ -3416,6 +3439,21 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const getSetStatus = (set) => set.status || (set.isCompleted ? "completed" : "pending");
+  const isWorkingSet = (set) => (set?.type || "working") !== "warmup";
+  const isCompletedSet = (set) => getSetStatus(set) === "completed";
+  const getCompletedSetsFromWorkout = (workout) => (workout?.exercises || [])
+    .flatMap(exercise => (exercise.sets || []).map(set => ({ ...set, __exercise: exercise })))
+    .filter(isCompletedSet);
+  const getExerciseCompletion = (exercise) => {
+    const workingSets = (exercise?.sets || []).filter(isWorkingSet);
+    const completedSets = workingSets.filter(isCompletedSet);
+    return {
+      total: workingSets.length,
+      completed: completedSets.length,
+      done: workingSets.length > 0 && completedSets.length === workingSets.length,
+      partial: completedSets.length > 0 && completedSets.length < workingSets.length,
+    };
+  };
 
   const getFirstActiveSetId = (exercise) => {
     const sets = exercise?.sets || [];
@@ -3548,11 +3586,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const recalculateWorkoutTotals = (workout) => {
     const exercises = workout?.exercises || [];
     const totalSets = exercises.reduce((sum, exercise) => sum + (exercise.sets || []).length, 0);
+    const completedSets = getCompletedSetsFromWorkout(workout);
     const totalVolume = exercises.reduce((sum, exercise) => {
-      return sum + (exercise.sets || []).reduce((setSum, set) => setSum + getSetVolumeForExercise(set, exercise), 0);
+      return sum + (exercise.sets || []).reduce((setSum, set) => {
+        if (!isCompletedSet(set)) return setSum;
+        return setSum + getSetVolumeForExercise(set, exercise);
+      }, 0);
     }, 0);
-    console.log("Recalculated workout totals:", { workoutId: workout?.supabaseId || workout?.id, totalSets, totalVolume });
-    return { totalSets, totalVolume };
+    console.log("Recalculated workout totals:", { workoutId: workout?.supabaseId || workout?.id, totalSets, completedSets: completedSets.length, totalVolume });
+    return { totalSets, completedSets: completedSets.length, totalVolume };
   };
 
   const getWorkoutTotals = (workout) => {
@@ -3565,7 +3607,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       profile_id: profile?.id,
       workout_date: workout?.date || selectedDateKey,
       title: workout?.title || "Новая тренировка",
-      status: workout?.status || "completed",
+      status: normalizeWorkoutStatus(workout?.status),
       notes: workout?.notes || "",
       total_sets: totals.totalSets,
       total_volume: totals.totalVolume,
@@ -3656,7 +3698,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const payload = {
       id: workout.supabaseId,
       title: workout.title || "Новая тренировка",
-      status: workout.status || "completed",
+      status: normalizeWorkoutStatus(workout.status),
       notes: workout.notes || "",
       total_sets: totals.totalSets,
       total_volume: totals.totalVolume,
@@ -4383,8 +4425,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       serverTotalVolume,
       calories: getWorkoutCaloriesFromRecord(row),
       estimatedCaloriesBurned: getWorkoutCaloriesFromRecord(row),
-      status: row.status || "completed",
-      startedAt: null,
+      status: normalizeWorkoutStatus(row.status),
+      startedAt: row.started_at || row.startedAt || row.created_at || row.createdAt || null,
       exercises: mappedExercises,
       notes: row.notes || "",
       templateId: null,
@@ -5337,6 +5379,20 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setOpenMenu(null);
   };
 
+  const findNextPendingSetTarget = (workout, exerciseIndex, currentSetId = null) => {
+    const exercises = workout?.exercises || [];
+    for (let index = exerciseIndex; index < exercises.length; index += 1) {
+      const exercise = exercises[index];
+      const sets = exercise?.sets || [];
+      const startSetIndex = index === exerciseIndex && currentSetId
+        ? Math.max(0, sets.findIndex(set => set.id === currentSetId) + 1)
+        : 0;
+      const nextSet = sets.slice(startSetIndex).find(set => getSetStatus(set) === "pending");
+      if (nextSet) return { workoutId: workout.id, exerciseIndex: index, setId: nextSet.id };
+    }
+    return null;
+  };
+
   const completeCurrentSet = () => {
     if (!selectedWorkout) return;
     const currentExercise = (selectedWorkout.exercises || [])[activeExerciseIndex];
@@ -5350,17 +5406,32 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }
 
     if (getSetStatus(currentSet) !== "completed") {
+      const nextTarget = findNextPendingSetTarget(selectedWorkout, activeExerciseIndex, currentSet.id);
+      const nextIsSameExercise = nextTarget?.exerciseIndex === activeExerciseIndex;
+      const restSeconds = nextTarget
+        ? safeWorkoutNumber(nextIsSameExercise
+          ? (currentSet.restSeconds ?? currentExercise.restSeconds ?? 120)
+          : (currentSet.restAfterSeconds || currentExercise.restAfterSeconds || currentSet.restSeconds || currentExercise.restSeconds || 120), 0)
+        : 0;
       updateActiveSet(currentSet.id, { status: "completed", completedAt: new Date().toISOString() });
-      setRestTimer(Number(currentSet.restSeconds || currentExercise.restSeconds || 120));
-      const currentIndex = sets.findIndex(set => set.id === currentSet.id);
-      const nextSet = sets.slice(currentIndex + 1).find(set => getSetStatus(set) === "pending");
-      if (nextSet) setActiveSetId(nextSet.id);
+      if (nextTarget && restSeconds > 0) {
+        restAdvanceRef.current = nextTarget;
+        setRestTimer(restSeconds);
+        return;
+      }
+      restAdvanceRef.current = null;
+      setRestTimer(null);
+      if (nextTarget) {
+        setActiveExerciseIndex(nextTarget.exerciseIndex);
+        setActiveSetId(nextTarget.setId);
+      }
       return;
     }
 
-    const nextPending = sets.find(set => getSetStatus(set) === "pending");
-    if (nextPending) {
-      setActiveSetId(nextPending.id);
+    const nextTarget = findNextPendingSetTarget(selectedWorkout, activeExerciseIndex, currentSet.id);
+    if (nextTarget) {
+      setActiveExerciseIndex(nextTarget.exerciseIndex);
+      setActiveSetId(nextTarget.setId);
       return;
     }
 
@@ -5383,6 +5454,91 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return Math.max(0, Math.round((met * 3.5 * profileWeightKg / 200) * minutes));
   };
 
+  const getWorkoutIncompleteSetCount = (workout) => (workout?.exercises || [])
+    .flatMap(exercise => exercise.sets || [])
+    .filter(set => getSetStatus(set) === "pending")
+    .length;
+
+  const pickTonnageAchievement = (volumeKg) => {
+    const volume = Math.max(0, safeWorkoutNumber(volumeKg, 0));
+    const options = [
+      { max: 80, weight: 4, label: "кошки", single: "кошка" },
+      { max: 200, weight: 10, label: "маленьких собак", single: "маленькая собака" },
+      { max: 400, weight: 25, label: "больших собак", single: "большая собака" },
+      { max: 700, weight: 80, label: "мужчин", single: "мужчина" },
+      { max: 1500, weight: 200, label: "мотоциклов", single: "мотоцикл" },
+      { max: 3000, weight: 1200, label: "маленьких автомобилей", single: "маленький автомобиль" },
+      { max: 7000, weight: 5000, label: "слонов", single: "слон" },
+      { max: 15000, weight: 12000, label: "автобусов", single: "автобус" },
+      { max: 30000, weight: 25000, label: "вагонов метро", single: "вагон метро" },
+      { max: 70000, weight: 60000, label: "локомотивов", single: "локомотив" },
+      { max: Infinity, weight: 120000, label: "башенных кранов", single: "башенный кран" },
+    ];
+    const item = options.find(option => volume <= option.max) || options[options.length - 1];
+    const count = Math.max(1, Math.round(volume / item.weight));
+    const objectLabel = count === 1 ? item.single : item.label;
+    return {
+      title: count === 1 ? `Это как ${objectLabel}` : `Это как ${count} ${objectLabel}`,
+      subtitle: `примерно ${Math.round(volume).toLocaleString("ru-RU")} кг поднятого тоннажа`,
+    };
+  };
+
+  const buildWorkoutCompletionSummary = (workout, durationSeconds, calories) => {
+    const completedEntries = getCompletedSetsFromWorkout(workout);
+    const totals = recalculateWorkoutTotals(workout);
+    const exercises = workout?.exercises || [];
+    const rirValues = completedEntries.map(set => optionalWorkoutNumber(set.rir)).filter(value => value !== null);
+    const rpeValues = completedEntries.map(set => optionalWorkoutNumber(set.rpe)).filter(value => value !== null);
+    const average = (values) => values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : null;
+    const muscleMap = completedEntries.reduce((map, set) => {
+      const exercise = set.__exercise || {};
+      const group = exercise.muscleGroup || "Другое";
+      if (!map[group]) map[group] = { muscleGroup: group, sets: 0, volume: 0 };
+      map[group].sets += 1;
+      map[group].volume += getSetVolumeForExercise(set, exercise);
+      return map;
+    }, {});
+    const exerciseDetails = exercises.map(exercise => {
+      const setList = exercise.sets || [];
+      const completed = setList.filter(isCompletedSet);
+      const volume = completed.reduce((sum, set) => sum + getSetVolumeForExercise(set, exercise), 0);
+      const exerciseRir = completed.map(set => optionalWorkoutNumber(set.rir)).filter(value => value !== null);
+      const exerciseRpe = completed.map(set => optionalWorkoutNumber(set.rpe)).filter(value => value !== null);
+      return {
+        id: exercise.id,
+        name: exercise.name,
+        muscleGroup: exercise.muscleGroup || "Другое",
+        completedSets: completed.length,
+        totalSets: setList.length,
+        volume,
+        averageRir: average(exerciseRir),
+        averageRpe: average(exerciseRpe),
+      };
+    });
+
+    return {
+      workoutId: workout.id,
+      title: workout.title || "Тренировка",
+      completedAt: new Date().toISOString(),
+      durationSeconds,
+      durationMinutes: Math.max(1, Math.round(durationSeconds / 60)),
+      calories,
+      completedSets: totals.completedSets,
+      totalSets: totals.totalSets,
+      completedExercises: exercises.filter(exercise => getExerciseCompletion(exercise).done).length,
+      totalExercises: exercises.length,
+      volumeKg: totals.totalVolume,
+      averageRir: average(rirValues),
+      averageRpe: average(rpeValues),
+      achievement: pickTonnageAchievement(totals.totalVolume),
+      muscles: Object.values(muscleMap).map(stat => ({
+        ...stat,
+        percent: totals.completedSets ? Math.round((stat.sets / totals.completedSets) * 100) : 0,
+      })).sort((a, b) => b.sets - a.sets || b.volume - a.volume),
+      exercises: exerciseDetails,
+    };
+  };
+
   const addExerciseToSelectedWorkout = (name, muscleGroup) => {
     addExercisesToSelectedWorkout([{ name, muscleGroup }]);
   };
@@ -5390,7 +5546,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const addExercisesToSelectedWorkout = async (items = []) => {
     if (!selectedWorkout) return;
     const additions = items.map((item, index) => ({
-      ...makeExercise((selectedWorkout.exercises || []).length + index + 1, item.name, item.muscleGroup, [[0, 0], [0, 0], [0, 0]]),
+      ...makeExercise((selectedWorkout.exercises || []).length + index + 1, item.name, item.muscleGroup, [[0, 0], [0, 0], [0, 0]], false),
       pending: canUseWorkoutApi,
       isSaving: canUseWorkoutApi,
       isSyncing: canUseWorkoutApi,
@@ -5442,22 +5598,57 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setIsExerciseBaseOpen(false);
   };
 
+  const setWorkoutSetCompletionState = (workout, completed = false) => {
+    const completedAt = completed ? new Date().toISOString() : null;
+    return normalizeWorkoutSupersetMetadata({
+      ...workout,
+      exercises: (workout.exercises || []).map(exercise => ({
+        ...exercise,
+        sets: (exercise.sets || []).map(set => ({
+          ...set,
+          status: completed ? "completed" : "pending",
+          isCompleted: completed,
+          completedAt,
+        })),
+      })),
+    });
+  };
+
+  const getFirstWorkoutTarget = (workout) => {
+    const exercise = (workout?.exercises || [])[0] || null;
+    return {
+      exerciseIndex: 0,
+      setId: getFirstActiveSetId(exercise),
+    };
+  };
+
   const startWorkout = (workout) => {
     if (!workout) return;
+    const startedAt = new Date().toISOString();
     const patch = (item) => ({
-      ...item,
+      ...setWorkoutSetCompletionState(item, false),
       status: "active",
       durationMinutes: 0,
-      startedAt: new Date().toISOString(),
+      totalVolumeKg: 0,
+      calories: 0,
+      estimatedCaloriesBurned: 0,
+      startedAt,
       updatedAt: new Date().toISOString(),
     });
-    setWorkouts(prev => prev.map(item => item.id === workout.id ? patch(item) : item));
-    setSelectedWorkout(prev => prev?.id === workout.id ? patch(prev) : prev);
-    setRestTimer(null);
     const nextWorkout = patch(workout);
+    const firstTarget = getFirstWorkoutTarget(nextWorkout);
+    setWorkouts(prev => prev.map(item => item.id === workout.id ? patch(item) : item));
+    setSelectedWorkout(nextWorkout);
+    setWorkoutViewMode("exercise");
+    setActiveExerciseIndex(firstTarget.exerciseIndex);
+    setActiveSetId(firstTarget.setId);
+    setElapsedWorkoutTime(0);
+    setRestTimer(null);
+    restAdvanceRef.current = null;
     if (nextWorkout.supabaseId) {
       queueWorkoutPatch(nextWorkout.id, {
         workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
+        set_updates: (nextWorkout.exercises || []).flatMap(exercise => (exercise.sets || []).map(buildSetPatchPayload).filter(Boolean)),
       }, { immediate: true });
     }
   };
@@ -5553,21 +5744,20 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       : buildWorkoutDateTimeIso(targetDateKey, options.hour, options.minute);
     const durationMinutes = mode === "completed"
       ? Math.max(1, safeWorkoutNumber(options.durationMinutes, workout.durationMinutes || 60))
-      : mode === "planned"
-        ? Math.max(0, safeWorkoutNumber(workout.durationMinutes, 60))
       : 0;
     const estimatedCalories = mode === "completed" ? estimateWorkoutCalories(durationMinutes * 60) : 0;
-    const sourceTotals = recalculateWorkoutTotals(workout);
+    const repeatedExercises = cloneExercisesForRepeat(workout.exercises || [], mode === "completed");
+    const repeatedTotals = recalculateWorkoutTotals({ exercises: repeatedExercises });
     const copy = makeWorkout(targetDateKey, {
       title: workout.title,
       programDayNumber: workout.programDayNumber,
       durationMinutes,
-      totalVolumeKg: sourceTotals.totalVolume,
+      totalVolumeKg: mode === "completed" ? repeatedTotals.totalVolume : 0,
       calories: estimatedCalories,
       estimatedCaloriesBurned: estimatedCalories,
       status,
       startedAt,
-      exercises: cloneExercisesForRepeat(workout.exercises || []),
+      exercises: repeatedExercises,
       notes: workout.notes,
       templateId: workout.templateId,
     });
@@ -5578,46 +5768,94 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     if (canUseWorkoutApi) {
       const pendingWorkout = { ...copy, pending: true, isSaving: true, isSyncing: true };
       setWorkouts(prev => [pendingWorkout, ...prev]);
-      if (mode === "now") openWorkoutDetails(pendingWorkout);
+      if (mode === "now") {
+        const firstTarget = getFirstWorkoutTarget(pendingWorkout);
+        setSelectedWorkout(pendingWorkout);
+        setWorkoutViewMode("exercise");
+        setActiveExerciseIndex(firstTarget.exerciseIndex);
+        setActiveSetId(firstTarget.setId);
+        setElapsedWorkoutTime(0);
+        setRestTimer(null);
+        restAdvanceRef.current = null;
+      }
       const id = await createWorkoutTreeViaApi(pendingWorkout);
       if (!id) patchWorkoutInState(pendingWorkout.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
       return;
     }
 
     setWorkouts(prev => [copy, ...prev]);
-    if (mode === "now") openWorkoutDetails(copy);
+    if (mode === "now") {
+      const firstTarget = getFirstWorkoutTarget(copy);
+      setSelectedWorkout(copy);
+      setWorkoutViewMode("exercise");
+      setActiveExerciseIndex(firstTarget.exerciseIndex);
+      setActiveSetId(firstTarget.setId);
+      setElapsedWorkoutTime(0);
+      setRestTimer(null);
+      restAdvanceRef.current = null;
+    }
+  };
+
+  const completeWorkoutAsIs = async (workout = selectedWorkout) => {
+    if (!workout) return;
+    const fallbackDurationSeconds = safeWorkoutNumber(workout.durationMinutes, 45) * 60;
+    const durationSeconds = Math.max(60, safeWorkoutNumber(elapsedWorkoutTime, 0) || fallbackDurationSeconds || 45 * 60);
+    const durationMinutes = Math.max(1, Math.round(durationSeconds / 60));
+    const calories = estimateWorkoutCalories(durationSeconds);
+    const finishedAt = new Date().toISOString();
+    const withStatus = {
+      ...workout,
+      status: "completed",
+      durationMinutes,
+      calories,
+      estimatedCaloriesBurned: calories,
+      finishedAt,
+      updatedAt: finishedAt,
+    };
+    const totals = recalculateWorkoutTotals(withStatus);
+    const nextWorkout = {
+      ...withStatus,
+      totalVolumeKg: totals.totalVolume,
+    };
+    const summary = buildWorkoutCompletionSummary(nextWorkout, durationSeconds, calories);
+    const previousWorkouts = workoutsRef.current;
+    const previousSelectedWorkout = selectedWorkout;
+
+    setWorkouts(prev => prev.map(item => item.id === nextWorkout.id ? nextWorkout : item));
+    setSelectedWorkout(nextWorkout);
+    setWorkoutViewMode("overview");
+    setRestTimer(null);
+    restAdvanceRef.current = null;
+    setOpenMenu(null);
+    setFinishChoiceSheet(null);
+
+    if (nextWorkout.supabaseId) {
+      clearWorkoutSaveQueue(nextWorkout.id);
+      const saved = await sendWorkoutPatch(nextWorkout.id, buildWorkoutTreePatch(nextWorkout));
+      if (!saved) {
+        setWorkouts(previousWorkouts);
+        setSelectedWorkout(previousSelectedWorkout);
+        setEditError({
+          title: "не удалось завершить тренировку",
+          description: "Сохранение в ONLYPUMP не прошло. Тренировка оставлена активной, чтобы данные не потерялись.",
+        });
+        return;
+      }
+    }
+
+    setCompletionDetailsOpen(false);
+    setCompletionSummarySheet(summary);
   };
 
   const finishActiveWorkout = () => {
     if (!selectedWorkout) return;
-    const fallbackDurationSeconds = safeWorkoutNumber(selectedWorkout.durationMinutes, 45) * 60;
-    const durationSeconds = Math.max(60, safeWorkoutNumber(elapsedWorkoutTime, 0) || fallbackDurationSeconds || 45 * 60);
-    const durationMinutes = Math.max(1, Math.round(durationSeconds / 60));
-    const totalVolumeKg = recalculateWorkoutTotals(selectedWorkout).totalVolume;
-    const calories = estimateWorkoutCalories(durationSeconds);
-    const patch = (workout) => ({
-      ...workout,
-      status: "completed",
-      durationMinutes,
-      totalVolumeKg,
-      calories,
-      estimatedCaloriesBurned: calories,
-      finishedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-
-    setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? patch(workout) : workout));
-    setSelectedWorkout(prev => prev ? patch(prev) : prev);
-    setWorkoutViewMode("overview");
-    setRestTimer(null);
-    setOpenMenu(null);
-    const nextWorkout = patch(selectedWorkout);
-    if (nextWorkout.supabaseId) {
-      queueWorkoutPatch(nextWorkout.id, {
-        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
-        set_updates: (nextWorkout.exercises || []).flatMap(exercise => (exercise.sets || []).map(buildSetPatchPayload).filter(Boolean)),
-      }, { immediate: true });
+    const incompleteCount = getWorkoutIncompleteSetCount(selectedWorkout);
+    if (incompleteCount > 0) {
+      setFinishChoiceSheet({ workoutId: selectedWorkout.id, incompleteCount });
+      setDetailMenuOpen(false);
+      return;
     }
+    completeWorkoutAsIs(selectedWorkout);
   };
 
   const openExerciseBase = (mode = "view") => {
@@ -5639,6 +5877,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   useAppBackLayer("workouts-superset-cancel", Boolean(supersetCancelPrompt), () => setSupersetCancelPrompt(null), 181);
   useAppBackLayer("workouts-rest-menu", restMenuOpen, () => setRestMenuOpen(false), 180);
   useAppBackLayer("workouts-open-menu", Boolean(openMenu), () => setOpenMenu(null), 175);
+  useAppBackLayer("workouts-finish-choice", Boolean(finishChoiceSheet), () => setFinishChoiceSheet(null), 178);
+  useAppBackLayer("workouts-completion-summary", Boolean(completionSummarySheet), () => setCompletionSummarySheet(null), 177);
   useAppBackLayer("workouts-repeat-scheduler", Boolean(repeatScheduler), () => setRepeatScheduler(null), 174);
   useAppBackLayer("workouts-repeat-sheet", Boolean(repeatSheetWorkout), () => setRepeatSheetWorkout(null), 173);
   useAppBackLayer("workouts-detail-menu", detailMenuOpen, () => setDetailMenuOpen(false), 170);
@@ -5861,7 +6101,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const exercises = [...(selectedWorkout.exercises || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
     const totalSets = exercises.flatMap(exercise => exercise.sets || []).length;
     const completedSets = exercises.flatMap(exercise => exercise.sets || []).filter(set => getSetStatus(set) === "completed").length;
-    const totalVolume = exercises.reduce((sum, exercise) => sum + (exercise.sets || []).reduce((setSum, set) => setSum + getSetVolumeForExercise(set, exercise), 0), 0);
+    const totalVolume = getWorkoutVolume({ exercises });
     const workoutIsActive = selectedWorkout.status === "active";
     const workoutIsPlanned = selectedWorkout.status === "planned";
     const selectedExerciseCount = selectedExerciseIds.length;
@@ -5947,9 +6187,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               const setMetrics = (exercise.sets || []).length
                 ? (exercise.sets || []).map(set => `${formatWorkoutInputNumber(getDisplayWeight(set.weight || 0, exercise))} ${exerciseUnit === "lb" ? "lb" : "кг"} × ${Number(set.reps || 0)}`).join(', ')
                 : 'подходы не добавлены';
-              const completedExerciseSets = (exercise.sets || []).filter(set => getSetStatus(set) === "completed").length;
-              const exerciseDone = (exercise.sets || []).length > 0 && completedExerciseSets === (exercise.sets || []).length;
-              const exercisePartial = completedExerciseSets > 0 && !exerciseDone;
+              const exerciseCompletion = getExerciseCompletion(exercise);
+              const exerciseDone = exerciseCompletion.done;
+              const exercisePartial = exerciseCompletion.partial;
               const selectedForEdit = selectedExerciseIds.includes(exercise.id);
               const supersetGroupId = getExerciseSupersetGroupId(exercise);
               const supersetColor = supersetGroupId ? supersetColorMap[supersetGroupId] : null;
@@ -6387,7 +6627,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         {activeTab === "results" && <SecondaryContent title="Результаты" description="Здесь будут графики тоннажа, частоты тренировок, среднего RIR и прогресса по упражнениям.">
           <div className="mt-6 grid grid-cols-2 gap-3">
             <div className="rounded-2xl bg-black/25 p-4"><div className="text-xs text-zinc-500">Тренировок</div><div className="mt-2 text-3xl font-black">{workouts.length}</div></div>
-            <div className="rounded-2xl bg-black/25 p-4"><div className="text-xs text-zinc-500">Тоннаж</div><div className="mt-2 text-3xl font-black">{formatVolumeNumber(workouts.reduce((sum, w) => sum + Number(getWorkoutVolume(w)), 0))}</div></div>
+            <div className="rounded-2xl bg-black/25 p-4"><div className="text-xs text-zinc-500">Тоннаж</div><div className="mt-2 text-3xl font-black">{formatVolumeNumber(workouts.filter(w => w.status === "completed").reduce((sum, w) => sum + Number(getWorkoutVolume(w)), 0))}</div></div>
           </div>
         </SecondaryContent>}
         {activeTab === "exercises" && <SecondaryContent title="Упражнения" description="Полная база упражнений: поиск по названию и сортировка по мышечным группам.">
@@ -6446,16 +6686,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <h2 className="text-xl font-black tracking-[-0.03em]">Добавить на {formatDayMonth(selectedDate)}</h2>
         <div className="mt-5 space-y-2">
-          <button onClick={() => addWorkoutForDate({ title: "Пустая тренировка", exercises: [] })} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Начать пустую тренировку</button>
+          <button onClick={() => addWorkoutForDate({ title: "Пустая тренировка", status: "active", durationMinutes: 0, totalVolumeKg: 0, calories: 0, estimatedCaloriesBurned: 0, exercises: [], startedAt: new Date().toISOString() })} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Начать пустую тренировку</button>
           <button onClick={openPlanWorkoutScheduler} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Запланировать тренировку</button>
-          <button onClick={() => { setIsAddMenuOpen(false); setIsTemplatesOpen(true); }} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Выбрать программу</button>
-          <button onClick={() => addWorkoutForDate()} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить тренировку за выбранную дату</button>
-          <button onClick={() => setIsAddMenuOpen(false)} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold text-zinc-500 transition hover:bg-white/8">Добавить заметку / замер</button>
+          <button onClick={() => { setIsAddMenuOpen(false); setIsTemplatesOpen(true); }} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Доступные программы</button>
         </div>
       </BottomSheetPanel>
     </div>}
 
-    {repeatSheetWorkout && <div onClick={() => setRepeatSheetWorkout(null)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+    {repeatSheetWorkout && <div onClick={() => setRepeatSheetWorkout(null)} className="onlypump-modal-layer fixed inset-0 z-[205] flex items-end bg-black/45 p-4 backdrop-blur-sm">
       <BottomSheetPanel onClose={() => setRepeatSheetWorkout(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/92 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <div className="flex items-start justify-between gap-3">
@@ -6469,11 +6707,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           <button onClick={() => repeatWorkout(repeatSheetWorkout, { mode: "now" })} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black transition active:scale-[0.98]">Сейчас</button>
           <button onClick={() => openRepeatScheduler(repeatSheetWorkout, "planned")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Запланировать</button>
           <button onClick={() => openRepeatScheduler(repeatSheetWorkout, "completed")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Добавить выполненную</button>
+          <button onClick={() => setRepeatSheetWorkout(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
         </div>
       </BottomSheetPanel>
     </div>}
 
-    {repeatScheduler && <div onClick={() => setRepeatScheduler(null)} className="onlypump-modal-layer fixed inset-0 z-[155] flex items-end bg-black/55 p-3 backdrop-blur-sm">
+    {repeatScheduler && <div onClick={() => setRepeatScheduler(null)} className="onlypump-modal-layer fixed inset-0 z-[206] flex items-end bg-black/55 p-3 backdrop-blur-sm">
       <BottomSheetPanel onClose={() => setRepeatScheduler(null)} onClick={(e) => e.stopPropagation()} className="mx-auto flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-[430px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <div className="flex items-start justify-between gap-3">
@@ -6557,6 +6796,105 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         <div className="mt-5 grid grid-cols-2 gap-3 pb-[var(--onlypump-safe-bottom)]">
           <button onClick={() => setRepeatScheduler(null)} className="h-12 rounded-full bg-white/8 font-black text-zinc-200">Отмена</button>
           <button onClick={confirmRepeatScheduler} className="h-12 rounded-full bg-red-500 font-black text-black">{getSchedulerActionLabel(repeatScheduler.mode)}</button>
+        </div>
+      </BottomSheetPanel>
+    </div>}
+
+    {finishChoiceSheet && <div onClick={() => setFinishChoiceSheet(null)} className="onlypump-modal-layer fixed inset-0 z-[205] flex items-end bg-black/55 p-4 backdrop-blur-sm">
+      <BottomSheetPanel onClose={() => setFinishChoiceSheet(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Завершение</p>
+            <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Есть невыполненные подходы</h2>
+          </div>
+          <button onClick={() => setFinishChoiceSheet(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-zinc-500">
+          Осталось {finishChoiceSheet.incompleteCount} невыполненных подходов. В статистику попадут только подходы с галочкой.
+        </p>
+        <div className="mt-5 space-y-2">
+          <button onClick={() => completeWorkoutAsIs(workoutsRef.current.find(item => item.id === finishChoiceSheet.workoutId) || selectedWorkout)} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black transition active:scale-[0.98]">Завершить</button>
+          <button onClick={() => { const id = finishChoiceSheet.workoutId; setFinishChoiceSheet(null); deleteWorkout(id); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
+          <button onClick={() => setFinishChoiceSheet(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
+        </div>
+      </BottomSheetPanel>
+    </div>}
+
+    {completionSummarySheet && <div onClick={() => setCompletionSummarySheet(null)} className="onlypump-modal-layer fixed inset-0 z-[205] flex items-end bg-black/55 p-3 backdrop-blur-sm">
+      <BottomSheetPanel onClose={() => setCompletionSummarySheet(null)} onClick={(e) => e.stopPropagation()} className="mx-auto flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-[430px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">Тренировка выполнена</p>
+            <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{completionSummarySheet.title}</h2>
+            <p className="mt-2 text-sm text-zinc-500">
+              {new Date(completionSummarySheet.completedAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}, {new Date(completionSummarySheet.completedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })} · {formatDuration(completionSummarySheet.durationMinutes)}
+            </p>
+          </div>
+          <button onClick={() => setCompletionSummarySheet(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+        </div>
+
+        <div className="onlypump-list-78 mt-5 flex-1 overflow-y-auto pr-1 onlypump-scrollbar-none">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-[22px] bg-white/[0.05] p-4"><div className="text-xs text-zinc-500">Упражнения</div><div className="mt-2 text-3xl font-black">{completionSummarySheet.completedExercises}/{completionSummarySheet.totalExercises}</div></div>
+            <div className="rounded-[22px] bg-white/[0.05] p-4"><div className="text-xs text-zinc-500">Подходы</div><div className="mt-2 text-3xl font-black">{completionSummarySheet.completedSets}/{completionSummarySheet.totalSets}</div></div>
+            <div className="rounded-[22px] bg-white/[0.05] p-4"><div className="text-xs text-zinc-500">Тоннаж</div><div className="mt-2 text-3xl font-black">{formatVolumeNumber(completionSummarySheet.volumeKg)}</div></div>
+            <div className="rounded-[22px] bg-white/[0.05] p-4"><div className="text-xs text-zinc-500">Калории</div><div className="mt-2 text-3xl font-black">{completionSummarySheet.calories}</div></div>
+          </div>
+
+          {(completionSummarySheet.averageRir !== null || completionSummarySheet.averageRpe !== null) && <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="rounded-[22px] bg-black/30 p-4"><div className="text-xs text-zinc-500">Средний RIR</div><div className="mt-2 text-2xl font-black">{completionSummarySheet.averageRir ?? "—"}</div></div>
+            <div className="rounded-[22px] bg-black/30 p-4"><div className="text-xs text-zinc-500">Средний RPE</div><div className="mt-2 text-2xl font-black">{completionSummarySheet.averageRpe ?? "—"}</div></div>
+          </div>}
+
+          <div className="mt-4 rounded-[28px] border border-red-500/25 bg-red-500/10 p-5 text-center">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-red-300">Ачивка тоннажа</p>
+            <h3 className="mt-3 text-2xl font-black tracking-[-0.04em] text-white">{completionSummarySheet.achievement.title}</h3>
+            <p className="mt-2 text-sm text-zinc-400">{completionSummarySheet.achievement.subtitle}</p>
+          </div>
+
+          <button onClick={() => setCompletionDetailsOpen(prev => !prev)} className="mt-4 w-full rounded-2xl bg-white/[0.06] px-4 py-4 text-left font-black text-zinc-100">
+            {completionDetailsOpen ? "Скрыть аналитику" : "Подробнее"}
+          </button>
+
+          {completionDetailsOpen && <div className="mt-4 space-y-4">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-[0.16em] text-zinc-500">Мышечные группы</h3>
+              <div className="mt-3 space-y-2">
+                {completionSummarySheet.muscles.length ? completionSummarySheet.muscles.map(stat => <div key={stat.muscleGroup} className="rounded-2xl bg-black/30 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-black text-zinc-100">{stat.muscleGroup}</span>
+                    <span className="text-sm font-semibold text-zinc-500">{stat.sets} · {stat.percent}%</span>
+                  </div>
+                  <div className="mt-2 text-sm text-zinc-500">{formatVolume(stat.volume)}</div>
+                </div>) : <div className="rounded-2xl bg-black/30 p-4 text-sm text-zinc-500">Выполненных подходов нет.</div>}
+              </div>
+            </div>
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-[0.16em] text-zinc-500">Упражнения</h3>
+              <div className="mt-3 space-y-2">
+                {completionSummarySheet.exercises.map(exercise => <div key={exercise.id} className="rounded-2xl bg-black/30 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="break-words font-black text-zinc-100">{exercise.name}</div>
+                      <div className="mt-1 text-xs font-semibold text-red-400">{exercise.muscleGroup}</div>
+                    </div>
+                    <span className="shrink-0 text-sm font-semibold text-zinc-500">{exercise.completedSets}/{exercise.totalSets}</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-zinc-400">
+                    <span className="rounded-full bg-white/[0.06] px-3 py-1.5">{formatVolume(exercise.volume)}</span>
+                    {exercise.averageRir !== null && <span className="rounded-full bg-white/[0.06] px-3 py-1.5">RIR {exercise.averageRir}</span>}
+                    {exercise.averageRpe !== null && <span className="rounded-full bg-white/[0.06] px-3 py-1.5">RPE {exercise.averageRpe}</span>}
+                  </div>
+                </div>)}
+              </div>
+            </div>
+          </div>}
+        </div>
+
+        <div className="mt-5 pb-[var(--onlypump-safe-bottom)]">
+          <button onClick={() => setCompletionSummarySheet(null)} className="h-12 w-full rounded-full bg-white font-black text-black">Закрыть</button>
         </div>
       </BottomSheetPanel>
     </div>}
@@ -7846,10 +8184,11 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE }) {
     const today = parseDateKeyLocal(formatDateKey(new Date()));
     const start = addLocalDaysToDate(today, -6).getTime();
     const recent = workouts.filter(workout => parseDateKeyLocal(workout.date).getTime() >= start);
-    const sets = recent.reduce((sum, workout) => sum + getWorkoutSetCountGlobal(workout), 0);
-    const volume = recent.reduce((sum, workout) => sum + getWorkoutVolume(workout), 0);
+    const completedRecent = recent.filter(workout => workout.status === "completed");
+    const sets = completedRecent.flatMap(getWorkoutSets).filter(set => getSetStatusGlobal(set) === "completed").length;
+    const volume = completedRecent.reduce((sum, workout) => sum + getWorkoutVolume(workout), 0);
     const loadLevel = getVolumeLoadLevel(sets, volumeStandards.weeklyTotal);
-    return { recent, sets, volume, loadLevel };
+    return { recent: completedRecent, sets, volume, loadLevel };
   }, [workouts]);
 
   const analyticCards = [
@@ -7861,7 +8200,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE }) {
 
   return <><Header title="Аналитика" subtitle="Система ищет слабые места: недоедание, перегруз, провалы сна и просадки активности."/><PageGrid>
     {analyticCards.map(([Icon,t,v,s])=><Card key={t} className="p-5"><Icon className="text-red-500"/><p className="mt-5 text-sm text-zinc-500">{t}</p><div className="mt-2 text-4xl">{v}</div><p className="mt-3 text-sm text-zinc-400">{s}</p></Card>)}
-    <Card className="p-5 xl:col-span-2"><h2 className="text-xl font-semibold">Вывод недели</h2><p className="mt-4 leading-7 text-zinc-300">За последние 7 дней: {weekAnalytics.recent.length} тренировок, {weekAnalytics.sets} подходов и {formatVolumeForProfile(weekAnalytics.volume || 0, profile)} тоннажа. Норма опытного для общего недельного объёма — {volumeStandards.weeklyTotal} подходов.</p></Card>
+    <Card className="p-5 xl:col-span-2"><h2 className="text-xl font-semibold">Вывод недели</h2><p className="mt-4 leading-7 text-zinc-300">За последние 7 дней: {weekAnalytics.recent.length} выполненных тренировок, {weekAnalytics.sets} подходов и {formatVolumeForProfile(weekAnalytics.volume || 0, profile)} тоннажа.</p></Card>
   </PageGrid></>;
 }
 
