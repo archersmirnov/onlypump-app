@@ -13,8 +13,15 @@
       --tg-content-safe-area-bottom: 0px;
       --onlypump-safe-top: max(env(safe-area-inset-top, 0px), var(--tg-safe-area-top), var(--tg-content-safe-area-top));
       --onlypump-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-bottom), var(--tg-content-safe-area-bottom));
+      --onlypump-telegram-main-top-offset: 0px;
+      --onlypump-telegram-internal-top-offset: 0px;
+      --onlypump-workout-bottom-bar-height: 96px;
       --tg-viewport-height: 100vh;
       --onlypump-app-height: var(--tg-viewport-height);
+    }
+    html.onlypump-telegram {
+      --onlypump-telegram-main-top-offset: 24px;
+      --onlypump-telegram-internal-top-offset: 36px;
     }
     @supports (height: 100dvh) {
       :root { --tg-viewport-height: 100dvh; }
@@ -58,8 +65,17 @@
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
       overscroll-behavior-y: contain;
-      padding-top: calc(var(--onlypump-safe-top) + 1.5rem);
+      padding-top: calc(var(--onlypump-safe-top) + var(--onlypump-telegram-main-top-offset) + 1.5rem);
       padding-bottom: calc(var(--onlypump-safe-bottom) + 6.5rem);
+    }
+    .onlypump-workout-scroll {
+      height: 100%;
+      min-height: 0;
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+      padding-bottom: calc(var(--onlypump-safe-bottom) + var(--onlypump-workout-bottom-bar-height) + 24px);
     }
     .onlypump-fullscreen-layer {
       height: var(--onlypump-app-height);
@@ -177,6 +193,7 @@ function initTelegramWebApp() {
   };
 
   if (tg) {
+    document.documentElement.classList.add("onlypump-telegram");
     safeCall(() => tg.ready());
     safeCall(() => tg.expand());
     if (typeof tg.requestFullscreen === "function") {
@@ -191,6 +208,8 @@ function initTelegramWebApp() {
     if (typeof tg.setBackgroundColor === "function") {
       safeCall(() => tg.setBackgroundColor("#000000"));
     }
+  } else {
+    document.documentElement.classList.remove("onlypump-telegram");
   }
 
   const updateViewport = () => syncOnlyPumpViewportHeight(tg);
@@ -2857,7 +2876,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
       const group = groups.get(key);
       group.workouts.push(workout);
-      group.totalVolume += Number(getWorkoutVolume(workout) || workout.totalVolumeKg || 0);
+      group.totalVolume += Number(getWorkoutVolume(workout));
       group.totalDuration += Number(workout.durationMinutes || 0);
       group.totalCalories += Number(workout.calories || 0);
     });
@@ -3200,10 +3219,20 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return Number.isFinite(parsed) ? parsed : fallback;
   };
 
-  const getWorkoutTotals = (workout) => {
+  const recalculateWorkoutTotals = (workout) => {
     const sets = (workout?.exercises || []).flatMap(exercise => exercise.sets || []);
-    const totalVolume = sets.reduce((sum, set) => sum + safeWorkoutNumber(set.weight) * safeWorkoutNumber(set.reps), 0);
-    return { totalSets: sets.length, totalVolume };
+    const totalSets = sets.length;
+    const totalVolume = sets.reduce((sum, set) => {
+      const weight = safeWorkoutNumber(set?.weight);
+      const reps = safeWorkoutNumber(set?.reps);
+      return sum + weight * reps;
+    }, 0);
+    console.log("Recalculated workout totals:", { workoutId: workout?.supabaseId || workout?.id, totalSets, totalVolume });
+    return { totalSets, totalVolume };
+  };
+
+  const getWorkoutTotals = (workout) => {
+    return recalculateWorkoutTotals(workout);
   };
 
   const buildWorkoutSupabasePayload = (workout) => {
@@ -3215,7 +3244,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       status: workout?.status || "completed",
       notes: workout?.notes || "",
       total_sets: totals.totalSets,
-      total_volume: totals.totalVolume || safeWorkoutNumber(workout?.totalVolumeKg),
+      total_volume: totals.totalVolume,
     };
   };
 
@@ -3280,15 +3309,30 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const buildWorkoutPatchPayload = (workout) => {
     if (!workout?.supabaseId) return null;
     const totals = getWorkoutTotals(workout);
-    return {
+    const payload = {
       id: workout.supabaseId,
       title: workout.title || "Новая тренировка",
       status: workout.status || "completed",
       notes: workout.notes || "",
       total_sets: totals.totalSets,
-      total_volume: totals.totalVolume || safeWorkoutNumber(workout.totalVolumeKg),
+      total_volume: totals.totalVolume,
       duration_seconds: Math.max(0, safeWorkoutNumber(workout.durationMinutes) * 60),
     };
+    console.log("Saving workout totals:", payload);
+    return payload;
+  };
+
+  const buildWorkoutTotalsPatchPayload = (workout) => {
+    if (!workout?.supabaseId) return null;
+    const totals = getWorkoutTotals(workout);
+    const payload = {
+      id: workout.supabaseId,
+      total_sets: totals.totalSets,
+      total_volume: totals.totalVolume,
+      duration_seconds: Math.max(0, safeWorkoutNumber(workout.durationMinutes) * 60),
+    };
+    console.log("Saving workout totals:", payload);
+    return payload;
   };
 
   const buildExercisePatchPayload = (exercise) => {
@@ -3379,9 +3423,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const sendWorkoutPatch = async (workoutId, patch) => {
     const normalizedPatch = mergeWorkoutPatch({}, patch);
     console.log("save_workout_patch payload", normalizedPatch);
+    if (normalizedPatch.workout_updates?.length) console.log("Saving workout totals:", normalizedPatch);
     try {
       const result = await callWorkoutsApi("save_workout_patch", normalizedPatch);
       console.log("save_workout_patch response", result);
+      if (normalizedPatch.workout_updates?.length) console.log("Saved workout totals response:", result);
       return result;
     } catch (error) {
       console.error("save_workout_patch error", { workoutId, patch: normalizedPatch, error });
@@ -3917,6 +3963,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       .sort((a, b) => safeWorkoutNumber(a.exercise_order ?? a.order) - safeWorkoutNumber(b.exercise_order ?? b.order))
       .map(mapSupabaseExercise);
     const derivedTotals = getWorkoutTotals({ exercises: mappedExercises });
+    const serverTotalSets = safeWorkoutNumber(row.total_sets ?? row.totalSets, 0);
+    const serverTotalVolume = safeWorkoutNumber(row.total_volume ?? row.totalVolume ?? row.totalVolumeKg, 0);
     return normalizeWorkoutSupersetMetadata({
       id: `workout-supabase-${row.id || index}`,
       supabaseId: row.id || null,
@@ -3925,7 +3973,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       title: row.title || "Новая тренировка",
       programDayNumber: index + 1,
       durationMinutes: safeWorkoutNumber(row.duration_minutes ?? row.durationMinutes ?? (row.duration_seconds !== undefined ? Number(row.duration_seconds) / 60 : undefined), 60),
-      totalVolumeKg: mappedExercises.length ? derivedTotals.totalVolume : 0,
+      totalVolumeKg: derivedTotals.totalVolume,
+      serverTotalSets,
+      serverTotalVolume,
       calories: 0,
       status: row.status || "completed",
       startedAt: null,
@@ -4009,6 +4059,25 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return tree;
   };
 
+  const syncStaleLoadedWorkoutTotals = (loadedWorkouts = []) => {
+    if (!canUseWorkoutApi) return;
+    loadedWorkouts.forEach(workout => {
+      if (!workout?.supabaseId) return;
+      const totals = getWorkoutTotals(workout);
+      const serverTotalSets = safeWorkoutNumber(workout.serverTotalSets, 0);
+      const serverTotalVolume = safeWorkoutNumber(workout.serverTotalVolume, 0);
+      const totalsChanged = totals.totalSets !== serverTotalSets || totals.totalVolume !== serverTotalVolume;
+      if (!totalsChanged) return;
+      const payload = {
+        workout_updates: [buildWorkoutTotalsPatchPayload(workout)],
+      };
+      console.log("Saving workout totals:", mergeWorkoutPatch({}, payload));
+      sendWorkoutPatch(workout.id, payload).then(response => {
+        console.log("Saved workout totals response:", response);
+      });
+    });
+  };
+
   const loadWorkoutsFromApi = async ({ preserveSelected = true, selectedSupabaseId = null } = {}) => {
     if (!canUseWorkoutApi) return null;
     let result = null;
@@ -4020,6 +4089,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return null;
     }
     const loadedWorkouts = buildWorkoutTreeFromApi(result);
+    syncStaleLoadedWorkoutTotals(loadedWorkouts);
     const mergedWorkouts = mergeLoadedWorkoutsWithDirtyState(loadedWorkouts);
     setWorkouts(mergedWorkouts);
     setSelectedWorkout(prev => {
@@ -4931,7 +5001,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           <div className="min-w-0">
             <div className="break-words text-[23px] font-black leading-[1.08] tracking-[-0.04em] text-white">{workout.title}</div>
             <div className="mt-2 break-words text-[17px] font-medium text-zinc-400">
-              {formatDuration(workout.durationMinutes)} · {formatVolume(getWorkoutVolume(workout) || workout.totalVolumeKg)} · {workout.calories} ккал
+              {formatDuration(workout.durationMinutes)} · {formatVolume(getWorkoutVolume(workout))} · {workout.calories} ккал
             </div>
           </div>
         </div>
@@ -5107,8 +5177,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     };
 
     const WorkoutOverviewScreen = () => <div className="onlypump-fullscreen-layer fixed inset-0 z-[160] bg-black text-zinc-100">
-      <div className="mx-auto flex h-full max-w-[430px] flex-col overflow-hidden bg-black">
-        <div className="relative shrink-0 overflow-hidden rounded-b-[38px] border-b border-white/10 bg-[radial-gradient(circle_at_70%_0%,rgba(239,68,68,0.35),transparent_34%),linear-gradient(160deg,#18181b,#050505)] px-5 pb-6 pt-[calc(var(--onlypump-safe-top)+16px)]">
+      <div className="relative mx-auto h-full max-w-[430px] overflow-hidden bg-black">
+        <div ref={workoutScrollRef} className="onlypump-workout-scroll onlypump-scrollbar-none">
+        <div className="relative overflow-hidden rounded-b-[38px] border-b border-white/10 bg-[radial-gradient(circle_at_70%_0%,rgba(239,68,68,0.35),transparent_34%),linear-gradient(160deg,#18181b,#050505)] px-5 pb-6 pt-[calc(var(--onlypump-safe-top)+var(--onlypump-telegram-internal-top-offset)+16px)]">
           <div className="flex items-center justify-between">
             <button onClick={closeWorkoutDetails} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.08] text-zinc-200 backdrop-blur">⌄</button>
             <div className="text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
@@ -5138,7 +5209,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             </div>
             <div className="rounded-2xl bg-black/32 px-3 py-4">
               <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Объем</div>
-              <div className="mt-2 text-xl font-black">{formatVolume(totalVolume || selectedWorkout.totalVolumeKg).replace(' кг','')}</div>
+              <div className="mt-2 text-xl font-black">{formatVolume(totalVolume).replace(' кг','')}</div>
             </div>
             <div className="rounded-2xl bg-black/32 px-3 py-4">
               <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Калории</div>
@@ -5156,7 +5227,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           />
         </div>
 
-        <div ref={workoutScrollRef} className="flex-1 overflow-y-auto px-5 pb-32 pt-6 onlypump-scrollbar-none">
+        <div className="px-5 pt-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-xl font-black tracking-[-0.04em]">Упражнения</h3>
@@ -5230,6 +5301,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               </SwipeActionRow>;
             }) : <div className="p-6 text-sm text-zinc-500">В тренировке пока нет упражнений.</div>}
           </div>
+        </div>
         </div>
 
         <div className="fixed bottom-0 left-0 right-0 z-[166] border-t border-white/10 bg-black/86 px-4 pb-[calc(var(--onlypump-safe-bottom)+10px)] pt-3 backdrop-blur-2xl">
@@ -5374,8 +5446,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       };
 
       return <div className="onlypump-fullscreen-layer fixed inset-0 z-[170] bg-black text-zinc-100">
-        <div className="mx-auto flex h-full max-w-[430px] flex-col overflow-hidden bg-black">
-          <div className="shrink-0 px-5 pt-[calc(var(--onlypump-safe-top)+18px)]">
+        <div className="relative mx-auto h-full max-w-[430px] overflow-hidden bg-black">
+          <div ref={workoutScrollRef} className="onlypump-workout-scroll px-5 pt-[calc(var(--onlypump-safe-top)+var(--onlypump-telegram-internal-top-offset)+18px)] onlypump-scrollbar-none">
+          <div>
             <div className="grid grid-cols-3 items-start gap-3 text-center">
               <div className="rounded-2xl bg-white/[0.05] px-3 py-3 text-left">
                 <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-600">упражнение</div>
@@ -5392,7 +5465,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             </div>
           </div>
 
-          <div ref={workoutScrollRef} className="flex-1 overflow-y-auto px-5 pb-28 pt-5 onlypump-scrollbar-none">
+          <div className="pt-5">
             {currentExercise ? <div className="relative min-h-[calc(var(--onlypump-app-height)-220px)] rounded-[34px] border border-white/10 bg-zinc-950/92 p-5 shadow-2xl shadow-black/60">
               <div className="flex items-center justify-between">
                 <button onClick={() => { setWorkoutViewMode("overview"); setOpenMenu(null); }} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200 backdrop-blur">⌄</button>
@@ -5477,6 +5550,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               </div>
             </div> : <div className="rounded-[34px] border border-white/10 bg-white/[0.04] p-8 text-center text-zinc-500">В тренировке нет упражнений.</div>}
           </div>
+          </div>
 
           <div className="fixed bottom-0 left-0 right-0 z-[176] border-t border-white/10 bg-black/86 px-4 pb-[calc(var(--onlypump-safe-bottom)+10px)] pt-3 backdrop-blur-2xl">
             <div className="mx-auto grid h-[72px] max-w-[430px] grid-cols-[48px_48px_1fr_58px_48px] items-center gap-2">
@@ -5553,7 +5627,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         {activeTab === "results" && <SecondaryContent title="Результаты" description="Здесь будут графики тоннажа, частоты тренировок, среднего RIR и прогресса по упражнениям.">
           <div className="mt-6 grid grid-cols-2 gap-3">
             <div className="rounded-2xl bg-black/25 p-4"><div className="text-xs text-zinc-500">Тренировок</div><div className="mt-2 text-3xl font-black">{workouts.length}</div></div>
-            <div className="rounded-2xl bg-black/25 p-4"><div className="text-xs text-zinc-500">Тоннаж</div><div className="mt-2 text-3xl font-black">{formatVolume(workouts.reduce((sum, w) => sum + Number(getWorkoutVolume(w) || w.totalVolumeKg || 0), 0)).replace(' кг','')}</div></div>
+            <div className="rounded-2xl bg-black/25 p-4"><div className="text-xs text-zinc-500">Тоннаж</div><div className="mt-2 text-3xl font-black">{formatVolume(workouts.reduce((sum, w) => sum + Number(getWorkoutVolume(w)), 0)).replace(' кг','')}</div></div>
           </div>
         </SecondaryContent>}
         {activeTab === "exercises" && <SecondaryContent title="Упражнения" description="Полная база упражнений: поиск по названию и сортировка по мышечным группам.">
@@ -6772,7 +6846,7 @@ function AnalyticsPage({ workouts = [] }) {
     const start = addLocalDaysToDate(today, -6).getTime();
     const recent = workouts.filter(workout => parseDateKeyLocal(workout.date).getTime() >= start);
     const sets = recent.reduce((sum, workout) => sum + getWorkoutSetCountGlobal(workout), 0);
-    const volume = recent.reduce((sum, workout) => sum + (getWorkoutVolume(workout) || workout.totalVolumeKg), 0);
+    const volume = recent.reduce((sum, workout) => sum + getWorkoutVolume(workout), 0);
     const loadLevel = getVolumeLoadLevel(sets, volumeStandards.weeklyTotal);
     return { recent, sets, volume, loadLevel };
   }, [workouts]);
