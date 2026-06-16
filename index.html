@@ -284,6 +284,13 @@ const DEFAULT_PROFILE = {
   neck_cm: null,
   waist_cm: null,
   hips_cm: null,
+  shoulders_cm: null,
+  chest_cm: null,
+  biceps_cm: null,
+  abdomen_cm: null,
+  glutes_cm: null,
+  thigh_cm: null,
+  calf_cm: null,
   body_fat_percent: null,
   activity_level: "moderate",
   steps_per_day: 8000,
@@ -294,6 +301,7 @@ const DEFAULT_PROFILE = {
   goal_type: "recomposition",
   goal_description: null,
   target_weight_kg: 76,
+  deficit_percent: 10,
   calories_target: 2500,
   protein_target: 180,
   fat_target: 70,
@@ -398,6 +406,13 @@ function buildFallbackProfile(overrides = {}) {
     neck_cm: optionalProfileNumber(overrides.neck_cm, DEFAULT_PROFILE.neck_cm),
     waist_cm: optionalProfileNumber(overrides.waist_cm, DEFAULT_PROFILE.waist_cm),
     hips_cm: optionalProfileNumber(overrides.hips_cm, DEFAULT_PROFILE.hips_cm),
+    shoulders_cm: optionalProfileNumber(overrides.shoulders_cm, DEFAULT_PROFILE.shoulders_cm),
+    chest_cm: optionalProfileNumber(overrides.chest_cm, DEFAULT_PROFILE.chest_cm),
+    biceps_cm: optionalProfileNumber(overrides.biceps_cm, DEFAULT_PROFILE.biceps_cm),
+    abdomen_cm: optionalProfileNumber(overrides.abdomen_cm, DEFAULT_PROFILE.abdomen_cm),
+    glutes_cm: optionalProfileNumber(overrides.glutes_cm, DEFAULT_PROFILE.glutes_cm),
+    thigh_cm: optionalProfileNumber(overrides.thigh_cm, DEFAULT_PROFILE.thigh_cm),
+    calf_cm: optionalProfileNumber(overrides.calf_cm, DEFAULT_PROFILE.calf_cm),
     body_fat_percent: optionalProfileNumber(overrides.body_fat_percent, DEFAULT_PROFILE.body_fat_percent),
     activity_level: overrides.activity_level || DEFAULT_PROFILE.activity_level,
     steps_per_day: safeProfileNumber(overrides.steps_per_day, DEFAULT_PROFILE.steps_per_day),
@@ -408,6 +423,7 @@ function buildFallbackProfile(overrides = {}) {
     goal_type: overrides.goal_type || DEFAULT_PROFILE.goal_type,
     goal_description: overrides.goal_description || DEFAULT_PROFILE.goal_description,
     target_weight_kg: optionalProfileNumber(overrides.target_weight_kg, DEFAULT_PROFILE.target_weight_kg),
+    deficit_percent: normalizeDeficitPercent(overrides.deficit_percent, DEFAULT_PROFILE.deficit_percent),
     calories_target: safeProfileNumber(overrides.calories_target, DEFAULT_PROFILE.calories_target),
     protein_target: safeProfileNumber(overrides.protein_target, DEFAULT_PROFILE.protein_target),
     fat_target: safeProfileNumber(overrides.fat_target, DEFAULT_PROFILE.fat_target),
@@ -444,6 +460,13 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     neck_cm: optionalProfileNumber(record.neck_cm, fallback.neck_cm || null),
     waist_cm: optionalProfileNumber(record.waist_cm, fallback.waist_cm || null),
     hips_cm: optionalProfileNumber(record.hips_cm, fallback.hips_cm || null),
+    shoulders_cm: optionalProfileNumber(record.shoulders_cm, fallback.shoulders_cm || null),
+    chest_cm: optionalProfileNumber(record.chest_cm, fallback.chest_cm || null),
+    biceps_cm: optionalProfileNumber(record.biceps_cm, fallback.biceps_cm || null),
+    abdomen_cm: optionalProfileNumber(record.abdomen_cm, fallback.abdomen_cm || null),
+    glutes_cm: optionalProfileNumber(record.glutes_cm, fallback.glutes_cm || null),
+    thigh_cm: optionalProfileNumber(record.thigh_cm, fallback.thigh_cm || null),
+    calf_cm: optionalProfileNumber(record.calf_cm, fallback.calf_cm || null),
     body_fat_percent: optionalProfileNumber(record.body_fat_percent, fallback.body_fat_percent || null),
     activity_level: record.activity_level || fallback.activity_level || DEFAULT_PROFILE.activity_level,
     steps_per_day: safeProfileNumber(record.steps_per_day, fallback.steps_per_day || DEFAULT_PROFILE.steps_per_day),
@@ -454,6 +477,7 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     goal_type: record.goal_type || fallback.goal_type || DEFAULT_PROFILE.goal_type,
     goal_description: record.goal_description !== undefined ? (record.goal_description || null) : (fallback.goal_description || null),
     target_weight_kg: optionalProfileNumber(record.target_weight_kg, fallback.target_weight_kg || DEFAULT_PROFILE.target_weight_kg),
+    deficit_percent: normalizeDeficitPercent(record.deficit_percent, fallback.deficit_percent || DEFAULT_PROFILE.deficit_percent),
     calories_target: safeProfileNumber(record.calories_target, fallback.calories_target || DEFAULT_PROFILE.calories_target),
     protein_target: safeProfileNumber(record.protein_target, fallback.protein_target || DEFAULT_PROFILE.protein_target),
     fat_target: safeProfileNumber(record.fat_target, fallback.fat_target || DEFAULT_PROFILE.fat_target),
@@ -506,6 +530,8 @@ const profileRound = (value, precision = 0) => {
   return Math.round(value * factor) / factor;
 };
 
+const normalizeDeficitPercent = (value, fallback = 10) => Math.max(5, Math.min(30, profileNumber(value, fallback)));
+
 const getProfileActivityMultiplier = (stepsPerDay, workoutsPerWeek) => {
   const steps = profileNonNegativeNumber(stepsPerDay, DEFAULT_PROFILE.steps_per_day);
   const workouts = profileNonNegativeNumber(workoutsPerWeek, DEFAULT_PROFILE.workouts_per_week);
@@ -548,7 +574,8 @@ const calculateProfileNutritionTargets = (draft = {}) => {
     ? 10 * weight + 6.25 * height - 5 * age - 161
     : 10 * weight + 6.25 * height - 5 * age + 5;
   const maintenance = bmr * activityMultiplier;
-  const goalMultiplier = goalType === "fat_loss" ? 0.82 : goalType === "muscle_gain" ? 1.1 : goalType === "maintenance" ? 1 : 0.95;
+  const deficitPercent = normalizeDeficitPercent(draft.deficit_percent);
+  const goalMultiplier = goalType === "fat_loss" ? (1 - deficitPercent / 100) : goalType === "muscle_gain" ? 1.1 : goalType === "maintenance" ? 1 : 0.95;
   let calories = Math.round((maintenance * goalMultiplier) / 10) * 10;
   const highProtein = parseProfileBoolean(draft.high_protein_enabled);
   const higherFat = parseProfileBoolean(draft.higher_fat_enabled);
@@ -642,12 +669,20 @@ const profileDraftFromProfile = (profile = DEFAULT_PROFILE) => ({
   neck_cm: profile.neck_cm || "",
   waist_cm: profile.waist_cm || "",
   hips_cm: profile.hips_cm || "",
+  shoulders_cm: profile.shoulders_cm || "",
+  chest_cm: profile.chest_cm || "",
+  biceps_cm: profile.biceps_cm || "",
+  abdomen_cm: profile.abdomen_cm || "",
+  glutes_cm: profile.glutes_cm || "",
+  thigh_cm: profile.thigh_cm || "",
+  calf_cm: profile.calf_cm || "",
   steps_per_day: profile.steps_per_day ?? DEFAULT_PROFILE.steps_per_day,
   workouts_per_week: profile.workouts_per_week ?? DEFAULT_PROFILE.workouts_per_week,
   high_protein_enabled: parseProfileBoolean(profile.high_protein_enabled),
   higher_fat_enabled: parseProfileBoolean(profile.higher_fat_enabled),
   manual_nutrition_targets_enabled: parseProfileBoolean(profile.manual_nutrition_targets_enabled),
   goal_type: profile.goal_type || "recomposition",
+  deficit_percent: profile.deficit_percent ?? DEFAULT_PROFILE.deficit_percent,
   target_weight_kg: profile.target_weight_kg || "",
   calories_target: profile.calories_target || "",
   protein_target: profile.protein_target || "",
@@ -677,6 +712,13 @@ const profilePayloadFromDraft = (draft = {}, currentDate = formatDateKey(new Dat
     neck_cm: profileNumber(draft.neck_cm),
     waist_cm: profileNumber(draft.waist_cm),
     hips_cm: profileNumber(draft.hips_cm),
+    shoulders_cm: profileNumber(draft.shoulders_cm),
+    chest_cm: profileNumber(draft.chest_cm),
+    biceps_cm: profileNumber(draft.biceps_cm),
+    abdomen_cm: profileNumber(draft.abdomen_cm),
+    glutes_cm: profileNumber(draft.glutes_cm),
+    thigh_cm: profileNumber(draft.thigh_cm),
+    calf_cm: profileNumber(draft.calf_cm),
     steps_per_day: profileNonNegativeNumber(draft.steps_per_day, DEFAULT_PROFILE.steps_per_day),
     workouts_per_week: profileNonNegativeNumber(draft.workouts_per_week, DEFAULT_PROFILE.workouts_per_week),
     high_protein_enabled: parseProfileBoolean(draft.high_protein_enabled),
@@ -684,6 +726,7 @@ const profilePayloadFromDraft = (draft = {}, currentDate = formatDateKey(new Dat
     manual_nutrition_targets_enabled: manualTargetsEnabled,
     goal_type: draft.goal_type || "recomposition",
     goal_description: profileGoalTypeLabels[draft.goal_type] || "Рекомпозиция",
+    deficit_percent: normalizeDeficitPercent(draft.deficit_percent),
     target_weight_kg: profileNumber(draft.target_weight_kg),
     ...targets,
     measurement_date: currentDate,
@@ -2475,7 +2518,7 @@ function InlineDateDataCard({ context = "home", dateKey, nutritionTotals, nutrit
   </Card>;
 }
 
-function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSelect, markedDateKeys = [], className = "" }) {
+function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSelect, markedDateKeys = [], className = "", markerClassName = "bg-red-500" }) {
   const [startOffset, setStartOffset] = useState(-3);
   const [dragX, setDragX] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -2572,7 +2615,7 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
               <span className="mt-1 text-sm font-semibold leading-none sm:text-xl">{date.getDate()}</span>
             </div>
             <div className="mt-1 flex h-2 items-center justify-center">
-              {marked && <span className={`h-1.5 w-1.5 rounded-full ${selected ? "bg-black" : "bg-red-500"}`}/>} 
+              {marked && <span className={`h-1.5 w-1.5 rounded-full ${selected ? "bg-black" : markerClassName}`}/>} 
             </div>
           </button>;
         })}
@@ -9318,7 +9361,55 @@ function LecturesPage({ lectureItems, setLectureItems }) {
   </>;
 }
 
-function ProgressPage({ workouts = [], measurements, setMeasurements, progressGoal, setProgressGoal }) {
+const progressMeasurementFields = [
+  { field: "weight", db: "weight_kg", label: "Вес", unit: "кг" },
+  { field: "bodyFat", db: "body_fat_percent", label: "Процент жира", unit: "%" },
+  { field: "neck", db: "neck_cm", label: "Шея", unit: "см" },
+  { field: "shoulders", db: "shoulders_cm", label: "Плечи", unit: "см" },
+  { field: "chest", db: "chest_cm", label: "Грудь", unit: "см" },
+  { field: "biceps", db: "biceps_cm", label: "Бицепс", unit: "см" },
+  { field: "waist", db: "waist_cm", label: "Талия", unit: "см" },
+  { field: "belly", db: "abdomen_cm", label: "Живот", unit: "см" },
+  { field: "glutes", db: "glutes_cm", label: "Ягодицы", unit: "см" },
+  { field: "thigh", db: "thigh_cm", label: "Бедро", unit: "см" },
+  { field: "calf", db: "calf_cm", label: "Голень", unit: "см" },
+];
+
+const progressMeasurementsFromRecord = (record = {}, fallback = {}) => progressMeasurementFields.reduce((acc, item) => {
+  const value = record?.[item.db] ?? record?.[item.field] ?? fallback?.[item.field];
+  const number = Number(value);
+  acc[item.field] = Number.isFinite(number) ? number : (fallback?.[item.field] ?? "");
+  return acc;
+}, {});
+
+const progressPayloadFromMeasurements = (dateKey, measurements = {}, deficitPercent = 10) => {
+  const payload = { date: dateKey, deficit_percent: normalizeDeficitPercent(deficitPercent) };
+  progressMeasurementFields.forEach(item => {
+    const number = Number(measurements[item.field]);
+    if (Number.isFinite(number) && number > 0) payload[item.db] = number;
+  });
+  return payload;
+};
+
+const progressMeasurementsEqual = (a = {}, b = {}) => progressMeasurementFields.every(({ field }) => String(a?.[field] ?? "") === String(b?.[field] ?? ""));
+
+function DeficitIntensityBar({ value = 10 }) {
+  const percent = normalizeDeficitPercent(value);
+  const position = ((percent - 5) / 25) * 100;
+  return <div className="mt-4">
+    <div className="relative h-3 rounded-full bg-gradient-to-r from-emerald-500 via-yellow-400 via-orange-500 to-red-600">
+      <span className="absolute top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-black bg-white shadow-lg" style={{ left: `${position}%` }}/>
+    </div>
+    <div className="mt-3 grid grid-cols-4 gap-2 text-[10px] text-zinc-500">
+      <span>5% мягко</span>
+      <span>10% умеренно</span>
+      <span>20% агрессивно</span>
+      <span className="text-right">30% очень жестко</span>
+    </div>
+  </div>;
+}
+
+function ProgressPage({ workouts = [], measurements, setMeasurements, progressGoal, setProgressGoal, profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", selectedDateKey = formatDateKey(new Date()), setSelectedDateKey = () => {}, onProgressProfileSaved }) {
 
   const [previousMeasurements] = useState({
     weight: 90,
@@ -9333,20 +9424,19 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
     thigh: 60,
     calf: 38,
   });
+  const [progressMeasurements, setProgressMeasurements] = useState(() => progressMeasurementsFromRecord(profile, measurements));
+  const [previousProgressMeasurements, setPreviousProgressMeasurements] = useState(previousMeasurements);
+  const [progressMarkedDateKeys, setProgressMarkedDateKeys] = useState([]);
+  const [saveError, setSaveError] = useState("");
+  const [isProgressSaving, setIsProgressSaving] = useState(false);
+  const saveTimerRef = useRef(null);
+  const saveSequenceRef = useRef(0);
+  const measurementsRef = useRef(measurements);
+  const isRemoteProgress = profileStatus === "verified" && Boolean(telegramInitData && profile?.id);
 
-  const measurementLabels = {
-    weight: "Вес",
-    bodyFat: "Процент жира",
-    neck: "Шея",
-    shoulders: "Плечи",
-    chest: "Грудь",
-    biceps: "Бицепс",
-    waist: "Талия",
-    belly: "Живот",
-    glutes: "Ягодицы",
-    thigh: "Бедро",
-    calf: "Голень",
-  };
+  useEffect(() => {
+    measurementsRef.current = measurements;
+  }, [measurements]);
 
   const strengthStats = useMemo(() => {
     const exercises = workouts.flatMap(workout => (workout.exercises || []).map(exercise => ({
@@ -9386,31 +9476,115 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
     return { list, totalVolume, avgStrength };
   }, [workouts]);
 
+  const goalType = profile?.goal_type || "recomposition";
+  const deficitPercent = normalizeDeficitPercent(progressGoal?.deficitPercent ?? profile?.deficit_percent ?? 10);
+
+  const applyProgressResponse = useCallback((result, options = {}) => {
+    const nextProfile = result?.profile ? normalizeProfileRecord(result.profile, profile || DEFAULT_PROFILE) : profile;
+    const effectiveRecord = result?.effective_measurement || result?.measurement || nextProfile || profile;
+    const previousRecord = result?.previous_measurement || result?.effective_measurement || nextProfile || previousMeasurements;
+    const nextMeasurements = progressMeasurementsFromRecord(effectiveRecord, progressMeasurementsFromRecord(nextProfile, measurementsRef.current));
+    const nextPrevious = progressMeasurementsFromRecord(previousRecord, previousMeasurements);
+    setProgressMeasurements(nextMeasurements);
+    setPreviousProgressMeasurements(nextPrevious);
+    setMeasurements(prev => progressMeasurementsEqual(prev, nextMeasurements) ? prev : nextMeasurements);
+    setProgressGoal(prev => ({
+      ...prev,
+      title: profileGoalTypeLabels[nextProfile?.goal_type] || nextProfile?.goal || prev.title,
+      targetWeight: nextProfile?.target_weight_kg || prev.targetWeight,
+      targetWaist: nextProfile?.waist_cm || nextMeasurements.waist || prev.targetWaist,
+      deficitPercent: normalizeDeficitPercent(nextProfile?.deficit_percent, prev.deficitPercent || 10),
+    }));
+    if (Array.isArray(result?.measurement_dates)) setProgressMarkedDateKeys(normalizeNutritionFilledDateKeys(result.measurement_dates));
+    if (result?.profile && options.syncNutrition) onProgressProfileSaved?.(nextProfile, { syncNutrition: true });
+  }, [onProgressProfileSaved, previousMeasurements, profile, setMeasurements, setProgressGoal]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadProgress = async () => {
+      setSaveError("");
+      if (!isRemoteProgress) {
+        const localMeasurements = progressMeasurementsFromRecord(profile, measurementsRef.current);
+        setProgressMeasurements(localMeasurements);
+        setPreviousProgressMeasurements(previousMeasurements);
+        return;
+      }
+      try {
+        const result = await callOnlyPumpProfileApi(telegramInitData, "load_progress", { date: selectedDateKey });
+        if (cancelled) return;
+        applyProgressResponse(result, { syncNutrition: false });
+      } catch (error) {
+        if (!cancelled) {
+          console.error("onlypump-profile-api progress error:", error);
+          setSaveError("Не удалось загрузить замеры. Показываю последние локальные значения.");
+        }
+      }
+    };
+    loadProgress();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyProgressResponse, isRemoteProgress, selectedDateKey, telegramInitData, profile?.id]);
+
+  const saveProgress = useCallback((nextMeasurements, nextDeficitPercent) => {
+    clearTimeout(saveTimerRef.current);
+    const sequence = ++saveSequenceRef.current;
+    setProgressMarkedDateKeys(prev => normalizeNutritionFilledDateKeys([...prev, selectedDateKey]));
+    if (!isRemoteProgress) {
+      setMeasurements(nextMeasurements);
+      setProgressGoal(prev => ({ ...prev, deficitPercent: normalizeDeficitPercent(nextDeficitPercent) }));
+      return;
+    }
+    saveTimerRef.current = setTimeout(async () => {
+      setIsProgressSaving(true);
+      setSaveError("");
+      try {
+        const result = await callOnlyPumpProfileApi(telegramInitData, "save_progress_measurement", progressPayloadFromMeasurements(selectedDateKey, nextMeasurements, nextDeficitPercent));
+        if (sequence !== saveSequenceRef.current) return;
+        applyProgressResponse(result, { syncNutrition: true });
+      } catch (error) {
+        console.error("onlypump-profile-api progress error:", error);
+        setSaveError("Не удалось сохранить замер. Я оставил изменения на экране, попробую при следующем вводе.");
+      } finally {
+        if (sequence === saveSequenceRef.current) setIsProgressSaving(false);
+      }
+    }, 450);
+  }, [applyProgressResponse, isRemoteProgress, selectedDateKey, setMeasurements, setProgressGoal, telegramInitData]);
+
   const updateMeasurement = (field, value) => {
-    setMeasurements(prev => ({ ...prev, [field]: Number(value) }));
+    const number = value === "" ? "" : Number(value);
+    const next = { ...progressMeasurements, [field]: Number.isFinite(number) ? number : "" };
+    setProgressMeasurements(next);
+    setMeasurements(next);
+    if (value !== "") saveProgress(next, deficitPercent);
   };
 
-  const updateGoal = (field, value) => {
-    setProgressGoal(prev => ({ ...prev, [field]: field === "title" ? value : Number(value) }));
+  const updateDeficitPercent = (value) => {
+    const nextDeficit = normalizeDeficitPercent(value);
+    setProgressGoal(prev => ({ ...prev, deficitPercent: nextDeficit }));
+    saveProgress(progressMeasurements, nextDeficit);
   };
 
   const bodyProgress = useMemo(() => {
     const weightStart = previousMeasurements.weight;
-    const weightCurrent = measurements.weight;
+    const weightCurrent = progressMeasurements.weight || measurements.weight;
     const weightTarget = progressGoal.targetWeight;
     const weightTotal = Math.abs(weightStart - weightTarget) || 1;
     const weightDone = Math.abs(weightStart - weightCurrent);
 
     const waistStart = previousMeasurements.waist;
-    const waistCurrent = measurements.waist;
+    const waistCurrent = progressMeasurements.waist || measurements.waist;
     const waistTarget = progressGoal.targetWaist;
     const waistTotal = Math.abs(waistStart - waistTarget) || 1;
     const waistDone = Math.abs(waistStart - waistCurrent);
 
     return Math.min(100, Math.round(((weightDone / weightTotal) * 50) + ((waistDone / waistTotal) * 50)));
-  }, [measurements, previousMeasurements, progressGoal]);
+  }, [measurements, previousMeasurements, progressGoal, progressMeasurements]);
 
   return <><Header title="Прогресс" subtitle="Силовые показатели связаны с вкладкой тренировок. Замеры и цель можно менять вручную."/>
+    <div className="mt-8">
+      <IOSWeekCalendar title="Неделя прогресса" selectedDateKey={selectedDateKey} onSelect={setSelectedDateKey} markedDateKeys={progressMarkedDateKeys} markerClassName="bg-white"/>
+    </div>
     <div className="mt-8 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
       <Card className="p-5">
         <div className="flex items-start justify-between gap-4">
@@ -9451,38 +9625,43 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
         <Card className="p-5">
           <Target className="text-red-500"/>
           <h2 className="mt-5 text-xl font-semibold">Цель</h2>
-          <label className="mt-4 block rounded-xl bg-white/[0.03] p-3">
-            <span className="text-[10px] uppercase tracking-wider text-zinc-500">Название цели</span>
-            <input value={progressGoal.title} onChange={(e) => updateGoal("title", e.target.value)} className="mt-1 w-full bg-transparent text-lg outline-none" />
-          </label>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            <label className="rounded-xl bg-white/[0.03] p-3"><span className="text-[10px] uppercase tracking-wider text-zinc-500">Вес</span><input type="number" value={progressGoal.targetWeight} onChange={(e) => updateGoal("targetWeight", e.target.value)} className="mt-1 w-full bg-transparent outline-none" /></label>
-            <label className="rounded-xl bg-white/[0.03] p-3"><span className="text-[10px] uppercase tracking-wider text-zinc-500">Талия</span><input type="number" value={progressGoal.targetWaist} onChange={(e) => updateGoal("targetWaist", e.target.value)} className="mt-1 w-full bg-transparent outline-none" /></label>
-            <label className="rounded-xl bg-white/[0.03] p-3"><span className="text-[10px] uppercase tracking-wider text-zinc-500">Сила %</span><input type="number" value={progressGoal.targetStrength} onChange={(e) => updateGoal("targetStrength", e.target.value)} className="mt-1 w-full bg-transparent outline-none" /></label>
+          <div className="mt-4 rounded-xl bg-white/[0.03] p-3">
+            <span className="text-[10px] uppercase tracking-wider text-zinc-500">Цель</span>
+            <div className="mt-1 text-lg font-semibold">{profileGoalTypeLabels[goalType] || progressGoal.title}</div>
           </div>
+          <div className={`mt-3 grid gap-2 ${goalType === "fat_loss" ? "grid-cols-3" : "grid-cols-2"}`}>
+            <label className="rounded-xl bg-white/[0.03] p-3"><span className="text-[10px] uppercase tracking-wider text-zinc-500">Вес</span><input type="number" value={progressMeasurements.weight ?? ""} onChange={(e) => updateMeasurement("weight", e.target.value)} className="mt-1 w-full bg-transparent text-base outline-none" /></label>
+            <label className="rounded-xl bg-white/[0.03] p-3"><span className="text-[10px] uppercase tracking-wider text-zinc-500">Талия</span><input type="number" value={progressMeasurements.waist ?? ""} onChange={(e) => updateMeasurement("waist", e.target.value)} className="mt-1 w-full bg-transparent text-base outline-none" /></label>
+            {goalType === "fat_loss" && <label className="rounded-xl bg-white/[0.03] p-3"><span className="text-[10px] uppercase tracking-wider text-zinc-500">Сила, %</span><input type="number" min="5" max="30" value={deficitPercent} onChange={(e) => updateDeficitPercent(e.target.value)} className="mt-1 w-full bg-transparent text-base outline-none" /></label>}
+          </div>
+          {goalType === "fat_loss" && <DeficitIntensityBar value={deficitPercent}/>}
           <div className="mt-5 text-5xl">{bodyProgress}%</div>
           <div className="mt-5"><Progress value={bodyProgress}/></div>
+          <p className="mt-3 text-xs text-zinc-500">{isProgressSaving ? "Сохраняю..." : "Автосохранение включено"}</p>
         </Card>
 
         <Card className="p-5">
           <h2 className="text-xl font-semibold">Замеры</h2>
           <div className="mt-5 grid grid-cols-2 gap-3">
-            {Object.entries(measurementLabels).map(([field, label]) => {
-              const current = measurements[field];
-              const previous = previousMeasurements[field];
-              const delta = Number((current - previous).toFixed(1));
+            {progressMeasurementFields.map(({ field, label, unit }) => {
+              const current = progressMeasurements[field] ?? "";
+              const previous = previousProgressMeasurements[field] ?? current;
+              const currentNumber = Number(current || 0);
+              const previousNumber = Number(previous || currentNumber || 0);
+              const delta = Number((currentNumber - previousNumber).toFixed(1));
               return <label key={field} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
                 <span className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider text-zinc-500">
                   <span>{label}</span>
                   <span className={delta < 0 ? "text-red-400" : delta > 0 ? "text-zinc-300" : "text-zinc-600"}>{delta > 0 ? "+" : ""}{delta}</span>
                 </span>
                 <div className="mt-1 flex items-center gap-1">
-                  <input type="number" value={current} onChange={(e) => updateMeasurement(field, e.target.value)} className="w-full bg-transparent text-lg outline-none" />
-                  <span className="text-xs text-zinc-500">{field === "weight" ? "кг" : field === "bodyFat" ? "%" : "см"}</span>
+                  <input type="number" value={current} onChange={(e) => updateMeasurement(field, e.target.value)} className="w-full bg-transparent text-base outline-none" />
+                  <span className="text-xs text-zinc-500">{unit}</span>
                 </div>
               </label>
             })}
           </div>
+          {saveError && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{saveError}</p>}
         </Card>
       </div>
     </div>
@@ -9607,6 +9786,20 @@ function ProfileFormFields({ draft, setDraft, showManualTargets = true }) {
       <ProfileInput label="Тренировок в неделю" type="number" value={draft.workouts_per_week} onChange={(value) => set("workouts_per_week", value)} required/>
       <ProfileInput label="Целевой вес, кг" type="number" value={draft.target_weight_kg} onChange={(value) => set("target_weight_kg", value)}/>
       <ProfileSelect label="Цель" value={draft.goal_type} onChange={(value) => set("goal_type", value)} options={Object.entries(profileGoalTypeLabels).map(([value, label]) => ({ value, label }))}/>
+      {draft.goal_type === "fat_loss" && <ProfileInput label="Сила, %" type="number" value={draft.deficit_percent} onChange={(value) => set("deficit_percent", value)} />}
+    </div>
+
+    <div>
+      <p className="mb-3 text-xs font-bold text-zinc-500">Дополнительные замеры</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ProfileInput label="Плечи, см" type="number" value={draft.shoulders_cm} onChange={(value) => set("shoulders_cm", value)}/>
+        <ProfileInput label="Грудь, см" type="number" value={draft.chest_cm} onChange={(value) => set("chest_cm", value)}/>
+        <ProfileInput label="Бицепс, см" type="number" value={draft.biceps_cm} onChange={(value) => set("biceps_cm", value)}/>
+        <ProfileInput label="Живот, см" type="number" value={draft.abdomen_cm} onChange={(value) => set("abdomen_cm", value)}/>
+        <ProfileInput label="Ягодицы, см" type="number" value={draft.glutes_cm} onChange={(value) => set("glutes_cm", value)}/>
+        <ProfileInput label="Бедро, см" type="number" value={draft.thigh_cm} onChange={(value) => set("thigh_cm", value)}/>
+        <ProfileInput label="Голень, см" type="number" value={draft.calf_cm} onChange={(value) => set("calf_cm", value)}/>
+      </div>
     </div>
 
     <div className="grid gap-3 sm:grid-cols-2">
@@ -9958,6 +10151,7 @@ function OnlyPumpPlatform() {
     targetWeight: 76,
     targetWaist: 74,
     targetStrength: 15,
+    deficitPercent: 10,
   });
   const [measurements, setMeasurements] = useState({
     weight: 90,
@@ -10000,13 +10194,20 @@ function OnlyPumpPlatform() {
       bodyFat: normalized.body_fat_percent || prev.bodyFat,
       neck: normalized.neck_cm || prev.neck,
       waist: normalized.waist_cm || prev.waist,
-      belly: normalized.waist_cm || prev.belly,
-      glutes: normalized.hips_cm || prev.glutes,
+      shoulders: normalized.shoulders_cm || prev.shoulders,
+      chest: normalized.chest_cm || prev.chest,
+      biceps: normalized.biceps_cm || prev.biceps,
+      belly: normalized.abdomen_cm || normalized.waist_cm || prev.belly,
+      glutes: normalized.glutes_cm || normalized.hips_cm || prev.glutes,
+      thigh: normalized.thigh_cm || prev.thigh,
+      calf: normalized.calf_cm || prev.calf,
     }));
     setProgressGoal(prev => ({
       ...prev,
       title: profileGoalTypeLabels[normalized.goal_type] || normalized.goal || prev.title,
       targetWeight: normalized.target_weight_kg || prev.targetWeight,
+      targetWaist: normalized.waist_cm || prev.targetWaist,
+      deficitPercent: normalizeDeficitPercent(normalized.deficit_percent, prev.deficitPercent || 10),
     }));
     setNutritionGoal(nextGoal);
     if (options.updateNutritionDay) {
@@ -10064,6 +10265,17 @@ function OnlyPumpPlatform() {
     clearCachedNutritionForProfileFromDate(localProfile, targetsFromDate);
     return true;
   }, [applyProfileState, globalSelectedDateKey, profile, profileStatus, telegramInitData]);
+
+  const handleProgressProfileSaved = useCallback((nextProfile, options = {}) => {
+    if (!nextProfile) return null;
+    const targetsFromDate = options.nutritionTargetsFromDate || formatDateKey(new Date());
+    const savedProfile = applyProfileState(nextProfile, {
+      updateNutritionDay: Boolean(options.syncNutrition),
+      nutritionTargetsFromDate: targetsFromDate,
+    });
+    if (options.syncNutrition) clearCachedNutritionForProfileFromDate(savedProfile, targetsFromDate);
+    return savedProfile;
+  }, [applyProfileState]);
 
   const loadNutritionForProfile = useCallback(async (activeProfile, initData, dateKey = globalSelectedDateKey, options = {}) => {
     if (!activeProfile) return null;
@@ -10282,11 +10494,11 @@ function OnlyPumpPlatform() {
     calculators: <CalculatorsPage/>,
     education: <EducationPage/>,
     lectures: <LecturesPage lectureItems={lectureItems} setLectureItems={setLectureItems}/>,
-    progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal}/>,
+    progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} onProgressProfileSaved={handleProgressProfileSaved}/>,
     analytics: <AnalyticsPage workouts={workouts} profile={profile}/>,
     community: <CommunityPage/>,
     profile: <ProfilePage profile={profile} profileStatus={profileStatus} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving}/>,
-  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, handleNutritionAction, handleSaveProfile, profileSaving]);
+  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, handleNutritionAction, handleSaveProfile, handleProgressProfileSaved, profileSaving]);
 
   if (appLoading || profileLoading) {
     return <div className="onlypump-app-shell flex items-center justify-center bg-black px-6 text-zinc-100">
