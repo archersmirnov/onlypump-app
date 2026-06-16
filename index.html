@@ -95,6 +95,30 @@
     .onlypump-modal-scroll {
       max-height: calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 2rem);
     }
+    .profile-screen,
+    .onboarding-screen {
+      width: 100%;
+      max-width: 100vw;
+      overflow-x: hidden;
+      box-sizing: border-box;
+    }
+    .profile-screen *,
+    .onboarding-screen * {
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    .profile-screen input,
+    .profile-screen select,
+    .profile-screen textarea,
+    .onboarding-screen input,
+    .onboarding-screen select,
+    .onboarding-screen textarea {
+      width: 100%;
+      max-width: 100%;
+      font-size: 16px !important;
+      -webkit-text-size-adjust: 100%;
+    }
     .onlypump-sheet-list {
       max-height: calc(var(--onlypump-app-height) * 0.56);
     }
@@ -346,6 +370,17 @@ function calculateProfileAge(birthDate) {
   const monthDelta = today.getMonth() - birth.getMonth();
   if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birth.getDate())) age--;
   return age > 0 ? age : null;
+}
+
+function formatAgeRu(age) {
+  const n = Math.abs(Number(age));
+  if (!Number.isFinite(n) || n <= 0) return "";
+  const lastTwo = n % 100;
+  const last = n % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return `${n} лет`;
+  if (last === 1) return `${n} год`;
+  if (last >= 2 && last <= 4) return `${n} года`;
+  return `${n} лет`;
 }
 
 function buildFallbackProfile(overrides = {}) {
@@ -1876,6 +1911,30 @@ const readCachedNutritionMarkersForProfile = (profile) => {
 const writeCachedNutritionForProfile = (profile, dateKey, nutritionDay) => {
   try {
     localStorage.setItem(getNutritionCacheKey(profile, dateKey), JSON.stringify(nutritionDay));
+  } catch (error) {
+    console.log("Nutrition cache error", error);
+  }
+};
+
+const isDateKeyOnOrAfter = (dateKey, fromDateKey) => {
+  const safeDate = normalizeNutritionFilledDateKeys([dateKey])[0];
+  const safeFrom = normalizeNutritionFilledDateKeys([fromDateKey])[0];
+  return Boolean(safeDate && safeFrom && safeDate >= safeFrom);
+};
+
+const clearCachedNutritionForProfileFromDate = (profile, fromDateKey = formatDateKey(new Date())) => {
+  try {
+    const telegramId = profile?.telegram_id || profile?.telegramId || profile?.id || "local";
+    const prefix = `onlypump_nutrition_cache_${telegramId}_`;
+    const keysToRemove = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key || !key.startsWith(prefix)) continue;
+      const dateKey = key.slice(prefix.length, prefix.length + 10);
+      if (isDateKeyOnOrAfter(dateKey, fromDateKey)) keysToRemove.push(key);
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+    if (keysToRemove.length) console.log("Nutrition future cache cleared", { fromDateKey, count: keysToRemove.length });
   } catch (error) {
     console.log("Nutrition cache error", error);
   }
@@ -9471,7 +9530,7 @@ function ProfileInput({ label, value, onChange, type = "text", placeholder = "",
       value={value ?? ""}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
-      className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none transition placeholder:text-zinc-700 focus:border-red-500/60"
+      className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-base outline-none transition placeholder:text-zinc-700 focus:border-red-500/60"
     />
   </label>;
 }
@@ -9482,7 +9541,7 @@ function ProfileSelect({ label, value, onChange, options }) {
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="mt-2 w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm outline-none transition focus:border-red-500/60"
+      className="mt-2 w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-base outline-none transition focus:border-red-500/60"
     >
       {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
     </select>
@@ -9537,7 +9596,7 @@ function ProfileFormFields({ draft, setDraft, showManualTargets = true }) {
       <ProfileInput label="Дата рождения" type="date" value={draft.birth_date} onChange={(value) => set("birth_date", value)} required/>
       <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
         <span className="text-xs font-bold text-zinc-500">Возраст</span>
-        <div className="mt-2 text-sm font-semibold text-zinc-100">{calculatedAge ? `${calculatedAge} лет` : "Укажи дату рождения"}</div>
+        <div className="mt-2 text-base font-semibold text-zinc-100">{calculatedAge ? formatAgeRu(calculatedAge) : "Укажи дату рождения"}</div>
       </div>
       <ProfileInput label="Рост, см" type="number" value={draft.height_cm} onChange={(value) => set("height_cm", value)} required/>
       <ProfileInput label="Вес, кг" type="number" value={draft.weight_kg} onChange={(value) => set("weight_kg", value)} required/>
@@ -9618,7 +9677,7 @@ function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving }) {
     if (ok === false) setError("Не удалось сохранить профиль. Проверь подключение и попробуй еще раз.");
   };
 
-  return <div className="onlypump-app-shell overflow-y-auto bg-black px-4 py-6 text-zinc-100" style={{ paddingTop: "calc(var(--onlypump-safe-top) + var(--onlypump-telegram-main-top-offset) + 1.5rem)", paddingBottom: "calc(var(--onlypump-safe-bottom) + 1.5rem)" }}>
+  return <div className="onboarding-screen onlypump-app-shell overflow-y-auto bg-black px-4 py-6 text-zinc-100" style={{ paddingTop: "calc(var(--onlypump-safe-top) + var(--onlypump-telegram-main-top-offset) + 1.5rem)", paddingBottom: "calc(var(--onlypump-safe-bottom) + 1.5rem)" }}>
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
         <div className="text-3xl font-black tracking-tight">ONLY<span className="text-red-500">PUMP</span></div>
@@ -9654,7 +9713,7 @@ function ProfileEditSheet({ profile, onClose, onSave, saving }) {
     if (ok === false) setError("Не удалось сохранить профиль. Попробуй еще раз.");
   };
 
-  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[175] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[175] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-4xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/95 px-5 pb-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem] sm:px-6 sm:pb-6" style={{ paddingTop: "calc(var(--onlypump-safe-top) + var(--onlypump-telegram-main-top-offset) + 1.25rem)" }}>
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
       <div className="mb-5 flex items-start justify-between gap-4">
@@ -9681,14 +9740,14 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", onSav
   const calculatedAge = calculateProfileAge(profile?.birth_date);
   const [editOpen, setEditOpen] = useState(false);
 
-  return <><Header title="Личный кабинет" subtitle="Профиль, тариф, подписка, настройки, доступы и история платежей."/><PageGrid>
+  return <div className="profile-screen"><Header title="Личный кабинет" subtitle="Профиль, тариф, подписка, настройки, доступы и история платежей."/><PageGrid>
     <Card className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p></Card>
-    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? `${calculatedAge} лет` : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profile.weight_kg || DEFAULT_PROFILE.weight_kg} кг</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profile.height_cm || DEFAULT_PROFILE.height_cm} см</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profile.steps_per_day || DEFAULT_PROFILE.steps_per_day} шагов · {profile.workouts_per_week ?? DEFAULT_PROFILE.workouts_per_week} тр/нед</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">КБЖУ</span><span>{profile.calories_target || 2500} / {profile.protein_target || 180} / {profile.fat_target || 70} / {profile.carbs_target || 250}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profile.manual_nutrition_targets_enabled ? "ручной" : "авто"}{profile.high_protein_enabled ? " · белок+" : ""}{profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><Button onClick={() => setEditOpen(true)} className="mt-5 w-full bg-white/8">Редактировать</Button></Card>
+    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? formatAgeRu(calculatedAge) : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profile.weight_kg || DEFAULT_PROFILE.weight_kg} кг</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profile.height_cm || DEFAULT_PROFILE.height_cm} см</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profile.steps_per_day || DEFAULT_PROFILE.steps_per_day} шагов · {profile.workouts_per_week ?? DEFAULT_PROFILE.workouts_per_week} тр/нед</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">КБЖУ</span><span>{profile.calories_target || 2500} / {profile.protein_target || 180} / {profile.fat_target || 70} / {profile.carbs_target || 250}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profile.manual_nutrition_targets_enabled ? "ручной" : "авто"}{profile.high_protein_enabled ? " · белок+" : ""}{profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><Button onClick={() => setEditOpen(true)} className="mt-5 w-full bg-white/8">Редактировать</Button></Card>
     <Card className="p-5"><CreditCard className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Подписка</h2><p className="mt-2 text-zinc-400">Активна до {new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</p><Button className="mt-5 w-full bg-white/8">Управлять</Button></Card>
     <Card className="p-5"><ShieldCheck className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Доступы</h2><p className="mt-2 text-zinc-400">Все модули открыты</p><div className="mt-5 flex gap-2 text-xs text-zinc-500"><Lock size={14}/> 1PM bonus locked</div></Card>
     <Card className="p-5"><Settings className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Настройки</h2>{["Уведомления", "Единицы измерения", "Интеграции", "Безопасность"].map(x=><div key={x} className="mt-3 rounded-lg bg-white/[0.03] p-3 text-sm">{x}</div>)}</Card>
     {editOpen && <ProfileEditSheet profile={profile} saving={profileSaving} onClose={() => setEditOpen(false)} onSave={async (payload) => { const ok = await onSaveProfile?.(payload); if (ok !== false) setEditOpen(false); }}/>}
-  </PageGrid></>;
+  </PageGrid></div>;
 }
 
 function PageGrid({ children }) {
@@ -9951,25 +10010,30 @@ function OnlyPumpPlatform() {
     }));
     setNutritionGoal(nextGoal);
     if (options.updateNutritionDay) {
+      const targetsFromDate = options.nutritionTargetsFromDate || formatDateKey(new Date());
       setNutritionDay(prev => prev ? {
         ...prev,
-        calories_target: nextGoal.calories,
-        protein_target: nextGoal.protein,
-        fat_target: nextGoal.fat,
-        carbs_target: nextGoal.carbs,
-        goal: nextGoal,
+        ...(isDateKeyOnOrAfter(prev.date || globalSelectedDateKey, targetsFromDate) ? {
+          calories_target: nextGoal.calories,
+          protein_target: nextGoal.protein,
+          fat_target: nextGoal.fat,
+          carbs_target: nextGoal.carbs,
+          goal: nextGoal,
+        } : {}),
       } : prev);
     }
     return normalized;
-  }, [nutritionGoal, profile]);
+  }, [globalSelectedDateKey, nutritionGoal, profile]);
 
   const handleSaveProfile = useCallback(async (payload, action = "update_profile") => {
     const payloadWithDate = { ...payload, current_date: globalSelectedDateKey, measurement_date: payload.measurement_date || globalSelectedDateKey };
+    const targetsFromDate = formatDateKey(new Date());
     if (profileStatus === "verified" && telegramInitData) {
       setProfileSaving(true);
       try {
         const result = await callOnlyPumpProfileApi(telegramInitData, action, payloadWithDate);
-        const savedProfile = applyProfileState(result.profile, { updateNutritionDay: true });
+        const savedProfile = applyProfileState(result.profile, { updateNutritionDay: true, nutritionTargetsFromDate: targetsFromDate });
+        clearCachedNutritionForProfileFromDate(savedProfile, targetsFromDate);
         setProfileStatus("verified");
         return Boolean(savedProfile);
       } catch (error) {
@@ -9996,7 +10060,8 @@ function OnlyPumpPlatform() {
       onboarding_completed: true,
       source: "fallback",
     }, profile || DEFAULT_PROFILE);
-    applyProfileState(localProfile, { updateNutritionDay: true });
+    applyProfileState(localProfile, { updateNutritionDay: true, nutritionTargetsFromDate: targetsFromDate });
+    clearCachedNutritionForProfileFromDate(localProfile, targetsFromDate);
     return true;
   }, [applyProfileState, globalSelectedDateKey, profile, profileStatus, telegramInitData]);
 
