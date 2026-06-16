@@ -176,7 +176,21 @@
     }
   }
   </script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+  <script>
+    if (window.Babel?.registerPreset && window.Babel?.availablePresets?.react) {
+      Babel.registerPreset("onlypump-classic", function () {
+        var presets = [];
+        if (Babel.availablePresets.env) {
+          presets.push([Babel.availablePresets.env, { modules: false }]);
+        }
+        presets.push([Babel.availablePresets.react, { runtime: "classic" }]);
+        return {
+          presets: presets
+        };
+      });
+    }
+  </script>
   <script>
     (function () {
       function getCrashMessage(error) {
@@ -222,7 +236,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <script type="text/babel" data-type="module">
+  <script type="text/babel" data-type="module" data-presets="onlypump-classic">
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
