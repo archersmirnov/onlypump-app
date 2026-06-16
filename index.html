@@ -177,6 +177,48 @@
   }
   </script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>
+    (function () {
+      function getCrashMessage(error) {
+        if (!error) return "Unknown startup error";
+        if (error.reason) return getCrashMessage(error.reason);
+        if (error.error) return getCrashMessage(error.error);
+        return error.message || String(error);
+      }
+
+      window.__ONLYPUMP_SHOW_CRASH__ = function (error) {
+        try {
+          console.error("ONLYPUMP APP CRASH", error);
+          var root = document.getElementById("root");
+          if (!root) return;
+          var message = getCrashMessage(error);
+          root.innerHTML = [
+            '<div class="onlypump-app-shell" style="min-height:100vh;background:#000;color:#f4f4f5;display:flex;align-items:center;justify-content:center;padding:24px;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;">',
+            '<div style="width:100%;max-width:420px;border:1px solid rgba(239,68,68,.28);background:#09090b;border-radius:24px;padding:24px;text-align:center;box-shadow:0 24px 80px rgba(0,0,0,.55);">',
+            '<div style="font-size:28px;font-weight:900;letter-spacing:-.04em;color:#ef4444;">ONLYPUMP</div>',
+            '<div style="margin-top:18px;font-size:18px;font-weight:800;">Не удалось загрузить приложение</div>',
+            '<div style="margin-top:10px;color:#a1a1aa;font-size:14px;line-height:1.55;">Попробуй перезагрузить. Ошибка уже записана в консоль.</div>',
+            '<div style="margin-top:14px;background:rgba(255,255,255,.04);border-radius:14px;padding:12px;text-align:left;color:#71717a;font-size:12px;word-break:break-word;">',
+            String(message).replace(/[<>&]/g, function (char) { return ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[char]; }),
+            '</div>',
+            '<button type="button" onclick="window.location.reload()" style="margin-top:18px;width:100%;height:46px;border:0;border-radius:999px;background:#ef4444;color:#000;font-weight:800;">Перезагрузить</button>',
+            '</div>',
+            '</div>'
+          ].join("");
+        } catch (fallbackError) {
+          console.error("ONLYPUMP APP CRASH FALLBACK FAILED", fallbackError);
+        }
+      };
+
+      window.addEventListener("error", function (event) {
+        if (!event.error && !event.message) return;
+        window.__ONLYPUMP_SHOW_CRASH__(event.error || event.message || event);
+      });
+      window.addEventListener("unhandledrejection", function (event) {
+        window.__ONLYPUMP_SHOW_CRASH__(event.reason || event);
+      });
+    })();
+  </script>
 </head>
 <body>
   <div id="root"></div>
@@ -259,6 +301,8 @@ function initTelegramWebApp() {
 }
 
 const telegramWebApp = initTelegramWebApp();
+console.log("ONLYPUMP START");
+console.log("Telegram object exists", Boolean(telegramWebApp || window.Telegram?.WebApp));
 
 const SUPABASE_URL = window.ONLYPUMP_SUPABASE_URL || window.SUPABASE_URL || "https://qehbgwnblebjahmytqca.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = window.ONLYPUMP_SUPABASE_PUBLISHABLE_KEY || window.SUPABASE_PUBLISHABLE_KEY || "sb_publishable_rZgTF88Cp6PGhKUpoD_O8A_aQi-1o_K";
@@ -542,8 +586,13 @@ async function callOnlyPumpProfileApi(initData, action, payload = {}) {
     body: JSON.stringify({ initData, action, payload }),
   });
   const result = await response.json().catch(() => ({}));
+  if (result?.access_denied && action === "load_profile" && result?.profile) {
+    return result;
+  }
   if (!response.ok || result?.ok === false || result?.error) {
-    throw result?.error || result?.message || new Error(`onlypump-profile-api ${action} failed with ${response.status}`);
+    const error = new Error(result?.error || result?.message || `onlypump-profile-api ${action} failed with ${response.status}`);
+    error.payload = result;
+    throw error;
   }
   return result;
 }
@@ -10840,6 +10889,22 @@ function AccessGateScreen({ profile = DEFAULT_PROFILE, status = "pending", refre
   </div>;
 }
 
+function TelegramRequiredScreen() {
+  return <div className="onlypump-app-shell overflow-y-auto bg-black px-4 py-6 text-zinc-100" style={{ paddingTop: "calc(var(--onlypump-safe-top) + 1.5rem)", paddingBottom: "calc(var(--onlypump-safe-bottom) + 1.5rem)" }}>
+    <div className="mx-auto flex min-h-full max-w-xl items-center">
+      <Card className="w-full p-6 text-center sm:p-8">
+        <div className="text-3xl font-black tracking-tight">ONLY<span className="text-red-500">PUMP</span></div>
+        <div className="mx-auto mt-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 text-red-400">
+          <ShieldCheck size={28}/>
+        </div>
+        <h1 className="mt-6 text-2xl font-black tracking-[-0.03em]">Откройте ONLYPUMP через Telegram</h1>
+        <p className="mt-3 text-sm leading-6 text-zinc-400">Это мини-приложение работает внутри Telegram.</p>
+        <p className="mt-5 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-zinc-500">Если ты уже в Telegram, закрой это окно и открой Mini App заново.</p>
+      </Card>
+    </div>
+  </div>;
+}
+
 function ProfileEditSheet({ profile, onClose, onSave, saving }) {
   const [draft, setDraft] = useState(() => profileDraftFromProfile(profile));
   const [error, setError] = useState("");
@@ -10929,6 +10994,7 @@ function OnlyPumpPlatform() {
   const [telegramInitData, setTelegramInitData] = useState(telegramBootInitData);
   const [appLoading, setAppLoading] = useState(isTelegramBootMode);
   const [profileLoading, setProfileLoading] = useState(isTelegramBootMode);
+  const [telegramRequired, setTelegramRequired] = useState(!isTelegramBootMode);
   const [accessGateStatus, setAccessGateStatus] = useState(null);
   const [accessRefreshing, setAccessRefreshing] = useState(false);
   const backLayerCount = useBackLayerCount();
@@ -11493,21 +11559,16 @@ function OnlyPumpPlatform() {
         setSupabaseClient(null);
         setProfile(activeProfile);
         setProfileStatus("local");
+        setTelegramRequired(true);
         setAccessGateStatus(null);
         profileSaveReadyRef.current = false;
-        const cached = readCachedWorkoutsForProfile(activeProfile);
-        if (cached.length) setWorkouts(cached);
-        setNutritionMarkedDateKeys(readCachedNutritionMarkersForProfile(activeProfile));
-        Promise.allSettled([
-          loadNutritionForProfile(activeProfile, "", globalSelectedDateKey, { useCache: true }),
-          loadHealthForProfile(activeProfile, "", globalSelectedDateKey),
-        ]).then(() => console.log("Initial local data refreshed"));
         setProfileLoading(false);
         setAppLoading(false);
         console.log("Profile loaded", activeProfile);
-        console.log("Initial app data loaded");
+        console.log("ONLYPUMP READY", { mode: "telegram-required" });
         return;
       }
+      setTelegramRequired(false);
 
       const client = createOnlyPumpSupabaseClient();
       supabaseClientRef.current = client;
@@ -11517,7 +11578,9 @@ function OnlyPumpPlatform() {
       let profileLoadError = null;
 
       try {
+        console.log("Loading profile...");
         const profileResult = await callOnlyPumpProfileApi(initData, "load_profile", {});
+        console.log("Profile response", profileResult);
         activeProfile = normalizeProfileRecord({ ...profileResult.profile, source: "supabase" }, localDefaults);
         result = { profile: activeProfile, status: "verified" };
         console.log("Extended profile loaded", activeProfile);
@@ -11531,6 +11594,7 @@ function OnlyPumpPlatform() {
       console.log("Using activeProfile:", activeProfile);
       applyProfileState(activeProfile);
       setProfileStatus(result.status);
+      console.log("Access status", getProfileAccessStatus(activeProfile), parseProfileBoolean(activeProfile?.is_admin));
       profileSaveReadyRef.current = result.status === "verified" && profileHasTestAccess(activeProfile) && Boolean(activeProfile?.id);
       if (profileLoadError) {
         setAccessGateStatus("pending");
@@ -11551,6 +11615,7 @@ function OnlyPumpPlatform() {
       }
       setAccessGateStatus(null);
       setNutritionMarkedDateKeys(readCachedNutritionMarkersForProfile(activeProfile));
+      console.log("Loading app data...");
       Promise.allSettled([
         loadWorkoutsForProfile(activeProfile, result.status === "verified" ? initData : "", { useCache: true }),
         loadNutritionForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey, { useCache: true }),
@@ -11559,7 +11624,7 @@ function OnlyPumpPlatform() {
       setProfileLoading(false);
       setAppLoading(false);
       console.log("Profile loaded", activeProfile);
-      console.log("Initial app data loaded");
+      console.log("ONLYPUMP READY", { mode: "app" });
     };
 
     bootstrapProfile();
@@ -11619,6 +11684,10 @@ function OnlyPumpPlatform() {
     </div>;
   }
 
+  if (telegramRequired) {
+    return <TelegramRequiredScreen/>;
+  }
+
   if (accessGateStatus && telegramInitData && !profileHasTestAccess(profile)) {
     return <AccessGateScreen profile={profile || DEFAULT_PROFILE} status={accessGateStatus} refreshing={accessRefreshing} onRefresh={refreshAccessStatus}/>;
   }
@@ -11649,7 +11718,7 @@ class OnlyPumpRuntimeBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    console.error("ONLYPUMP runtime error", error, info);
+    console.error("ONLYPUMP APP CRASH", error, info);
   }
 
   render() {
@@ -11674,8 +11743,15 @@ class OnlyPumpRuntimeBoundary extends React.Component {
   }
 }
 
-const root = createRoot(document.getElementById("root"));
-root.render(<OnlyPumpRuntimeBoundary><OnlyPumpPlatform /></OnlyPumpRuntimeBoundary>);
+try {
+  const rootElement = document.getElementById("root");
+  if (!rootElement) throw new Error("Root element is missing");
+  const root = createRoot(rootElement);
+  root.render(<OnlyPumpRuntimeBoundary><OnlyPumpPlatform /></OnlyPumpRuntimeBoundary>);
+} catch (error) {
+  console.error("ONLYPUMP STARTUP ERROR", error);
+  window.__ONLYPUMP_SHOW_CRASH__?.(error);
+}
   </script>
 </body>
 </html>
