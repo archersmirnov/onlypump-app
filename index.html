@@ -315,6 +315,11 @@ const DEFAULT_PROFILE = {
   profile_updated_at: null,
   nutrition_targets_updated_at: null,
   default_weight_unit: "kg",
+  access_status: "pending",
+  is_admin: false,
+  access_requested_at: null,
+  access_granted_at: null,
+  access_note: null,
   source: "fallback",
 };
 
@@ -371,6 +376,19 @@ function parseProfileBoolean(value, fallback = false) {
   if (value === true || value === "true" || value === 1 || value === "1") return true;
   if (value === false || value === "false" || value === 0 || value === "0") return false;
   return fallback;
+}
+
+function normalizeAccessStatus(value) {
+  const status = String(value || "pending").trim().toLowerCase();
+  return ["allowed", "blocked", "pending"].includes(status) ? status : "pending";
+}
+
+function getProfileAccessStatus(profile = {}) {
+  return normalizeAccessStatus(profile?.access_status);
+}
+
+function profileHasTestAccess(profile = {}) {
+  return parseProfileBoolean(profile?.is_admin) || getProfileAccessStatus(profile) === "allowed";
 }
 
 function calculateProfileAge(birthDate) {
@@ -441,6 +459,11 @@ function buildFallbackProfile(overrides = {}) {
     profile_updated_at: overrides.profile_updated_at || DEFAULT_PROFILE.profile_updated_at,
     nutrition_targets_updated_at: overrides.nutrition_targets_updated_at || DEFAULT_PROFILE.nutrition_targets_updated_at,
     default_weight_unit: normalizeWeightUnit(overrides.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
+    access_status: normalizeAccessStatus(overrides.access_status ?? DEFAULT_PROFILE.access_status),
+    is_admin: parseProfileBoolean(overrides.is_admin, DEFAULT_PROFILE.is_admin),
+    access_requested_at: overrides.access_requested_at || DEFAULT_PROFILE.access_requested_at,
+    access_granted_at: overrides.access_granted_at || DEFAULT_PROFILE.access_granted_at,
+    access_note: overrides.access_note ?? DEFAULT_PROFILE.access_note,
     source: overrides.source || "fallback",
   };
 }
@@ -499,6 +522,11 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     profile_updated_at: record.profile_updated_at || fallback.profile_updated_at || null,
     nutrition_targets_updated_at: record.nutrition_targets_updated_at || fallback.nutrition_targets_updated_at || null,
     default_weight_unit: normalizeWeightUnit(record.default_weight_unit || fallback.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
+    access_status: normalizeAccessStatus(record.access_status ?? fallback.access_status ?? DEFAULT_PROFILE.access_status),
+    is_admin: parseProfileBoolean(record.is_admin, fallback.is_admin ?? DEFAULT_PROFILE.is_admin),
+    access_requested_at: record.access_requested_at || fallback.access_requested_at || null,
+    access_granted_at: record.access_granted_at || fallback.access_granted_at || null,
+    access_note: record.access_note ?? fallback.access_note ?? null,
     source: record.source || fallback.source || "supabase",
   };
 }
@@ -10770,6 +10798,48 @@ function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving }) {
   </div>;
 }
 
+function AccessGateScreen({ profile = DEFAULT_PROFILE, status = "pending", refreshing = false, onRefresh }) {
+  const normalizedStatus = normalizeAccessStatus(status);
+  const isBlocked = normalizedStatus === "blocked";
+  const title = isBlocked ? "Доступ закрыт" : "Доступ к тесту пока закрыт";
+  const message = isBlocked
+    ? "Этот аккаунт не имеет доступа к тестовой версии."
+    : "Ты уже оставил заявку на доступ. Я открою приложение вручную после подтверждения.";
+  const statusLabel = isBlocked ? "Закрыт" : "Ожидает доступа";
+  const displayName = getProfileDisplayName(profile);
+  const telegramLabel = profile?.telegram_username ? `@${profile.telegram_username}` : profile?.telegram_id ? `ID ${profile.telegram_id}` : "Telegram-профиль";
+
+  return <div className="onlypump-app-shell overflow-y-auto bg-black px-4 py-6 text-zinc-100" style={{ paddingTop: "calc(var(--onlypump-safe-top) + var(--onlypump-telegram-main-top-offset) + 1.5rem)", paddingBottom: "calc(var(--onlypump-safe-bottom) + 1.5rem)" }}>
+    <div className="mx-auto flex min-h-full max-w-xl items-center">
+      <Card className="w-full p-6 sm:p-8">
+        <div className="text-3xl font-black tracking-tight">ONLY<span className="text-red-500">PUMP</span></div>
+        <div className="mt-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 text-red-400">
+          <Lock size={28}/>
+        </div>
+        <h1 className="mt-6 text-2xl font-black tracking-[-0.03em]">{title}</h1>
+        <p className="mt-3 text-sm leading-6 text-zinc-400">{message}</p>
+        <div className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-zinc-500">Пользователь</span>
+            <span className="break-words text-right font-semibold">{displayName}</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-zinc-500">Telegram</span>
+            <span className="break-words text-right text-zinc-300">{telegramLabel}</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-zinc-500">Статус</span>
+            <span className={`rounded-full px-3 py-1 text-xs font-bold ${isBlocked ? "bg-red-500/10 text-red-300" : "bg-yellow-500/10 text-yellow-300"}`}>{statusLabel}</span>
+          </div>
+        </div>
+        <Button onClick={onRefresh} disabled={refreshing} className="mt-6 w-full bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">
+          {refreshing ? "Проверяю..." : "Обновить статус"}
+        </Button>
+      </Card>
+    </div>
+  </div>;
+}
+
 function ProfileEditSheet({ profile, onClose, onSave, saving }) {
   const [draft, setDraft] = useState(() => profileDraftFromProfile(profile));
   const [error, setError] = useState("");
@@ -10859,6 +10929,8 @@ function OnlyPumpPlatform() {
   const [telegramInitData, setTelegramInitData] = useState(telegramBootInitData);
   const [appLoading, setAppLoading] = useState(isTelegramBootMode);
   const [profileLoading, setProfileLoading] = useState(isTelegramBootMode);
+  const [accessGateStatus, setAccessGateStatus] = useState(null);
+  const [accessRefreshing, setAccessRefreshing] = useState(false);
   const backLayerCount = useBackLayerCount();
   const [globalSelectedDateKey, setGlobalSelectedDateKey] = useState(formatDateKey(new Date()));
   const [workouts, setWorkouts] = useState(() => isTelegramBootMode ? [] : buildInitialWorkoutModels());
@@ -11130,7 +11202,7 @@ function OnlyPumpPlatform() {
   const handleSaveProfile = useCallback(async (payload, action = "update_profile") => {
     const payloadWithDate = { ...payload, current_date: globalSelectedDateKey, measurement_date: payload.measurement_date || globalSelectedDateKey };
     const targetsFromDate = formatDateKey(new Date());
-    if (profileStatus === "verified" && telegramInitData) {
+    if (profileStatus === "verified" && profileHasTestAccess(profile) && telegramInitData) {
       setProfileSaving(true);
       try {
         if (action === "update_profile" || action === "complete_onboarding") console.log("PROFILE MEASUREMENT SAVE", payloadWithDate);
@@ -11223,7 +11295,7 @@ function OnlyPumpPlatform() {
       writeCachedHealthLogsForProfile(profile, upsertHealthLogList(healthLogs, optimisticLog));
     }
 
-    if (!(profileStatus === "verified" && telegramInitData && profile?.id)) return true;
+    if (!(profileStatus === "verified" && profileHasTestAccess(profile) && telegramInitData && profile?.id)) return true;
 
     setHealthSaving(true);
     try {
@@ -11298,7 +11370,7 @@ function OnlyPumpPlatform() {
   const handleNutritionAction = useCallback(async (action, payload = {}) => {
     const dateKey = payload.date || nutritionDay?.date || globalSelectedDateKey;
     const payloadWithDate = { ...payload, date: dateKey };
-    const canUseRemoteNutrition = profileStatus === "verified" && Boolean(telegramInitData && profile?.id);
+    const canUseRemoteNutrition = profileStatus === "verified" && profileHasTestAccess(profile) && Boolean(telegramInitData && profile?.id);
     const shouldOptimisticallyUpdate = ["add_item", "delete_item", "toggle_favorite"].includes(action);
     const baseNutritionDay = nutritionDay?.date === dateKey ? nutritionDay : buildLocalNutritionDay(dateKey, nutritionGoal);
     const previousDay = baseNutritionDay;
@@ -11360,6 +11432,42 @@ function OnlyPumpPlatform() {
 
   const nutritionMeals = useMemo(() => deriveHomeMealsFromNutritionDay(nutritionDay), [nutritionDay]);
 
+  const refreshAccessStatus = useCallback(async () => {
+    if (!telegramInitData) return false;
+    setAccessRefreshing(true);
+    try {
+      const profileResult = await callOnlyPumpProfileApi(telegramInitData, "load_profile", {});
+      const nextProfile = normalizeProfileRecord({ ...profileResult.profile, source: "supabase" }, profile || DEFAULT_PROFILE);
+      const savedProfile = applyProfileState(nextProfile);
+      setProfileStatus("verified");
+      profileSaveReadyRef.current = Boolean(savedProfile?.id) && profileHasTestAccess(savedProfile);
+      console.log("Access status refreshed", {
+        access_status: getProfileAccessStatus(savedProfile),
+        is_admin: parseProfileBoolean(savedProfile?.is_admin),
+      });
+      if (!profileHasTestAccess(savedProfile)) {
+        setAccessGateStatus(getProfileAccessStatus(savedProfile));
+        return false;
+      }
+      setAccessGateStatus(null);
+      setNutritionMarkedDateKeys(readCachedNutritionMarkersForProfile(savedProfile));
+      Promise.allSettled([
+        loadWorkoutsForProfile(savedProfile, telegramInitData, { useCache: true }),
+        loadNutritionForProfile(savedProfile, telegramInitData, globalSelectedDateKey, { useCache: true }),
+        loadHealthForProfile(savedProfile, telegramInitData, globalSelectedDateKey),
+      ]).then((results) => console.log("Access granted data refreshed", results.map(item => item.status)));
+      return true;
+    } catch (error) {
+      console.error("onlypump-profile-api access refresh error:", error);
+      setAccessGateStatus(prev => prev || "pending");
+      return false;
+    } finally {
+      setAccessRefreshing(false);
+      setProfileLoading(false);
+      setAppLoading(false);
+    }
+  }, [applyProfileState, globalSelectedDateKey, loadHealthForProfile, loadNutritionForProfile, loadWorkoutsForProfile, profile, telegramInitData]);
+
   useEffect(() => {
     if (!profile) return;
     writeCachedWorkoutsForProfile(profile, workouts);
@@ -11385,6 +11493,7 @@ function OnlyPumpPlatform() {
         setSupabaseClient(null);
         setProfile(activeProfile);
         setProfileStatus("local");
+        setAccessGateStatus(null);
         profileSaveReadyRef.current = false;
         const cached = readCachedWorkoutsForProfile(activeProfile);
         if (cached.length) setWorkouts(cached);
@@ -11405,6 +11514,7 @@ function OnlyPumpPlatform() {
       setSupabaseClient(client);
       let result = { profile: localDefaults, status: "local" };
       let activeProfile = normalizeProfileRecord({ ...localDefaults, display_name: "Профиль", first_name: "", source: "fallback" }, { ...localDefaults, display_name: "Профиль", first_name: "" });
+      let profileLoadError = null;
 
       try {
         const profileResult = await callOnlyPumpProfileApi(initData, "load_profile", {});
@@ -11413,6 +11523,7 @@ function OnlyPumpPlatform() {
         console.log("Extended profile loaded", activeProfile);
       } catch (profileError) {
         console.error("onlypump-profile-api error:", profileError);
+        profileLoadError = profileError;
         result = { profile: activeProfile, status: "local" };
       }
 
@@ -11420,7 +11531,25 @@ function OnlyPumpPlatform() {
       console.log("Using activeProfile:", activeProfile);
       applyProfileState(activeProfile);
       setProfileStatus(result.status);
-      profileSaveReadyRef.current = result.status === "verified" && Boolean(activeProfile?.id);
+      profileSaveReadyRef.current = result.status === "verified" && profileHasTestAccess(activeProfile) && Boolean(activeProfile?.id);
+      if (profileLoadError) {
+        setAccessGateStatus("pending");
+        setProfileLoading(false);
+        setAppLoading(false);
+        console.log("Access gate:", { access_status: "pending", reason: "profile_load_failed" });
+        return;
+      }
+      if (result.status === "verified" && !profileHasTestAccess(activeProfile)) {
+        setAccessGateStatus(getProfileAccessStatus(activeProfile));
+        setProfileLoading(false);
+        setAppLoading(false);
+        console.log("Access gate:", {
+          access_status: getProfileAccessStatus(activeProfile),
+          is_admin: parseProfileBoolean(activeProfile?.is_admin),
+        });
+        return;
+      }
+      setAccessGateStatus(null);
       setNutritionMarkedDateKeys(readCachedNutritionMarkersForProfile(activeProfile));
       Promise.allSettled([
         loadWorkoutsForProfile(activeProfile, result.status === "verified" ? initData : "", { useCache: true }),
@@ -11442,15 +11571,17 @@ function OnlyPumpPlatform() {
 
   useEffect(() => {
     if (!profile) return;
-    const canUseRemoteNutrition = profileStatus === "verified" && Boolean(telegramInitData && profile?.id);
+    if (accessGateStatus) return;
+    const canUseRemoteNutrition = profileStatus === "verified" && profileHasTestAccess(profile) && Boolean(telegramInitData && profile?.id);
     loadNutritionForProfile(profile, canUseRemoteNutrition ? telegramInitData : "", globalSelectedDateKey, { useCache: true });
-  }, [globalSelectedDateKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData]);
+  }, [accessGateStatus, globalSelectedDateKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData]);
 
   useEffect(() => {
     if (!profile) return;
-    const canUseRemoteHealth = profileStatus === "verified" && Boolean(telegramInitData && profile?.id);
+    if (accessGateStatus) return;
+    const canUseRemoteHealth = profileStatus === "verified" && profileHasTestAccess(profile) && Boolean(telegramInitData && profile?.id);
     loadHealthForProfile(profile, canUseRemoteHealth ? telegramInitData : "", globalSelectedDateKey);
-  }, [globalSelectedDateKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData]);
+  }, [accessGateStatus, globalSelectedDateKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData]);
 
   useEffect(() => {
     if (!profile || !nutritionDay?.date) return;
@@ -11486,6 +11617,10 @@ function OnlyPumpPlatform() {
         <p className="mt-2 text-sm text-zinc-500">Загрузка...</p>
       </div>
     </div>;
+  }
+
+  if (accessGateStatus && telegramInitData && !profileHasTestAccess(profile)) {
+    return <AccessGateScreen profile={profile || DEFAULT_PROFILE} status={accessGateStatus} refreshing={accessRefreshing} onRefresh={refreshAccessStatus}/>;
   }
 
   if (profileStatus === "verified" && profile && profile.onboarding_completed !== true) {
