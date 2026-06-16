@@ -2000,32 +2000,16 @@ const getDayOffsetFromToday = (dateKey) => {
 const clampNumber = (value, min = 0, max = Infinity) => Math.max(min, Math.min(max, Number(value || 0)));
 
 const buildNutritionTotalsForDate = (dateKey, baseTotals = {}) => {
-  const diff = getDayOffsetFromToday(dateKey);
-  if (diff === 0) return baseTotals;
-  const wave = ((Math.abs(diff) * 73) % 17) - 8;
   return {
-    calories: Math.round(clampNumber(baseTotals.calories || 2320, 1200) + diff * 35 + wave * 18),
-    protein: Math.round(clampNumber(baseTotals.protein || 190, 80) + diff * 2 + wave),
-    fat: Math.round(clampNumber(baseTotals.fat || 65, 25) + Math.round(wave / 2)),
-    carbs: Math.round(clampNumber(baseTotals.carbs || 220, 60) + diff * 5 + wave * 2),
+    calories: Number(baseTotals.calories || 0),
+    protein: Number(baseTotals.protein || 0),
+    fat: Number(baseTotals.fat || 0),
+    carbs: Number(baseTotals.carbs || 0),
   };
 };
 
 const buildMealsForDate = (dateKey, baseMeals = []) => {
-  const diff = getDayOffsetFromToday(dateKey);
-  if (diff === 0 && baseMeals.length) return baseMeals;
-  const totals = buildNutritionTotalsForDate(dateKey, baseMeals.reduce((acc, meal) => ({
-    calories: acc.calories + Number(meal.calories || 0),
-    protein: acc.protein + Number(meal.protein || 0),
-    fat: acc.fat + Number(meal.fat || 0),
-    carbs: acc.carbs + Number(meal.carbs || 0),
-  }), { calories: 2320, protein: 190, fat: 65, carbs: 220 }));
-  return [
-    { id: `day-${dateKey}-1`, name: "Завтрак", food: diff < 0 ? "Яйца, тосты, ягоды" : "Омлет, хлеб, кофе", calories: Math.round(totals.calories * 0.27), protein: Math.round(totals.protein * 0.25), fat: Math.round(totals.fat * 0.35), carbs: Math.round(totals.carbs * 0.25) },
-    { id: `day-${dateKey}-2`, name: "Обед", food: diff < 0 ? "Курица, картофель, овощи" : "Рис, курица, салат", calories: Math.round(totals.calories * 0.34), protein: Math.round(totals.protein * 0.34), fat: Math.round(totals.fat * 0.25), carbs: Math.round(totals.carbs * 0.38) },
-    { id: `day-${dateKey}-3`, name: "Перекус", food: "Йогурт, фрукт, протеин", calories: Math.round(totals.calories * 0.15), protein: Math.round(totals.protein * 0.18), fat: Math.round(totals.fat * 0.1), carbs: Math.round(totals.carbs * 0.15) },
-    { id: `day-${dateKey}-4`, name: "Ужин", food: diff > 0 ? "Рыба, картофель, салат" : "Рыба, рис, овощи", calories: Math.round(totals.calories * 0.24), protein: Math.round(totals.protein * 0.23), fat: Math.round(totals.fat * 0.3), carbs: Math.round(totals.carbs * 0.22) },
-  ];
+  return Array.isArray(baseMeals) ? baseMeals : [];
 };
 
 const buildWorkoutSummaryForDate = (dateKey, baseSummary = {}) => {
@@ -2223,26 +2207,15 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
 }
 
 function DayDataModal({ dateKey, context = "home", onClose, setActive, workout, nutritionMeals = [], nutritionTotals, nutritionGoal = initialNutritionGoal, measurements = {}, workoutSummary, profile }) {
-  const todayKey = formatDateKey(new Date());
-  const isToday = dateKey === todayKey;
   const dayNutrition = nutritionTotals || {
-    calories: isToday ? 2320 : 2140,
-    protein: isToday ? 194 : 172,
-    fat: isToday ? 68 : 61,
-    carbs: isToday ? 218 : 205,
+    calories: 0,
+    protein: 0,
+    fat: 0,
+    carbs: 0,
   };
-  const dayMeals = isToday && nutritionMeals.length ? nutritionMeals : [
-    { id: "mock-1", name: "Завтрак", food: "Омлет, тосты, ягоды", calories: 620, protein: 48, fat: 24, carbs: 54 },
-    { id: "mock-2", name: "Обед", food: "Курица, картофель, овощи", calories: 740, protein: 58, fat: 18, carbs: 82 },
-    { id: "mock-3", name: "Ужин", food: "Рыба, салат, рис", calories: 640, protein: 52, fat: 19, carbs: 55 },
-  ];
-  const dayWorkout = workout || (context !== "nutrition" ? {
-    title: isToday ? "Push — Грудь / Плечи / Трицепс" : "Тренировка дня",
-    focus: isToday ? "Сила + гипертрофия" : "Плановая нагрузка",
-    time: isToday ? "75 мин" : "60 мин",
-    done: !isToday,
-  } : null);
-  const safeWorkoutSummary = workoutSummary || { completedSets: isToday ? 2 : 7, totalSets: isToday ? 9 : 9, completedVolume: isToday ? 768 : 5420, progress: isToday ? 22 : 100 };
+  const dayMeals = nutritionMeals.length ? nutritionMeals : [];
+  const dayWorkout = workout || null;
+  const safeWorkoutSummary = workoutSummary || { completedSets: 0, totalSets: 0, completedVolume: 0, progress: 0 };
   const caloriesPercent = Math.min(100, Math.round((dayNutrition.calories / Math.max(1, nutritionGoal.calories)) * 100));
   const showWorkout = context === "home" || context === "workouts";
   const showNutrition = context === "home" || context === "nutrition";
@@ -2486,7 +2459,7 @@ function MasonryGrid({ children, className = "" }) {
   return <div ref={gridRef} className={`onlypump-masonry-grid ${className}`}>{children}</div>;
 }
 
-function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, setHomeWidgets, profile }) {
+function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutritionMarkedDateKeys = [], nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, setHomeWidgets, profile, selectedDateKey: controlledSelectedDateKey, setSelectedDateKey: controlledSetSelectedDateKey }) {
   const nutritionTotals = useMemo(() => nutritionMeals.reduce((acc, meal) => ({
     calories: acc.calories + Number(meal.calories || 0),
     protein: acc.protein + Number(meal.protein || 0),
@@ -2503,11 +2476,19 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, mea
     return Math.min(100, Math.round((done / total) * 100));
   }, [measurements, progressGoal]);
 
-  const [selectedDateKey, setSelectedDateKey] = useState(formatDateKey(new Date()));
+  const selectedDateKey = controlledSelectedDateKey || formatDateKey(new Date());
+  const setSelectedDateKey = controlledSetSelectedDateKey || (() => {});
+  const selectedNutritionDayMatches = nutritionDay?.date === selectedDateKey;
   const selectedDateWorkouts = useMemo(() => workouts.filter(workout => workout.date === selectedDateKey), [workouts, selectedDateKey]);
   const selectedPrimaryWorkout = selectedDateWorkouts[0] || null;
-  const selectedNutritionTotals = useMemo(() => buildNutritionTotalsForDate(selectedDateKey, nutritionTotals), [selectedDateKey, nutritionTotals]);
-  const selectedNutritionMeals = useMemo(() => buildMealsForDate(selectedDateKey, nutritionMeals), [selectedDateKey, nutritionMeals]);
+  const selectedNutritionTotals = useMemo(() => selectedNutritionDayMatches
+    ? buildNutritionTotalsForDate(selectedDateKey, nutritionDay?.totals || nutritionTotals)
+    : { calories: 0, protein: 0, fat: 0, carbs: 0 }, [selectedDateKey, selectedNutritionDayMatches, nutritionDay?.totals, nutritionTotals]);
+  const selectedNutritionMeals = useMemo(() => selectedNutritionDayMatches ? deriveHomeMealsFromNutritionDay(nutritionDay) : [], [selectedNutritionDayMatches, nutritionDay]);
+  const homeMarkedDateKeys = useMemo(() => Array.from(new Set([
+    ...workouts.map(workout => workout.date).filter(Boolean),
+    ...nutritionMarkedDateKeys.filter(Boolean),
+  ])).sort(), [workouts, nutritionMarkedDateKeys]);
   const selectedWorkoutSummary = useMemo(() => summarizeWorkouts(selectedDateWorkouts), [selectedDateWorkouts]);
   const currentWeekWorkoutSummary = useMemo(() => summarizeCurrentWeekWorkouts(workouts, new Date()), [workouts]);
   const currentWeekTonnageProgress = currentWeekWorkoutSummary.plannedVolume
@@ -2530,6 +2511,10 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, mea
   const formatHomeVolumeKg = (valueKg) => {
     const rounded = Math.round(Number(valueKg || 0) * 10) / 10;
     return `${rounded.toLocaleString("ru-RU")} кг`;
+  };
+  const openNutritionFromHome = () => {
+    setSelectedDateKey(selectedDateKey);
+    setActive("nutrition");
   };
 
   const [homeEditMode, setHomeEditMode] = useState(false);
@@ -2604,13 +2589,13 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, mea
       case "metricSets":
         return <MetricWidgetCard title="Подходы" value={currentWeekWorkoutSummary.completedSets} sub={`из ${currentWeekWorkoutSummary.plannedSets} запланировано`} progress={currentWeekWorkoutSummary.progress} icon={CheckCircle2} onClick={() => setActive("workouts")}/>;
       case "metricCalories":
-        return <MetricWidgetCard title="Калории" value={selectedNutritionTotals.calories} sub={`/ ${nutritionGoal.calories} ккал`} delta={`${caloriesPercent}% цели`} progress={caloriesPercent} icon={Apple} onClick={() => setActive("nutrition")}/>;
+        return <MetricWidgetCard title="Калории" value={selectedNutritionTotals.calories} sub={`/ ${nutritionGoal.calories} ккал`} delta={`${caloriesPercent}% цели`} progress={caloriesPercent} icon={Apple} onClick={openNutritionFromHome}/>;
       case "metricProtein":
-        return <MetricWidgetCard title="Белок" value={`${selectedNutritionTotals.protein} г`} sub={`/ ${nutritionGoal.protein} г`} delta={`${proteinPercent}% цели`} progress={proteinPercent} icon={Utensils} onClick={() => setActive("nutrition")}/>;
+        return <MetricWidgetCard title="Белок" value={`${selectedNutritionTotals.protein} г`} sub={`/ ${nutritionGoal.protein} г`} delta={`${proteinPercent}% цели`} progress={proteinPercent} icon={Utensils} onClick={openNutritionFromHome}/>;
       case "metricRecovery":
         return <MetricWidgetCard title="Восстановление" value={`${recovery}%`} sub="сон · нагрузка · активность" progress={recovery} icon={HeartPulse} onClick={() => setActive("analytics")}/>;
       case "macros":
-        return <MetricWidgetCard title="БЖУ" value={`${proteinPercent}%`} sub={`${selectedNutritionTotals.protein} Б · ${selectedNutritionTotals.fat} Ж · ${selectedNutritionTotals.carbs} У`} icon={Utensils} onClick={() => setActive("nutrition")}>
+        return <MetricWidgetCard title="БЖУ" value={`${proteinPercent}%`} sub={`${selectedNutritionTotals.protein} Б · ${selectedNutritionTotals.fat} Ж · ${selectedNutritionTotals.carbs} У`} icon={Utensils} onClick={openNutritionFromHome}>
           <div className="mt-4 space-y-2 text-[11px] text-zinc-400">
             <div className="flex justify-between"><span>Б</span><span>{selectedNutritionTotals.protein}/{nutritionGoal.protein}</span></div><Progress value={proteinPercent}/>
             <div className="flex justify-between"><span>Ж</span><span>{selectedNutritionTotals.fat}/{nutritionGoal.fat}</span></div><Progress value={fatPercent}/>
@@ -2638,7 +2623,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, mea
           </div>
         </Card>;
       case "nutrition":
-        return <Card key={id} onClick={() => setActive("nutrition")} className={`cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5 ${widgetSpan(id)}`}>
+        return <Card key={id} onClick={openNutritionFromHome} className={`cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5 ${widgetSpan(id)}`}>
           <h3 className="font-semibold">Питание за выбранный день</h3>
           <div className="mt-5 grid grid-cols-[1fr_auto] items-center gap-4">
             <div className="h-40 rounded-2xl bg-[url('https://images.unsplash.com/photo-1546069901-d5bfd2cbfb1f?q=80&w=700&auto=format&fit=crop')] bg-cover bg-center"/>
@@ -2774,7 +2759,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionGoal, mea
         title="Календарь недели"
         selectedDateKey={selectedDateKey}
         onSelect={openDayFromCalendar}
-        markedDateKeys={workouts.map(workout => workout.date)}
+        markedDateKeys={homeMarkedDateKeys}
       />
     </div>
     <div className="mt-4 flex flex-wrap justify-end gap-2">
@@ -7963,7 +7948,7 @@ const deriveHomeMealsFromNutritionDay = (day) => (day?.meals || []).map(meal => 
 }));
 
 function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutritionGoal, selectedDateKey, setSelectedDateKey, markedDateKeys = [], profile, telegramInitData, onNutritionAction, nutritionLoading }) {
-  const day = nutritionDay || buildLocalNutritionDay(selectedDateKey, nutritionGoal);
+  const day = nutritionDay?.date === selectedDateKey ? nutritionDay : buildLocalNutritionDay(selectedDateKey, nutritionGoal);
   const [mealChoiceOpen, setMealChoiceOpen] = useState(false);
   const [foodPickerOpen, setFoodPickerOpen] = useState(false);
   const [targetMealType, setTargetMealType] = useState(null);
@@ -8163,7 +8148,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Ккал</span>
               <span className="mt-1 text-2xl font-black">{roundCalories(totals.calories)}</span>
             </div>
-            <div className="absolute bottom-0 right-0 rounded-full bg-black/80 px-2 py-1 text-[10px] font-bold text-zinc-400">/ {goal.calories} ккал</div>
+            <div className="absolute bottom-0 right-1 rounded-full bg-black/80 px-2 py-0.5 text-[10px] font-bold leading-none text-zinc-400">{goal.calories}</div>
           </div>
         </div>
         <div className="space-y-3">
@@ -9463,8 +9448,9 @@ function OnlyPumpPlatform() {
     const dateKey = payload.date || nutritionDay?.date || globalSelectedDateKey;
     const payloadWithDate = { ...payload, date: dateKey };
     const canUseRemoteNutrition = profileStatus === "verified" && Boolean(telegramInitData && profile?.id);
-    const shouldOptimisticallyUpdate = ["add_item", "toggle_favorite"].includes(action);
-    const previousDay = nutritionDay;
+    const shouldOptimisticallyUpdate = ["add_item", "delete_item", "toggle_favorite"].includes(action);
+    const baseNutritionDay = nutritionDay?.date === dateKey ? nutritionDay : buildLocalNutritionDay(dateKey, nutritionGoal);
+    const previousDay = baseNutritionDay;
     const previousMarkers = nutritionMarkedDateKeys;
 
     const applyNutritionDay = (nextDay, activeProfile = profile) => {
@@ -9484,7 +9470,7 @@ function OnlyPumpPlatform() {
 
     if (canUseRemoteNutrition) {
       if (shouldOptimisticallyUpdate) {
-        applyNutritionDay(applyLocalNutritionAction(nutritionDay, action, payloadWithDate));
+        applyNutritionDay(applyLocalNutritionAction(baseNutritionDay, action, payloadWithDate));
       }
       setNutritionRefreshing(true);
       try {
@@ -9516,7 +9502,7 @@ function OnlyPumpPlatform() {
       }
     }
 
-    const localDay = applyLocalNutritionAction(nutritionDay, action, payloadWithDate);
+    const localDay = applyLocalNutritionAction(baseNutritionDay, action, payloadWithDate);
     applyNutritionDay(localDay);
     return { ok: true, ...localDay };
   }, [globalSelectedDateKey, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, profile, profileStatus, telegramInitData]);
@@ -9639,7 +9625,7 @@ function OnlyPumpPlatform() {
   }, [homeWidgets]);
 
   const page = useMemo(() => ({
-    home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} profile={profile}/>,
+    home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionDay={nutritionDay} nutritionMarkedDateKeys={nutritionMarkedDateKeys} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} profile={profile} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey}/>,
     workouts: <WorkoutsPage workouts={workouts} setWorkouts={setWorkouts} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} profile={profile} telegramInitData={telegramInitData}/>,
     nutrition: <NutritionPage nutritionDay={nutritionDay} setNutritionDay={setNutritionDay} nutritionGoal={nutritionGoal} setNutritionGoal={setNutritionGoal} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} markedDateKeys={nutritionMarkedDateKeys} profile={profile} telegramInitData={telegramInitData} onNutritionAction={handleNutritionAction} nutritionLoading={nutritionRefreshing}/>,
     calculators: <CalculatorsPage/>,
