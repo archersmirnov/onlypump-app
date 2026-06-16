@@ -1540,6 +1540,11 @@ const getNutritionCacheKey = (profile, dateKey) => {
   return `onlypump_nutrition_cache_${telegramId}_${dateKey}`;
 };
 
+const getNutritionMarkersCacheKey = (profile) => {
+  const telegramId = profile?.telegram_id || profile?.telegramId || profile?.id || "local";
+  return `onlypump_nutrition_markers_${telegramId}`;
+};
+
 const readCachedNutritionForProfile = (profile, dateKey) => {
   try {
     const raw = localStorage.getItem(getNutritionCacheKey(profile, dateKey));
@@ -1552,12 +1557,48 @@ const readCachedNutritionForProfile = (profile, dateKey) => {
   }
 };
 
+const readCachedNutritionMarkersForProfile = (profile) => {
+  try {
+    const raw = localStorage.getItem(getNutritionMarkersCacheKey(profile));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch (error) {
+    console.log("Nutrition marker cache error", error);
+    return [];
+  }
+};
+
 const writeCachedNutritionForProfile = (profile, dateKey, nutritionDay) => {
   try {
     localStorage.setItem(getNutritionCacheKey(profile, dateKey), JSON.stringify(nutritionDay));
   } catch (error) {
     console.log("Nutrition cache error", error);
   }
+};
+
+const writeCachedNutritionMarkersForProfile = (profile, dateKeys = []) => {
+  try {
+    const clean = [...new Set((dateKeys || []).filter(Boolean))].sort();
+    localStorage.setItem(getNutritionMarkersCacheKey(profile), JSON.stringify(clean));
+  } catch (error) {
+    console.log("Nutrition marker cache error", error);
+  }
+};
+
+const nutritionDayHasFood = (day) => {
+  const hasItems = (day?.meals || []).some(meal => (meal.items || []).length > 0);
+  const hasCalories = Number(day?.totals?.calories || day?.calories_total || 0) > 0;
+  return hasItems || hasCalories;
+};
+
+const mergeNutritionMarkerKeys = (dateKeys = [], dateKey, hasFood) => {
+  const set = new Set((dateKeys || []).filter(Boolean));
+  if (dateKey) {
+    if (hasFood) set.add(dateKey);
+    else set.delete(dateKey);
+  }
+  return [...set].sort();
 };
 
 const callOnlyPumpWorkoutsApi = async (initData, action, payload = {}) => {
@@ -7805,6 +7846,10 @@ const normalizeNutritionDay = (result = {}, fallbackDate = formatDateKey(new Dat
     favorites: (result.favorites || []).map(favorite => ({ id: favorite.id, foodKey: favorite.food_key, foodSnapshot: favorite.food_snapshot || {} })),
     recentFoods: (result.recent_foods || []).map(mapNutritionItem),
     frequentFoods: (result.frequent_foods || []).map(item => ({ ...mapNutritionItem(item), useCount: item.use_count || item.useCount || 0 })),
+    markedDateKeys: [...new Set([
+      ...(result.nutrition_marked_dates || []),
+      ...(result.markedDateKeys || []),
+    ].map(item => String(item || "").slice(0, 10)).filter(item => /^\d{4}-\d{2}-\d{2}$/.test(item)))].sort(),
   };
 };
 
@@ -7839,6 +7884,7 @@ const recalculateNutritionDayLocal = (day) => {
       fat: roundMacro(totals.fat),
       carbs: roundMacro(totals.carbs),
     },
+    markedDateKeys: mergeNutritionMarkerKeys(day?.markedDateKeys || [], day?.date, totals.calories > 0 || meals.some(meal => (meal.items || []).length > 0)),
   };
 };
 
@@ -7853,7 +7899,7 @@ const snapshotFoodFromPayload = (item = {}) => ({
   default_grams: Number(item.serving_grams ?? item.servingGrams ?? item.default_grams ?? 100),
   modifiers: Array.isArray(item.modifiers) ? item.modifiers : (item.selected_modifiers || item.selectedModifiers || []),
   defaultSelectedModifierIds: item.defaultSelectedModifierIds || (item.selected_modifiers || item.selectedModifiers || []).map(modifier => modifier.id || modifier).filter(Boolean),
-  synonyms: [],
+  synonyms: Array.isArray(item.synonyms) ? item.synonyms : [],
 });
 
 const buildNutritionItemFromPayload = (payload = {}) => mapNutritionItem({
@@ -7916,16 +7962,20 @@ const deriveHomeMealsFromNutritionDay = (day) => (day?.meals || []).map(meal => 
   carbs: meal.carbs,
 }));
 
-function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutritionGoal, selectedDateKey, setSelectedDateKey, profile, telegramInitData, onNutritionAction, nutritionLoading }) {
+function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutritionGoal, selectedDateKey, setSelectedDateKey, markedDateKeys = [], profile, telegramInitData, onNutritionAction, nutritionLoading }) {
   const day = nutritionDay || buildLocalNutritionDay(selectedDateKey, nutritionGoal);
   const [mealChoiceOpen, setMealChoiceOpen] = useState(false);
   const [foodPickerOpen, setFoodPickerOpen] = useState(false);
   const [targetMealType, setTargetMealType] = useState(null);
   const [activeFoodTab, setActiveFoodTab] = useState("eyeball");
+  const [activeEyeballTab, setActiveEyeballTab] = useState("all");
   const [foodSearch, setFoodSearch] = useState("");
   const [foodDraft, setFoodDraft] = useState(null);
   const [notice, setNotice] = useState(null);
   const [swipedItemId, setSwipedItemId] = useState(null);
+  const [expandedMeals, setExpandedMeals] = useState({});
+  const [pendingFoodAction, setPendingFoodAction] = useState(null);
+  const [pendingFavoriteKeys, setPendingFavoriteKeys] = useState([]);
 
   useAppBackLayer("nutrition-meal-choice", mealChoiceOpen, () => setMealChoiceOpen(false), 142);
   useAppBackLayer("nutrition-food-picker", foodPickerOpen && !foodDraft, () => setFoodPickerOpen(false), 143);
@@ -7935,7 +7985,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   const goal = day.goal || nutritionGoal || initialNutritionGoal;
   const percent = (value, target) => Math.min(100, Math.round((Number(value || 0) / Math.max(1, Number(target || 1))) * 100));
   const caloriesPercent = percent(totals.calories, goal.calories);
-  const markedDateKeys = (day.meals || []).some(meal => meal.items?.length) ? [selectedDateKey] : [];
+  const nutritionMarkedDateKeys = mergeNutritionMarkerKeys(markedDateKeys, selectedDateKey, nutritionDayHasFood(day));
 
   useEffect(() => {
     if (day.goal) setNutritionGoal(day.goal);
@@ -7950,12 +8000,21 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
     setMealChoiceOpen(true);
   };
 
-  const openFoodPicker = (mealType) => {
+  const showNutritionError = (message) => {
+    setNotice(message);
+    setTimeout(() => setNotice(null), 2400);
+  };
+
+  const toggleMealExpanded = (mealType) => {
+    setExpandedMeals(prev => ({ ...prev, [mealType]: !prev[mealType] }));
+  };
+
+  const openFoodPicker = (mealType, options = {}) => {
     setTargetMealType(mealType);
     setMealChoiceOpen(false);
     setFoodPickerOpen(true);
     setActiveFoodTab("eyeball");
-    setFoodSearch("");
+    if (options.resetSearch) setFoodSearch("");
     setFoodDraft(null);
   };
 
@@ -7995,43 +8054,85 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
     });
   };
 
+  const activeEyeballFoods = useMemo(() => {
+    if (activeEyeballTab === "recent") return (day.recentFoods || []).map(foodFromItem);
+    if (activeEyeballTab === "frequent") return (day.frequentFoods || []).map(foodFromItem);
+    if (activeEyeballTab === "favorites") return (day.favorites || []).map(favorite => getFoodByKey(favorite.foodKey) || snapshotFoodFromPayload(favorite.foodSnapshot || { foodKey: favorite.foodKey }));
+    return nutritionFoodLibrary;
+  }, [activeEyeballTab, day.recentFoods, day.frequentFoods, day.favorites]);
+
   const filteredFoods = useMemo(() => {
     const query = foodSearch.trim().toLowerCase().replace(/ё/g, "е");
-    if (!query) return nutritionFoodLibrary.slice(0, 80);
-    return nutritionFoodLibrary.filter(item => getFoodSearchText(item).includes(query)).slice(0, 90);
-  }, [foodSearch]);
+    const source = activeEyeballFoods.filter(Boolean).map(item => snapshotFoodFromPayload(item));
+    if (!query) return source.slice(0, activeEyeballTab === "all" ? 80 : 40);
+    return source.filter(item => getFoodSearchText(item).includes(query)).slice(0, 90);
+  }, [activeEyeballFoods, activeEyeballTab, foodSearch]);
 
   const favoriteKeys = new Set((day.favorites || []).map(item => item.foodKey));
   const draftTotals = foodDraft ? calculateNutritionItemTotals(foodDraft.food, foodDraft.grams, foodDraft.selectedModifierIds) : null;
 
   const saveFoodDraft = async () => {
-    if (!foodDraft?.food) return;
+    if (!foodDraft?.food || pendingFoodAction) return;
+    const actionKey = `${foodDraft.mode}-${foodDraft.mealType}-${foodDraft.food.key}`;
+    setPendingFoodAction(actionKey);
     const payload = buildNutritionPayloadFromFood(foodDraft.food, foodDraft.grams, foodDraft.selectedModifierIds, foodDraft.notes);
     const action = foodDraft.mode === "edit" ? "update_item" : "add_item";
-    const result = await onNutritionAction(action, {
+    const requestPayload = {
       date: selectedDateKey,
       meal_type: foodDraft.mealType,
       id: foodDraft.itemId,
       item: payload,
-    });
-    if (result) {
+    };
+
+    if (action === "add_item") {
+      const mealType = foodDraft.mealType;
+      const resultPromise = onNutritionAction(action, requestPayload);
+      setExpandedMeals(prev => ({ ...prev, [mealType]: true }));
       setFoodDraft(null);
-      setFoodPickerOpen(false);
       setMealChoiceOpen(false);
+      setPendingFoodAction(null);
+      resultPromise.then(result => {
+        if (result?.ok === false) showNutritionError("Не удалось сохранить продукт. Попробуй ещё раз");
+      }).catch(() => showNutritionError("Не удалось сохранить продукт. Попробуй ещё раз"));
+      return;
+    }
+
+    try {
+      const result = await onNutritionAction(action, requestPayload);
+      if (result?.ok === false) {
+        showNutritionError(action === "add_item" ? "Не удалось сохранить продукт. Попробуй ещё раз" : "Не удалось сохранить изменения");
+        return;
+      }
+      setExpandedMeals(prev => ({ ...prev, [foodDraft.mealType]: true }));
+      setFoodDraft(null);
+      if (action === "update_item") {
+        setFoodPickerOpen(false);
+        setMealChoiceOpen(false);
+      }
+    } finally {
+      setPendingFoodAction(null);
     }
   };
 
   const deleteFoodItem = async (itemId) => {
-    await onNutritionAction("delete_item", { date: selectedDateKey, id: itemId });
+    const result = await onNutritionAction("delete_item", { date: selectedDateKey, id: itemId });
+    if (result?.ok === false) showNutritionError("Не удалось удалить продукт");
     setSwipedItemId(null);
   };
 
   const toggleFavorite = async (foodItem) => {
-    await onNutritionAction("toggle_favorite", {
-      date: selectedDateKey,
-      food_key: foodItem.key,
-      food_snapshot: foodItem,
-    });
+    if (!foodItem?.key || pendingFavoriteKeys.includes(foodItem.key)) return;
+    setPendingFavoriteKeys(prev => [...prev, foodItem.key]);
+    try {
+      const result = await onNutritionAction("toggle_favorite", {
+        date: selectedDateKey,
+        food_key: foodItem.key,
+        food_snapshot: foodItem,
+      });
+      if (result?.ok === false) showNutritionError("Не удалось обновить избранное");
+    } finally {
+      setPendingFavoriteKeys(prev => prev.filter(key => key !== foodItem.key));
+    }
   };
 
   const renderFoodButton = (foodItem, source = "") => {
@@ -8050,7 +8151,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
 
   return <><Header title="Питание" subtitle="Добавляй еду на глаз: порции, дополнения, избранное и быстрый поиск."/>
     <div className="mt-6">
-      <IOSWeekCalendar title="Неделя питания" selectedDateKey={selectedDateKey} onSelect={setSelectedDateKey} markedDateKeys={markedDateKeys}/>
+      <IOSWeekCalendar title="Неделя питания" selectedDateKey={selectedDateKey} onSelect={setSelectedDateKey} markedDateKeys={nutritionMarkedDateKeys}/>
     </div>
 
     <div className="mt-5 rounded-[28px] border border-white/10 bg-white/[0.035] p-4">
@@ -8061,8 +8162,8 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
             <div className="absolute left-[10px] top-[10px] flex h-28 w-28 flex-col items-center justify-center rounded-full bg-zinc-950">
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Ккал</span>
               <span className="mt-1 text-2xl font-black">{roundCalories(totals.calories)}</span>
-              <span className="text-[10px] text-zinc-500">/ {goal.calories}</span>
             </div>
+            <div className="absolute bottom-0 right-0 rounded-full bg-black/80 px-2 py-1 text-[10px] font-bold text-zinc-400">/ {goal.calories} ккал</div>
           </div>
         </div>
         <div className="space-y-3">
@@ -8081,19 +8182,27 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
     </div>
 
     <div className="mt-3 space-y-3 pb-24">
-      {(day.meals || []).map(meal => <div key={meal.type} className="overflow-hidden rounded-[26px] border border-white/10 bg-zinc-950/80">
-        <button onClick={openMealChoice} className="w-full p-4 text-left">
+      {(day.meals || []).map(meal => {
+        const expanded = Boolean(expandedMeals[meal.type]);
+        return <div key={meal.type} className="overflow-hidden rounded-[26px] border border-white/10 bg-zinc-950/80">
+        <button onClick={() => toggleMealExpanded(meal.type)} className="w-full p-4 text-left">
           <div className="flex items-start justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <h3 className="text-lg font-black">{meal.title}</h3>
               <p className="mt-1 text-xs text-zinc-500">{roundCalories(meal.calories)} ккал · {roundMacro(meal.protein)} Б / {roundMacro(meal.fat)} Ж / {roundMacro(meal.carbs)} У</p>
+              <p className="mt-2 text-xs text-zinc-600">{meal.items?.length ? `${meal.items.length} продукт${meal.items.length === 1 ? "" : meal.items.length < 5 ? "а" : "ов"}` : "ничего не добавлено"}</p>
             </div>
-            <span className="rounded-full bg-white/[0.06] px-3 py-1 text-xs font-bold text-zinc-400">{meal.items?.length || 0}</span>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="rounded-full bg-white/[0.06] px-3 py-1 text-xs font-bold text-zinc-400">{meal.items?.length || 0}</span>
+              <ChevronDown size={18} className={`text-zinc-500 transition ${expanded ? "rotate-180" : ""}`}/>
+            </div>
           </div>
-          {!meal.items?.length && <p className="mt-4 rounded-2xl bg-white/[0.03] p-4 text-sm text-zinc-500">ничего не добавлено</p>}
         </button>
-        {!!meal.items?.length && <div className="border-t border-white/10">
-          {meal.items.map(item => <SwipeActionRow key={item.id} rowId={item.id} swipedId={swipedItemId} setSwipedId={setSwipedItemId} className="border-b border-white/10 last:border-b-0" actions={[
+        {expanded && <div className="border-t border-white/10">
+          {!meal.items?.length && <div className="p-4">
+            <p className="rounded-2xl bg-white/[0.03] p-4 text-sm text-zinc-500">ничего не добавлено</p>
+          </div>}
+          {meal.items?.map(item => <SwipeActionRow key={item.id} rowId={item.id} swipedId={swipedItemId} setSwipedId={setSwipedItemId} className="border-b border-white/10 last:border-b-0" actions={[
             { label: "delete", icon: "🗑", className: "bg-red-500", onClick: () => deleteFoodItem(item.id) },
           ]}>
             <button onClick={() => openFoodDraft(foodFromItem(item), meal.type, item)} className="grid w-full grid-cols-[1fr_auto] gap-3 bg-zinc-950 px-4 py-4 text-left transition hover:bg-white/[0.03]">
@@ -8107,8 +8216,15 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
               </div>
             </button>
           </SwipeActionRow>)}
+          <div className="p-4">
+            <button onClick={() => openFoodPicker(meal.type)} className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-white/[0.06] text-sm font-black text-red-300 transition hover:bg-white/[0.09]">
+              <Plus size={18}/>
+              Добавить продукт
+            </button>
+          </div>
         </div>}
-      </div>)}
+      </div>;
+      })}
     </div>
 
     {notice && <div className="fixed left-1/2 top-[calc(var(--onlypump-safe-top)+22px)] z-[220] -translate-x-1/2 rounded-full bg-white px-4 py-2 text-sm font-black text-black shadow-2xl">{notice}</div>}
@@ -8132,18 +8248,35 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
         <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20" />
         <div className="flex items-start justify-between gap-3">
           <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">{nutritionMealTypes.find(item => item.type === targetMealType)?.title || "Прием"}</p><h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Добавить продукт</h2></div>
-          <button onClick={() => setFoodPickerOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button onClick={() => setFoodPickerOpen(false)} className="rounded-full bg-white/8 px-3 py-2 text-xs font-bold text-zinc-300">Закрыть</button>
+            <button onClick={() => setFoodPickerOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+          </div>
         </div>
         <div className="mt-5 grid grid-cols-3 gap-2">
           {[["products", "Продукты"], ["recipes", "Рецепты"], ["eyeball", "На глаз"]].map(([id, label]) => <button key={id} onClick={() => id === "eyeball" ? setActiveFoodTab(id) : (setActiveFoodTab(id), showSoon())} className={`h-11 rounded-full text-sm font-black ${activeFoodTab === id ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-400"}`}>{label}</button>)}
         </div>
         {activeFoodTab !== "eyeball" ? <div className="mt-5 rounded-3xl bg-white/[0.04] p-8 text-center text-zinc-500">В разработке</div> : <>
+          <div className="mt-4 grid grid-cols-4 gap-2">
+            {[
+              ["all", "Все"],
+              ["recent", "Недавние"],
+              ["frequent", "Частые"],
+              ["favorites", "Избранные"],
+            ].map(([id, label]) => <button key={id} onClick={() => setActiveEyeballTab(id)} className={`h-10 rounded-full text-xs font-black ${activeEyeballTab === id ? "bg-white text-black" : "bg-white/[0.06] text-zinc-400"}`}>{label}</button>)}
+          </div>
           <div className="mt-5 flex-1 overflow-y-auto pr-1 onlypump-scrollbar-none">
-            {(day.favorites || []).length > 0 && <div className="mb-6"><h3 className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Избранное</h3><div className="space-y-2">{day.favorites.slice(0, 8).map(favorite => renderFoodButton(getFoodByKey(favorite.foodKey) || favorite.foodSnapshot, "favorite"))}</div></div>}
-            {(day.recentFoods || []).length > 0 && <div className="mb-6"><h3 className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Недавние</h3><div className="space-y-2">{day.recentFoods.slice(0, 8).map(item => renderFoodButton(foodFromItem(item), "recent"))}</div></div>}
-            {(day.frequentFoods || []).length > 0 && <div className="mb-6"><h3 className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Частые</h3><div className="space-y-2">{day.frequentFoods.slice(0, 8).map(item => renderFoodButton(foodFromItem(item), "frequent"))}</div></div>}
-            <h3 className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">На глаз</h3>
-            <div className="space-y-2">{filteredFoods.length ? filteredFoods.map(item => renderFoodButton(item, "library")) : <div className="rounded-3xl bg-white/[0.04] p-8 text-center text-sm text-zinc-500">Ничего не найдено. Попробуй другое название.</div>}</div>
+            <div className="space-y-2">{filteredFoods.length ? filteredFoods.map(item => renderFoodButton(item, activeEyeballTab)) : <div className="rounded-3xl bg-white/[0.04] p-8 text-center text-sm text-zinc-500">
+              {foodSearch.trim()
+                ? "Ничего не найдено. Попробуй другое название."
+                : activeEyeballTab === "recent"
+                  ? "Пока нет недавних"
+                  : activeEyeballTab === "frequent"
+                    ? "Пока нет частых"
+                    : activeEyeballTab === "favorites"
+                      ? "Пока нет избранных"
+                      : "Ничего не найдено. Попробуй другое название."}
+            </div>}</div>
           </div>
           <div className="mt-4 rounded-2xl bg-white/[0.05] px-4 py-3">
             <input value={foodSearch} onChange={(e) => setFoodSearch(e.target.value)} placeholder="Поиск: курица, роллы, мороженое..." className="w-full bg-transparent text-base outline-none placeholder:text-zinc-600" />
@@ -8196,9 +8329,9 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
           </div>
         </div>
         <div className="mt-5 grid grid-cols-[48px_1fr_1fr] gap-3 pb-[var(--onlypump-safe-bottom)]">
-          <button onClick={() => toggleFavorite(foodDraft.food)} className={`flex h-12 items-center justify-center rounded-full ${favoriteKeys.has(foodDraft.food.key) ? "bg-red-500 text-black" : "bg-white/8 text-zinc-200"}`}><Star size={20}/></button>
+          <button disabled={pendingFavoriteKeys.includes(foodDraft.food.key)} onClick={() => toggleFavorite(foodDraft.food)} className={`flex h-12 items-center justify-center rounded-full transition disabled:opacity-60 ${favoriteKeys.has(foodDraft.food.key) ? "bg-red-500 text-black" : "bg-white/8 text-zinc-200"}`}><Star size={20}/></button>
           <button onClick={() => setFoodDraft(null)} className="h-12 rounded-full bg-white/8 font-black text-zinc-200">Отмена</button>
-          <button onClick={saveFoodDraft} className="h-12 rounded-full bg-red-500 font-black text-black">{foodDraft.mode === "edit" ? "Сохранить" : "Добавить"}</button>
+          <button disabled={Boolean(pendingFoodAction)} onClick={saveFoodDraft} className="h-12 rounded-full bg-red-500 font-black text-black transition disabled:opacity-60">{pendingFoodAction ? "Сохраняю..." : foodDraft.mode === "edit" ? "Сохранить" : "Добавить"}</button>
         </div>
       </BottomSheetPanel>
     </div>}
@@ -9067,6 +9200,7 @@ function OnlyPumpPlatform() {
   const [workoutsRefreshing, setWorkoutsRefreshing] = useState(false);
   const [nutritionGoal, setNutritionGoal] = useState(initialNutritionGoal);
   const [nutritionDay, setNutritionDay] = useState(() => buildLocalNutritionDay(formatDateKey(new Date()), initialNutritionGoal));
+  const [nutritionMarkedDateKeys, setNutritionMarkedDateKeys] = useState([]);
   const [nutritionRefreshing, setNutritionRefreshing] = useState(false);
 
   useEffect(() => {
@@ -9278,12 +9412,21 @@ function OnlyPumpPlatform() {
 
   const loadNutritionForProfile = useCallback(async (activeProfile, initData, dateKey = globalSelectedDateKey, options = {}) => {
     if (!activeProfile) return null;
+    const cachedMarkers = readCachedNutritionMarkersForProfile(activeProfile);
+    if (cachedMarkers.length && options.useCache !== false) {
+      setNutritionMarkedDateKeys(cachedMarkers);
+    }
     const cached = readCachedNutritionForProfile(activeProfile, dateKey);
     if (cached && options.useCache !== false) {
       const cachedDay = normalizeNutritionDay(cached, dateKey, nutritionGoal);
       console.log("Nutrition cache loaded", { key: getNutritionCacheKey(activeProfile, dateKey), date: dateKey });
       setNutritionDay(cachedDay);
       setNutritionGoal(cachedDay.goal);
+      setNutritionMarkedDateKeys(prev => {
+        const next = mergeNutritionMarkerKeys(cachedMarkers.length ? cachedMarkers : prev, cachedDay.date || dateKey, nutritionDayHasFood(cachedDay));
+        writeCachedNutritionMarkersForProfile(activeProfile, next);
+        return next;
+      });
     } else if (!cached && options.seedLocal !== false) {
       setNutritionDay(prev => prev?.date === dateKey ? prev : buildLocalNutritionDay(dateKey, nutritionGoal));
     }
@@ -9299,6 +9442,12 @@ function OnlyPumpPlatform() {
       console.log("Nutrition loaded", { date: loaded.date, totals: loaded.totals });
       setNutritionDay(loaded);
       setNutritionGoal(loaded.goal);
+      setNutritionMarkedDateKeys(prev => {
+        const fromServer = Array.isArray(result.nutrition_marked_dates) ? result.nutrition_marked_dates : loaded.markedDateKeys || prev;
+        const next = mergeNutritionMarkerKeys(fromServer, loaded.date || dateKey, nutritionDayHasFood(loaded));
+        writeCachedNutritionMarkersForProfile(activeProfile, next);
+        return next;
+      });
       writeCachedNutritionForProfile(activeProfile, loaded.date || dateKey, loaded);
       return loaded;
     } catch (error) {
@@ -9314,8 +9463,29 @@ function OnlyPumpPlatform() {
     const dateKey = payload.date || nutritionDay?.date || globalSelectedDateKey;
     const payloadWithDate = { ...payload, date: dateKey };
     const canUseRemoteNutrition = profileStatus === "verified" && Boolean(telegramInitData && profile?.id);
+    const shouldOptimisticallyUpdate = ["add_item", "toggle_favorite"].includes(action);
+    const previousDay = nutritionDay;
+    const previousMarkers = nutritionMarkedDateKeys;
+
+    const applyNutritionDay = (nextDay, activeProfile = profile) => {
+      const normalizedDay = recalculateNutritionDayLocal(nextDay);
+      setNutritionDay(normalizedDay);
+      setNutritionGoal(normalizedDay.goal);
+      if (activeProfile) {
+        writeCachedNutritionForProfile(activeProfile, normalizedDay.date || dateKey, normalizedDay);
+        setNutritionMarkedDateKeys(prev => {
+          const nextMarkers = mergeNutritionMarkerKeys(prev, normalizedDay.date || dateKey, nutritionDayHasFood(normalizedDay));
+          writeCachedNutritionMarkersForProfile(activeProfile, nextMarkers);
+          return nextMarkers;
+        });
+      }
+      return normalizedDay;
+    };
 
     if (canUseRemoteNutrition) {
+      if (shouldOptimisticallyUpdate) {
+        applyNutritionDay(applyLocalNutritionAction(nutritionDay, action, payloadWithDate));
+      }
       setNutritionRefreshing(true);
       try {
         const result = await callOnlyPumpNutritionApi(telegramInitData, action, payloadWithDate);
@@ -9323,21 +9493,33 @@ function OnlyPumpPlatform() {
         console.log("Nutrition updated", { action, date: updatedDay.date, totals: updatedDay.totals });
         setNutritionDay(updatedDay);
         setNutritionGoal(updatedDay.goal);
+        setNutritionMarkedDateKeys(prev => {
+          const fromServer = Array.isArray(result.nutrition_marked_dates) ? result.nutrition_marked_dates : updatedDay.markedDateKeys || prev;
+          const nextMarkers = mergeNutritionMarkerKeys(fromServer, updatedDay.date || dateKey, nutritionDayHasFood(updatedDay));
+          writeCachedNutritionMarkersForProfile(profile, nextMarkers);
+          return nextMarkers;
+        });
         writeCachedNutritionForProfile(profile, updatedDay.date || dateKey, updatedDay);
         return result;
       } catch (error) {
         console.error("Supabase nutrition error", { action, error });
+        if (shouldOptimisticallyUpdate && previousDay) {
+          setNutritionDay(previousDay);
+          setNutritionGoal(previousDay.goal || nutritionGoal);
+          setNutritionMarkedDateKeys(previousMarkers);
+          writeCachedNutritionForProfile(profile, previousDay.date || dateKey, previousDay);
+          writeCachedNutritionMarkersForProfile(profile, previousMarkers);
+        }
+        return { ok: false, error };
       } finally {
         setNutritionRefreshing(false);
       }
     }
 
     const localDay = applyLocalNutritionAction(nutritionDay, action, payloadWithDate);
-    setNutritionDay(localDay);
-    setNutritionGoal(localDay.goal);
-    if (profile) writeCachedNutritionForProfile(profile, localDay.date || dateKey, localDay);
+    applyNutritionDay(localDay);
     return { ok: true, ...localDay };
-  }, [globalSelectedDateKey, nutritionDay, nutritionGoal, profile, profileStatus, telegramInitData]);
+  }, [globalSelectedDateKey, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, profile, profileStatus, telegramInitData]);
 
   const nutritionMeals = useMemo(() => deriveHomeMealsFromNutritionDay(nutritionDay), [nutritionDay]);
 
@@ -9369,6 +9551,7 @@ function OnlyPumpPlatform() {
         profileSaveReadyRef.current = false;
         const cached = readCachedWorkoutsForProfile(activeProfile);
         if (cached.length) setWorkouts(cached);
+        setNutritionMarkedDateKeys(readCachedNutritionMarkersForProfile(activeProfile));
         loadNutritionForProfile(activeProfile, "", globalSelectedDateKey, { useCache: true });
         setProfileLoading(false);
         setAppLoading(false);
@@ -9390,6 +9573,7 @@ function OnlyPumpPlatform() {
       setProfile(activeProfile);
       setProfileStatus(result.status);
       profileSaveReadyRef.current = result.status === "verified" && Boolean(activeProfile?.id);
+      setNutritionMarkedDateKeys(readCachedNutritionMarkersForProfile(activeProfile));
       loadWorkoutsForProfile(activeProfile, result.status === "verified" ? initData : "", { useCache: true });
       loadNutritionForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey, { useCache: true });
       setMeasurements(prev => ({ ...prev, weight: activeProfile.weight_kg || prev.weight }));
@@ -9416,7 +9600,9 @@ function OnlyPumpPlatform() {
   useEffect(() => {
     if (!profile || !nutritionDay?.date) return;
     writeCachedNutritionForProfile(profile, nutritionDay.date, nutritionDay);
-  }, [profile?.id, profile?.telegram_id, nutritionDay]);
+    const nextMarkers = mergeNutritionMarkerKeys(nutritionMarkedDateKeys, nutritionDay.date, nutritionDayHasFood(nutritionDay));
+    writeCachedNutritionMarkersForProfile(profile, nextMarkers);
+  }, [profile?.id, profile?.telegram_id, nutritionDay, nutritionMarkedDateKeys]);
 
   useEffect(() => {
     const client = supabaseClientRef.current;
@@ -9455,7 +9641,7 @@ function OnlyPumpPlatform() {
   const page = useMemo(() => ({
     home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} profile={profile}/>,
     workouts: <WorkoutsPage workouts={workouts} setWorkouts={setWorkouts} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} profile={profile} telegramInitData={telegramInitData}/>,
-    nutrition: <NutritionPage nutritionDay={nutritionDay} setNutritionDay={setNutritionDay} nutritionGoal={nutritionGoal} setNutritionGoal={setNutritionGoal} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} profile={profile} telegramInitData={telegramInitData} onNutritionAction={handleNutritionAction} nutritionLoading={nutritionRefreshing}/>,
+    nutrition: <NutritionPage nutritionDay={nutritionDay} setNutritionDay={setNutritionDay} nutritionGoal={nutritionGoal} setNutritionGoal={setNutritionGoal} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} markedDateKeys={nutritionMarkedDateKeys} profile={profile} telegramInitData={telegramInitData} onNutritionAction={handleNutritionAction} nutritionLoading={nutritionRefreshing}/>,
     calculators: <CalculatorsPage/>,
     education: <EducationPage/>,
     lectures: <LecturesPage lectureItems={lectureItems} setLectureItems={setLectureItems}/>,
@@ -9463,7 +9649,7 @@ function OnlyPumpPlatform() {
     analytics: <AnalyticsPage workouts={workouts} profile={profile}/>,
     community: <CommunityPage/>,
     profile: <ProfilePage profile={profile} profileStatus={profileStatus}/>,
-  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, handleNutritionAction]);
+  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, handleNutritionAction]);
 
   if (appLoading || profileLoading) {
     return <div className="onlypump-app-shell flex items-center justify-center bg-black px-6 text-zinc-100">
