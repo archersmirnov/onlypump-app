@@ -302,6 +302,7 @@ const DEFAULT_PROFILE = {
   goal_description: null,
   target_weight_kg: 76,
   deficit_percent: 10,
+  goal_intensity_percent: 10,
   calories_target: 2500,
   protein_target: 180,
   fat_target: 70,
@@ -424,6 +425,7 @@ function buildFallbackProfile(overrides = {}) {
     goal_description: overrides.goal_description || DEFAULT_PROFILE.goal_description,
     target_weight_kg: optionalProfileNumber(overrides.target_weight_kg, DEFAULT_PROFILE.target_weight_kg),
     deficit_percent: normalizeDeficitPercent(overrides.deficit_percent, DEFAULT_PROFILE.deficit_percent),
+    goal_intensity_percent: normalizeGoalIntensityPercent(overrides.goal_type || DEFAULT_PROFILE.goal_type, overrides.goal_intensity_percent ?? overrides.deficit_percent, DEFAULT_PROFILE.goal_intensity_percent),
     calories_target: safeProfileNumber(overrides.calories_target, DEFAULT_PROFILE.calories_target),
     protein_target: safeProfileNumber(overrides.protein_target, DEFAULT_PROFILE.protein_target),
     fat_target: safeProfileNumber(overrides.fat_target, DEFAULT_PROFILE.fat_target),
@@ -478,6 +480,7 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     goal_description: record.goal_description !== undefined ? (record.goal_description || null) : (fallback.goal_description || null),
     target_weight_kg: optionalProfileNumber(record.target_weight_kg, fallback.target_weight_kg || DEFAULT_PROFILE.target_weight_kg),
     deficit_percent: normalizeDeficitPercent(record.deficit_percent, fallback.deficit_percent || DEFAULT_PROFILE.deficit_percent),
+    goal_intensity_percent: normalizeGoalIntensityPercent(record.goal_type || fallback.goal_type || DEFAULT_PROFILE.goal_type, record.goal_intensity_percent ?? record.deficit_percent, fallback.goal_intensity_percent || fallback.deficit_percent || DEFAULT_PROFILE.goal_intensity_percent),
     calories_target: safeProfileNumber(record.calories_target, fallback.calories_target || DEFAULT_PROFILE.calories_target),
     protein_target: safeProfileNumber(record.protein_target, fallback.protein_target || DEFAULT_PROFILE.protein_target),
     fat_target: safeProfileNumber(record.fat_target, fallback.fat_target || DEFAULT_PROFILE.fat_target),
@@ -532,6 +535,19 @@ const profileRound = (value, precision = 0) => {
 
 const normalizeDeficitPercent = (value, fallback = 10) => Math.max(5, Math.min(30, profileNumber(value, fallback)));
 
+const getGoalIntensityRange = (goalType) => {
+  if (goalType === "muscle_gain") return { min: 3, max: 20, fallback: 10 };
+  return { min: 5, max: 30, fallback: 10 };
+};
+
+const normalizeGoalIntensityPercent = (goalType, value, fallback = 10) => {
+  const range = getGoalIntensityRange(goalType);
+  const parsed = profileNumber(value, profileNumber(fallback, range.fallback));
+  return Math.max(range.min, Math.min(range.max, parsed || range.fallback));
+};
+
+const goalUsesIntensity = (goalType) => goalType === "fat_loss" || goalType === "muscle_gain";
+
 const getProfileActivityMultiplier = (stepsPerDay, workoutsPerWeek) => {
   const steps = profileNonNegativeNumber(stepsPerDay, DEFAULT_PROFILE.steps_per_day);
   const workouts = profileNonNegativeNumber(workoutsPerWeek, DEFAULT_PROFILE.workouts_per_week);
@@ -574,8 +590,8 @@ const calculateProfileNutritionTargets = (draft = {}) => {
     ? 10 * weight + 6.25 * height - 5 * age - 161
     : 10 * weight + 6.25 * height - 5 * age + 5;
   const maintenance = bmr * activityMultiplier;
-  const deficitPercent = normalizeDeficitPercent(draft.deficit_percent);
-  const goalMultiplier = goalType === "fat_loss" ? (1 - deficitPercent / 100) : goalType === "muscle_gain" ? 1.1 : goalType === "maintenance" ? 1 : 0.95;
+  const goalIntensityPercent = normalizeGoalIntensityPercent(goalType, draft.goal_intensity_percent ?? draft.deficit_percent);
+  const goalMultiplier = goalType === "fat_loss" ? (1 - goalIntensityPercent / 100) : goalType === "muscle_gain" ? (1 + goalIntensityPercent / 100) : goalType === "maintenance" ? 1 : 0.95;
   let calories = Math.round((maintenance * goalMultiplier) / 10) * 10;
   const highProtein = parseProfileBoolean(draft.high_protein_enabled);
   const higherFat = parseProfileBoolean(draft.higher_fat_enabled);
@@ -683,6 +699,7 @@ const profileDraftFromProfile = (profile = DEFAULT_PROFILE) => ({
   manual_nutrition_targets_enabled: parseProfileBoolean(profile.manual_nutrition_targets_enabled),
   goal_type: profile.goal_type || "recomposition",
   deficit_percent: profile.deficit_percent ?? DEFAULT_PROFILE.deficit_percent,
+  goal_intensity_percent: profile.goal_intensity_percent ?? profile.deficit_percent ?? DEFAULT_PROFILE.goal_intensity_percent,
   target_weight_kg: profile.target_weight_kg || "",
   calories_target: profile.calories_target || "",
   protein_target: profile.protein_target || "",
@@ -726,7 +743,8 @@ const profilePayloadFromDraft = (draft = {}, currentDate = formatDateKey(new Dat
     manual_nutrition_targets_enabled: manualTargetsEnabled,
     goal_type: draft.goal_type || "recomposition",
     goal_description: profileGoalTypeLabels[draft.goal_type] || "Рекомпозиция",
-    deficit_percent: normalizeDeficitPercent(draft.deficit_percent),
+    deficit_percent: normalizeDeficitPercent(draft.deficit_percent ?? draft.goal_intensity_percent),
+    goal_intensity_percent: normalizeGoalIntensityPercent(draft.goal_type, draft.goal_intensity_percent ?? draft.deficit_percent),
     target_weight_kg: profileNumber(draft.target_weight_kg),
     ...targets,
     measurement_date: currentDate,
@@ -9382,8 +9400,14 @@ const progressMeasurementsFromRecord = (record = {}, fallback = {}) => progressM
   return acc;
 }, {});
 
-const progressPayloadFromMeasurements = (dateKey, measurements = {}, deficitPercent = 10) => {
-  const payload = { date: dateKey, deficit_percent: normalizeDeficitPercent(deficitPercent) };
+const progressPayloadFromMeasurements = (dateKey, measurements = {}, goalType = "recomposition", goalIntensityPercent = 10) => {
+  const normalizedIntensity = normalizeGoalIntensityPercent(goalType, goalIntensityPercent);
+  const payload = {
+    date: dateKey,
+    goal_type: goalType || "recomposition",
+    goal_intensity_percent: normalizedIntensity,
+  };
+  if (goalType === "fat_loss") payload.deficit_percent = normalizeDeficitPercent(normalizedIntensity);
   progressMeasurementFields.forEach(item => {
     const number = Number(measurements[item.field]);
     if (Number.isFinite(number) && number > 0) payload[item.db] = number;
@@ -9393,18 +9417,19 @@ const progressPayloadFromMeasurements = (dateKey, measurements = {}, deficitPerc
 
 const progressMeasurementsEqual = (a = {}, b = {}) => progressMeasurementFields.every(({ field }) => String(a?.[field] ?? "") === String(b?.[field] ?? ""));
 
-function DeficitIntensityBar({ value = 10 }) {
-  const percent = normalizeDeficitPercent(value);
-  const position = ((percent - 5) / 25) * 100;
+function GoalIntensityBar({ goalType = "fat_loss", value = 10 }) {
+  const range = getGoalIntensityRange(goalType);
+  const percent = normalizeGoalIntensityPercent(goalType, value);
+  const position = ((percent - range.min) / Math.max(1, range.max - range.min)) * 100;
+  const labels = goalType === "muscle_gain"
+    ? [`${range.min}% мягко`, "10% умеренно", "15% активно", `${range.max}% агрессивно`]
+    : [`${range.min}% мягко`, "10% умеренно", "20% агрессивно", `${range.max}% очень жестко`];
   return <div className="mt-4">
     <div className="relative h-3 rounded-full bg-gradient-to-r from-emerald-500 via-yellow-400 via-orange-500 to-red-600">
       <span className="absolute top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-black bg-white shadow-lg" style={{ left: `${position}%` }}/>
     </div>
     <div className="mt-3 grid grid-cols-4 gap-2 text-[10px] text-zinc-500">
-      <span>5% мягко</span>
-      <span>10% умеренно</span>
-      <span>20% агрессивно</span>
-      <span className="text-right">30% очень жестко</span>
+      {labels.map((label, index) => <span key={label} className={index === labels.length - 1 ? "text-right" : ""}>{label}</span>)}
     </div>
   </div>;
 }
@@ -9476,8 +9501,9 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
     return { list, totalVolume, avgStrength };
   }, [workouts]);
 
-  const goalType = profile?.goal_type || "recomposition";
-  const deficitPercent = normalizeDeficitPercent(progressGoal?.deficitPercent ?? profile?.deficit_percent ?? 10);
+  const goalType = progressGoal?.goalType || profile?.goal_type || "recomposition";
+  const goalIntensityPercent = normalizeGoalIntensityPercent(goalType, progressGoal?.goalIntensityPercent ?? profile?.goal_intensity_percent ?? profile?.deficit_percent ?? 10);
+  const showGoalIntensity = goalUsesIntensity(goalType);
 
   const applyProgressResponse = useCallback((result, options = {}) => {
     const nextProfile = result?.profile ? normalizeProfileRecord(result.profile, profile || DEFAULT_PROFILE) : profile;
@@ -9491,8 +9517,10 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
     setProgressGoal(prev => ({
       ...prev,
       title: profileGoalTypeLabels[nextProfile?.goal_type] || nextProfile?.goal || prev.title,
+      goalType: nextProfile?.goal_type || prev.goalType || "recomposition",
       targetWeight: nextProfile?.target_weight_kg || prev.targetWeight,
       targetWaist: nextProfile?.waist_cm || nextMeasurements.waist || prev.targetWaist,
+      goalIntensityPercent: normalizeGoalIntensityPercent(nextProfile?.goal_type, nextProfile?.goal_intensity_percent ?? nextProfile?.deficit_percent, prev.goalIntensityPercent || prev.deficitPercent || 10),
       deficitPercent: normalizeDeficitPercent(nextProfile?.deficit_percent, prev.deficitPercent || 10),
     }));
     if (Array.isArray(result?.measurement_dates)) setProgressMarkedDateKeys(normalizeNutritionFilledDateKeys(result.measurement_dates));
@@ -9526,43 +9554,70 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
     };
   }, [applyProgressResponse, isRemoteProgress, selectedDateKey, telegramInitData, profile?.id]);
 
-  const saveProgress = useCallback((nextMeasurements, nextDeficitPercent) => {
+  const saveProgress = useCallback((nextMeasurements, nextGoalType = goalType, nextGoalIntensityPercent = goalIntensityPercent) => {
     clearTimeout(saveTimerRef.current);
     const sequence = ++saveSequenceRef.current;
     setProgressMarkedDateKeys(prev => normalizeNutritionFilledDateKeys([...prev, selectedDateKey]));
     if (!isRemoteProgress) {
       setMeasurements(nextMeasurements);
-      setProgressGoal(prev => ({ ...prev, deficitPercent: normalizeDeficitPercent(nextDeficitPercent) }));
+      setProgressGoal(prev => ({
+        ...prev,
+        goalType: nextGoalType,
+        title: profileGoalTypeLabels[nextGoalType] || prev.title,
+        goalIntensityPercent: normalizeGoalIntensityPercent(nextGoalType, nextGoalIntensityPercent),
+        deficitPercent: nextGoalType === "fat_loss" ? normalizeDeficitPercent(nextGoalIntensityPercent) : prev.deficitPercent,
+      }));
       return;
     }
     saveTimerRef.current = setTimeout(async () => {
       setIsProgressSaving(true);
       setSaveError("");
       try {
-        const result = await callOnlyPumpProfileApi(telegramInitData, "save_progress_measurement", progressPayloadFromMeasurements(selectedDateKey, nextMeasurements, nextDeficitPercent));
+        const payload = progressPayloadFromMeasurements(selectedDateKey, nextMeasurements, nextGoalType, nextGoalIntensityPercent);
+        console.log("SAVE PROGRESS MEASUREMENT", payload);
+        const result = await callOnlyPumpProfileApi(telegramInitData, "save_progress_measurement", payload);
+        console.log("SAVE PROGRESS RESPONSE", result);
         if (sequence !== saveSequenceRef.current) return;
         applyProgressResponse(result, { syncNutrition: true });
       } catch (error) {
         console.error("onlypump-profile-api progress error:", error);
+        console.log("SAVE PROGRESS ERROR", error);
         setSaveError("Не удалось сохранить замер. Я оставил изменения на экране, попробую при следующем вводе.");
       } finally {
         if (sequence === saveSequenceRef.current) setIsProgressSaving(false);
       }
     }, 450);
-  }, [applyProgressResponse, isRemoteProgress, selectedDateKey, setMeasurements, setProgressGoal, telegramInitData]);
+  }, [applyProgressResponse, goalIntensityPercent, goalType, isRemoteProgress, selectedDateKey, setMeasurements, setProgressGoal, telegramInitData]);
 
   const updateMeasurement = (field, value) => {
     const number = value === "" ? "" : Number(value);
     const next = { ...progressMeasurements, [field]: Number.isFinite(number) ? number : "" };
     setProgressMeasurements(next);
     setMeasurements(next);
-    if (value !== "") saveProgress(next, deficitPercent);
+    if (value !== "") saveProgress(next, goalType, goalIntensityPercent);
   };
 
-  const updateDeficitPercent = (value) => {
-    const nextDeficit = normalizeDeficitPercent(value);
-    setProgressGoal(prev => ({ ...prev, deficitPercent: nextDeficit }));
-    saveProgress(progressMeasurements, nextDeficit);
+  const updateGoalType = (value) => {
+    const nextGoalType = value || "recomposition";
+    const nextIntensity = normalizeGoalIntensityPercent(nextGoalType, goalIntensityPercent);
+    setProgressGoal(prev => ({
+      ...prev,
+      goalType: nextGoalType,
+      title: profileGoalTypeLabels[nextGoalType] || prev.title,
+      goalIntensityPercent: nextIntensity,
+      deficitPercent: nextGoalType === "fat_loss" ? normalizeDeficitPercent(nextIntensity) : prev.deficitPercent,
+    }));
+    saveProgress(progressMeasurements, nextGoalType, nextIntensity);
+  };
+
+  const updateGoalIntensityPercent = (value) => {
+    const nextIntensity = normalizeGoalIntensityPercent(goalType, value);
+    setProgressGoal(prev => ({
+      ...prev,
+      goalIntensityPercent: nextIntensity,
+      deficitPercent: goalType === "fat_loss" ? normalizeDeficitPercent(nextIntensity) : prev.deficitPercent,
+    }));
+    saveProgress(progressMeasurements, goalType, nextIntensity);
   };
 
   const bodyProgress = useMemo(() => {
@@ -9625,16 +9680,18 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
         <Card className="p-5">
           <Target className="text-red-500"/>
           <h2 className="mt-5 text-xl font-semibold">Цель</h2>
-          <div className="mt-4 rounded-xl bg-white/[0.03] p-3">
+          <label className="mt-4 block rounded-xl bg-white/[0.03] p-3">
             <span className="text-[10px] uppercase tracking-wider text-zinc-500">Цель</span>
-            <div className="mt-1 text-lg font-semibold">{profileGoalTypeLabels[goalType] || progressGoal.title}</div>
-          </div>
-          <div className={`mt-3 grid gap-2 ${goalType === "fat_loss" ? "grid-cols-3" : "grid-cols-2"}`}>
+            <select value={goalType} onChange={(e) => updateGoalType(e.target.value)} className="mt-1 w-full bg-transparent text-lg font-semibold text-zinc-100 outline-none">
+              {Object.entries(profileGoalTypeLabels).map(([value, label]) => <option key={value} value={value} className="bg-zinc-950 text-zinc-100">{label}</option>)}
+            </select>
+          </label>
+          <div className={`mt-3 grid gap-2 ${showGoalIntensity ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2"}`}>
             <label className="rounded-xl bg-white/[0.03] p-3"><span className="text-[10px] uppercase tracking-wider text-zinc-500">Вес</span><input type="number" value={progressMeasurements.weight ?? ""} onChange={(e) => updateMeasurement("weight", e.target.value)} className="mt-1 w-full bg-transparent text-base outline-none" /></label>
             <label className="rounded-xl bg-white/[0.03] p-3"><span className="text-[10px] uppercase tracking-wider text-zinc-500">Талия</span><input type="number" value={progressMeasurements.waist ?? ""} onChange={(e) => updateMeasurement("waist", e.target.value)} className="mt-1 w-full bg-transparent text-base outline-none" /></label>
-            {goalType === "fat_loss" && <label className="rounded-xl bg-white/[0.03] p-3"><span className="text-[10px] uppercase tracking-wider text-zinc-500">Сила, %</span><input type="number" min="5" max="30" value={deficitPercent} onChange={(e) => updateDeficitPercent(e.target.value)} className="mt-1 w-full bg-transparent text-base outline-none" /></label>}
+            {showGoalIntensity && <label className="rounded-xl bg-white/[0.03] p-3"><span className="text-[10px] uppercase tracking-wider text-zinc-500">{goalType === "muscle_gain" ? "Сила профицита, %" : "Сила дефицита, %"}</span><input type="number" min={getGoalIntensityRange(goalType).min} max={getGoalIntensityRange(goalType).max} value={goalIntensityPercent} onChange={(e) => updateGoalIntensityPercent(e.target.value)} className="mt-1 w-full bg-transparent text-base outline-none" /></label>}
           </div>
-          {goalType === "fat_loss" && <DeficitIntensityBar value={deficitPercent}/>}
+          {showGoalIntensity && <GoalIntensityBar goalType={goalType} value={goalIntensityPercent}/>}
           <div className="mt-5 text-5xl">{bodyProgress}%</div>
           <div className="mt-5"><Progress value={bodyProgress}/></div>
           <p className="mt-3 text-xs text-zinc-500">{isProgressSaving ? "Сохраняю..." : "Автосохранение включено"}</p>
@@ -9743,8 +9800,88 @@ function ProfileToggle({ label, description, checked, onChange }) {
   </button>;
 }
 
-function ProfileFormFields({ draft, setDraft, showManualTargets = true }) {
+const birthMonthLabels = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+
+function formatBirthDateDisplay(dateKey) {
+  if (!dateKey) return "Выбрать дату";
+  const [year, month, day] = String(dateKey).slice(0, 10).split("-");
+  if (!year || !month || !day) return "Выбрать дату";
+  return `${day}/${month}/${year}`;
+}
+
+function BirthDatePickerSheet({ value, onSave, onClose }) {
+  const currentYear = new Date().getFullYear();
+  const fallbackDate = parseDateKeyLocal(value || `${currentYear - 30}-01-01`);
+  const [day, setDay] = useState(Number.isNaN(fallbackDate.getTime()) ? 1 : fallbackDate.getDate());
+  const [month, setMonth] = useState(Number.isNaN(fallbackDate.getTime()) ? 1 : fallbackDate.getMonth() + 1);
+  const [year, setYear] = useState(Number.isNaN(fallbackDate.getTime()) ? currentYear - 30 : fallbackDate.getFullYear());
+  const years = useMemo(() => Array.from({ length: 91 }, (_, index) => currentYear - 12 - index), [currentYear]);
+  const maxDay = new Date(year, month, 0).getDate();
+  const days = useMemo(() => Array.from({ length: maxDay }, (_, index) => index + 1), [maxDay]);
+
+  useEffect(() => {
+    if (day > maxDay) setDay(maxDay);
+  }, [day, maxDay]);
+
+  const save = () => {
+    onSave(formatDateKey(new Date(year, month - 1, day)));
+    onClose();
+  };
+
+  const columnClass = "onlypump-scrollbar-none max-h-72 min-w-0 flex-1 overflow-y-auto rounded-2xl bg-white/[0.035] p-2";
+  const optionClass = (active) => `block w-full rounded-xl px-2 py-3 text-center text-sm font-semibold transition ${active ? "bg-red-500 text-black" : "text-zinc-300 hover:bg-white/[0.08]"}`;
+
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[185] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-red-500">Профиль</p>
+          <h2 className="mt-2 text-2xl font-black">Дата рождения</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-zinc-300">×</button>
+      </div>
+      <div className="mt-5 flex min-w-0 gap-2" data-no-sheet-drag="true">
+        <div className={columnClass}>
+          {days.map(value => <button key={value} type="button" onClick={() => setDay(value)} className={optionClass(day === value)}>{String(value).padStart(2, "0")}</button>)}
+        </div>
+        <div className={columnClass}>
+          {birthMonthLabels.map((label, index) => {
+            const value = index + 1;
+            return <button key={label} type="button" onClick={() => setMonth(value)} className={optionClass(month === value)}>{label}</button>;
+          })}
+        </div>
+        <div className={columnClass}>
+          {years.map(value => <button key={value} type="button" onClick={() => setYear(value)} className={optionClass(year === value)}>{value}</button>)}
+        </div>
+      </div>
+      <Button onClick={save} className="mt-5 w-full bg-gradient-to-r from-red-700 to-red-500 text-black">Сохранить</Button>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function BirthDateField({ value, onChange, required = false }) {
+  const [open, setOpen] = useState(false);
+  return <>
+    <button
+      type="button"
+      onClick={() => setOpen(true)}
+      className="block w-full min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left transition focus:border-red-500/60"
+    >
+      <span className="block text-xs font-bold text-zinc-500">Дата рождения{required ? " *" : ""}</span>
+      <span className={`mt-2 block text-base font-semibold ${value ? "text-zinc-100" : "text-zinc-600"}`}>{formatBirthDateDisplay(value)}</span>
+    </button>
+    {open && <BirthDatePickerSheet value={value} onSave={onChange} onClose={() => setOpen(false)}/>}
+  </>;
+}
+
+function ProfileFormFields({ draft, setDraft, showManualTargets = true, onBirthDateSaved }) {
   const set = (key, value) => setDraft(prev => ({ ...prev, [key]: value }));
+  const setBirthDate = (value) => {
+    const nextDraft = { ...draft, birth_date: value };
+    setDraft(nextDraft);
+    onBirthDateSaved?.(nextDraft);
+  };
   const setManualTarget = (key, value) => setDraft(prev => updateManualNutritionDraft(prev, key, value));
   const resetManualTargets = () => setDraft(prev => ({
     ...prev,
@@ -9772,7 +9909,7 @@ function ProfileFormFields({ draft, setDraft, showManualTargets = true }) {
         { value: "male", label: "Мужчина" },
         { value: "female", label: "Женщина" },
       ]}/>
-      <ProfileInput label="Дата рождения" type="date" value={draft.birth_date} onChange={(value) => set("birth_date", value)} required/>
+      <BirthDateField value={draft.birth_date} onChange={setBirthDate} required/>
       <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
         <span className="text-xs font-bold text-zinc-500">Возраст</span>
         <div className="mt-2 text-base font-semibold text-zinc-100">{calculatedAge ? formatAgeRu(calculatedAge) : "Укажи дату рождения"}</div>
@@ -9786,7 +9923,6 @@ function ProfileFormFields({ draft, setDraft, showManualTargets = true }) {
       <ProfileInput label="Тренировок в неделю" type="number" value={draft.workouts_per_week} onChange={(value) => set("workouts_per_week", value)} required/>
       <ProfileInput label="Целевой вес, кг" type="number" value={draft.target_weight_kg} onChange={(value) => set("target_weight_kg", value)}/>
       <ProfileSelect label="Цель" value={draft.goal_type} onChange={(value) => set("goal_type", value)} options={Object.entries(profileGoalTypeLabels).map(([value, label]) => ({ value, label }))}/>
-      {draft.goal_type === "fat_loss" && <ProfileInput label="Сила, %" type="number" value={draft.deficit_percent} onChange={(value) => set("deficit_percent", value)} />}
     </div>
 
     <div>
@@ -9893,17 +10029,27 @@ function ProfileEditSheet({ profile, onClose, onSave, saving }) {
   const submit = async () => {
     if (!draft.display_name || !calculateProfileAge(draft.birth_date) || !profileNumber(draft.height_cm) || !profileNumber(draft.weight_kg)) {
       setError("Заполни имя, дату рождения, рост и вес.");
-      return;
+      return false;
     }
     const manualConflict = getManualNutritionConflict(draft);
     if (manualConflict) {
       setError(manualConflict);
-      return;
+      return false;
     }
     setError("");
     const payload = profilePayloadFromDraft(draft);
-    const ok = await onSave(payload);
+    const ok = await onSave?.(payload);
     if (ok === false) setError("Не удалось сохранить профиль. Попробуй еще раз.");
+    return ok;
+  };
+
+  const saveBirthDate = async (nextDraft) => {
+    if (!nextDraft.display_name || !calculateProfileAge(nextDraft.birth_date) || !profileNumber(nextDraft.height_cm) || !profileNumber(nextDraft.weight_kg)) return;
+    const manualConflict = getManualNutritionConflict(nextDraft);
+    if (manualConflict) return;
+    const ok = await onSave?.(profilePayloadFromDraft(nextDraft));
+    if (ok === false) setError("Не удалось сохранить дату рождения. Попробуй еще раз.");
+    else setError("");
   };
 
   return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[175] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -9916,11 +10062,11 @@ function ProfileEditSheet({ profile, onClose, onSave, saving }) {
         </div>
         <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-zinc-300">×</button>
       </div>
-      <ProfileFormFields draft={draft} setDraft={setDraft} showManualTargets/>
+      <ProfileFormFields draft={draft} setDraft={setDraft} showManualTargets onBirthDateSaved={saveBirthDate}/>
       {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
       <div className="mt-6 flex gap-3">
         <Button onClick={onClose} className="flex-1 bg-white/8">Отмена</Button>
-        <Button onClick={submit} disabled={saving} className="flex-1 bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+        <Button onClick={async () => { const ok = await submit(); if (ok !== false) onClose(); }} disabled={saving} className="flex-1 bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
       </div>
     </BottomSheetPanel>
   </div>;
@@ -9939,7 +10085,7 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", onSav
     <Card className="p-5"><CreditCard className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Подписка</h2><p className="mt-2 text-zinc-400">Активна до {new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</p><Button className="mt-5 w-full bg-white/8">Управлять</Button></Card>
     <Card className="p-5"><ShieldCheck className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Доступы</h2><p className="mt-2 text-zinc-400">Все модули открыты</p><div className="mt-5 flex gap-2 text-xs text-zinc-500"><Lock size={14}/> 1PM bonus locked</div></Card>
     <Card className="p-5"><Settings className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Настройки</h2>{["Уведомления", "Единицы измерения", "Интеграции", "Безопасность"].map(x=><div key={x} className="mt-3 rounded-lg bg-white/[0.03] p-3 text-sm">{x}</div>)}</Card>
-    {editOpen && <ProfileEditSheet profile={profile} saving={profileSaving} onClose={() => setEditOpen(false)} onSave={async (payload) => { const ok = await onSaveProfile?.(payload); if (ok !== false) setEditOpen(false); }}/>}
+    {editOpen && <ProfileEditSheet profile={profile} saving={profileSaving} onClose={() => setEditOpen(false)} onSave={onSaveProfile}/>}
   </PageGrid></div>;
 }
 
@@ -10148,9 +10294,11 @@ function OnlyPumpPlatform() {
 
   const [progressGoal, setProgressGoal] = useState({
     title: "Рекомпозиция тела",
+    goalType: "recomposition",
     targetWeight: 76,
     targetWaist: 74,
     targetStrength: 15,
+    goalIntensityPercent: 10,
     deficitPercent: 10,
   });
   const [measurements, setMeasurements] = useState({
@@ -10205,8 +10353,10 @@ function OnlyPumpPlatform() {
     setProgressGoal(prev => ({
       ...prev,
       title: profileGoalTypeLabels[normalized.goal_type] || normalized.goal || prev.title,
+      goalType: normalized.goal_type || prev.goalType || "recomposition",
       targetWeight: normalized.target_weight_kg || prev.targetWeight,
       targetWaist: normalized.waist_cm || prev.targetWaist,
+      goalIntensityPercent: normalizeGoalIntensityPercent(normalized.goal_type, normalized.goal_intensity_percent ?? normalized.deficit_percent, prev.goalIntensityPercent || prev.deficitPercent || 10),
       deficitPercent: normalizeDeficitPercent(normalized.deficit_percent, prev.deficitPercent || 10),
     }));
     setNutritionGoal(nextGoal);
