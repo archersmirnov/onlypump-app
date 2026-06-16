@@ -1545,6 +1545,10 @@ const getNutritionMarkersCacheKey = (profile) => {
   return `onlypump_nutrition_markers_${telegramId}`;
 };
 
+const normalizeNutritionFilledDateKeys = (values = []) => [...new Set((values || [])
+  .map(item => String(item || "").slice(0, 10))
+  .filter(item => /^\d{4}-\d{2}-\d{2}$/.test(item)))].sort();
+
 const readCachedNutritionForProfile = (profile, dateKey) => {
   try {
     const raw = localStorage.getItem(getNutritionCacheKey(profile, dateKey));
@@ -1562,7 +1566,7 @@ const readCachedNutritionMarkersForProfile = (profile) => {
     const raw = localStorage.getItem(getNutritionMarkersCacheKey(profile));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    return normalizeNutritionFilledDateKeys(Array.isArray(parsed) ? parsed : []);
   } catch (error) {
     console.log("Nutrition marker cache error", error);
     return [];
@@ -1579,7 +1583,7 @@ const writeCachedNutritionForProfile = (profile, dateKey, nutritionDay) => {
 
 const writeCachedNutritionMarkersForProfile = (profile, dateKeys = []) => {
   try {
-    const clean = [...new Set((dateKeys || []).filter(Boolean))].sort();
+    const clean = normalizeNutritionFilledDateKeys(dateKeys);
     localStorage.setItem(getNutritionMarkersCacheKey(profile), JSON.stringify(clean));
   } catch (error) {
     console.log("Nutrition marker cache error", error);
@@ -1593,12 +1597,26 @@ const nutritionDayHasFood = (day) => {
 };
 
 const mergeNutritionMarkerKeys = (dateKeys = [], dateKey, hasFood) => {
-  const set = new Set((dateKeys || []).filter(Boolean));
-  if (dateKey) {
-    if (hasFood) set.add(dateKey);
-    else set.delete(dateKey);
+  const set = new Set(normalizeNutritionFilledDateKeys(dateKeys));
+  const safeDateKey = normalizeNutritionFilledDateKeys([dateKey])[0];
+  if (safeDateKey) {
+    if (hasFood) set.add(safeDateKey);
+    else set.delete(safeDateKey);
   }
   return [...set].sort();
+};
+
+const getNutritionFilledDateKeys = (source = {}, fallback = []) => {
+  const fields = ["filled_dates", "nutrition_marked_dates", "markedDateKeys"];
+  const values = [];
+  let hasExplicitDates = false;
+  for (const field of fields) {
+    if (Array.isArray(source?.[field])) {
+      hasExplicitDates = true;
+      values.push(...source[field]);
+    }
+  }
+  return normalizeNutritionFilledDateKeys(hasExplicitDates ? values : fallback);
 };
 
 const callOnlyPumpWorkoutsApi = async (initData, action, payload = {}) => {
@@ -7831,10 +7849,7 @@ const normalizeNutritionDay = (result = {}, fallbackDate = formatDateKey(new Dat
     favorites: (result.favorites || []).map(favorite => ({ id: favorite.id, foodKey: favorite.food_key, foodSnapshot: favorite.food_snapshot || {} })),
     recentFoods: (result.recent_foods || []).map(mapNutritionItem),
     frequentFoods: (result.frequent_foods || []).map(item => ({ ...mapNutritionItem(item), useCount: item.use_count || item.useCount || 0 })),
-    markedDateKeys: [...new Set([
-      ...(result.nutrition_marked_dates || []),
-      ...(result.markedDateKeys || []),
-    ].map(item => String(item || "").slice(0, 10)).filter(item => /^\d{4}-\d{2}-\d{2}$/.test(item)))].sort(),
+    markedDateKeys: getNutritionFilledDateKeys(result),
   };
 };
 
@@ -7970,7 +7985,9 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   const goal = day.goal || nutritionGoal || initialNutritionGoal;
   const percent = (value, target) => Math.min(100, Math.round((Number(value || 0) / Math.max(1, Number(target || 1))) * 100));
   const caloriesPercent = percent(totals.calories, goal.calories);
-  const nutritionMarkedDateKeys = mergeNutritionMarkerKeys(markedDateKeys, selectedDateKey, nutritionDayHasFood(day));
+  const nutritionMarkedDateKeys = nutritionDay?.date === selectedDateKey
+    ? mergeNutritionMarkerKeys(markedDateKeys, selectedDateKey, nutritionDayHasFood(day))
+    : normalizeNutritionFilledDateKeys(markedDateKeys);
 
   useEffect(() => {
     if (day.goal) setNutritionGoal(day.goal);
@@ -8147,8 +8164,8 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
             <div className="absolute left-[10px] top-[10px] flex h-28 w-28 flex-col items-center justify-center rounded-full bg-zinc-950">
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Ккал</span>
               <span className="mt-1 text-2xl font-black">{roundCalories(totals.calories)}</span>
+              <span className="mt-1 text-[10px] font-bold leading-none text-zinc-400">/ {goal.calories}</span>
             </div>
-            <div className="absolute bottom-0 right-1 rounded-full bg-black/80 px-2 py-0.5 text-[10px] font-bold leading-none text-zinc-400">{goal.calories}</div>
           </div>
         </div>
         <div className="space-y-3">
@@ -9408,7 +9425,10 @@ function OnlyPumpPlatform() {
       setNutritionDay(cachedDay);
       setNutritionGoal(cachedDay.goal);
       setNutritionMarkedDateKeys(prev => {
-        const next = mergeNutritionMarkerKeys(cachedMarkers.length ? cachedMarkers : prev, cachedDay.date || dateKey, nutritionDayHasFood(cachedDay));
+        const baseMarkers = cachedMarkers.length ? cachedMarkers : getNutritionFilledDateKeys(cachedDay, prev);
+        const next = nutritionDayHasFood(cachedDay)
+          ? mergeNutritionMarkerKeys(baseMarkers, cachedDay.date || dateKey, true)
+          : normalizeNutritionFilledDateKeys(baseMarkers);
         writeCachedNutritionMarkersForProfile(activeProfile, next);
         return next;
       });
@@ -9428,7 +9448,7 @@ function OnlyPumpPlatform() {
       setNutritionDay(loaded);
       setNutritionGoal(loaded.goal);
       setNutritionMarkedDateKeys(prev => {
-        const fromServer = Array.isArray(result.nutrition_marked_dates) ? result.nutrition_marked_dates : loaded.markedDateKeys || prev;
+        const fromServer = getNutritionFilledDateKeys(result, loaded.markedDateKeys?.length ? loaded.markedDateKeys : prev);
         const next = mergeNutritionMarkerKeys(fromServer, loaded.date || dateKey, nutritionDayHasFood(loaded));
         writeCachedNutritionMarkersForProfile(activeProfile, next);
         return next;
@@ -9480,7 +9500,7 @@ function OnlyPumpPlatform() {
         setNutritionDay(updatedDay);
         setNutritionGoal(updatedDay.goal);
         setNutritionMarkedDateKeys(prev => {
-          const fromServer = Array.isArray(result.nutrition_marked_dates) ? result.nutrition_marked_dates : updatedDay.markedDateKeys || prev;
+          const fromServer = getNutritionFilledDateKeys(result, updatedDay.markedDateKeys?.length ? updatedDay.markedDateKeys : prev);
           const nextMarkers = mergeNutritionMarkerKeys(fromServer, updatedDay.date || dateKey, nutritionDayHasFood(updatedDay));
           writeCachedNutritionMarkersForProfile(profile, nextMarkers);
           return nextMarkers;
@@ -9586,7 +9606,9 @@ function OnlyPumpPlatform() {
   useEffect(() => {
     if (!profile || !nutritionDay?.date) return;
     writeCachedNutritionForProfile(profile, nutritionDay.date, nutritionDay);
-    const nextMarkers = mergeNutritionMarkerKeys(nutritionMarkedDateKeys, nutritionDay.date, nutritionDayHasFood(nutritionDay));
+    const nextMarkers = nutritionDayHasFood(nutritionDay)
+      ? mergeNutritionMarkerKeys(nutritionMarkedDateKeys, nutritionDay.date, true)
+      : normalizeNutritionFilledDateKeys(nutritionMarkedDateKeys);
     writeCachedNutritionMarkersForProfile(profile, nextMarkers);
   }, [profile?.id, profile?.telegram_id, nutritionDay, nutritionMarkedDateKeys]);
 
