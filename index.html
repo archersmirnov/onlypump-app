@@ -1123,7 +1123,7 @@ const DEFAULT_HEALTH_LOG = {
   notes: "",
 };
 
-const clampNumber = (value, min, max) => Math.max(min, Math.min(max, value));
+const clampNumber = (value, min = 0, max = Infinity) => Math.max(min, Math.min(max, Number(value || 0)));
 
 const calculateSleepDurationMinutesLocal = (startValue, endValue, fallback = 0) => {
   const start = new Date(startValue || "");
@@ -2544,8 +2544,6 @@ const getDayOffsetFromToday = (dateKey) => {
   const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   return Math.round((dateStart - todayStart) / (1000 * 60 * 60 * 24));
 };
-
-const clampNumber = (value, min = 0, max = Infinity) => Math.max(min, Math.min(max, Number(value || 0)));
 
 const buildNutritionTotalsForDate = (dateKey, baseTotals = {}) => {
   return {
@@ -11221,8 +11219,44 @@ function OnlyPumpPlatform() {
   </div>;
 }
 
+class OnlyPumpRuntimeBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error("ONLYPUMP runtime error", error, info);
+  }
+
+  render() {
+    if (this.state.error) {
+      return <div className="onlypump-app-shell flex items-center justify-center bg-black px-6 text-zinc-100">
+        <div className="max-w-md rounded-2xl border border-red-500/25 bg-zinc-950 p-6 text-center shadow-2xl shadow-black/60">
+          <h1 className="text-2xl font-black tracking-[-0.04em] text-red-500">ONLYPUMP</h1>
+          <p className="mt-4 text-sm text-zinc-300">Приложение не смогло открыть экран.</p>
+          <p className="mt-3 rounded-xl bg-black/40 p-3 text-left text-xs text-zinc-500">{String(this.state.error?.message || this.state.error)}</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="mt-5 w-full rounded-full bg-red-500 px-4 py-3 text-sm font-semibold text-black"
+          >
+            Перезагрузить
+          </button>
+        </div>
+      </div>;
+    }
+
+    return this.props.children;
+  }
+}
+
 const root = createRoot(document.getElementById("root"));
-root.render(<OnlyPumpPlatform />);
+root.render(<OnlyPumpRuntimeBoundary><OnlyPumpPlatform /></OnlyPumpRuntimeBoundary>);
   </script>
 </body>
 </html>
