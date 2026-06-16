@@ -969,6 +969,7 @@ const homeWidgetCatalog = [
   { id: "metricCalories", label: "Калории", description: "Калории за день", default: true, span: "compact" },
   { id: "metricProtein", label: "Белок", description: "Белок за день", default: true, span: "compact" },
   { id: "metricRecovery", label: "Восстановление", description: "Индекс восстановления", default: true, span: "compact" },
+  { id: "metricSleep", label: "Сон", description: "Отчет сна и восстановление", default: false, span: "compact" },
   { id: "macros", label: "БЖУ", description: "Белки, жиры и углеводы со шкалами", default: false, span: "compact" },
   { id: "water", label: "Вода", description: "Трекер выпитой воды за день", default: false, span: "compact" },
   { id: "workout", label: "Сегодняшняя тренировка", description: "План и прогресс тренировки дня", default: false, span: "large" },
@@ -1044,14 +1045,6 @@ function buildHomeWidgetsAfterRemoving(prevWidgets, id) {
   return enforceHomeWidgetRules(next);
 }
 
-const stats = [
-  { label: "Вес", value: "90 кг", delta: "-0,6 кг", type: "line" },
-  { label: "Процент жира", value: "12,6 %", delta: "-0,3 %", type: "line" },
-  { label: "Шаги", value: "12 842", delta: "+105%", type: "bars" },
-  { label: "Калории", value: "2 320", sub: "/ 2 800", delta: "83%", type: "progress" },
-  { label: "Сон", value: "7 ч 32 м", delta: "92%", type: "sleep" },
-];
-
 const lessons = [
   { title: "Основы питания", category: "Питание", meta: "Урок 4 из 12", progress: 60, img: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=700&auto=format&fit=crop" },
   { title: "Механика упражнений", category: "Тренировки", meta: "Урок 6 из 15", progress: 40, img: "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=700&auto=format&fit=crop" },
@@ -1106,6 +1099,115 @@ const formatCycleCardDate = (dateKey) => {
   }
 
   return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+};
+
+const getProfileDisplayName = (profile = DEFAULT_PROFILE) => {
+  const saved = String(profile?.display_name || "").trim();
+  if (saved) return saved;
+  const firstName = String(profile?.first_name || "").trim();
+  return firstName || "Пользователь";
+};
+
+const DEFAULT_HEALTH_LOG = {
+  id: null,
+  date: formatDateKey(new Date()),
+  log_date: formatDateKey(new Date()),
+  steps_count: 0,
+  sleep_started_at: null,
+  sleep_ended_at: null,
+  sleep_duration_minutes: 0,
+  sleep_latency_minutes: 0,
+  sleep_awakenings: 0,
+  sleep_quality_score: null,
+  recovery_score: null,
+  notes: "",
+};
+
+const clampNumber = (value, min, max) => Math.max(min, Math.min(max, value));
+
+const calculateSleepDurationMinutesLocal = (startValue, endValue, fallback = 0) => {
+  const start = new Date(startValue || "");
+  const end = new Date(endValue || "");
+  const fallbackNumber = Number(fallback);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return Number.isFinite(fallbackNumber) ? Math.max(0, fallbackNumber) : 0;
+  let diff = Math.round((end.getTime() - start.getTime()) / 60000);
+  if (diff < 0) diff += 24 * 60;
+  return clampNumber(diff, 0, 24 * 60);
+};
+
+const calculateRecoveryScoreLocal = (log = {}) => {
+  const duration = Number(log.sleep_duration_minutes || 0);
+  if (!duration) return null;
+  const latency = Number(log.sleep_latency_minutes || 0);
+  const awakenings = Number(log.sleep_awakenings || 0);
+  const sleepScore = Math.min(duration / 480, 1) * 100;
+  const latencyPenalty = latency <= 20 ? 0 : clampNumber((latency - 20) / 4, 5, 15);
+  const awakeningsPenalty = awakenings * 5;
+  return Math.round(clampNumber(sleepScore - latencyPenalty - awakeningsPenalty, 0, 100));
+};
+
+const normalizeHealthLog = (record = {}, dateKey = formatDateKey(new Date())) => {
+  const logDate = record?.log_date || record?.date || dateKey;
+  const duration = calculateSleepDurationMinutesLocal(record.sleep_started_at, record.sleep_ended_at, record.sleep_duration_minutes);
+  const base = {
+    ...DEFAULT_HEALTH_LOG,
+    ...record,
+    date: logDate,
+    log_date: logDate,
+    steps_count: profileNonNegativeNumber(record.steps_count, 0),
+    sleep_duration_minutes: duration,
+    sleep_latency_minutes: profileNonNegativeNumber(record.sleep_latency_minutes, 0),
+    sleep_awakenings: profileNonNegativeNumber(record.sleep_awakenings, 0),
+  };
+  return {
+    ...base,
+    recovery_score: record.recovery_score ?? calculateRecoveryScoreLocal(base),
+  };
+};
+
+const buildLocalHealthLog = (dateKey = formatDateKey(new Date())) => normalizeHealthLog({ date: dateKey, log_date: dateKey }, dateKey);
+
+const upsertHealthLogList = (logs = [], log) => {
+  const normalized = normalizeHealthLog(log, log?.log_date || log?.date);
+  const filtered = logs.filter(item => (item.log_date || item.date) !== normalized.log_date);
+  return [...filtered, normalized].sort((a, b) => String(a.log_date || a.date).localeCompare(String(b.log_date || b.date)));
+};
+
+const formatSleepDuration = (minutes) => {
+  const total = Math.max(0, Math.round(Number(minutes || 0)));
+  if (!total) return "сон не добавлен";
+  const hours = Math.floor(total / 60);
+  const mins = total % 60;
+  if (!hours) return `${mins} мин`;
+  return `${hours} ч ${String(mins).padStart(2, "0")} м`;
+};
+
+const sleepQualityLabel = (log = {}) => {
+  const recovery = Number(log.recovery_score ?? 0);
+  if (!log.sleep_duration_minutes) return "сон не добавлен";
+  if (recovery >= 85) return "отлично";
+  if (recovery >= 70) return "хорошо";
+  if (recovery >= 50) return "средне";
+  return "мало восстановления";
+};
+
+const toLocalDateTimeInput = (value, fallbackDateKey = formatDateKey(new Date()), fallbackTime = "07:00") => {
+  const date = value ? new Date(value) : null;
+  if (date && !Number.isNaN(date.getTime())) {
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    const hh = String(date.getHours()).padStart(2, "0");
+    const min = String(date.getMinutes()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+  }
+  return `${fallbackDateKey}T${fallbackTime}`;
+};
+
+const dateKeyDaysAgo = (dateKey, days) => {
+  const date = parseDateKeyLocal(dateKey);
+  date.setDate(date.getDate() - days);
+  return formatDateKey(date);
 };
 
 const initialCycleWorkouts = [
@@ -2154,7 +2256,7 @@ function MiniBars() {
 }
 
 function DesktopSidebar({ active, setActive, profile }) {
-  const displayName = profile?.display_name || DEFAULT_PROFILE.display_name;
+  const displayName = getProfileDisplayName(profile);
 
   return <aside className="hidden w-64 shrink-0 border-r border-white/10 bg-zinc-950/95 p-7 lg:block">
     <button onClick={() => setActive("home")} className="mb-10 text-left"><div className="text-3xl font-black tracking-tight">ONLY<span className="text-red-500">PUMP</span></div><div className="mt-1 text-xs uppercase tracking-[0.18em] text-zinc-500">фитнес-платформа</div></button>
@@ -2835,6 +2937,102 @@ function WaterWidget({ waterIntake, waterGoal, onAdd, onRemove }) {
   </Card>;
 }
 
+function SleepReportSheet({ dateKey, healthLog, onSave, onClose, saving = false }) {
+  const selectedDate = parseDateKeyLocal(dateKey);
+  const startFallback = new Date(selectedDate);
+  startFallback.setDate(startFallback.getDate() - 1);
+  const startFallbackKey = formatDateKey(startFallback);
+  const [startedAt, setStartedAt] = useState(() => toLocalDateTimeInput(healthLog?.sleep_started_at, startFallbackKey, "23:00"));
+  const [endedAt, setEndedAt] = useState(() => toLocalDateTimeInput(healthLog?.sleep_ended_at, dateKey, "07:00"));
+  const [latency, setLatency] = useState(() => Number(healthLog?.sleep_latency_minutes || 0));
+  const [awakenings, setAwakenings] = useState(() => Number(healthLog?.sleep_awakenings || 0));
+  const [error, setError] = useState("");
+  const duration = calculateSleepDurationMinutesLocal(startedAt, endedAt, healthLog?.sleep_duration_minutes || 0);
+  const recovery = calculateRecoveryScoreLocal({
+    sleep_duration_minutes: duration,
+    sleep_latency_minutes: latency,
+    sleep_awakenings: awakenings,
+  });
+
+  const save = async () => {
+    if (!duration) {
+      setError("Укажи время сна и пробуждения.");
+      return;
+    }
+    setError("");
+    const payload = {
+      date: dateKey,
+      log_date: dateKey,
+      steps_count: healthLog?.steps_count || 0,
+      sleep_started_at: new Date(startedAt).toISOString(),
+      sleep_ended_at: new Date(endedAt).toISOString(),
+      sleep_duration_minutes: duration,
+      sleep_latency_minutes: Number(latency || 0),
+      sleep_awakenings: Number(awakenings || 0),
+    };
+    const ok = await onSave?.(payload);
+    if (ok === false) {
+      setError("Не удалось сохранить сон. Изменения оставлены на экране.");
+      return;
+    }
+    onClose();
+  };
+
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-lg overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-red-500">{formatCycleDate(dateKey)}</p>
+          <h2 className="mt-2 text-2xl font-black">Отчет сна</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-zinc-300">×</button>
+      </div>
+
+      <div className="mt-6 grid grid-cols-[128px_1fr] items-center gap-5">
+        <div className="relative flex h-32 w-32 items-center justify-center rounded-full" style={{ background: `conic-gradient(#ef4444 0 ${Math.min(100, Math.round((duration / 480) * 100))}%, #27272a ${Math.min(100, Math.round((duration / 480) * 100))}% 100%)` }}>
+          <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-zinc-950">
+            <span className="text-[10px] uppercase tracking-wider text-zinc-500">Сон</span>
+            <span className="mt-1 text-lg font-bold">{formatSleepDuration(duration)}</span>
+          </div>
+        </div>
+        <div className="space-y-3 text-sm">
+          <div className="rounded-2xl bg-white/[0.04] p-3">
+            <span className="text-xs text-zinc-500">Восстановление</span>
+            <div className="mt-1 text-3xl font-black text-red-500">{recovery ?? 0}%</div>
+          </div>
+          <p className="text-xs leading-5 text-zinc-500">Цель сна: 8 часов. Учитываем длительность, время засыпания и пробуждения.</p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <label className="block min-w-0">
+          <span className="text-xs font-bold text-zinc-500">Время отхода ко сну</span>
+          <input type="datetime-local" value={startedAt} onChange={(event) => setStartedAt(event.target.value)} className="mt-2 w-full min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-base outline-none focus:border-red-500/60"/>
+        </label>
+        <label className="block min-w-0">
+          <span className="text-xs font-bold text-zinc-500">Время пробуждения</span>
+          <input type="datetime-local" value={endedAt} onChange={(event) => setEndedAt(event.target.value)} className="mt-2 w-full min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-base outline-none focus:border-red-500/60"/>
+        </label>
+      </div>
+
+      <div className="mt-5 space-y-5">
+        <label className="block">
+          <div className="flex justify-between text-sm"><span>Как быстро вы уснули?</span><span className="text-zinc-400">{latency} мин</span></div>
+          <input type="range" min="0" max="120" value={latency} onChange={(event) => setLatency(Number(event.target.value))} className="mt-3 w-full accent-red-500"/>
+        </label>
+        <label className="block">
+          <div className="flex justify-between text-sm"><span>Количество пробуждений за ночь</span><span className="text-zinc-400">{awakenings}</span></div>
+          <input type="range" min="0" max="12" value={awakenings} onChange={(event) => setAwakenings(Number(event.target.value))} className="mt-3 w-full accent-red-500"/>
+        </label>
+      </div>
+
+      {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+      <Button onClick={save} disabled={saving} className="mt-6 w-full bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{healthLog?.sleep_duration_minutes ? "Сохранить" : "Добавить"}</Button>
+    </BottomSheetPanel>
+  </div>;
+}
+
 function HomeWidgetSettingsModal({ enabledWidgets, onAdd, onClose }) {
   const availableWidgets = homeWidgetCatalog.filter(widget => !enabledWidgets.includes(widget.id));
 
@@ -2905,7 +3103,7 @@ function MasonryGrid({ children, className = "" }) {
   return <div ref={gridRef} className={`onlypump-masonry-grid ${className}`}>{children}</div>;
 }
 
-function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutritionMarkedDateKeys = [], nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, setHomeWidgets, profile, selectedDateKey: controlledSelectedDateKey, setSelectedDateKey: controlledSetSelectedDateKey }) {
+function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutritionMarkedDateKeys = [], nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, setHomeWidgets, profile, selectedDateKey: controlledSelectedDateKey, setSelectedDateKey: controlledSetSelectedDateKey, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], healthSaving = false, onSaveHealthLog }) {
   const nutritionTotals = useMemo(() => nutritionMeals.reduce((acc, meal) => ({
     calories: acc.calories + Number(meal.calories || 0),
     protein: acc.protein + Number(meal.protein || 0),
@@ -2934,7 +3132,8 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const homeMarkedDateKeys = useMemo(() => Array.from(new Set([
     ...workouts.map(workout => workout.date).filter(Boolean),
     ...nutritionMarkedDateKeys.filter(Boolean),
-  ])).sort(), [workouts, nutritionMarkedDateKeys]);
+    ...healthLogs.map(log => log.log_date || log.date).filter(Boolean),
+  ])).sort(), [workouts, nutritionMarkedDateKeys, healthLogs]);
   const selectedWorkoutSummary = useMemo(() => summarizeWorkouts(selectedDateWorkouts), [selectedDateWorkouts]);
   const currentWeekWorkoutSummary = useMemo(() => summarizeCurrentWeekWorkouts(workouts, new Date()), [workouts]);
   const currentWeekTonnageProgress = currentWeekWorkoutSummary.plannedVolume
@@ -2945,9 +3144,13 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const proteinPercent = Math.min(100, Math.round((selectedNutritionTotals.protein / Math.max(1, nutritionGoal.protein)) * 100));
   const fatPercent = Math.min(100, Math.round((selectedNutritionTotals.fat / Math.max(1, nutritionGoal.fat)) * 100));
   const carbsPercent = Math.min(100, Math.round((selectedNutritionTotals.carbs / Math.max(1, nutritionGoal.carbs)) * 100));
-  const recovery = 78;
+  const selectedHealthRecord = (healthLog?.log_date || healthLog?.date) === selectedDateKey
+    ? healthLog
+    : healthLogs.find(log => (log.log_date || log.date) === selectedDateKey);
+  const selectedHealthLog = normalizeHealthLog(selectedHealthRecord || {}, selectedDateKey);
+  const recovery = selectedHealthLog.recovery_score;
   const weightDelta = selectedMeasurements?.weight ? Number((Number(selectedMeasurements.weight) - 90).toFixed(1)) : 0;
-  const displayName = profile?.display_name || DEFAULT_PROFILE.display_name;
+  const displayName = getProfileDisplayName(profile);
   const homeVolumeUnit = normalizeWeightUnit(profile?.default_weight_unit || DEFAULT_PROFILE.default_weight_unit);
   const formatHomeVolume = (valueKg) => {
     const value = homeVolumeUnit === "lb" ? kgToLb(valueKg) : Number(valueKg || 0);
@@ -2969,6 +3172,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const widgetDragRef = useRef(null);
   const [widgetDragVisual, setWidgetDragVisual] = useState(null);
   const [waterIntake, setWaterIntake] = useState(1250);
+  const [sleepSheetOpen, setSleepSheetOpen] = useState(false);
   const waterGoal = 2500;
   const mobileHiddenWidgetIds = [];
 
@@ -3039,7 +3243,9 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       case "metricProtein":
         return <MetricWidgetCard title="Белок" value={`${selectedNutritionTotals.protein} г`} sub={`/ ${nutritionGoal.protein} г`} delta={`${proteinPercent}% цели`} progress={proteinPercent} icon={Utensils} onClick={openNutritionFromHome}/>;
       case "metricRecovery":
-        return <MetricWidgetCard title="Восстановление" value={`${recovery}%`} sub="сон · нагрузка · активность" progress={recovery} icon={HeartPulse} onClick={() => setActive("analytics")}/>;
+        return <MetricWidgetCard title="Восстановление" value={recovery == null ? "—" : `${recovery}%`} sub={selectedHealthLog.sleep_duration_minutes ? sleepQualityLabel(selectedHealthLog) : "сон не добавлен"} progress={recovery || 0} icon={HeartPulse} onClick={() => setActive("analytics")}/>;
+      case "metricSleep":
+        return <MetricWidgetCard title="Сон" value={formatSleepDuration(selectedHealthLog.sleep_duration_minutes)} sub={selectedHealthLog.sleep_duration_minutes ? `${selectedHealthLog.sleep_latency_minutes || 0} мин засыпание · ${selectedHealthLog.sleep_awakenings || 0} проб.` : "нажми, чтобы добавить"} progress={selectedHealthLog.sleep_duration_minutes ? Math.min(100, Math.round((selectedHealthLog.sleep_duration_minutes / 480) * 100)) : 0} icon={Moon} onClick={() => setSleepSheetOpen(true)}/>;
       case "macros":
         return <MetricWidgetCard title="БЖУ" value={`${proteinPercent}%`} sub={`${selectedNutritionTotals.protein} Б · ${selectedNutritionTotals.fat} Ж · ${selectedNutritionTotals.carbs} У`} icon={Utensils} onClick={openNutritionFromHome}>
           <div className="mt-4 space-y-2 text-[11px] text-zinc-400">
@@ -3226,6 +3432,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       </Card>}
     </MasonryGrid>
     {widgetPickerOpen && <HomeWidgetSettingsModal enabledWidgets={homeWidgets} onAdd={addWidget} onClose={() => setWidgetPickerOpen(false)}/>} 
+    {sleepSheetOpen && <SleepReportSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setSleepSheetOpen(false)} onSave={onSaveHealthLog}/>}
     <InlineDateDataCard
       context="home"
       dateKey={selectedDateKey}
@@ -9760,9 +9967,228 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
   </>;
 }
 
-function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE }) {
+const analyticsPeriods = [
+  { id: "day", label: "День", days: 1 },
+  { id: "week", label: "Неделя", days: 7 },
+  { id: "month", label: "Месяц", days: 30 },
+  { id: "sixMonths", label: "6 месяцев", days: 183 },
+  { id: "year", label: "Год", days: 365 },
+];
+
+const measurementAnalyticsMetrics = [
+  { key: "weight_kg", label: "Вес", unit: "кг" },
+  { key: "body_fat_percent", label: "Процент жира", unit: "%" },
+  { key: "neck_cm", label: "Шея", unit: "см" },
+  { key: "shoulders_cm", label: "Плечи", unit: "см" },
+  { key: "chest_cm", label: "Грудь", unit: "см" },
+  { key: "biceps_cm", label: "Бицепс", unit: "см" },
+  { key: "waist_cm", label: "Талия", unit: "см" },
+  { key: "abdomen_cm", label: "Живот", unit: "см" },
+  { key: "glutes_cm", label: "Ягодицы", unit: "см" },
+  { key: "thigh_cm", label: "Бедро", unit: "см" },
+  { key: "calf_cm", label: "Голень", unit: "см" },
+];
+
+const healthAnalyticsMetrics = [
+  { key: "steps_count", label: "Шаги", unit: "", type: "bar" },
+  { key: "sleep_duration_minutes", label: "Сон", unit: "мин", type: "bar" },
+  { key: "sleep_latency_minutes", label: "Засыпание", unit: "мин", type: "bar" },
+  { key: "sleep_awakenings", label: "Пробуждения", unit: "", type: "bar" },
+  { key: "recovery_score", label: "Восстановление", unit: "%", type: "line" },
+];
+
+const trainingAnalyticsMetrics = [
+  { key: "sets", label: "Подходы", unit: "", type: "bar" },
+  { key: "volume", label: "Тоннаж", unit: "кг", type: "bar" },
+  { key: "workouts", label: "Тренировки", unit: "", type: "bar" },
+];
+
+const filterAnalyticsPoints = (points = [], period = "month", selectedDateKey = formatDateKey(new Date())) => {
+  const days = analyticsPeriods.find(item => item.id === period)?.days || 30;
+  const start = parseDateKeyLocal(dateKeyDaysAgo(selectedDateKey, days - 1)).getTime();
+  const end = parseDateKeyLocal(selectedDateKey).getTime();
+  return points.filter(point => {
+    const time = parseDateKeyLocal(point.date).getTime();
+    return time >= start && time <= end;
+  });
+};
+
+const buildMeasurementSeries = (measurements = [], metricKey = "weight_kg") => measurements
+  .map(item => ({ date: String(item.measurement_date || item.date || "").slice(0, 10), value: Number(item[metricKey]) }))
+  .filter(item => item.date && Number.isFinite(item.value));
+
+const buildHealthSeries = (logs = [], metricKey = "steps_count") => logs
+  .map(item => ({ date: String(item.log_date || item.date || "").slice(0, 10), value: Number(item[metricKey]) }))
+  .filter(item => item.date && Number.isFinite(item.value) && item.value >= 0);
+
+const buildTrainingSeries = (workouts = [], metricKey = "sets") => {
+  const map = new Map();
+  workouts.filter(workout => workout.status === "completed").forEach(workout => {
+    const date = workout.date || formatDateKey(new Date());
+    const sets = getWorkoutSets(workout).filter(set => getSetStatusGlobal(set) === "completed");
+    const current = map.get(date) || { date, sets: 0, volume: 0, workouts: 0 };
+    current.sets += sets.length;
+    current.volume += getWorkoutVolume(workout);
+    current.workouts += 1;
+    map.set(date, current);
+  });
+  return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date)).map(item => ({ date: item.date, value: Number(item[metricKey] || 0) }));
+};
+
+const analyticsSummary = (points = []) => {
+  const values = points.map(point => Number(point.value)).filter(Number.isFinite);
+  if (!values.length) return { avg: 0, min: 0, max: 0, change: 0, trend: "нет данных" };
+  const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const change = values[values.length - 1] - values[0];
+  return {
+    avg,
+    min: Math.min(...values),
+    max: Math.max(...values),
+    change,
+    trend: change > 0 ? "рост" : change < 0 ? "снижение" : "ровно",
+  };
+};
+
+function AnalyticsChart({ points = [], type = "line", unit = "" }) {
+  const [selected, setSelected] = useState(null);
+  const safePoints = points.slice(-32);
+  const values = safePoints.map(point => Number(point.value || 0));
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = Math.max(1, max - min);
+  const coords = safePoints.map((point, index) => ({
+    ...point,
+    x: safePoints.length === 1 ? 180 : 16 + (index / Math.max(1, safePoints.length - 1)) * 328,
+    y: 128 - ((Number(point.value || 0) - min) / range) * 104,
+  }));
+  const path = coords.map((point, index) => `${index ? "L" : "M"} ${point.x} ${point.y}`).join(" ");
+
+  if (!safePoints.length) return <div className="mt-5 rounded-2xl bg-white/[0.04] p-8 text-center text-sm text-zinc-500">Недостаточно данных для графика.</div>;
+
+  return <div className="mt-5 rounded-3xl bg-white/[0.035] p-4">
+    <svg viewBox="0 0 360 150" className="h-44 w-full overflow-visible">
+      <line x1="12" y1="132" x2="348" y2="132" stroke="rgba(255,255,255,0.08)" strokeWidth="1"/>
+      {type === "bar" ? coords.map((point, index) => {
+        const width = Math.max(6, 280 / Math.max(8, coords.length));
+        const height = 132 - point.y;
+        return <rect key={`${point.date}-${index}`} x={point.x - width / 2} y={point.y} width={width} height={height} rx="5" fill="#ef4444" opacity={selected?.date === point.date ? 1 : 0.78} onClick={() => setSelected(point)}/>;
+      }) : <>
+        <path d={path} fill="none" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+        {coords.map((point, index) => <circle key={`${point.date}-${index}`} cx={point.x} cy={point.y} r={selected?.date === point.date ? 6 : 4} fill="#ef4444" stroke="#050505" strokeWidth="2" onClick={() => setSelected(point)}/>)}
+      </>}
+    </svg>
+    <div className="mt-2 flex items-center justify-between gap-3 text-xs text-zinc-500">
+      <span>{safePoints[0]?.date}</span>
+      <span>{safePoints[safePoints.length - 1]?.date}</span>
+    </div>
+    {selected && <div className="mt-3 rounded-2xl bg-black/35 p-3 text-sm"><span className="text-zinc-500">{selected.date}</span><span className="float-right font-semibold text-zinc-100">{Math.round(Number(selected.value) * 10) / 10}{unit ? ` ${unit}` : ""}</span></div>}
+  </div>;
+}
+
+function AnalyticsDetailSheet({ type, title, measurements, healthLogs, workouts, selectedDateKey, onClose }) {
+  const metricOptions = type === "training" ? trainingAnalyticsMetrics : type === "health" ? healthAnalyticsMetrics : measurementAnalyticsMetrics;
+  const [metric, setMetric] = useState(type === "weight" ? "weight_kg" : metricOptions[0].key);
+  const [period, setPeriod] = useState(type === "training" ? "week" : "month");
+  const metricConfig = metricOptions.find(item => item.key === metric) || metricOptions[0];
+  const allPoints = type === "training"
+    ? buildTrainingSeries(workouts, metric)
+    : type === "health"
+      ? buildHealthSeries(healthLogs, metric)
+      : buildMeasurementSeries(measurements, metric);
+  const points = filterAnalyticsPoints(allPoints, period, selectedDateKey);
+  const summary = analyticsSummary(points);
+  const chartType = metricConfig.type || (type === "health" ? "bar" : "line");
+
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[185] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-3xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-red-500">Аналитика</p>
+          <h2 className="mt-2 text-2xl font-black">{title}</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-zinc-300">×</button>
+      </div>
+
+      <div className="mt-5 flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
+        {metricOptions.map(item => <button key={item.key} type="button" onClick={() => setMetric(item.key)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold ${metric === item.key ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-300"}`}>{item.label}</button>)}
+      </div>
+      <div className="mt-3 flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
+        {analyticsPeriods.filter(item => type !== "training" || ["day", "week", "month"].includes(item.id)).map(item => <button key={item.id} type="button" onClick={() => setPeriod(item.id)} className={`shrink-0 rounded-full px-4 py-2 text-xs ${period === item.id ? "bg-white text-black" : "bg-white/[0.06] text-zinc-300"}`}>{item.label}</button>)}
+      </div>
+
+      <AnalyticsChart points={points} type={chartType} unit={metricConfig.unit}/>
+
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div className="rounded-2xl bg-white/[0.04] p-3"><p className="text-[10px] uppercase text-zinc-500">Среднее</p><b>{Math.round(summary.avg * 10) / 10}</b></div>
+        <div className="rounded-2xl bg-white/[0.04] p-3"><p className="text-[10px] uppercase text-zinc-500">Минимум</p><b>{Math.round(summary.min * 10) / 10}</b></div>
+        <div className="rounded-2xl bg-white/[0.04] p-3"><p className="text-[10px] uppercase text-zinc-500">Максимум</p><b>{Math.round(summary.max * 10) / 10}</b></div>
+        <div className="rounded-2xl bg-white/[0.04] p-3"><p className="text-[10px] uppercase text-zinc-500">Изменение</p><b>{summary.change > 0 ? "+" : ""}{Math.round(summary.change * 10) / 10}</b></div>
+        <div className="rounded-2xl bg-white/[0.04] p-3"><p className="text-[10px] uppercase text-zinc-500">Тренд</p><b>{summary.trend}</b></div>
+      </div>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], healthSaving = false, healthRefreshing = false, selectedDateKey = formatDateKey(new Date()), telegramInitData = "", profileStatus = "local", onSaveHealthLog }) {
+  const [detail, setDetail] = useState(null);
+  const [sleepSheetOpen, setSleepSheetOpen] = useState(false);
+  const [stepsDraft, setStepsDraft] = useState(() => String(healthLog?.steps_count || ""));
+  const [analyticsData, setAnalyticsData] = useState({ measurements: [], health_logs: [] });
+  const selectedHealthRecord = (healthLog?.log_date || healthLog?.date) === selectedDateKey
+    ? healthLog
+    : healthLogs.find(log => (log.log_date || log.date) === selectedDateKey);
+  const currentHealthLog = normalizeHealthLog(selectedHealthRecord || {}, selectedDateKey);
+
+  useEffect(() => {
+    setStepsDraft(String(currentHealthLog.steps_count || ""));
+  }, [currentHealthLog.log_date, currentHealthLog.steps_count]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!(profileStatus === "verified" && telegramInitData && profile?.id)) {
+        setAnalyticsData({
+          measurements: [{
+            measurement_date: selectedDateKey,
+            weight_kg: measurements?.weight || profile?.weight_kg,
+            body_fat_percent: measurements?.bodyFat || profile?.body_fat_percent,
+            neck_cm: measurements?.neck || profile?.neck_cm,
+            shoulders_cm: measurements?.shoulders || profile?.shoulders_cm,
+            chest_cm: measurements?.chest || profile?.chest_cm,
+            biceps_cm: measurements?.biceps || profile?.biceps_cm,
+            waist_cm: measurements?.waist || profile?.waist_cm,
+            abdomen_cm: measurements?.belly || profile?.abdomen_cm,
+            glutes_cm: measurements?.glutes || profile?.glutes_cm,
+            thigh_cm: measurements?.thigh || profile?.thigh_cm,
+            calf_cm: measurements?.calf || profile?.calf_cm,
+          }],
+          health_logs: healthLogs.length ? healthLogs : [currentHealthLog],
+        });
+        return;
+      }
+      try {
+        const result = await callOnlyPumpProfileApi(telegramInitData, "load_analytics", {
+          date: selectedDateKey,
+          start_date: dateKeyDaysAgo(selectedDateKey, 365),
+          end_date: selectedDateKey,
+        });
+        if (!cancelled) setAnalyticsData({
+          measurements: Array.isArray(result.measurements) ? result.measurements : [],
+          health_logs: Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [],
+        });
+      } catch (error) {
+        console.error("onlypump-profile-api analytics error:", error);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [profileStatus, telegramInitData, profile?.id, selectedDateKey, healthLogs, measurements]);
+
   const weekAnalytics = useMemo(() => {
-    const today = parseDateKeyLocal(formatDateKey(new Date()));
+    const today = parseDateKeyLocal(selectedDateKey);
     const start = addLocalDaysToDate(today, -6).getTime();
     const recent = workouts.filter(workout => parseDateKeyLocal(workout.date).getTime() >= start);
     const completedRecent = recent.filter(workout => workout.status === "completed");
@@ -9770,19 +10196,42 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE }) {
     const volume = completedRecent.reduce((sum, workout) => sum + getWorkoutVolume(workout), 0);
     const loadLevel = getVolumeLoadLevel(sets, volumeStandards.weeklyTotal);
     return { recent: completedRecent, sets, volume, loadLevel };
-  }, [workouts]);
+  }, [workouts, selectedDateKey]);
 
-  const analyticCards = [
-    [HeartPulse, "Восстановление", "78%", "Норма"],
-    [Moon, "Сон", "7 ч 32 м", "Хорошо"],
-    [Activity, "Активность", "12 842", "Выше цели"],
-    [Zap, "Тренировочная нагрузка", `${weekAnalytics.sets}`, `${weekAnalytics.loadLevel.label} · подходов за 7 дней`],
+  const latestMeasurement = analyticsData.measurements?.length ? analyticsData.measurements[analyticsData.measurements.length - 1] : {};
+  const saveSteps = async () => {
+    const nextSteps = profileNonNegativeNumber(stepsDraft, 0);
+    setStepsDraft(String(nextSteps));
+    await onSaveHealthLog?.({ ...currentHealthLog, date: selectedDateKey, log_date: selectedDateKey, steps_count: nextSteps });
+  };
+
+  const cards = [
+    { id: "measurements", icon: Ruler, title: "Замеры", value: latestMeasurement?.waist_cm ? `${latestMeasurement.waist_cm} см` : "нет данных", sub: "вес, талия и окружности", detail: "measurements" },
+    { id: "weight", icon: Scale, title: "Вес", value: `${latestMeasurement?.weight_kg || profile?.weight_kg || measurements?.weight || 0} кг`, sub: "текущий вес и тренд", detail: "weight" },
+    { id: "steps", icon: Activity, title: "Шаги", value: `${currentHealthLog.steps_count || 0}`, sub: "ручной учет за день", detail: "health" },
+    { id: "sleep", icon: Moon, title: "Сон", value: formatSleepDuration(currentHealthLog.sleep_duration_minutes), sub: sleepQualityLabel(currentHealthLog), detail: "health", sleep: true },
+    { id: "training", icon: Zap, title: "Тренировочная нагрузка", value: `${weekAnalytics.sets}`, sub: `${weekAnalytics.loadLevel.label} · подходов за 7 дней`, detail: "training" },
+    { id: "recovery", icon: HeartPulse, title: "Восстановление", value: currentHealthLog.recovery_score == null ? "—" : `${currentHealthLog.recovery_score}%`, sub: currentHealthLog.sleep_duration_minutes ? "расчет по сну" : "сон не добавлен", detail: "health" },
   ];
 
-  return <><Header title="Аналитика" subtitle="Система ищет слабые места: недоедание, перегруз, провалы сна и просадки активности."/><PageGrid>
-    {analyticCards.map(([Icon,t,v,s])=><Card key={t} className="p-5"><Icon className="text-red-500"/><p className="mt-5 text-sm text-zinc-500">{t}</p><div className="mt-2 text-4xl">{v}</div><p className="mt-3 text-sm text-zinc-400">{s}</p></Card>)}
-    <Card className="p-5 xl:col-span-2"><h2 className="text-xl font-semibold">Вывод недели</h2><p className="mt-4 leading-7 text-zinc-300">За последние 7 дней: {weekAnalytics.recent.length} выполненных тренировок, {weekAnalytics.sets} подходов и {formatVolumeForProfile(weekAnalytics.volume || 0, profile)} тоннажа.</p></Card>
-  </PageGrid></>;
+  return <>
+    <Header title="Аналитика" subtitle="Замеры, вес, шаги, сон, тренировочная нагрузка и восстановление."/>
+    <PageGrid>
+      {cards.map(({ id, icon: Icon, title, value, sub, detail: detailType, sleep }) => <Card key={id} onClick={() => sleep ? setSleepSheetOpen(true) : setDetail({ type: detailType, title })} className="cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5">
+        <Icon className="text-red-500"/>
+        <p className="mt-5 text-sm text-zinc-500">{title}</p>
+        <div className="mt-2 break-words text-4xl">{value}</div>
+        <p className="mt-3 text-sm text-zinc-400">{sub}</p>
+        {id === "steps" && <div className="mt-4" onClick={(event) => event.stopPropagation()}>
+          <input type="number" value={stepsDraft} onChange={(event) => setStepsDraft(event.target.value)} onBlur={saveSteps} className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-base outline-none focus:border-red-500/60" placeholder="Шаги"/>
+          <p className="mt-2 text-xs text-zinc-500">{healthRefreshing ? "Обновляю..." : "Сохраняется после выхода из поля"}</p>
+        </div>}
+      </Card>)}
+      <Card className="p-5 xl:col-span-2"><h2 className="text-xl font-semibold">Вывод недели</h2><p className="mt-4 leading-7 text-zinc-300">За последние 7 дней: {weekAnalytics.recent.length} выполненных тренировок, {weekAnalytics.sets} подходов и {formatVolumeForProfile(weekAnalytics.volume || 0, profile)} тоннажа. Сон за выбранный день: {formatSleepDuration(currentHealthLog.sleep_duration_minutes)}.</p></Card>
+    </PageGrid>
+    {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} workouts={workouts} selectedDateKey={selectedDateKey} onClose={() => setDetail(null)}/>}
+    {sleepSheetOpen && <SleepReportSheet dateKey={selectedDateKey} healthLog={currentHealthLog} saving={healthSaving} onClose={() => setSleepSheetOpen(false)} onSave={onSaveHealthLog}/>}
+  </>;
 }
 
 function CommunityPage() {
@@ -9801,7 +10250,7 @@ function ProfileInput({ label, value, onChange, type = "text", placeholder = "",
       value={value ?? ""}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
-      className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-base outline-none transition placeholder:text-zinc-700 focus:border-red-500/60"
+      className="mt-2 box-border w-full min-w-0 max-w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-base outline-none transition placeholder:text-zinc-700 focus:border-red-500/60"
     />
   </label>;
 }
@@ -9812,7 +10261,7 @@ function ProfileSelect({ label, value, onChange, options }) {
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="mt-2 w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-base outline-none transition focus:border-red-500/60"
+      className="mt-2 box-border w-full min-w-0 max-w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-base outline-none transition focus:border-red-500/60"
     >
       {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
     </select>
@@ -10108,7 +10557,7 @@ function ProfileEditSheet({ profile, onClose, onSave, saving }) {
 }
 
 function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", onSaveProfile, profileSaving = false }) {
-  const displayName = profile?.display_name || DEFAULT_PROFILE.display_name;
+  const displayName = getProfileDisplayName(profile);
   const telegramLabel = profile?.telegram_username ? `@${profile.telegram_username}` : profile?.telegram_id ? `ID ${profile.telegram_id}` : "Обычная web-версия";
   const profileSource = profileStatus === "verified" ? "Supabase: Telegram проверен" : profileStatus === "loaded" ? "Supabase: профиль загружен" : profileStatus === "created" ? "Supabase: профиль создан" : "Локальный fallback";
   const calculatedAge = calculateProfileAge(profile?.birth_date);
@@ -10156,6 +10605,10 @@ function OnlyPumpPlatform() {
   const [nutritionMarkedDateKeys, setNutritionMarkedDateKeys] = useState([]);
   const [nutritionRefreshing, setNutritionRefreshing] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
+  const [healthLog, setHealthLog] = useState(() => buildLocalHealthLog(formatDateKey(new Date())));
+  const [healthLogs, setHealthLogs] = useState([]);
+  const [healthSaving, setHealthSaving] = useState(false);
+  const [healthRefreshing, setHealthRefreshing] = useState(false);
 
   useEffect(() => {
     activeRef.current = active;
@@ -10465,6 +10918,53 @@ function OnlyPumpPlatform() {
     return savedProfile;
   }, [applyProfileState]);
 
+  const loadHealthForProfile = useCallback(async (activeProfile, initData, dateKey = globalSelectedDateKey) => {
+    if (!activeProfile) return null;
+    if (!initData || !activeProfile.id) {
+      setHealthLog(prev => (prev?.log_date === dateKey || prev?.date === dateKey) ? prev : buildLocalHealthLog(dateKey));
+      return null;
+    }
+    setHealthRefreshing(true);
+    try {
+      const result = await callOnlyPumpProfileApi(initData, "load_health_log", { date: dateKey });
+      const nextLog = normalizeHealthLog(result.health_log || result.log || {}, dateKey);
+      const nextLogs = Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [];
+      setHealthLog(nextLog);
+      setHealthLogs(nextLogs.length ? nextLogs : upsertHealthLogList(healthLogs, nextLog));
+      return nextLog;
+    } catch (error) {
+      console.error("onlypump-profile-api health error:", error);
+      setHealthLog(prev => (prev?.log_date === dateKey || prev?.date === dateKey) ? prev : buildLocalHealthLog(dateKey));
+      return null;
+    } finally {
+      setHealthRefreshing(false);
+    }
+  }, [globalSelectedDateKey, healthLogs]);
+
+  const handleSaveHealthLog = useCallback(async (payload = {}) => {
+    const dateKey = payload.date || payload.log_date || globalSelectedDateKey;
+    const optimisticLog = normalizeHealthLog({ ...healthLog, ...payload, date: dateKey, log_date: dateKey }, dateKey);
+    setHealthLog(optimisticLog);
+    setHealthLogs(prev => upsertHealthLogList(prev, optimisticLog));
+
+    if (!(profileStatus === "verified" && telegramInitData && profile?.id)) return true;
+
+    setHealthSaving(true);
+    try {
+      const result = await callOnlyPumpProfileApi(telegramInitData, "save_health_log", { ...payload, date: dateKey, log_date: dateKey });
+      const savedLog = normalizeHealthLog(result.health_log || result.log || optimisticLog, dateKey);
+      const logs = Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : null;
+      setHealthLog(savedLog);
+      setHealthLogs(prev => logs?.length ? logs : upsertHealthLogList(prev, savedLog));
+      return true;
+    } catch (error) {
+      console.error("onlypump-profile-api health save error:", error);
+      return false;
+    } finally {
+      setHealthSaving(false);
+    }
+  }, [globalSelectedDateKey, healthLog, profile, profileStatus, telegramInitData]);
+
   const loadNutritionForProfile = useCallback(async (activeProfile, initData, dateKey = globalSelectedDateKey, options = {}) => {
     if (!activeProfile) return null;
     const cachedMarkers = readCachedNutritionMarkersForProfile(activeProfile);
@@ -10612,6 +11112,7 @@ function OnlyPumpPlatform() {
         if (cached.length) setWorkouts(cached);
         setNutritionMarkedDateKeys(readCachedNutritionMarkersForProfile(activeProfile));
         loadNutritionForProfile(activeProfile, "", globalSelectedDateKey, { useCache: true });
+        loadHealthForProfile(activeProfile, "", globalSelectedDateKey);
         setProfileLoading(false);
         setAppLoading(false);
         console.log("Profile loaded", activeProfile);
@@ -10643,6 +11144,7 @@ function OnlyPumpPlatform() {
       setNutritionMarkedDateKeys(readCachedNutritionMarkersForProfile(activeProfile));
       loadWorkoutsForProfile(activeProfile, result.status === "verified" ? initData : "", { useCache: true });
       loadNutritionForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey, { useCache: true });
+      loadHealthForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey);
       setProfileLoading(false);
       setAppLoading(false);
       console.log("Profile loaded", activeProfile);
@@ -10663,6 +11165,12 @@ function OnlyPumpPlatform() {
   }, [globalSelectedDateKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData]);
 
   useEffect(() => {
+    if (!profile) return;
+    const canUseRemoteHealth = profileStatus === "verified" && Boolean(telegramInitData && profile?.id);
+    loadHealthForProfile(profile, canUseRemoteHealth ? telegramInitData : "", globalSelectedDateKey);
+  }, [globalSelectedDateKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData]);
+
+  useEffect(() => {
     if (!profile || !nutritionDay?.date) return;
     writeCachedNutritionForProfile(profile, nutritionDay.date, nutritionDay);
     const nextMarkers = nutritionDayHasFood(nutritionDay)
@@ -10676,17 +11184,17 @@ function OnlyPumpPlatform() {
   }, [homeWidgets]);
 
   const page = useMemo(() => ({
-    home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionDay={nutritionDay} nutritionMarkedDateKeys={nutritionMarkedDateKeys} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} profile={profile} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey}/>,
+    home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionDay={nutritionDay} nutritionMarkedDateKeys={nutritionMarkedDateKeys} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} profile={profile} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} onSaveHealthLog={handleSaveHealthLog}/>,
     workouts: <WorkoutsPage workouts={workouts} setWorkouts={setWorkouts} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} profile={profile} telegramInitData={telegramInitData}/>,
     nutrition: <NutritionPage nutritionDay={nutritionDay} setNutritionDay={setNutritionDay} nutritionGoal={nutritionGoal} setNutritionGoal={setNutritionGoal} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} markedDateKeys={nutritionMarkedDateKeys} profile={profile} telegramInitData={telegramInitData} onNutritionAction={handleNutritionAction} nutritionLoading={nutritionRefreshing}/>,
     calculators: <CalculatorsPage/>,
     education: <EducationPage/>,
     lectures: <LecturesPage lectureItems={lectureItems} setLectureItems={setLectureItems}/>,
     progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} onProgressProfileSaved={handleProgressProfileSaved}/>,
-    analytics: <AnalyticsPage workouts={workouts} profile={profile}/>,
+    analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} healthRefreshing={healthRefreshing} selectedDateKey={globalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} onSaveHealthLog={handleSaveHealthLog}/>,
     community: <CommunityPage/>,
     profile: <ProfilePage profile={profile} profileStatus={profileStatus} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving}/>,
-  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, handleNutritionAction, handleSaveProfile, handleProgressProfileSaved, profileSaving]);
+  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, handleNutritionAction, handleSaveProfile, handleProgressProfileSaved, profileSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog]);
 
   if (appLoading || profileLoading) {
     return <div className="onlypump-app-shell flex items-center justify-center bg-black px-6 text-zinc-100">
