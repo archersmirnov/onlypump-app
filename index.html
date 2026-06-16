@@ -970,6 +970,7 @@ const homeWidgetCatalog = [
   { id: "metricProtein", label: "Белок", description: "Белок за день", default: true, span: "compact" },
   { id: "metricRecovery", label: "Восстановление", description: "Индекс восстановления", default: true, span: "compact" },
   { id: "metricSleep", label: "Сон", description: "Отчет сна и восстановление", default: false, span: "compact" },
+  { id: "metricSteps", label: "Шаги", description: "Шаги за выбранный день", default: false, span: "compact" },
   { id: "macros", label: "БЖУ", description: "Белки, жиры и углеводы со шкалами", default: false, span: "compact" },
   { id: "water", label: "Вода", description: "Трекер выпитой воды за день", default: false, span: "compact" },
   { id: "workout", label: "Сегодняшняя тренировка", description: "План и прогресс тренировки дня", default: false, span: "large" },
@@ -3197,6 +3198,62 @@ function SleepReportSheet({ dateKey, healthLog, onSave, onClose, saving = false 
   </>;
 }
 
+function StepsEditorSheet({ dateKey, healthLog, onSave, onClose, saving = false }) {
+  const initialSteps = profileNonNegativeNumber(healthLog?.steps_count, 0);
+  const [stepsDraft, setStepsDraft] = useState(String(initialSteps));
+  const [error, setError] = useState("");
+
+  const save = async () => {
+    const nextSteps = profileNonNegativeNumber(stepsDraft, 0);
+    setError("");
+    const payload = {
+      ...healthLog,
+      date: dateKey,
+      log_date: dateKey,
+      steps_count: nextSteps,
+    };
+    const ok = await onSave?.(payload);
+    if (ok === false) {
+      setError("Не удалось сохранить шаги. Значение осталось на экране, попробуй еще раз.");
+      return;
+    }
+    onClose();
+  };
+
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отмена</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs uppercase tracking-wider text-red-500">{formatCycleDate(dateKey)}</p>
+          <h2 className="mt-2 text-2xl font-black">Шаги</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+
+      <label className="mt-6 block rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+        <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Количество шагов</span>
+        <input
+          type="number"
+          min="0"
+          inputMode="numeric"
+          value={stepsDraft}
+          onChange={(event) => setStepsDraft(event.target.value)}
+          placeholder="0"
+          className="mt-3 w-full bg-transparent text-4xl font-black outline-none placeholder:text-zinc-700"
+        />
+      </label>
+
+      {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+      <div className="mt-6 flex gap-3">
+        <Button onClick={onClose} className="flex-1 bg-white/8">Отмена</Button>
+        <Button onClick={save} disabled={saving} className="flex-1 bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+      </div>
+    </BottomSheetPanel>
+  </div>;
+}
+
 function HomeWidgetSettingsModal({ enabledWidgets, onAdd, onClose }) {
   const availableWidgets = homeWidgetCatalog.filter(widget => !enabledWidgets.includes(widget.id));
 
@@ -3313,6 +3370,9 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     : healthLogs.find(log => (log.log_date || log.date) === selectedDateKey);
   const selectedHealthLog = normalizeHealthLog(selectedHealthRecord || {}, selectedDateKey);
   const recovery = selectedHealthLog.recovery_score;
+  const selectedSteps = profileNonNegativeNumber(selectedHealthLog.steps_count, 0);
+  const stepsGoal = profileNonNegativeNumber(profile?.steps_per_day, DEFAULT_PROFILE.steps_per_day);
+  const stepsProgress = Math.min(100, Math.round((selectedSteps / Math.max(1, stepsGoal)) * 100));
   const weightDelta = selectedMeasurements?.weight ? Number((Number(selectedMeasurements.weight) - 90).toFixed(1)) : 0;
   const displayName = getProfileDisplayName(profile);
   const homeVolumeUnit = normalizeWeightUnit(profile?.default_weight_unit || DEFAULT_PROFILE.default_weight_unit);
@@ -3337,6 +3397,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const [widgetDragVisual, setWidgetDragVisual] = useState(null);
   const [waterIntake, setWaterIntake] = useState(1250);
   const [sleepSheetOpen, setSleepSheetOpen] = useState(false);
+  const [stepsSheetOpen, setStepsSheetOpen] = useState(false);
   const waterGoal = 2500;
   const mobileHiddenWidgetIds = [];
 
@@ -3410,6 +3471,8 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         return <MetricWidgetCard title="Восстановление" value={recovery == null ? "—" : `${recovery}%`} sub={selectedHealthLog.sleep_duration_minutes ? sleepQualityLabel(selectedHealthLog) : "сон не добавлен"} progress={recovery || 0} icon={HeartPulse} onClick={() => setActive("analytics")}/>;
       case "metricSleep":
         return <MetricWidgetCard title="Сон" value={formatSleepDuration(selectedHealthLog.sleep_duration_minutes)} sub={selectedHealthLog.sleep_duration_minutes ? `${selectedHealthLog.sleep_latency_minutes || 0} мин засыпание · ${selectedHealthLog.sleep_awakenings || 0} проб.` : "нажми, чтобы добавить"} progress={selectedHealthLog.sleep_duration_minutes ? Math.min(100, Math.round((selectedHealthLog.sleep_duration_minutes / 480) * 100)) : 0} icon={Moon} onClick={() => setSleepSheetOpen(true)}/>;
+      case "metricSteps":
+        return <MetricWidgetCard title="Шаги" value={selectedSteps.toLocaleString("ru-RU")} sub={`цель ${stepsGoal.toLocaleString("ru-RU")}`} progress={stepsProgress} icon={Activity} onClick={() => setStepsSheetOpen(true)}/>;
       case "macros":
         return <MetricWidgetCard title="БЖУ" value={`${proteinPercent}%`} sub={`${selectedNutritionTotals.protein} Б · ${selectedNutritionTotals.fat} Ж · ${selectedNutritionTotals.carbs} У`} icon={Utensils} onClick={openNutritionFromHome}>
           <div className="mt-4 space-y-2 text-[11px] text-zinc-400">
@@ -3597,6 +3660,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     </MasonryGrid>
     {widgetPickerOpen && <HomeWidgetSettingsModal enabledWidgets={homeWidgets} onAdd={addWidget} onClose={() => setWidgetPickerOpen(false)}/>} 
     {sleepSheetOpen && <SleepReportSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setSleepSheetOpen(false)} onSave={onSaveHealthLog}/>}
+    {stepsSheetOpen && <StepsEditorSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setStepsSheetOpen(false)} onSave={onSaveHealthLog}/>}
     <InlineDateDataCard
       context="home"
       dateKey={selectedDateKey}
@@ -11148,7 +11212,10 @@ function OnlyPumpPlatform() {
 
   const handleSaveHealthLog = useCallback(async (payload = {}) => {
     const dateKey = payload.date || payload.log_date || globalSelectedDateKey;
-    const optimisticLog = normalizeHealthLog({ ...healthLog, ...payload, date: dateKey, log_date: dateKey }, dateKey);
+    const currentDateLog = (healthLog?.log_date || healthLog?.date) === dateKey
+      ? healthLog
+      : healthLogs.find(log => (log.log_date || log.date) === dateKey);
+    const optimisticLog = normalizeHealthLog({ ...(currentDateLog || buildLocalHealthLog(dateKey)), ...payload, date: dateKey, log_date: dateKey }, dateKey);
     setHealthLog(optimisticLog);
     setHealthLogs(prev => upsertHealthLogList(prev, optimisticLog));
     if (profile) {
