@@ -239,6 +239,7 @@ const telegramWebApp = initTelegramWebApp();
 const SUPABASE_URL = window.ONLYPUMP_SUPABASE_URL || window.SUPABASE_URL || "https://qehbgwnblebjahmytqca.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = window.ONLYPUMP_SUPABASE_PUBLISHABLE_KEY || window.SUPABASE_PUBLISHABLE_KEY || "sb_publishable_rZgTF88Cp6PGhKUpoD_O8A_aQi-1o_K";
 const VERIFY_TELEGRAM_USER_URL = "https://qehbgwnblebjahmytqca.supabase.co/functions/v1/verify-telegram-user";
+const ONLYPUMP_PROFILE_API_URL = "https://qehbgwnblebjahmytqca.supabase.co/functions/v1/onlypump-profile-api";
 const ONLYPUMP_WORKOUTS_API_URL = "https://qehbgwnblebjahmytqca.supabase.co/functions/v1/onlypump-workouts-api";
 const ONLYPUMP_NUTRITION_API_URL = "https://qehbgwnblebjahmytqca.supabase.co/functions/v1/onlypump-nutrition-api";
 console.log("Supabase URL present", Boolean(SUPABASE_URL));
@@ -254,6 +255,24 @@ const DEFAULT_PROFILE = {
   weight_kg: 90,
   height_cm: 180,
   goal: "Рекомпозиция тела",
+  sex: null,
+  birth_date: null,
+  age: null,
+  neck_cm: null,
+  waist_cm: null,
+  hips_cm: null,
+  body_fat_percent: null,
+  activity_level: "moderate",
+  goal_type: "recomposition",
+  goal_description: null,
+  target_weight_kg: 76,
+  calories_target: 2500,
+  protein_target: 180,
+  fat_target: 70,
+  carbs_target: 250,
+  onboarding_completed: false,
+  onboarding_completed_at: null,
+  profile_updated_at: null,
   default_weight_unit: "kg",
   source: "fallback",
 };
@@ -297,6 +316,11 @@ function safeProfileNumber(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function optionalProfileNumber(value, fallback = null) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function buildFallbackProfile(overrides = {}) {
   return {
     ...DEFAULT_PROFILE,
@@ -305,6 +329,24 @@ function buildFallbackProfile(overrides = {}) {
     weight_kg: safeProfileNumber(overrides.weight_kg, DEFAULT_PROFILE.weight_kg),
     height_cm: safeProfileNumber(overrides.height_cm, DEFAULT_PROFILE.height_cm),
     goal: overrides.goal || DEFAULT_PROFILE.goal,
+    sex: overrides.sex || DEFAULT_PROFILE.sex,
+    birth_date: overrides.birth_date || DEFAULT_PROFILE.birth_date,
+    age: optionalProfileNumber(overrides.age, DEFAULT_PROFILE.age),
+    neck_cm: optionalProfileNumber(overrides.neck_cm, DEFAULT_PROFILE.neck_cm),
+    waist_cm: optionalProfileNumber(overrides.waist_cm, DEFAULT_PROFILE.waist_cm),
+    hips_cm: optionalProfileNumber(overrides.hips_cm, DEFAULT_PROFILE.hips_cm),
+    body_fat_percent: optionalProfileNumber(overrides.body_fat_percent, DEFAULT_PROFILE.body_fat_percent),
+    activity_level: overrides.activity_level || DEFAULT_PROFILE.activity_level,
+    goal_type: overrides.goal_type || DEFAULT_PROFILE.goal_type,
+    goal_description: overrides.goal_description || DEFAULT_PROFILE.goal_description,
+    target_weight_kg: optionalProfileNumber(overrides.target_weight_kg, DEFAULT_PROFILE.target_weight_kg),
+    calories_target: safeProfileNumber(overrides.calories_target, DEFAULT_PROFILE.calories_target),
+    protein_target: safeProfileNumber(overrides.protein_target, DEFAULT_PROFILE.protein_target),
+    fat_target: safeProfileNumber(overrides.fat_target, DEFAULT_PROFILE.fat_target),
+    carbs_target: safeProfileNumber(overrides.carbs_target, DEFAULT_PROFILE.carbs_target),
+    onboarding_completed: Boolean(overrides.onboarding_completed || DEFAULT_PROFILE.onboarding_completed),
+    onboarding_completed_at: overrides.onboarding_completed_at || DEFAULT_PROFILE.onboarding_completed_at,
+    profile_updated_at: overrides.profile_updated_at || DEFAULT_PROFILE.profile_updated_at,
     default_weight_unit: normalizeWeightUnit(overrides.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
     source: overrides.source || "fallback",
   };
@@ -322,6 +364,24 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     weight_kg: safeProfileNumber(record.weight_kg, fallback.weight_kg || DEFAULT_PROFILE.weight_kg),
     height_cm: safeProfileNumber(record.height_cm, fallback.height_cm || DEFAULT_PROFILE.height_cm),
     goal: record.goal || fallback.goal || DEFAULT_PROFILE.goal,
+    sex: record.sex !== undefined ? (record.sex || null) : (fallback.sex || null),
+    birth_date: record.birth_date !== undefined ? (record.birth_date || null) : (fallback.birth_date || null),
+    age: optionalProfileNumber(record.age, fallback.age || null),
+    neck_cm: optionalProfileNumber(record.neck_cm, fallback.neck_cm || null),
+    waist_cm: optionalProfileNumber(record.waist_cm, fallback.waist_cm || null),
+    hips_cm: optionalProfileNumber(record.hips_cm, fallback.hips_cm || null),
+    body_fat_percent: optionalProfileNumber(record.body_fat_percent, fallback.body_fat_percent || null),
+    activity_level: record.activity_level || fallback.activity_level || DEFAULT_PROFILE.activity_level,
+    goal_type: record.goal_type || fallback.goal_type || DEFAULT_PROFILE.goal_type,
+    goal_description: record.goal_description !== undefined ? (record.goal_description || null) : (fallback.goal_description || null),
+    target_weight_kg: optionalProfileNumber(record.target_weight_kg, fallback.target_weight_kg || DEFAULT_PROFILE.target_weight_kg),
+    calories_target: safeProfileNumber(record.calories_target, fallback.calories_target || DEFAULT_PROFILE.calories_target),
+    protein_target: safeProfileNumber(record.protein_target, fallback.protein_target || DEFAULT_PROFILE.protein_target),
+    fat_target: safeProfileNumber(record.fat_target, fallback.fat_target || DEFAULT_PROFILE.fat_target),
+    carbs_target: safeProfileNumber(record.carbs_target, fallback.carbs_target || DEFAULT_PROFILE.carbs_target),
+    onboarding_completed: Boolean(record.onboarding_completed ?? fallback.onboarding_completed ?? DEFAULT_PROFILE.onboarding_completed),
+    onboarding_completed_at: record.onboarding_completed_at || fallback.onboarding_completed_at || null,
+    profile_updated_at: record.profile_updated_at || fallback.profile_updated_at || null,
     default_weight_unit: normalizeWeightUnit(record.default_weight_unit || fallback.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
     source: record.source || fallback.source || "supabase",
   };
@@ -355,6 +415,146 @@ async function verifyTelegramUserProfile(initData, fallback = DEFAULT_PROFILE) {
     return { profile: localProfile, status: "local" };
   }
 }
+
+async function callOnlyPumpProfileApi(initData, action, payload = {}) {
+  const response = await fetch(ONLYPUMP_PROFILE_API_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ initData, action, payload }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result?.ok === false || result?.error) {
+    throw result?.error || result?.message || new Error(`onlypump-profile-api ${action} failed with ${response.status}`);
+  }
+  return result;
+}
+
+const profileGoalTypeLabels = {
+  fat_loss: "Похудение",
+  muscle_gain: "Набор мышц",
+  recomposition: "Рекомпозиция",
+  maintenance: "Поддержание",
+};
+
+const profileActivityLabels = {
+  sedentary: "Низкая",
+  light: "Легкая",
+  moderate: "Средняя",
+  high: "Высокая",
+  very_high: "Очень высокая",
+};
+
+const profileActivityMultipliers = {
+  sedentary: 1.2,
+  light: 1.375,
+  moderate: 1.55,
+  high: 1.725,
+  very_high: 1.9,
+};
+
+const profileNumber = (value, fallback = null) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+};
+
+const profileRound = (value, precision = 0) => {
+  const factor = 10 ** precision;
+  return Math.round(value * factor) / factor;
+};
+
+const calculateProfileBodyFat = (draft = {}) => {
+  const sex = draft.sex;
+  const height = profileNumber(draft.height_cm);
+  const neck = profileNumber(draft.neck_cm);
+  const waist = profileNumber(draft.waist_cm);
+  const hips = profileNumber(draft.hips_cm);
+  if (!height || !neck || !waist) return null;
+  let value = null;
+  if (sex === "male" && waist > neck) {
+    value = 495 / (1.0324 - 0.19077 * Math.log10(waist - neck) + 0.15456 * Math.log10(height)) - 450;
+  }
+  if (sex === "female" && hips && waist + hips > neck) {
+    value = 495 / (1.29579 - 0.35004 * Math.log10(waist + hips - neck) + 0.22100 * Math.log10(height)) - 450;
+  }
+  if (!Number.isFinite(value)) return null;
+  return profileRound(Math.max(3, Math.min(60, value)), 1);
+};
+
+const calculateProfileNutritionTargets = (draft = {}) => {
+  const sex = draft.sex === "female" ? "female" : "male";
+  const age = profileNumber(draft.age, 30);
+  const height = profileNumber(draft.height_cm, 180);
+  const weight = profileNumber(draft.weight_kg, 80);
+  const activity = draft.activity_level || "moderate";
+  const goalType = draft.goal_type || "recomposition";
+  const bmr = sex === "female"
+    ? 10 * weight + 6.25 * height - 5 * age - 161
+    : 10 * weight + 6.25 * height - 5 * age + 5;
+  const maintenance = bmr * (profileActivityMultipliers[activity] || profileActivityMultipliers.moderate);
+  const goalMultiplier = goalType === "fat_loss" ? 0.82 : goalType === "muscle_gain" ? 1.1 : goalType === "maintenance" ? 1 : 0.95;
+  let calories = Math.round((maintenance * goalMultiplier) / 10) * 10;
+  const protein = Math.round(weight * (goalType === "fat_loss" || goalType === "recomposition" ? 2.2 : 2.0));
+  let fat = Math.max(45, Math.round(weight * 0.8));
+  let carbs = Math.round((calories - protein * 4 - fat * 9) / 4);
+  if (carbs < 50) {
+    carbs = 50;
+    fat = Math.max(45, Math.round((calories - protein * 4 - carbs * 4) / 9));
+    calories = Math.round((protein * 4 + fat * 9 + carbs * 4) / 10) * 10;
+  }
+  return { calories_target: calories, protein_target: protein, fat_target: fat, carbs_target: carbs };
+};
+
+const profileNutritionGoalFromProfile = (profile = DEFAULT_PROFILE, fallback = initialNutritionGoal) => ({
+  calories: safeProfileNumber(profile.calories_target, fallback.calories),
+  protein: safeProfileNumber(profile.protein_target, fallback.protein),
+  fat: safeProfileNumber(profile.fat_target, fallback.fat),
+  carbs: safeProfileNumber(profile.carbs_target, fallback.carbs),
+});
+
+const profileDraftFromProfile = (profile = DEFAULT_PROFILE) => ({
+  display_name: profile.display_name || "",
+  sex: profile.sex || "male",
+  age: profile.age || "",
+  birth_date: profile.birth_date || "",
+  height_cm: profile.height_cm || "",
+  weight_kg: profile.weight_kg || "",
+  neck_cm: profile.neck_cm || "",
+  waist_cm: profile.waist_cm || "",
+  hips_cm: profile.hips_cm || "",
+  activity_level: profile.activity_level || "moderate",
+  goal_type: profile.goal_type || "recomposition",
+  target_weight_kg: profile.target_weight_kg || "",
+  calories_target: profile.calories_target || "",
+  protein_target: profile.protein_target || "",
+  fat_target: profile.fat_target || "",
+  carbs_target: profile.carbs_target || "",
+});
+
+const profilePayloadFromDraft = (draft = {}, currentDate = formatDateKey(new Date())) => ({
+  display_name: String(draft.display_name || "").trim(),
+  sex: draft.sex || "male",
+  birth_date: draft.birth_date || null,
+  age: profileNumber(draft.age),
+  height_cm: profileNumber(draft.height_cm),
+  weight_kg: profileNumber(draft.weight_kg),
+  neck_cm: profileNumber(draft.neck_cm),
+  waist_cm: profileNumber(draft.waist_cm),
+  hips_cm: profileNumber(draft.hips_cm),
+  activity_level: draft.activity_level || "moderate",
+  goal_type: draft.goal_type || "recomposition",
+  goal_description: profileGoalTypeLabels[draft.goal_type] || "Рекомпозиция",
+  target_weight_kg: profileNumber(draft.target_weight_kg),
+  calories_target: profileNumber(draft.calories_target),
+  protein_target: profileNumber(draft.protein_target),
+  fat_target: profileNumber(draft.fat_target),
+  carbs_target: profileNumber(draft.carbs_target),
+  measurement_date: currentDate,
+  current_date: currentDate,
+});
 
 const onlypumpBackLayers = new Map();
 let onlypumpBackLayerOrder = 0;
@@ -9163,17 +9363,179 @@ function CommunityPage() {
   </PageGrid></>;
 }
 
-function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local" }) {
+function ProfileInput({ label, value, onChange, type = "text", placeholder = "", required = false }) {
+  return <label className="block">
+    <span className="text-xs font-bold text-zinc-500">{label}{required ? " *" : ""}</span>
+    <input
+      type={type}
+      value={value ?? ""}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none transition placeholder:text-zinc-700 focus:border-red-500/60"
+    />
+  </label>;
+}
+
+function ProfileSelect({ label, value, onChange, options }) {
+  return <label className="block">
+    <span className="text-xs font-bold text-zinc-500">{label}</span>
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="mt-2 w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm outline-none transition focus:border-red-500/60"
+    >
+      {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+    </select>
+  </label>;
+}
+
+function ProfileFormFields({ draft, setDraft, showManualTargets = true }) {
+  const set = (key, value) => setDraft(prev => ({ ...prev, [key]: value }));
+  const calculatedBodyFat = calculateProfileBodyFat(draft);
+  const calculatedTargets = calculateProfileNutritionTargets(draft);
+  const targetValues = {
+    calories_target: draft.calories_target || calculatedTargets.calories_target,
+    protein_target: draft.protein_target || calculatedTargets.protein_target,
+    fat_target: draft.fat_target || calculatedTargets.fat_target,
+    carbs_target: draft.carbs_target || calculatedTargets.carbs_target,
+  };
+
+  return <div className="space-y-5">
+    <div className="grid gap-3 sm:grid-cols-2">
+      <ProfileInput label="Имя" value={draft.display_name} onChange={(value) => set("display_name", value)} required/>
+      <ProfileSelect label="Пол" value={draft.sex} onChange={(value) => set("sex", value)} options={[
+        { value: "male", label: "Мужчина" },
+        { value: "female", label: "Женщина" },
+      ]}/>
+      <ProfileInput label="Возраст" type="number" value={draft.age} onChange={(value) => set("age", value)} required/>
+      <ProfileInput label="Дата рождения" type="date" value={draft.birth_date} onChange={(value) => set("birth_date", value)}/>
+      <ProfileInput label="Рост, см" type="number" value={draft.height_cm} onChange={(value) => set("height_cm", value)} required/>
+      <ProfileInput label="Вес, кг" type="number" value={draft.weight_kg} onChange={(value) => set("weight_kg", value)} required/>
+      <ProfileInput label="Шея, см" type="number" value={draft.neck_cm} onChange={(value) => set("neck_cm", value)}/>
+      <ProfileInput label="Талия, см" type="number" value={draft.waist_cm} onChange={(value) => set("waist_cm", value)}/>
+      {draft.sex === "female" && <ProfileInput label="Бедра, см" type="number" value={draft.hips_cm} onChange={(value) => set("hips_cm", value)}/>}
+      <ProfileInput label="Целевой вес, кг" type="number" value={draft.target_weight_kg} onChange={(value) => set("target_weight_kg", value)}/>
+      <ProfileSelect label="Цель" value={draft.goal_type} onChange={(value) => set("goal_type", value)} options={Object.entries(profileGoalTypeLabels).map(([value, label]) => ({ value, label }))}/>
+      <ProfileSelect label="Активность" value={draft.activity_level} onChange={(value) => set("activity_level", value)} options={Object.entries(profileActivityLabels).map(([value, label]) => ({ value, label }))}/>
+    </div>
+
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-red-400">Процент жира</p>
+        <div className="mt-2 text-3xl font-black">{calculatedBodyFat == null ? "—" : `${calculatedBodyFat}%`}</div>
+        <p className="mt-2 text-xs leading-5 text-zinc-500">{calculatedBodyFat == null ? "Недостаточно данных для формулы US Navy." : "Приблизительная оценка по формуле US Navy."}</p>
+      </div>
+      <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-red-400">Расчет КБЖУ</p>
+        <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
+          <div className="rounded-xl bg-black/30 p-2"><span className="block text-zinc-500">Ккал</span><b>{targetValues.calories_target}</b></div>
+          <div className="rounded-xl bg-black/30 p-2"><span className="block text-zinc-500">Б</span><b>{targetValues.protein_target}</b></div>
+          <div className="rounded-xl bg-black/30 p-2"><span className="block text-zinc-500">Ж</span><b>{targetValues.fat_target}</b></div>
+          <div className="rounded-xl bg-black/30 p-2"><span className="block text-zinc-500">У</span><b>{targetValues.carbs_target}</b></div>
+        </div>
+      </div>
+    </div>
+
+    {showManualTargets && <div>
+      <p className="mb-3 text-xs font-bold text-zinc-500">КБЖУ вручную</p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <ProfileInput label="Калории" type="number" value={draft.calories_target} onChange={(value) => set("calories_target", value)}/>
+        <ProfileInput label="Белки" type="number" value={draft.protein_target} onChange={(value) => set("protein_target", value)}/>
+        <ProfileInput label="Жиры" type="number" value={draft.fat_target} onChange={(value) => set("fat_target", value)}/>
+        <ProfileInput label="Углеводы" type="number" value={draft.carbs_target} onChange={(value) => set("carbs_target", value)}/>
+      </div>
+    </div>}
+  </div>;
+}
+
+function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving }) {
+  const [draft, setDraft] = useState(() => ({
+    ...profileDraftFromProfile(profile),
+    calories_target: "",
+    protein_target: "",
+    fat_target: "",
+    carbs_target: "",
+  }));
+  const [error, setError] = useState("");
+  const canSubmit = draft.display_name && draft.sex && profileNumber(draft.age) && profileNumber(draft.height_cm) && profileNumber(draft.weight_kg) && draft.goal_type;
+
+  const submit = async () => {
+    if (!canSubmit) {
+      setError("Заполни имя, пол, возраст, рост, вес и цель.");
+      return;
+    }
+    setError("");
+    const ok = await onComplete(profilePayloadFromDraft(draft));
+    if (ok === false) setError("Не удалось сохранить профиль. Проверь подключение и попробуй еще раз.");
+  };
+
+  return <div className="onlypump-app-shell overflow-y-auto bg-black px-4 py-6 text-zinc-100" style={{ paddingTop: "calc(var(--onlypump-safe-top) + 1.5rem)", paddingBottom: "calc(var(--onlypump-safe-bottom) + 1.5rem)" }}>
+    <div className="mx-auto max-w-3xl">
+      <div className="mb-6">
+        <div className="text-3xl font-black tracking-tight">ONLY<span className="text-red-500">PUMP</span></div>
+        <p className="mt-2 text-sm text-zinc-500">Первичная настройка профиля</p>
+      </div>
+      <Card className="p-5 sm:p-7">
+        <h1 className="text-2xl font-black tracking-[-0.03em]">Расскажем системе, с чего ты стартуешь</h1>
+        <p className="mt-2 text-sm leading-6 text-zinc-500">Эти данные нужны для стартового процента жира, целей КБЖУ, главной и будущей аналитики прогресса.</p>
+        <div className="mt-6"><ProfileFormFields draft={draft} setDraft={setDraft} showManualTargets={false}/></div>
+        {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+        <Button onClick={submit} disabled={saving} className="mt-6 w-full bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить и начать"}</Button>
+      </Card>
+    </div>
+  </div>;
+}
+
+function ProfileEditSheet({ profile, onClose, onSave, saving }) {
+  const [draft, setDraft] = useState(() => profileDraftFromProfile(profile));
+  const [error, setError] = useState("");
+  const submit = async () => {
+    if (!draft.display_name || !profileNumber(draft.age) || !profileNumber(draft.height_cm) || !profileNumber(draft.weight_kg)) {
+      setError("Заполни имя, возраст, рост и вес.");
+      return;
+    }
+    setError("");
+    const payload = profilePayloadFromDraft(draft);
+    for (const field of ["calories_target", "protein_target", "fat_target", "carbs_target"]) {
+      if (String(draft[field] || "") === String(profile?.[field] || "")) delete payload[field];
+    }
+    const ok = await onSave(payload);
+    if (ok === false) setError("Не удалось сохранить профиль. Попробуй еще раз.");
+  };
+
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[175] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-4xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem] sm:p-6">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-red-500">Личный кабинет</p>
+          <h2 className="mt-2 text-2xl font-black">Профиль</h2>
+        </div>
+        <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-zinc-300">×</button>
+      </div>
+      <ProfileFormFields draft={draft} setDraft={setDraft} showManualTargets/>
+      {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+      <div className="mt-6 flex gap-3">
+        <Button onClick={onClose} className="flex-1 bg-white/8">Отмена</Button>
+        <Button onClick={submit} disabled={saving} className="flex-1 bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+      </div>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", onSaveProfile, profileSaving = false }) {
   const displayName = profile?.display_name || DEFAULT_PROFILE.display_name;
   const telegramLabel = profile?.telegram_username ? `@${profile.telegram_username}` : profile?.telegram_id ? `ID ${profile.telegram_id}` : "Обычная web-версия";
   const profileSource = profileStatus === "verified" ? "Supabase: Telegram проверен" : profileStatus === "loaded" ? "Supabase: профиль загружен" : profileStatus === "created" ? "Supabase: профиль создан" : "Локальный fallback";
+  const [editOpen, setEditOpen] = useState(false);
 
   return <><Header title="Личный кабинет" subtitle="Профиль, тариф, подписка, настройки, доступы и история платежей."/><PageGrid>
     <Card className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p></Card>
-    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profile.weight_kg || DEFAULT_PROFILE.weight_kg} кг</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profile.height_cm || DEFAULT_PROFILE.height_cm} см</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profile.goal || DEFAULT_PROFILE.goal}</span></div></div></Card>
+    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profile.weight_kg || DEFAULT_PROFILE.weight_kg} кг</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profile.height_cm || DEFAULT_PROFILE.height_cm} см</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">КБЖУ</span><span>{profile.calories_target || 2500} / {profile.protein_target || 180} / {profile.fat_target || 70} / {profile.carbs_target || 250}</span></div></div><Button onClick={() => setEditOpen(true)} className="mt-5 w-full bg-white/8">Редактировать</Button></Card>
     <Card className="p-5"><CreditCard className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Подписка</h2><p className="mt-2 text-zinc-400">Активна до {new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</p><Button className="mt-5 w-full bg-white/8">Управлять</Button></Card>
     <Card className="p-5"><ShieldCheck className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Доступы</h2><p className="mt-2 text-zinc-400">Все модули открыты</p><div className="mt-5 flex gap-2 text-xs text-zinc-500"><Lock size={14}/> 1PM bonus locked</div></Card>
     <Card className="p-5"><Settings className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Настройки</h2>{["Уведомления", "Единицы измерения", "Интеграции", "Безопасность"].map(x=><div key={x} className="mt-3 rounded-lg bg-white/[0.03] p-3 text-sm">{x}</div>)}</Card>
+    {editOpen && <ProfileEditSheet profile={profile} saving={profileSaving} onClose={() => setEditOpen(false)} onSave={async (payload) => { const ok = await onSaveProfile?.(payload); if (ok !== false) setEditOpen(false); }}/>}
   </PageGrid></>;
 }
 
@@ -9208,6 +9570,7 @@ function OnlyPumpPlatform() {
   const [nutritionDay, setNutritionDay] = useState(() => buildLocalNutritionDay(formatDateKey(new Date()), initialNutritionGoal));
   const [nutritionMarkedDateKeys, setNutritionMarkedDateKeys] = useState([]);
   const [nutritionRefreshing, setNutritionRefreshing] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
 
   useEffect(() => {
     activeRef.current = active;
@@ -9416,6 +9779,69 @@ function OnlyPumpPlatform() {
     }
   });
 
+  const applyProfileState = useCallback((nextProfile, options = {}) => {
+    const normalized = normalizeProfileRecord(nextProfile, profile || DEFAULT_PROFILE);
+    const nextGoal = profileNutritionGoalFromProfile(normalized, nutritionGoal);
+    setProfile(normalized);
+    setMeasurements(prev => ({
+      ...prev,
+      weight: normalized.weight_kg || prev.weight,
+      bodyFat: normalized.body_fat_percent || prev.bodyFat,
+      neck: normalized.neck_cm || prev.neck,
+      waist: normalized.waist_cm || prev.waist,
+      belly: normalized.waist_cm || prev.belly,
+      glutes: normalized.hips_cm || prev.glutes,
+    }));
+    setProgressGoal(prev => ({
+      ...prev,
+      title: profileGoalTypeLabels[normalized.goal_type] || normalized.goal || prev.title,
+      targetWeight: normalized.target_weight_kg || prev.targetWeight,
+    }));
+    setNutritionGoal(nextGoal);
+    if (options.updateNutritionDay) {
+      setNutritionDay(prev => prev ? {
+        ...prev,
+        calories_target: nextGoal.calories,
+        protein_target: nextGoal.protein,
+        fat_target: nextGoal.fat,
+        carbs_target: nextGoal.carbs,
+        goal: nextGoal,
+      } : prev);
+    }
+    return normalized;
+  }, [nutritionGoal, profile]);
+
+  const handleSaveProfile = useCallback(async (payload, action = "update_profile") => {
+    const payloadWithDate = { ...payload, current_date: globalSelectedDateKey, measurement_date: payload.measurement_date || globalSelectedDateKey };
+    if (profileStatus === "verified" && telegramInitData) {
+      setProfileSaving(true);
+      try {
+        const result = await callOnlyPumpProfileApi(telegramInitData, action, payloadWithDate);
+        const savedProfile = applyProfileState(result.profile, { updateNutritionDay: true });
+        setProfileStatus("verified");
+        return Boolean(savedProfile);
+      } catch (error) {
+        console.error("onlypump-profile-api error:", error);
+        return false;
+      } finally {
+        setProfileSaving(false);
+      }
+    }
+
+    const localTargets = calculateProfileNutritionTargets(payloadWithDate);
+    const localBodyFat = calculateProfileBodyFat(payloadWithDate);
+    const localProfile = normalizeProfileRecord({
+      ...profile,
+      ...payloadWithDate,
+      ...localTargets,
+      body_fat_percent: localBodyFat,
+      onboarding_completed: true,
+      source: "fallback",
+    }, profile || DEFAULT_PROFILE);
+    applyProfileState(localProfile, { updateNutritionDay: true });
+    return true;
+  }, [applyProfileState, globalSelectedDateKey, profile, profileStatus, telegramInitData]);
+
   const loadNutritionForProfile = useCallback(async (activeProfile, initData, dateKey = globalSelectedDateKey, options = {}) => {
     if (!activeProfile) return null;
     const cachedMarkers = readCachedNutritionMarkersForProfile(activeProfile);
@@ -9576,18 +10002,25 @@ function OnlyPumpPlatform() {
       const result = await verifyTelegramUserProfile(initData, localDefaults);
 
       if (cancelled) return;
-      const activeProfile = initData && result.status !== "verified"
+      let activeProfile = initData && result.status !== "verified"
         ? normalizeProfileRecord({ ...result.profile, display_name: "Профиль", first_name: "", source: "fallback" }, { ...localDefaults, display_name: "Профиль", first_name: "" })
         : result.profile;
+      if (result.status === "verified") {
+        try {
+          const profileResult = await callOnlyPumpProfileApi(initData, "load_profile", {});
+          activeProfile = normalizeProfileRecord({ ...profileResult.profile, source: "supabase" }, activeProfile);
+          console.log("Extended profile loaded", activeProfile);
+        } catch (error) {
+          console.error("onlypump-profile-api error:", error);
+        }
+      }
       console.log("Using activeProfile:", activeProfile);
-      setProfile(activeProfile);
+      applyProfileState(activeProfile);
       setProfileStatus(result.status);
       profileSaveReadyRef.current = result.status === "verified" && Boolean(activeProfile?.id);
       setNutritionMarkedDateKeys(readCachedNutritionMarkersForProfile(activeProfile));
       loadWorkoutsForProfile(activeProfile, result.status === "verified" ? initData : "", { useCache: true });
       loadNutritionForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey, { useCache: true });
-      setMeasurements(prev => ({ ...prev, weight: activeProfile.weight_kg || prev.weight }));
-      setProgressGoal(prev => ({ ...prev, title: activeProfile.goal || prev.title }));
       setProfileLoading(false);
       setAppLoading(false);
       console.log("Profile loaded", activeProfile);
@@ -9617,36 +10050,6 @@ function OnlyPumpPlatform() {
   }, [profile?.id, profile?.telegram_id, nutritionDay, nutritionMarkedDateKeys]);
 
   useEffect(() => {
-    const client = supabaseClientRef.current;
-    if (!profileSaveReadyRef.current || !client || !profile?.id || profileStatus !== "verified") return;
-
-    const payload = {
-      weight_kg: safeProfileNumber(measurements.weight, profile.weight_kg || DEFAULT_PROFILE.weight_kg),
-      height_cm: safeProfileNumber(profile.height_cm, DEFAULT_PROFILE.height_cm),
-      goal: progressGoal.title || profile.goal || DEFAULT_PROFILE.goal,
-      default_weight_unit: normalizeWeightUnit(profile.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
-    };
-
-    const timer = setTimeout(async () => {
-      try {
-        const { error } = await client
-          .from("profiles")
-          .update(payload)
-          .eq("id", profile.id);
-        if (error) {
-          console.log("Supabase error", error);
-          return;
-        }
-        setProfile(prev => normalizeProfileRecord({ ...prev, ...payload, source: "supabase" }, prev));
-      } catch (error) {
-        console.log("Supabase error", error);
-      }
-    }, 900);
-
-    return () => clearTimeout(timer);
-  }, [measurements.weight, progressGoal.title, profile?.id, profile?.height_cm, profileStatus]);
-
-  useEffect(() => {
     localStorage.setItem("onlypump-home-widgets", JSON.stringify(homeWidgets));
   }, [homeWidgets]);
 
@@ -9660,8 +10063,8 @@ function OnlyPumpPlatform() {
     progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal}/>,
     analytics: <AnalyticsPage workouts={workouts} profile={profile}/>,
     community: <CommunityPage/>,
-    profile: <ProfilePage profile={profile} profileStatus={profileStatus}/>,
-  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, handleNutritionAction]);
+    profile: <ProfilePage profile={profile} profileStatus={profileStatus} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving}/>,
+  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, handleNutritionAction, handleSaveProfile, profileSaving]);
 
   if (appLoading || profileLoading) {
     return <div className="onlypump-app-shell flex items-center justify-center bg-black px-6 text-zinc-100">
@@ -9671,6 +10074,10 @@ function OnlyPumpPlatform() {
         <p className="mt-2 text-sm text-zinc-500">Загрузка...</p>
       </div>
     </div>;
+  }
+
+  if (profileStatus === "verified" && profile && profile.onboarding_completed !== true) {
+    return <OnboardingScreen profile={profile} saving={profileSaving} onComplete={(payload) => handleSaveProfile(payload, "complete_onboarding")}/>;
   }
 
   return <div className="onlypump-app-shell bg-black text-zinc-100 selection:bg-red-500/30">
