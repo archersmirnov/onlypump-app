@@ -7830,11 +7830,14 @@ const normalizeNutritionDay = (result = {}, fallbackDate = formatDateKey(new Dat
     nutrition_items: [],
   }));
   const computedTotals = getNutritionDayTotalsFromMeals(meals);
+  const explicitCaloriesTarget = day.calories_target ?? day.goal?.calories;
+  const caloriesTarget = Number(explicitCaloriesTarget ?? fallbackGoal.calories ?? initialNutritionGoal.calories);
   return {
     id: day.id || null,
     date: day.nutrition_date || day.date || fallbackDate,
+    calories_target: explicitCaloriesTarget != null ? Number(explicitCaloriesTarget) : null,
     goal: {
-      calories: Number(day.calories_target ?? day.goal?.calories ?? fallbackGoal.calories ?? initialNutritionGoal.calories),
+      calories: caloriesTarget,
       protein: Number(day.protein_target ?? day.goal?.protein ?? fallbackGoal.protein ?? initialNutritionGoal.protein),
       fat: Number(day.fat_target ?? day.goal?.fat ?? fallbackGoal.fat ?? initialNutritionGoal.fat),
       carbs: Number(day.carbs_target ?? day.goal?.carbs ?? fallbackGoal.carbs ?? initialNutritionGoal.carbs),
@@ -7985,6 +7988,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   const goal = day.goal || nutritionGoal || initialNutritionGoal;
   const percent = (value, target) => Math.min(100, Math.round((Number(value || 0) / Math.max(1, Number(target || 1))) * 100));
   const caloriesPercent = percent(totals.calories, goal.calories);
+  const calorieTarget = roundCalories(day?.calories_target ?? 2500);
   const nutritionMarkedDateKeys = nutritionDay?.date === selectedDateKey
     ? mergeNutritionMarkerKeys(markedDateKeys, selectedDateKey, nutritionDayHasFood(day))
     : normalizeNutritionFilledDateKeys(markedDateKeys);
@@ -8161,10 +8165,10 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
         <div className="flex flex-col items-center justify-center">
           <div className="relative h-[86px] w-32 overflow-hidden">
             <div className="absolute left-0 top-0 h-32 w-32 rounded-full" style={{ background: `conic-gradient(from 270deg, #ef4444 0deg ${Math.round(caloriesPercent * 1.8)}deg, #27272a ${Math.round(caloriesPercent * 1.8)}deg 180deg, transparent 180deg 360deg)` }} />
-            <div className="absolute left-[10px] top-[10px] flex h-28 w-28 flex-col items-center justify-center rounded-full bg-zinc-950">
+            <div className="absolute left-[10px] top-[10px] flex h-28 w-28 flex-col items-center justify-start rounded-full bg-zinc-950 pt-3 text-center">
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Ккал</span>
-              <span className="mt-1 text-2xl font-black">{roundCalories(totals.calories)}</span>
-              <span className="mt-1 text-[10px] font-bold leading-none text-zinc-400">/ {goal.calories}</span>
+              <span className="mt-1 text-2xl font-black leading-none">{roundCalories(totals.calories)}</span>
+              <span className="mt-1 text-[10px] font-bold leading-none text-zinc-400">/ {calorieTarget}</span>
             </div>
           </div>
         </div>
