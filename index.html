@@ -18,6 +18,50 @@
       --onlypump-workout-bottom-bar-height: 96px;
       --tg-viewport-height: 100vh;
       --onlypump-app-height: var(--tg-viewport-height);
+      --onlypump-bg: #000000;
+      --onlypump-surface: #09090b;
+      --onlypump-card: rgba(9, 9, 11, 0.78);
+      --onlypump-card-solid: #09090b;
+      --onlypump-soft: rgba(255, 255, 255, 0.06);
+      --onlypump-border: rgba(255, 255, 255, 0.10);
+      --onlypump-text: #f4f4f5;
+      --onlypump-muted: #a1a1aa;
+      --onlypump-faint: #71717a;
+      --onlypump-overlay: rgba(0, 0, 0, 0.70);
+      --onlypump-shadow: rgba(0, 0, 0, 0.70);
+      --onlypump-input: rgba(255, 255, 255, 0.04);
+    }
+    :root.theme-dark,
+    .theme-dark {
+      color-scheme: dark;
+      --onlypump-bg: #000000;
+      --onlypump-surface: #09090b;
+      --onlypump-card: rgba(9, 9, 11, 0.78);
+      --onlypump-card-solid: #09090b;
+      --onlypump-soft: rgba(255, 255, 255, 0.06);
+      --onlypump-border: rgba(255, 255, 255, 0.10);
+      --onlypump-text: #f4f4f5;
+      --onlypump-muted: #a1a1aa;
+      --onlypump-faint: #71717a;
+      --onlypump-overlay: rgba(0, 0, 0, 0.70);
+      --onlypump-shadow: rgba(0, 0, 0, 0.70);
+      --onlypump-input: rgba(255, 255, 255, 0.04);
+    }
+    :root.theme-light,
+    .theme-light {
+      color-scheme: light;
+      --onlypump-bg: #f5f5f7;
+      --onlypump-surface: #ffffff;
+      --onlypump-card: rgba(255, 255, 255, 0.86);
+      --onlypump-card-solid: #ffffff;
+      --onlypump-soft: rgba(17, 24, 39, 0.06);
+      --onlypump-border: rgba(17, 24, 39, 0.10);
+      --onlypump-text: #111827;
+      --onlypump-muted: #6b7280;
+      --onlypump-faint: #9ca3af;
+      --onlypump-overlay: rgba(17, 24, 39, 0.28);
+      --onlypump-shadow: rgba(17, 24, 39, 0.12);
+      --onlypump-input: rgba(255, 255, 255, 0.74);
     }
     html.onlypump-telegram {
       --onlypump-telegram-main-top-offset: 24px;
@@ -33,7 +77,8 @@
       height: var(--onlypump-app-height);
       min-height: var(--onlypump-app-height);
       overflow: hidden;
-      background: #000;
+      background: var(--onlypump-bg);
+      color: var(--onlypump-text);
     }
     html { overscroll-behavior: none; }
     body {
@@ -52,6 +97,8 @@
       height: var(--onlypump-app-height);
       min-height: 0;
       overflow: hidden;
+      background: var(--onlypump-bg);
+      color: var(--onlypump-text);
     }
     .onlypump-app-frame {
       height: 100%;
@@ -162,6 +209,74 @@
       min-width: 0;
       break-inside: avoid;
       will-change: transform;
+    }
+    .theme-light .bg-black,
+    .theme-light .bg-zinc-950,
+    .theme-light .bg-zinc-900 {
+      background-color: var(--onlypump-card-solid) !important;
+    }
+    .theme-light .bg-zinc-800 {
+      background-color: #d1d5db !important;
+    }
+    .theme-light .bg-black\/70,
+    .theme-light [class*="bg-black/70"],
+    .theme-light [class*="bg-black/75"],
+    .theme-light [class*="bg-black/80"] {
+      background-color: var(--onlypump-overlay) !important;
+    }
+    .theme-light [class*="bg-black/"],
+    .theme-light [class*="bg-zinc-950/"],
+    .theme-light [class*="bg-zinc-900/"],
+    .theme-light [class*="bg-zinc-800/"],
+    .theme-light [class*="bg-white/"] {
+      background-color: var(--onlypump-card) !important;
+    }
+    .theme-light [class*="border-white/"],
+    .theme-light [class*="border-zinc-"] {
+      border-color: var(--onlypump-border) !important;
+    }
+    .theme-light .text-white,
+    .theme-light .text-zinc-100,
+    .theme-light .text-zinc-200,
+    .theme-light .text-zinc-300 {
+      color: var(--onlypump-text) !important;
+    }
+    .theme-light .text-zinc-400,
+    .theme-light .text-zinc-500 {
+      color: var(--onlypump-muted) !important;
+    }
+    .theme-light .text-zinc-600,
+    .theme-light .text-zinc-700 {
+      color: var(--onlypump-faint) !important;
+    }
+    .theme-light .onlypump-app-frame {
+      background-color: rgba(255, 255, 255, 0.62) !important;
+      border-color: var(--onlypump-border) !important;
+      box-shadow: 0 24px 70px rgba(17, 24, 39, 0.10);
+    }
+    .theme-light .onlypump-bottom-sheet,
+    .theme-light .onlypump-sheet-panel,
+    .theme-light .onlypump-modal-scroll {
+      background-color: var(--onlypump-card-solid) !important;
+      border-color: var(--onlypump-border) !important;
+    }
+    .theme-light input,
+    .theme-light select,
+    .theme-light textarea {
+      background-color: var(--onlypump-input) !important;
+      border-color: var(--onlypump-border) !important;
+      color: var(--onlypump-text) !important;
+    }
+    .theme-light input::placeholder,
+    .theme-light textarea::placeholder {
+      color: var(--onlypump-faint) !important;
+    }
+    .theme-light [class*="shadow-black"] {
+      --tw-shadow-color: var(--onlypump-shadow) !important;
+      --tw-shadow: var(--tw-shadow-colored) !important;
+    }
+    .theme-light .divide-white\/10 > :not([hidden]) ~ :not([hidden]) {
+      border-color: var(--onlypump-border) !important;
     }
   </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -378,6 +493,11 @@ const DEFAULT_PROFILE = {
   access_requested_at: null,
   access_granted_at: null,
   access_note: null,
+  light_theme_enabled: false,
+  light_theme_always: false,
+  light_theme_start_time: "06:00",
+  light_theme_end_time: "20:00",
+  theme_updated_at: null,
   source: "fallback",
 };
 
@@ -434,6 +554,47 @@ function parseProfileBoolean(value, fallback = false) {
   if (value === true || value === "true" || value === 1 || value === "1") return true;
   if (value === false || value === "false" || value === 0 || value === "0") return false;
   return fallback;
+}
+
+function normalizeThemeTime(value, fallback = "06:00") {
+  const source = String(value ?? "").trim();
+  const match = source.match(/^(\d{1,2}):(\d{1,2})$/);
+  if (!match) return fallback;
+  const hour = Math.min(23, Math.max(0, Number(match[1])));
+  const minute = Math.min(59, Math.max(0, Number(match[2])));
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return fallback;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function themeTimeToMinutes(value, fallback = "06:00") {
+  const [hour, minute] = normalizeThemeTime(value, fallback).split(":").map(Number);
+  return hour * 60 + minute;
+}
+
+function isMinuteInsideThemeRange(current, start, end) {
+  if (start === end) return false;
+  if (start < end) return current >= start && current < end;
+  return current >= start || current < end;
+}
+
+function buildThemeSettingsPayload(settings = {}) {
+  const enabled = parseProfileBoolean(settings.light_theme_enabled, false);
+  const always = enabled && parseProfileBoolean(settings.light_theme_always, false);
+  return {
+    light_theme_enabled: enabled,
+    light_theme_always: always,
+    light_theme_start_time: always ? "00:00" : normalizeThemeTime(settings.light_theme_start_time, DEFAULT_PROFILE.light_theme_start_time),
+    light_theme_end_time: always ? "00:00" : normalizeThemeTime(settings.light_theme_end_time, DEFAULT_PROFILE.light_theme_end_time),
+  };
+}
+
+function profileWantsLightTheme(profile = DEFAULT_PROFILE, now = new Date()) {
+  if (!parseProfileBoolean(profile?.light_theme_enabled, DEFAULT_PROFILE.light_theme_enabled)) return false;
+  if (parseProfileBoolean(profile?.light_theme_always, DEFAULT_PROFILE.light_theme_always)) return true;
+  const current = now.getHours() * 60 + now.getMinutes();
+  const start = themeTimeToMinutes(profile?.light_theme_start_time, DEFAULT_PROFILE.light_theme_start_time);
+  const end = themeTimeToMinutes(profile?.light_theme_end_time, DEFAULT_PROFILE.light_theme_end_time);
+  return isMinuteInsideThemeRange(current, start, end);
 }
 
 function normalizeAccessStatus(value) {
@@ -522,6 +683,11 @@ function buildFallbackProfile(overrides = {}) {
     access_requested_at: overrides.access_requested_at || DEFAULT_PROFILE.access_requested_at,
     access_granted_at: overrides.access_granted_at || DEFAULT_PROFILE.access_granted_at,
     access_note: overrides.access_note ?? DEFAULT_PROFILE.access_note,
+    light_theme_enabled: parseProfileBoolean(overrides.light_theme_enabled, DEFAULT_PROFILE.light_theme_enabled),
+    light_theme_always: parseProfileBoolean(overrides.light_theme_always, DEFAULT_PROFILE.light_theme_always),
+    light_theme_start_time: normalizeThemeTime(overrides.light_theme_start_time, DEFAULT_PROFILE.light_theme_start_time),
+    light_theme_end_time: normalizeThemeTime(overrides.light_theme_end_time, DEFAULT_PROFILE.light_theme_end_time),
+    theme_updated_at: overrides.theme_updated_at || DEFAULT_PROFILE.theme_updated_at,
     source: overrides.source || "fallback",
   };
 }
@@ -585,6 +751,11 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     access_requested_at: record.access_requested_at || fallback.access_requested_at || null,
     access_granted_at: record.access_granted_at || fallback.access_granted_at || null,
     access_note: record.access_note ?? fallback.access_note ?? null,
+    light_theme_enabled: parseProfileBoolean(record.light_theme_enabled, fallback.light_theme_enabled ?? DEFAULT_PROFILE.light_theme_enabled),
+    light_theme_always: parseProfileBoolean(record.light_theme_always, fallback.light_theme_always ?? DEFAULT_PROFILE.light_theme_always),
+    light_theme_start_time: normalizeThemeTime(record.light_theme_start_time ?? fallback.light_theme_start_time, DEFAULT_PROFILE.light_theme_start_time),
+    light_theme_end_time: normalizeThemeTime(record.light_theme_end_time ?? fallback.light_theme_end_time, DEFAULT_PROFILE.light_theme_end_time),
+    theme_updated_at: record.theme_updated_at || fallback.theme_updated_at || null,
     source: record.source || fallback.source || "supabase",
   };
 }
@@ -10968,20 +11139,168 @@ function ProfileEditSheet({ profile, onClose, onSave, saving }) {
   </div>;
 }
 
-function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", onSaveProfile, profileSaving = false }) {
+function ThemeTimePickerSheet({ title, value, onSave, onClose }) {
+  const normalized = normalizeThemeTime(value, "06:00");
+  const [hour, setHour] = useState(normalized.slice(0, 2));
+  const [minute, setMinute] = useState(normalized.slice(3, 5));
+  const hours = useMemo(() => Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0")), []);
+  const minutes = useMemo(() => Array.from({ length: 60 }, (_, index) => String(index).padStart(2, "0")), []);
+  const columnClass = "onlypump-scrollbar-none h-60 min-w-0 flex-1 overflow-y-auto rounded-[24px] bg-black/28 p-2";
+  const optionClass = (active) => `block w-full rounded-2xl px-2 py-3 text-center text-sm font-black transition ${active ? "bg-red-500 text-black" : "text-zinc-300 hover:bg-white/[0.08]"}`;
+  const save = () => {
+    onSave?.(`${hour}:${minute}`);
+    onClose();
+  };
+
+  return <div onClick={(event) => { event.stopPropagation(); onClose(); }} className="onlypump-modal-layer fixed inset-0 z-[210] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} priority={210} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отменить</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Тема</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">{title}</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+      <div className="mt-6 grid grid-cols-2 gap-3" data-no-sheet-drag="true">
+        <div className={columnClass}>
+          <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Час</div>
+          {hours.map(option => <button key={option} type="button" onClick={() => setHour(option)} className={optionClass(hour === option)}>{option}</button>)}
+        </div>
+        <div className={columnClass}>
+          <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Мин</div>
+          {minutes.map(option => <button key={option} type="button" onClick={() => setMinute(option)} className={optionClass(minute === option)}>{option}</button>)}
+        </div>
+      </div>
+      <Button onClick={save} className="mt-5 w-full bg-gradient-to-r from-red-700 to-red-500 text-black">Сохранить</Button>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function ThemeSettingsSheet({ profile = DEFAULT_PROFILE, saving = false, onClose, onSave }) {
+  const [draft, setDraft] = useState(() => buildThemeSettingsPayload(profile));
+  const [timePicker, setTimePicker] = useState(null);
+  const [error, setError] = useState("");
+  const scheduleLabel = draft.light_theme_always
+    ? "Светлая тема включена постоянно"
+    : `${draft.light_theme_start_time} - ${draft.light_theme_end_time}`;
+
+  const setEnabled = (enabled) => setDraft(prev => buildThemeSettingsPayload({
+    ...prev,
+    light_theme_enabled: enabled,
+    light_theme_always: enabled ? prev.light_theme_always : false,
+  }));
+
+  const setAlways = (enabled) => setDraft(prev => buildThemeSettingsPayload({
+    ...prev,
+    light_theme_enabled: enabled ? true : prev.light_theme_enabled,
+    light_theme_always: enabled,
+    light_theme_start_time: enabled ? "00:00" : normalizeThemeTime(profile.light_theme_start_time, DEFAULT_PROFILE.light_theme_start_time),
+    light_theme_end_time: enabled ? "00:00" : normalizeThemeTime(profile.light_theme_end_time, DEFAULT_PROFILE.light_theme_end_time),
+  }));
+
+  const saveTime = (key, value) => setDraft(prev => buildThemeSettingsPayload({
+    ...prev,
+    light_theme_enabled: true,
+    light_theme_always: false,
+    [key]: normalizeThemeTime(value, key === "light_theme_start_time" ? DEFAULT_PROFILE.light_theme_start_time : DEFAULT_PROFILE.light_theme_end_time),
+  }));
+
+  const submit = async () => {
+    setError("");
+    const ok = await onSave?.(draft);
+    if (ok === false) {
+      setError("Не удалось сохранить тему. Проверь подключение и попробуй еще раз.");
+      return;
+    }
+    onClose();
+  };
+
+  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[190] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} priority={190} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отменить</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs uppercase tracking-wider text-red-500">Личный кабинет</p>
+          <h2 className="mt-2 text-2xl font-black">Настройка темы</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+
+      <div className="space-y-3">
+        <ProfileToggle label="Светлая тема" description="Включает расписание или постоянный светлый режим." checked={draft.light_theme_enabled} onChange={setEnabled}/>
+        <ProfileToggle label="Всегда" description="Светлая тема будет активна без расписания." checked={draft.light_theme_always} onChange={setAlways}/>
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <span className="text-xs font-bold uppercase tracking-[0.14em] text-zinc-500">Расписание</span>
+          <span className="text-xs font-bold text-red-400">{scheduleLabel}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <button type="button" onClick={() => setTimePicker("start")} className="rounded-2xl border border-white/10 bg-black/28 p-4 text-left transition hover:bg-white/[0.08]">
+            <span className="block text-xs font-bold text-zinc-500">Начало</span>
+            <span className="mt-2 block text-2xl font-black">{draft.light_theme_start_time}</span>
+          </button>
+          <button type="button" onClick={() => setTimePicker("end")} className="rounded-2xl border border-white/10 bg-black/28 p-4 text-left transition hover:bg-white/[0.08]">
+            <span className="block text-xs font-bold text-zinc-500">Конец</span>
+            <span className="mt-2 block text-2xl font-black">{draft.light_theme_end_time}</span>
+          </button>
+        </div>
+        <p className="mt-3 text-xs leading-5 text-zinc-500">Если время окончания меньше начала, расписание продолжится после полуночи.</p>
+      </div>
+
+      {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+      <div className="mt-6 flex gap-3">
+        <Button onClick={onClose} className="flex-1 bg-white/8">Отмена</Button>
+        <Button onClick={submit} disabled={saving} className="flex-1 bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+      </div>
+    </BottomSheetPanel>
+    {timePicker === "start" && <ThemeTimePickerSheet title="Начало" value={draft.light_theme_start_time} onClose={() => setTimePicker(null)} onSave={(value) => saveTime("light_theme_start_time", value)}/>}
+    {timePicker === "end" && <ThemeTimePickerSheet title="Конец" value={draft.light_theme_end_time} onClose={() => setTimePicker(null)} onSave={(value) => saveTime("light_theme_end_time", value)}/>}
+  </div>;
+}
+
+function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", onSaveProfile, profileSaving = false, onSaveThemeSettings, themeSaving = false }) {
   const displayName = getProfileDisplayName(profile);
   const telegramLabel = profile?.telegram_username ? `@${profile.telegram_username}` : profile?.telegram_id ? `ID ${profile.telegram_id}` : "Обычная web-версия";
   const profileSource = profileStatus === "verified" ? "Supabase: Telegram проверен" : profileStatus === "loaded" ? "Supabase: профиль загружен" : profileStatus === "created" ? "Supabase: профиль создан" : "Локальный fallback";
   const calculatedAge = calculateProfileAge(profile?.birth_date);
   const [editOpen, setEditOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [themeError, setThemeError] = useState("");
+  const lightThemeEnabled = parseProfileBoolean(profile?.light_theme_enabled, DEFAULT_PROFILE.light_theme_enabled);
+  const lightThemeAlways = parseProfileBoolean(profile?.light_theme_always, DEFAULT_PROFILE.light_theme_always);
+  const lightThemeSchedule = lightThemeAlways
+    ? "всегда"
+    : `${normalizeThemeTime(profile?.light_theme_start_time, DEFAULT_PROFILE.light_theme_start_time)} - ${normalizeThemeTime(profile?.light_theme_end_time, DEFAULT_PROFILE.light_theme_end_time)}`;
+
+  const toggleLightTheme = async (enabled) => {
+    setThemeError("");
+    const ok = await onSaveThemeSettings?.(buildThemeSettingsPayload({
+      ...profile,
+      light_theme_enabled: enabled,
+      light_theme_always: enabled ? profile?.light_theme_always : false,
+    }));
+    if (ok === false) setThemeError("Не удалось сохранить тему. Попробуй еще раз.");
+  };
 
   return <div className="profile-screen"><Header title="Личный кабинет" subtitle="Профиль, тариф, подписка, настройки, доступы и история платежей."/><PageGrid>
     <Card className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p></Card>
     <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? formatAgeRu(calculatedAge) : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profile.weight_kg || DEFAULT_PROFILE.weight_kg} кг</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profile.height_cm || DEFAULT_PROFILE.height_cm} см</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profile.steps_per_day || DEFAULT_PROFILE.steps_per_day} шагов · {profile.workouts_per_week ?? DEFAULT_PROFILE.workouts_per_week} тр/нед</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">КБЖУ</span><span>{profile.calories_target || 2500} / {profile.protein_target || 180} / {profile.fat_target || 70} / {profile.carbs_target || 250}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profile.manual_nutrition_targets_enabled ? "ручной" : "авто"}{profile.high_protein_enabled ? " · белок+" : ""}{profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><Button onClick={() => setEditOpen(true)} className="mt-5 w-full bg-white/8">Редактировать</Button></Card>
     <Card className="p-5"><CreditCard className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Подписка</h2><p className="mt-2 text-zinc-400">Активна до {new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</p><Button className="mt-5 w-full bg-white/8">Управлять</Button></Card>
     <Card className="p-5"><ShieldCheck className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Доступы</h2><p className="mt-2 text-zinc-400">Все модули открыты</p><div className="mt-5 flex gap-2 text-xs text-zinc-500"><Lock size={14}/> 1PM bonus locked</div></Card>
-    <Card className="p-5"><Settings className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Настройки</h2>{["Уведомления", "Единицы измерения", "Интеграции", "Безопасность"].map(x=><div key={x} className="mt-3 rounded-lg bg-white/[0.03] p-3 text-sm">{x}</div>)}</Card>
+    <Card className="p-5 xl:col-span-2"><Settings className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Настройки</h2>{["Уведомления", "Единицы измерения", "Интеграции", "Безопасность"].map(x=><div key={x} className="mt-3 rounded-lg bg-white/[0.03] p-3 text-sm">{x}</div>)}
+      <div className="mt-5 border-t border-white/10 pt-5">
+        <ProfileToggle label="Светлая тема" description={`Режим: ${lightThemeEnabled ? lightThemeSchedule : "выключена"}`} checked={lightThemeEnabled} onChange={toggleLightTheme}/>
+        <Button onClick={() => setThemeOpen(true)} className="mt-3 w-full bg-white/8">Настроить темы</Button>
+        {themeError && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{themeError}</p>}
+      </div>
+    </Card>
     {editOpen && <ProfileEditSheet profile={profile} saving={profileSaving} onClose={() => setEditOpen(false)} onSave={onSaveProfile}/>}
+    {themeOpen && <ThemeSettingsSheet profile={profile} saving={themeSaving} onClose={() => setThemeOpen(false)} onSave={onSaveThemeSettings}/>}
   </PageGrid></div>;
 }
 
@@ -11020,6 +11339,7 @@ function OnlyPumpPlatform() {
   const [nutritionMarkedDateKeys, setNutritionMarkedDateKeys] = useState([]);
   const [nutritionRefreshing, setNutritionRefreshing] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
+  const [themeSaving, setThemeSaving] = useState(false);
   const [healthLog, setHealthLog] = useState(() => buildLocalHealthLog(formatDateKey(new Date())));
   const [healthLogs, setHealthLogs] = useState([]);
   const [healthSaving, setHealthSaving] = useState(false);
@@ -11218,6 +11538,7 @@ function OnlyPumpPlatform() {
     calf: 39,
   });
   const [profile, setProfile] = useState(() => isTelegramBootMode ? null : buildFallbackProfile());
+  const [themeTick, setThemeTick] = useState(() => Date.now());
   const [profileStatus, setProfileStatus] = useState("local");
   const [lectureItems, setLectureItems] = useState(initialLectures);
   const [homeWidgets, setHomeWidgets] = useState(() => {
@@ -11235,10 +11556,37 @@ function OnlyPumpPlatform() {
     }
   });
 
+  const activeTheme = useMemo(
+    () => profileWantsLightTheme(profile || DEFAULT_PROFILE, new Date(themeTick)) ? "light" : "dark",
+    [profile?.light_theme_enabled, profile?.light_theme_always, profile?.light_theme_start_time, profile?.light_theme_end_time, themeTick]
+  );
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("theme-light", activeTheme === "light");
+    root.classList.toggle("theme-dark", activeTheme !== "light");
+    const telegramThemeColor = activeTheme === "light" ? "#f5f5f7" : "#000000";
+    try { telegramWebApp?.setHeaderColor?.(telegramThemeColor); } catch (error) {}
+    try { telegramWebApp?.setBackgroundColor?.(telegramThemeColor); } catch (error) {}
+  }, [activeTheme]);
+
+  useEffect(() => {
+    const refreshThemeTime = () => setThemeTick(Date.now());
+    const intervalId = window.setInterval(refreshThemeTime, 60 * 1000);
+    window.addEventListener("focus", refreshThemeTime);
+    document.addEventListener("visibilitychange", refreshThemeTime);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshThemeTime);
+      document.removeEventListener("visibilitychange", refreshThemeTime);
+    };
+  }, []);
+
   const applyProfileState = useCallback((nextProfile, options = {}) => {
     const normalized = normalizeProfileRecord(nextProfile, profile || DEFAULT_PROFILE);
     const nextGoal = profileNutritionGoalFromProfile(normalized, nutritionGoal);
     setProfile(normalized);
+    setThemeTick(Date.now());
     setMeasurements(prev => ({
       ...prev,
       weight: normalized.weight_kg || prev.weight,
@@ -11321,6 +11669,32 @@ function OnlyPumpPlatform() {
     clearCachedNutritionForProfileFromDate(localProfile, targetsFromDate);
     return true;
   }, [applyProfileState, globalSelectedDateKey, profile, profileStatus, telegramInitData]);
+
+  const handleSaveThemeSettings = useCallback(async (settings = {}) => {
+    const payload = buildThemeSettingsPayload({ ...(profile || DEFAULT_PROFILE), ...settings });
+    const optimisticProfile = normalizeProfileRecord({
+      ...(profile || DEFAULT_PROFILE),
+      ...payload,
+      theme_updated_at: new Date().toISOString(),
+      source: profile?.source || "fallback",
+    }, profile || DEFAULT_PROFILE);
+    applyProfileState(optimisticProfile);
+
+    if (!(profileStatus === "verified" && profileHasTestAccess(profile) && telegramInitData && profile?.id)) return true;
+
+    setThemeSaving(true);
+    try {
+      const result = await callOnlyPumpProfileApi(telegramInitData, "update_theme_settings", payload);
+      const savedProfile = applyProfileState(result.profile || optimisticProfile);
+      setProfileStatus("verified");
+      return Boolean(savedProfile);
+    } catch (error) {
+      console.error("onlypump-profile-api theme error:", error);
+      return false;
+    } finally {
+      setThemeSaving(false);
+    }
+  }, [applyProfileState, profile, profileStatus, telegramInitData]);
 
   const handleProgressProfileSaved = useCallback((nextProfile, options = {}) => {
     if (!nextProfile) return null;
@@ -11685,11 +12059,11 @@ function OnlyPumpPlatform() {
     progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} onProgressProfileSaved={handleProgressProfileSaved}/>,
     analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} healthRefreshing={healthRefreshing} selectedDateKey={globalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} onSaveHealthLog={handleSaveHealthLog}/>,
     community: <CommunityPage/>,
-    profile: <ProfilePage profile={profile} profileStatus={profileStatus} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving}/>,
-  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, handleNutritionAction, handleSaveProfile, handleProgressProfileSaved, profileSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog]);
+    profile: <ProfilePage profile={profile} profileStatus={profileStatus} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving}/>,
+  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, handleNutritionAction, handleSaveProfile, handleSaveThemeSettings, handleProgressProfileSaved, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog]);
 
   if (appLoading || profileLoading) {
-    return <div className="onlypump-app-shell flex items-center justify-center bg-black px-6 text-zinc-100">
+    return <div className={`onlypump-app-shell theme-${activeTheme} flex items-center justify-center bg-black px-6 text-zinc-100`}>
       <div className="text-center">
         <div className="mx-auto h-12 w-12 animate-pulse rounded-full bg-red-500/70" />
         <h1 className="mt-5 text-2xl font-black tracking-[-0.04em]">ONLYPUMP</h1>
@@ -11710,7 +12084,7 @@ function OnlyPumpPlatform() {
     return <OnboardingScreen profile={profile} saving={profileSaving} onComplete={(payload) => handleSaveProfile(payload, "complete_onboarding")}/>;
   }
 
-  return <div className="onlypump-app-shell bg-black text-zinc-100 selection:bg-red-500/30">
+  return <div className={`onlypump-app-shell theme-${activeTheme} bg-black text-zinc-100 selection:bg-red-500/30`}>
     <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_5%,rgba(239,68,68,0.13),transparent_30%),radial-gradient(circle_at_30%_35%,rgba(255,255,255,0.05),transparent_30%)]"/>
     <div className="onlypump-app-frame relative mx-auto flex max-w-[1720px] rounded-3xl border border-white/10 bg-black/70">
       <DesktopSidebar active={active} setActive={setActive} profile={profile}/>
