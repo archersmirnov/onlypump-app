@@ -1204,6 +1204,39 @@ const toLocalDateTimeInput = (value, fallbackDateKey = formatDateKey(new Date())
   return `${fallbackDateKey}T${fallbackTime}`;
 };
 
+const sleepDateTimeParts = (value, fallbackDateKey = formatDateKey(new Date()), fallbackTime = "07:00") => {
+  const safeValue = toLocalDateTimeInput(value, fallbackDateKey, fallbackTime);
+  const [dateKey, time = fallbackTime] = safeValue.split("T");
+  const [hour = "00", minute = "00"] = time.split(":");
+  return {
+    dateKey,
+    hour: String(hour).padStart(2, "0").slice(0, 2),
+    minute: String(minute).padStart(2, "0").slice(0, 2),
+  };
+};
+
+const localDateTimeFromParts = (dateKey, hour, minute) => `${dateKey}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+
+const formatShortDateRu = (dateKey) => {
+  const [year, month, day] = String(dateKey || "").slice(0, 10).split("-");
+  if (!year || !month || !day) return "Дата";
+  return `${day}.${month}`;
+};
+
+const formatSleepDateTimeDisplay = (value, fallbackDateKey, fallbackTime) => {
+  const parts = sleepDateTimeParts(value, fallbackDateKey, fallbackTime);
+  return `${parts.hour}:${parts.minute}, ${formatShortDateRu(parts.dateKey)}`;
+};
+
+const normalizeSleepEndDateTime = (startValue, endValue) => {
+  const start = new Date(startValue || "");
+  const end = new Date(endValue || "");
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return endValue;
+  const normalized = new Date(end);
+  if (normalized.getTime() <= start.getTime()) normalized.setDate(normalized.getDate() + 1);
+  return toLocalDateTimeInput(normalized, formatDateKey(normalized), "07:00");
+};
+
 const dateKeyDaysAgo = (dateKey, days) => {
   const date = parseDateKeyLocal(dateKey);
   date.setDate(date.getDate() - days);
@@ -2120,6 +2153,81 @@ const writeCachedNutritionMarkersForProfile = (profile, dateKeys = []) => {
   }
 };
 
+const getHealthCacheKey = (profile, dateKey) => {
+  const telegramId = profile?.telegram_id || profile?.telegramId || profile?.id || "local";
+  return `onlypump_health_cache_${telegramId}_${dateKey}`;
+};
+
+const getHealthLogsCacheKey = (profile) => {
+  const telegramId = profile?.telegram_id || profile?.telegramId || profile?.id || "local";
+  return `onlypump_health_logs_${telegramId}`;
+};
+
+const readCachedHealthForProfile = (profile, dateKey) => {
+  try {
+    const raw = localStorage.getItem(getHealthCacheKey(profile, dateKey));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? normalizeHealthLog(parsed, dateKey) : null;
+  } catch (error) {
+    console.log("Health cache error", error);
+    return null;
+  }
+};
+
+const readCachedHealthLogsForProfile = (profile) => {
+  try {
+    const raw = localStorage.getItem(getHealthLogsCacheKey(profile));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(log => normalizeHealthLog(log, log.log_date || log.date)).filter(Boolean) : [];
+  } catch (error) {
+    console.log("Health cache error", error);
+    return [];
+  }
+};
+
+const writeCachedHealthForProfile = (profile, dateKey, log) => {
+  try {
+    localStorage.setItem(getHealthCacheKey(profile, dateKey), JSON.stringify(normalizeHealthLog(log, dateKey)));
+  } catch (error) {
+    console.log("Health cache error", error);
+  }
+};
+
+const writeCachedHealthLogsForProfile = (profile, logs = []) => {
+  try {
+    localStorage.setItem(getHealthLogsCacheKey(profile), JSON.stringify((logs || []).map(log => normalizeHealthLog(log, log.log_date || log.date))));
+  } catch (error) {
+    console.log("Health cache error", error);
+  }
+};
+
+const getAnalyticsCacheKey = (profile, type, metric, period, selectedDateKey) => {
+  const telegramId = profile?.telegram_id || profile?.telegramId || profile?.id || "local";
+  return `onlypump_analytics_cache_${telegramId}_${type}_${metric}_${period}_${selectedDateKey}`;
+};
+
+const readCachedAnalyticsForProfile = (profile, type, metric, period, selectedDateKey) => {
+  try {
+    const raw = localStorage.getItem(getAnalyticsCacheKey(profile, type, metric, period, selectedDateKey));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (error) {
+    console.log("Analytics cache error", error);
+    return null;
+  }
+};
+
+const writeCachedAnalyticsForProfile = (profile, type, metric, period, selectedDateKey, data) => {
+  try {
+    localStorage.setItem(getAnalyticsCacheKey(profile, type, metric, period, selectedDateKey), JSON.stringify(data));
+  } catch (error) {
+    console.log("Analytics cache error", error);
+  }
+};
+
 const nutritionDayHasFood = (day) => {
   const hasItems = (day?.meals || []).some(meal => (meal.items || []).length > 0);
   const hasCalories = Number(day?.totals?.calories || day?.calories_total || 0) > 0;
@@ -2935,6 +3043,58 @@ function WaterWidget({ waterIntake, waterGoal, onAdd, onRemove }) {
   </Card>;
 }
 
+function SleepTimePickerSheet({ title, value, fallbackDateKey, fallbackTime, baseDateKey, onSave, onClose }) {
+  const initial = sleepDateTimeParts(value, fallbackDateKey, fallbackTime);
+  const [dateKey, setDateKey] = useState(initial.dateKey);
+  const [hour, setHour] = useState(initial.hour);
+  const [minute, setMinute] = useState(initial.minute);
+  const dateOptions = useMemo(() => {
+    const base = parseDateKeyLocal(baseDateKey || fallbackDateKey || formatDateKey(new Date()));
+    const values = [-1, 0, 1].map(offset => formatDateKey(addLocalDaysToDate(base, offset)));
+    return [...new Set([initial.dateKey, ...values].filter(Boolean))].sort();
+  }, [baseDateKey, fallbackDateKey, initial.dateKey]);
+  const hours = useMemo(() => Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0")), []);
+  const minutes = useMemo(() => Array.from({ length: 60 }, (_, index) => String(index).padStart(2, "0")), []);
+  const columnClass = "onlypump-scrollbar-none h-60 min-w-0 flex-1 overflow-y-auto rounded-[24px] bg-black/28 p-2";
+  const optionClass = (active) => `block w-full rounded-2xl px-2 py-3 text-center text-sm font-black transition ${active ? "bg-red-500 text-black" : "text-zinc-300 hover:bg-white/[0.08]"}`;
+
+  const save = () => {
+    onSave(localDateTimeFromParts(dateKey, hour, minute));
+    onClose();
+  };
+
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[215] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} priority={215} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отменить</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Отчет сна</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">{title}</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+
+      <div className="mt-6 grid grid-cols-[1.35fr_0.85fr_0.85fr] gap-3" data-no-sheet-drag="true">
+        <div className={columnClass}>
+          <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Дата</div>
+          {dateOptions.map(option => <button key={option} type="button" onClick={() => setDateKey(option)} className={optionClass(dateKey === option)}>{formatShortDateRu(option)}</button>)}
+        </div>
+        <div className={columnClass}>
+          <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Час</div>
+          {hours.map(option => <button key={option} type="button" onClick={() => setHour(option)} className={optionClass(hour === option)}>{option}</button>)}
+        </div>
+        <div className={columnClass}>
+          <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Мин</div>
+          {minutes.map(option => <button key={option} type="button" onClick={() => setMinute(option)} className={optionClass(minute === option)}>{option}</button>)}
+        </div>
+      </div>
+
+      <Button onClick={save} className="mt-5 w-full bg-gradient-to-r from-red-700 to-red-500 text-black">Сохранить</Button>
+    </BottomSheetPanel>
+  </div>;
+}
+
 function SleepReportSheet({ dateKey, healthLog, onSave, onClose, saving = false }) {
   const selectedDate = parseDateKeyLocal(dateKey);
   const startFallback = new Date(selectedDate);
@@ -2944,8 +3104,10 @@ function SleepReportSheet({ dateKey, healthLog, onSave, onClose, saving = false 
   const [endedAt, setEndedAt] = useState(() => toLocalDateTimeInput(healthLog?.sleep_ended_at, dateKey, "07:00"));
   const [latency, setLatency] = useState(() => Number(healthLog?.sleep_latency_minutes || 0));
   const [awakenings, setAwakenings] = useState(() => Number(healthLog?.sleep_awakenings || 0));
+  const [timePicker, setTimePicker] = useState(null);
   const [error, setError] = useState("");
-  const duration = calculateSleepDurationMinutesLocal(startedAt, endedAt, healthLog?.sleep_duration_minutes || 0);
+  const normalizedEndedAt = normalizeSleepEndDateTime(startedAt, endedAt);
+  const duration = calculateSleepDurationMinutesLocal(startedAt, normalizedEndedAt, healthLog?.sleep_duration_minutes || 0);
   const recovery = calculateRecoveryScoreLocal({
     sleep_duration_minutes: duration,
     sleep_latency_minutes: latency,
@@ -2963,7 +3125,7 @@ function SleepReportSheet({ dateKey, healthLog, onSave, onClose, saving = false 
       log_date: dateKey,
       steps_count: healthLog?.steps_count || 0,
       sleep_started_at: new Date(startedAt).toISOString(),
-      sleep_ended_at: new Date(endedAt).toISOString(),
+      sleep_ended_at: new Date(normalizedEndedAt).toISOString(),
       sleep_duration_minutes: duration,
       sleep_latency_minutes: Number(latency || 0),
       sleep_awakenings: Number(awakenings || 0),
@@ -2976,7 +3138,8 @@ function SleepReportSheet({ dateKey, healthLog, onSave, onClose, saving = false 
     onClose();
   };
 
-  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+  return <>
+  <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-lg overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
       <div className="flex items-start justify-between gap-4">
@@ -3004,14 +3167,14 @@ function SleepReportSheet({ dateKey, healthLog, onSave, onClose, saving = false 
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
-        <label className="block min-w-0">
-          <span className="text-xs font-bold text-zinc-500">Время отхода ко сну</span>
-          <input type="datetime-local" value={startedAt} onChange={(event) => setStartedAt(event.target.value)} className="mt-2 w-full min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-base outline-none focus:border-red-500/60"/>
-        </label>
-        <label className="block min-w-0">
-          <span className="text-xs font-bold text-zinc-500">Время пробуждения</span>
-          <input type="datetime-local" value={endedAt} onChange={(event) => setEndedAt(event.target.value)} className="mt-2 w-full min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-base outline-none focus:border-red-500/60"/>
-        </label>
+        <button type="button" onClick={() => setTimePicker("start")} className="block min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left transition hover:border-red-500/50 hover:bg-red-500/5">
+          <span className="text-xs font-bold text-zinc-500">Отход ко сну</span>
+          <span className="mt-2 block text-lg font-black text-zinc-100">{formatSleepDateTimeDisplay(startedAt, startFallbackKey, "23:00")}</span>
+        </button>
+        <button type="button" onClick={() => setTimePicker("end")} className="block min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left transition hover:border-red-500/50 hover:bg-red-500/5">
+          <span className="text-xs font-bold text-zinc-500">Пробуждение</span>
+          <span className="mt-2 block text-lg font-black text-zinc-100">{formatSleepDateTimeDisplay(normalizedEndedAt, dateKey, "07:00")}</span>
+        </button>
       </div>
 
       <div className="mt-5 space-y-5">
@@ -3028,7 +3191,10 @@ function SleepReportSheet({ dateKey, healthLog, onSave, onClose, saving = false 
       {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
       <Button onClick={save} disabled={saving} className="mt-6 w-full bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{healthLog?.sleep_duration_minutes ? "Сохранить" : "Добавить"}</Button>
     </BottomSheetPanel>
-  </div>;
+  </div>
+  {timePicker === "start" && <SleepTimePickerSheet title="Отход ко сну" value={startedAt} fallbackDateKey={startFallbackKey} fallbackTime="23:00" baseDateKey={dateKey} onClose={() => setTimePicker(null)} onSave={setStartedAt}/>}
+  {timePicker === "end" && <SleepTimePickerSheet title="Пробуждение" value={normalizedEndedAt} fallbackDateKey={dateKey} fallbackTime="07:00" baseDateKey={dateKey} onClose={() => setTimePicker(null)} onSave={setEndedAt}/>}
+  </>;
 }
 
 function HomeWidgetSettingsModal({ enabledWidgets, onAdd, onClose }) {
@@ -9932,8 +10098,10 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
           </div>
           {showGoalIntensity && <GoalIntensityBar goalType={goalType} value={goalIntensityPercent}/>}
           {goalIntensityError && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-xs text-red-300">{goalIntensityError}</p>}
-          <div className="mt-5 text-5xl">{bodyProgress}%</div>
-          <div className="mt-5"><Progress value={bodyProgress}/></div>
+          {showGoalIntensity && <>
+            <div className="mt-5 text-5xl">{bodyProgress}%</div>
+            <div className="mt-5"><Progress value={bodyProgress}/></div>
+          </>}
           <p className="mt-3 text-xs text-zinc-500">{isProgressSaving ? "Сохраняю..." : "Автосохранение включено"}</p>
         </Card>
 
@@ -10083,19 +10251,78 @@ function AnalyticsChart({ points = [], type = "line", unit = "" }) {
   </div>;
 }
 
-function AnalyticsDetailSheet({ type, title, measurements, healthLogs, workouts, selectedDateKey, onClose }) {
+function AnalyticsDetailSheet({ type, title, measurements, healthLogs, workouts, selectedDateKey, profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onClose }) {
   const metricOptions = type === "training" ? trainingAnalyticsMetrics : type === "health" ? healthAnalyticsMetrics : measurementAnalyticsMetrics;
   const [metric, setMetric] = useState(type === "weight" ? "weight_kg" : metricOptions[0].key);
   const [period, setPeriod] = useState(type === "training" ? "week" : "month");
+  const [remoteData, setRemoteData] = useState({ measurements: [], health_logs: [] });
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const metricConfig = metricOptions.find(item => item.key === metric) || metricOptions[0];
+  const canLoadRemote = type !== "training" && profileStatus === "verified" && Boolean(telegramInitData && profile?.id);
+  const sourceMeasurements = remoteData.measurements.length ? remoteData.measurements : measurements;
+  const sourceHealthLogs = remoteData.health_logs.length ? remoteData.health_logs : healthLogs;
   const allPoints = type === "training"
     ? buildTrainingSeries(workouts, metric)
     : type === "health"
-      ? buildHealthSeries(healthLogs, metric)
-      : buildMeasurementSeries(measurements, metric);
+      ? buildHealthSeries(sourceHealthLogs, metric)
+      : buildMeasurementSeries(sourceMeasurements, metric);
   const points = filterAnalyticsPoints(allPoints, period, selectedDateKey);
   const summary = analyticsSummary(points);
   const chartType = metricConfig.type || (type === "health" ? "bar" : "line");
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!canLoadRemote) {
+      setRemoteData({ measurements: [], health_logs: [] });
+      setLoadError("");
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const cached = readCachedAnalyticsForProfile(profile, type, metric, period, selectedDateKey);
+    if (cached) {
+      setRemoteData({
+        measurements: Array.isArray(cached.measurements) ? cached.measurements : [],
+        health_logs: Array.isArray(cached.health_logs) ? cached.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [],
+      });
+    }
+
+    const load = async () => {
+      setLoading(true);
+      setLoadError("");
+      const days = analyticsPeriods.find(item => item.id === period)?.days || 30;
+      try {
+        const result = await callOnlyPumpProfileApi(telegramInitData, "load_analytics", {
+          date: selectedDateKey,
+          start_date: dateKeyDaysAgo(selectedDateKey, days - 1),
+          end_date: selectedDateKey,
+          scope: type,
+          metric,
+        });
+        if (cancelled) return;
+        const next = {
+          measurements: Array.isArray(result.measurements) ? result.measurements : [],
+          health_logs: Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [],
+        };
+        setRemoteData(next);
+        writeCachedAnalyticsForProfile(profile, type, metric, period, selectedDateKey, next);
+      } catch (error) {
+        if (!cancelled) {
+          console.error("onlypump-profile-api analytics error:", error);
+          setLoadError("Не удалось обновить график. Показываю последние данные.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [canLoadRemote, metric, period, profile?.id, selectedDateKey, telegramInitData, type]);
 
   return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[185] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-3xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
@@ -10115,6 +10342,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, workouts,
         {analyticsPeriods.filter(item => type !== "training" || ["day", "week", "month"].includes(item.id)).map(item => <button key={item.id} type="button" onClick={() => setPeriod(item.id)} className={`shrink-0 rounded-full px-4 py-2 text-xs ${period === item.id ? "bg-white text-black" : "bg-white/[0.06] text-zinc-300"}`}>{item.label}</button>)}
       </div>
 
+      {(loading || loadError) && <p className={`mt-4 rounded-2xl p-3 text-sm ${loadError ? "bg-red-500/10 text-red-300" : "bg-white/[0.04] text-zinc-400"}`}>{loadError || "Обновляю график..."}</p>}
       <AnalyticsChart points={points} type={chartType} unit={metricConfig.unit}/>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -10132,58 +10360,31 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
   const [detail, setDetail] = useState(null);
   const [sleepSheetOpen, setSleepSheetOpen] = useState(false);
   const [stepsDraft, setStepsDraft] = useState(() => String(healthLog?.steps_count || ""));
-  const [analyticsData, setAnalyticsData] = useState({ measurements: [], health_logs: [] });
   const selectedHealthRecord = (healthLog?.log_date || healthLog?.date) === selectedDateKey
     ? healthLog
     : healthLogs.find(log => (log.log_date || log.date) === selectedDateKey);
   const currentHealthLog = normalizeHealthLog(selectedHealthRecord || {}, selectedDateKey);
+  const analyticsData = useMemo(() => ({
+    measurements: [{
+      measurement_date: selectedDateKey,
+      weight_kg: measurements?.weight || profile?.weight_kg,
+      body_fat_percent: measurements?.bodyFat || profile?.body_fat_percent,
+      neck_cm: measurements?.neck || profile?.neck_cm,
+      shoulders_cm: measurements?.shoulders || profile?.shoulders_cm,
+      chest_cm: measurements?.chest || profile?.chest_cm,
+      biceps_cm: measurements?.biceps || profile?.biceps_cm,
+      waist_cm: measurements?.waist || profile?.waist_cm,
+      abdomen_cm: measurements?.belly || profile?.abdomen_cm,
+      glutes_cm: measurements?.glutes || profile?.glutes_cm,
+      thigh_cm: measurements?.thigh || profile?.thigh_cm,
+      calf_cm: measurements?.calf || profile?.calf_cm,
+    }],
+    health_logs: healthLogs.length ? healthLogs : [currentHealthLog],
+  }), [currentHealthLog, healthLogs, measurements, profile, selectedDateKey]);
 
   useEffect(() => {
     setStepsDraft(String(currentHealthLog.steps_count || ""));
   }, [currentHealthLog.log_date, currentHealthLog.steps_count]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      if (!(profileStatus === "verified" && telegramInitData && profile?.id)) {
-        setAnalyticsData({
-          measurements: [{
-            measurement_date: selectedDateKey,
-            weight_kg: measurements?.weight || profile?.weight_kg,
-            body_fat_percent: measurements?.bodyFat || profile?.body_fat_percent,
-            neck_cm: measurements?.neck || profile?.neck_cm,
-            shoulders_cm: measurements?.shoulders || profile?.shoulders_cm,
-            chest_cm: measurements?.chest || profile?.chest_cm,
-            biceps_cm: measurements?.biceps || profile?.biceps_cm,
-            waist_cm: measurements?.waist || profile?.waist_cm,
-            abdomen_cm: measurements?.belly || profile?.abdomen_cm,
-            glutes_cm: measurements?.glutes || profile?.glutes_cm,
-            thigh_cm: measurements?.thigh || profile?.thigh_cm,
-            calf_cm: measurements?.calf || profile?.calf_cm,
-          }],
-          health_logs: healthLogs.length ? healthLogs : [currentHealthLog],
-        });
-        return;
-      }
-      try {
-        const result = await callOnlyPumpProfileApi(telegramInitData, "load_analytics", {
-          date: selectedDateKey,
-          start_date: dateKeyDaysAgo(selectedDateKey, 365),
-          end_date: selectedDateKey,
-        });
-        if (!cancelled) setAnalyticsData({
-          measurements: Array.isArray(result.measurements) ? result.measurements : [],
-          health_logs: Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [],
-        });
-      } catch (error) {
-        console.error("onlypump-profile-api analytics error:", error);
-      }
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [profileStatus, telegramInitData, profile?.id, selectedDateKey, healthLogs, measurements]);
 
   const weekAnalytics = useMemo(() => {
     const today = parseDateKeyLocal(selectedDateKey);
@@ -10227,7 +10428,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       </Card>)}
       <Card className="p-5 xl:col-span-2"><h2 className="text-xl font-semibold">Вывод недели</h2><p className="mt-4 leading-7 text-zinc-300">За последние 7 дней: {weekAnalytics.recent.length} выполненных тренировок, {weekAnalytics.sets} подходов и {formatVolumeForProfile(weekAnalytics.volume || 0, profile)} тоннажа. Сон за выбранный день: {formatSleepDuration(currentHealthLog.sleep_duration_minutes)}.</p></Card>
     </PageGrid>
-    {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} workouts={workouts} selectedDateKey={selectedDateKey} onClose={() => setDetail(null)}/>}
+    {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} workouts={workouts} selectedDateKey={selectedDateKey} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onClose={() => setDetail(null)}/>}
     {sleepSheetOpen && <SleepReportSheet dateKey={selectedDateKey} healthLog={currentHealthLog} saving={healthSaving} onClose={() => setSleepSheetOpen(false)} onSave={onSaveHealthLog}/>}
   </>;
 }
@@ -10918,9 +11119,13 @@ function OnlyPumpPlatform() {
 
   const loadHealthForProfile = useCallback(async (activeProfile, initData, dateKey = globalSelectedDateKey) => {
     if (!activeProfile) return null;
+    const cachedLog = readCachedHealthForProfile(activeProfile, dateKey);
+    const cachedLogs = readCachedHealthLogsForProfile(activeProfile);
+    if (cachedLog) setHealthLog(cachedLog);
+    if (cachedLogs.length) setHealthLogs(cachedLogs);
     if (!initData || !activeProfile.id) {
-      setHealthLog(prev => (prev?.log_date === dateKey || prev?.date === dateKey) ? prev : buildLocalHealthLog(dateKey));
-      return null;
+      setHealthLog(prev => cachedLog || ((prev?.log_date === dateKey || prev?.date === dateKey) ? prev : buildLocalHealthLog(dateKey)));
+      return cachedLog;
     }
     setHealthRefreshing(true);
     try {
@@ -10929,11 +11134,13 @@ function OnlyPumpPlatform() {
       const nextLogs = Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [];
       setHealthLog(nextLog);
       setHealthLogs(nextLogs.length ? nextLogs : upsertHealthLogList(healthLogs, nextLog));
+      writeCachedHealthForProfile(activeProfile, dateKey, nextLog);
+      writeCachedHealthLogsForProfile(activeProfile, nextLogs.length ? nextLogs : upsertHealthLogList(cachedLogs, nextLog));
       return nextLog;
     } catch (error) {
       console.error("onlypump-profile-api health error:", error);
-      setHealthLog(prev => (prev?.log_date === dateKey || prev?.date === dateKey) ? prev : buildLocalHealthLog(dateKey));
-      return null;
+      setHealthLog(prev => cachedLog || ((prev?.log_date === dateKey || prev?.date === dateKey) ? prev : buildLocalHealthLog(dateKey)));
+      return cachedLog;
     } finally {
       setHealthRefreshing(false);
     }
@@ -10944,6 +11151,10 @@ function OnlyPumpPlatform() {
     const optimisticLog = normalizeHealthLog({ ...healthLog, ...payload, date: dateKey, log_date: dateKey }, dateKey);
     setHealthLog(optimisticLog);
     setHealthLogs(prev => upsertHealthLogList(prev, optimisticLog));
+    if (profile) {
+      writeCachedHealthForProfile(profile, dateKey, optimisticLog);
+      writeCachedHealthLogsForProfile(profile, upsertHealthLogList(healthLogs, optimisticLog));
+    }
 
     if (!(profileStatus === "verified" && telegramInitData && profile?.id)) return true;
 
@@ -10954,6 +11165,8 @@ function OnlyPumpPlatform() {
       const logs = Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : null;
       setHealthLog(savedLog);
       setHealthLogs(prev => logs?.length ? logs : upsertHealthLogList(prev, savedLog));
+      writeCachedHealthForProfile(profile, dateKey, savedLog);
+      writeCachedHealthLogsForProfile(profile, logs?.length ? logs : upsertHealthLogList(healthLogs, savedLog));
       return true;
     } catch (error) {
       console.error("onlypump-profile-api health save error:", error);
@@ -10961,7 +11174,7 @@ function OnlyPumpPlatform() {
     } finally {
       setHealthSaving(false);
     }
-  }, [globalSelectedDateKey, healthLog, profile, profileStatus, telegramInitData]);
+  }, [globalSelectedDateKey, healthLog, healthLogs, profile, profileStatus, telegramInitData]);
 
   const loadNutritionForProfile = useCallback(async (activeProfile, initData, dateKey = globalSelectedDateKey, options = {}) => {
     if (!activeProfile) return null;
@@ -11109,8 +11322,10 @@ function OnlyPumpPlatform() {
         const cached = readCachedWorkoutsForProfile(activeProfile);
         if (cached.length) setWorkouts(cached);
         setNutritionMarkedDateKeys(readCachedNutritionMarkersForProfile(activeProfile));
-        loadNutritionForProfile(activeProfile, "", globalSelectedDateKey, { useCache: true });
-        loadHealthForProfile(activeProfile, "", globalSelectedDateKey);
+        Promise.allSettled([
+          loadNutritionForProfile(activeProfile, "", globalSelectedDateKey, { useCache: true }),
+          loadHealthForProfile(activeProfile, "", globalSelectedDateKey),
+        ]).then(() => console.log("Initial local data refreshed"));
         setProfileLoading(false);
         setAppLoading(false);
         console.log("Profile loaded", activeProfile);
@@ -11140,9 +11355,11 @@ function OnlyPumpPlatform() {
       setProfileStatus(result.status);
       profileSaveReadyRef.current = result.status === "verified" && Boolean(activeProfile?.id);
       setNutritionMarkedDateKeys(readCachedNutritionMarkersForProfile(activeProfile));
-      loadWorkoutsForProfile(activeProfile, result.status === "verified" ? initData : "", { useCache: true });
-      loadNutritionForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey, { useCache: true });
-      loadHealthForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey);
+      Promise.allSettled([
+        loadWorkoutsForProfile(activeProfile, result.status === "verified" ? initData : "", { useCache: true }),
+        loadNutritionForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey, { useCache: true }),
+        loadHealthForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey),
+      ]).then((results) => console.log("Initial app data refreshed", results.map(item => item.status)));
       setProfileLoading(false);
       setAppLoading(false);
       console.log("Profile loaded", activeProfile);
