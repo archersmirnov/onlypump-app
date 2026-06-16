@@ -275,6 +275,9 @@ const DEFAULT_PROFILE = {
   first_name: "Артур",
   last_name: "",
   display_name: "Артур",
+  display_name_locked: false,
+  display_name_source: "telegram",
+  display_name_updated_at: null,
   weight_kg: 90,
   height_cm: 180,
   goal: "Рекомпозиция тела",
@@ -426,6 +429,9 @@ function buildFallbackProfile(overrides = {}) {
     target_weight_kg: optionalProfileNumber(overrides.target_weight_kg, DEFAULT_PROFILE.target_weight_kg),
     deficit_percent: normalizeDeficitPercent(overrides.deficit_percent, DEFAULT_PROFILE.deficit_percent),
     goal_intensity_percent: normalizeGoalIntensityPercent(overrides.goal_type || DEFAULT_PROFILE.goal_type, overrides.goal_intensity_percent ?? overrides.deficit_percent, DEFAULT_PROFILE.goal_intensity_percent),
+    display_name_locked: parseProfileBoolean(overrides.display_name_locked, DEFAULT_PROFILE.display_name_locked),
+    display_name_source: overrides.display_name_source || DEFAULT_PROFILE.display_name_source,
+    display_name_updated_at: overrides.display_name_updated_at || DEFAULT_PROFILE.display_name_updated_at,
     calories_target: safeProfileNumber(overrides.calories_target, DEFAULT_PROFILE.calories_target),
     protein_target: safeProfileNumber(overrides.protein_target, DEFAULT_PROFILE.protein_target),
     fat_target: safeProfileNumber(overrides.fat_target, DEFAULT_PROFILE.fat_target),
@@ -453,6 +459,9 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     first_name: record.first_name !== undefined ? (record.first_name || null) : (fallback.first_name || null),
     last_name: record.last_name !== undefined ? (record.last_name || null) : (fallback.last_name || null),
     display_name: record.display_name || telegramDisplayFallback,
+    display_name_locked: parseProfileBoolean(record.display_name_locked, fallback.display_name_locked ?? DEFAULT_PROFILE.display_name_locked),
+    display_name_source: record.display_name_source || fallback.display_name_source || DEFAULT_PROFILE.display_name_source,
+    display_name_updated_at: record.display_name_updated_at || fallback.display_name_updated_at || null,
     weight_kg: safeProfileNumber(record.weight_kg, fallback.weight_kg || DEFAULT_PROFILE.weight_kg),
     height_cm: safeProfileNumber(record.height_cm, fallback.height_cm || DEFAULT_PROFILE.height_cm),
     goal: record.goal || fallback.goal || DEFAULT_PROFILE.goal,
@@ -535,15 +544,14 @@ const profileRound = (value, precision = 0) => {
 
 const normalizeDeficitPercent = (value, fallback = 10) => Math.max(5, Math.min(30, profileNumber(value, fallback)));
 
-const getGoalIntensityRange = (goalType) => {
-  if (goalType === "muscle_gain") return { min: 3, max: 20, fallback: 10 };
-  return { min: 5, max: 30, fallback: 10 };
-};
+const getGoalIntensityRange = () => ({ min: 0, max: 50, fallback: 10 });
 
 const normalizeGoalIntensityPercent = (goalType, value, fallback = 10) => {
   const range = getGoalIntensityRange(goalType);
-  const parsed = profileNumber(value, profileNumber(fallback, range.fallback));
-  return Math.max(range.min, Math.min(range.max, parsed || range.fallback));
+  const parsed = Number(value);
+  const fallbackNumber = Number(fallback);
+  const safeValue = Number.isFinite(parsed) ? parsed : (Number.isFinite(fallbackNumber) ? fallbackNumber : range.fallback);
+  return Math.max(range.min, Math.min(range.max, safeValue));
 };
 
 const goalUsesIntensity = (goalType) => goalType === "fat_loss" || goalType === "muscle_gain";
@@ -9421,15 +9429,16 @@ function GoalIntensityBar({ goalType = "fat_loss", value = 10 }) {
   const range = getGoalIntensityRange(goalType);
   const percent = normalizeGoalIntensityPercent(goalType, value);
   const position = ((percent - range.min) / Math.max(1, range.max - range.min)) * 100;
-  const labels = goalType === "muscle_gain"
-    ? [`${range.min}% мягко`, "10% умеренно", "15% активно", `${range.max}% агрессивно`]
-    : [`${range.min}% мягко`, "10% умеренно", "20% агрессивно", `${range.max}% очень жестко`];
   return <div className="mt-4">
-    <div className="relative h-3 rounded-full bg-gradient-to-r from-emerald-500 via-yellow-400 via-orange-500 to-red-600">
-      <span className="absolute top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-black bg-white shadow-lg" style={{ left: `${position}%` }}/>
+    <div className="relative h-3 rounded-full bg-white/10">
+      <span className="absolute left-0 top-0 h-full rounded-full bg-red-500" style={{ width: `${position}%` }}/>
+      <span className="absolute top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-black bg-red-500 shadow-lg shadow-red-500/30" style={{ left: `${position}%` }}/>
     </div>
     <div className="mt-3 grid grid-cols-4 gap-2 text-[10px] text-zinc-500">
-      {labels.map((label, index) => <span key={label} className={index === labels.length - 1 ? "text-right" : ""}>{label}</span>)}
+      <span>0%</span>
+      <span>10%</span>
+      <span>30%</span>
+      <span className="text-right">50%</span>
     </div>
   </div>;
 }
@@ -9453,10 +9462,12 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
   const [previousProgressMeasurements, setPreviousProgressMeasurements] = useState(previousMeasurements);
   const [progressMarkedDateKeys, setProgressMarkedDateKeys] = useState([]);
   const [saveError, setSaveError] = useState("");
+  const [goalIntensityError, setGoalIntensityError] = useState("");
   const [isProgressSaving, setIsProgressSaving] = useState(false);
   const saveTimerRef = useRef(null);
   const saveSequenceRef = useRef(0);
   const measurementsRef = useRef(measurements);
+  const goalIntensityFocusedRef = useRef(false);
   const isRemoteProgress = profileStatus === "verified" && Boolean(telegramInitData && profile?.id);
 
   useEffect(() => {
@@ -9504,6 +9515,20 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
   const goalType = progressGoal?.goalType || profile?.goal_type || "recomposition";
   const goalIntensityPercent = normalizeGoalIntensityPercent(goalType, progressGoal?.goalIntensityPercent ?? profile?.goal_intensity_percent ?? profile?.deficit_percent ?? 10);
   const showGoalIntensity = goalUsesIntensity(goalType);
+  const [goalIntensityInput, setGoalIntensityInput] = useState(() => String(goalIntensityPercent));
+
+  useEffect(() => {
+    if (!goalIntensityFocusedRef.current) setGoalIntensityInput(String(goalIntensityPercent));
+  }, [goalIntensityPercent, goalType]);
+
+  const validateGoalIntensity = useCallback((value) => {
+    if (String(value).trim() === "") return { valid: false, message: "" };
+    const number = Number(value);
+    if (!Number.isFinite(number)) return { valid: false, message: "Введите число" };
+    if (number < 0) return { valid: false, message: "Минимум 0%" };
+    if (number > 50) return { valid: false, message: "Максимум 50%" };
+    return { valid: true, value: number };
+  }, []);
 
   const applyProgressResponse = useCallback((result, options = {}) => {
     const nextProfile = result?.profile ? normalizeProfileRecord(result.profile, profile || DEFAULT_PROFILE) : profile;
@@ -9611,7 +9636,16 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
   };
 
   const updateGoalIntensityPercent = (value) => {
-    const nextIntensity = normalizeGoalIntensityPercent(goalType, value);
+    setGoalIntensityInput(value);
+    const validation = validateGoalIntensity(value);
+    if (!validation.valid) {
+      clearTimeout(saveTimerRef.current);
+      saveSequenceRef.current += 1;
+      setGoalIntensityError(validation.message);
+      return;
+    }
+    const nextIntensity = validation.value;
+    setGoalIntensityError("");
     setProgressGoal(prev => ({
       ...prev,
       goalIntensityPercent: nextIntensity,
@@ -9689,9 +9723,10 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
           <div className={`mt-3 grid gap-2 ${showGoalIntensity ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2"}`}>
             <label className="rounded-xl bg-white/[0.03] p-3"><span className="text-[10px] uppercase tracking-wider text-zinc-500">Вес</span><input type="number" value={progressMeasurements.weight ?? ""} onChange={(e) => updateMeasurement("weight", e.target.value)} className="mt-1 w-full bg-transparent text-base outline-none" /></label>
             <label className="rounded-xl bg-white/[0.03] p-3"><span className="text-[10px] uppercase tracking-wider text-zinc-500">Талия</span><input type="number" value={progressMeasurements.waist ?? ""} onChange={(e) => updateMeasurement("waist", e.target.value)} className="mt-1 w-full bg-transparent text-base outline-none" /></label>
-            {showGoalIntensity && <label className="rounded-xl bg-white/[0.03] p-3"><span className="text-[10px] uppercase tracking-wider text-zinc-500">{goalType === "muscle_gain" ? "Сила профицита, %" : "Сила дефицита, %"}</span><input type="number" min={getGoalIntensityRange(goalType).min} max={getGoalIntensityRange(goalType).max} value={goalIntensityPercent} onChange={(e) => updateGoalIntensityPercent(e.target.value)} className="mt-1 w-full bg-transparent text-base outline-none" /></label>}
+            {showGoalIntensity && <label className="rounded-xl bg-white/[0.03] p-3"><span className="text-[10px] uppercase tracking-wider text-zinc-500">{goalType === "muscle_gain" ? "Сила профицита, %" : "Сила дефицита, %"}</span><input type="number" min="0" max="50" value={goalIntensityInput} onFocus={() => { goalIntensityFocusedRef.current = true; }} onBlur={() => { goalIntensityFocusedRef.current = false; const validation = validateGoalIntensity(goalIntensityInput); if (!validation.valid && goalIntensityInput === "") { setGoalIntensityInput(String(goalIntensityPercent)); setGoalIntensityError(""); } }} onChange={(e) => updateGoalIntensityPercent(e.target.value)} className="mt-1 w-full bg-transparent text-base outline-none" /></label>}
           </div>
           {showGoalIntensity && <GoalIntensityBar goalType={goalType} value={goalIntensityPercent}/>}
+          {goalIntensityError && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-xs text-red-300">{goalIntensityError}</p>}
           <div className="mt-5 text-5xl">{bodyProgress}%</div>
           <div className="mt-5"><Progress value={bodyProgress}/></div>
           <p className="mt-3 text-xs text-zinc-500">{isProgressSaving ? "Сохраняю..." : "Автосохранение включено"}</p>
@@ -10382,13 +10417,16 @@ function OnlyPumpPlatform() {
     if (profileStatus === "verified" && telegramInitData) {
       setProfileSaving(true);
       try {
+        if (action === "update_profile" || action === "complete_onboarding") console.log("PROFILE MEASUREMENT SAVE", payloadWithDate);
         const result = await callOnlyPumpProfileApi(telegramInitData, action, payloadWithDate);
+        if (action === "update_profile" || action === "complete_onboarding") console.log("PROFILE MEASUREMENT RESPONSE", result);
         const savedProfile = applyProfileState(result.profile, { updateNutritionDay: true, nutritionTargetsFromDate: targetsFromDate });
         clearCachedNutritionForProfileFromDate(savedProfile, targetsFromDate);
         setProfileStatus("verified");
         return Boolean(savedProfile);
       } catch (error) {
         console.error("onlypump-profile-api error:", error);
+        if (action === "update_profile" || action === "complete_onboarding") console.log("PROFILE MEASUREMENT ERROR", error);
         return false;
       } finally {
         setProfileSaving(false);
