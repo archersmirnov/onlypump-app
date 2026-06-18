@@ -16,6 +16,7 @@
       --onlypump-telegram-main-top-offset: 0px;
       --onlypump-telegram-internal-top-offset: 0px;
       --onlypump-workout-bottom-bar-height: 96px;
+      --onlypump-keyboard-bottom: 0px;
       --tg-viewport-height: 100vh;
       --onlypump-app-height: var(--tg-viewport-height);
       --onlypump-bg: #000000;
@@ -146,6 +147,7 @@
       max-height: var(--onlypump-app-height);
       padding-top: calc(var(--onlypump-safe-top) + 1rem) !important;
       padding-bottom: calc(var(--onlypump-safe-bottom) + 1rem) !important;
+      overscroll-behavior: contain;
     }
     .onlypump-bottom-sheet {
       max-height: calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - 0.75rem);
@@ -183,6 +185,53 @@
     }
     .onlypump-sheet-panel {
       will-change: transform;
+      overscroll-behavior: contain;
+    }
+    html.onlypump-sheet-open .onlypump-main-scroll,
+    html.onlypump-sheet-open .onlypump-workout-scroll {
+      overflow: hidden !important;
+    }
+    .onlypump-sheet-scroll-list,
+    .onlypump-exercise-base-list {
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+      padding-bottom: calc(var(--onlypump-safe-bottom) + var(--onlypump-keyboard-bottom) + 88px);
+    }
+    .onlypump-keyboard-aware-list {
+      padding-bottom: calc(var(--onlypump-safe-bottom) + var(--onlypump-keyboard-bottom) + 40px);
+    }
+    .onlypump-wheel-scroll {
+      overflow-y: auto;
+      overflow-x: hidden;
+      scroll-snap-type: y mandatory;
+      scroll-padding-block: var(--onlypump-wheel-item-height, 52px);
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+      touch-action: pan-y;
+      scrollbar-width: none;
+      mask-image: linear-gradient(to bottom, transparent 0%, #000 26%, #000 74%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 26%, #000 74%, transparent 100%);
+    }
+    .onlypump-wheel-scroll::-webkit-scrollbar {
+      display: none;
+    }
+    .onlypump-wheel-item {
+      scroll-snap-align: center;
+      scroll-snap-stop: always;
+    }
+    .onlypump-wheel-center {
+      pointer-events: none;
+      position: absolute;
+      left: 0.25rem;
+      right: 0.25rem;
+      top: 50%;
+      height: var(--onlypump-wheel-item-height, 52px);
+      transform: translateY(-50%);
+      border-radius: 1rem;
+      border: 1px solid rgba(239, 68, 68, 0.36);
+      background: rgba(239, 68, 68, 0.16);
     }
     .onlypump-list-50 {
       max-height: calc(var(--onlypump-app-height) * 0.5);
@@ -346,6 +395,10 @@
     .theme-light .onlypump-exercise-add-footer {
       background: transparent !important;
     }
+    .theme-light .onlypump-wheel-center {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(220, 38, 38, 0.28);
+    }
   </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -432,8 +485,13 @@ import {
 
 function syncOnlyPumpViewportHeight(tg) {
   const telegramHeight = Number(tg?.viewportHeight || tg?.viewportStableHeight || 0);
-  const browserHeight = Number(window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0);
+  const visualViewport = window.visualViewport;
+  const browserHeight = Number(visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0);
+  const layoutHeight = Number(window.innerHeight || document.documentElement.clientHeight || 0);
+  const rawKeyboardBottom = visualViewport ? Math.max(0, Math.round(layoutHeight - visualViewport.height - visualViewport.offsetTop)) : 0;
+  const keyboardBottom = rawKeyboardBottom > 80 ? rawKeyboardBottom : 0;
   const nextHeight = Math.max(320, Math.round(telegramHeight || browserHeight));
+  document.documentElement.style.setProperty("--onlypump-keyboard-bottom", `${keyboardBottom}px`);
   if (nextHeight) {
     document.documentElement.style.setProperty("--tg-viewport-height", `${nextHeight}px`);
     document.documentElement.style.setProperty("--onlypump-app-height", `${nextHeight}px`);
@@ -500,6 +558,18 @@ function initTelegramWebApp() {
 const telegramWebApp = initTelegramWebApp();
 console.log("ONLYPUMP START");
 console.log("Telegram object exists", Boolean(telegramWebApp || window.Telegram?.WebApp));
+
+document.addEventListener("focusin", (event) => {
+  const target = event.target;
+  if (!target?.matches?.("input, textarea, select")) return;
+  window.setTimeout(() => {
+    try {
+      target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+    } catch (error) {
+      target.scrollIntoView?.({ block: "center", inline: "nearest" });
+    }
+  }, 180);
+});
 
 const SUPABASE_URL = window.ONLYPUMP_SUPABASE_URL || window.SUPABASE_URL || "https://qehbgwnblebjahmytqca.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = window.ONLYPUMP_SUPABASE_PUBLISHABLE_KEY || window.SUPABASE_PUBLISHABLE_KEY || "sb_publishable_rZgTF88Cp6PGhKUpoD_O8A_aQi-1o_K";
@@ -1092,6 +1162,12 @@ const profilePayloadFromDraft = (draft = {}, currentDate = formatDateKey(new Dat
 
 const onlypumpBackLayers = new Map();
 let onlypumpBackLayerOrder = 0;
+let onlypumpOpenSheetCount = 0;
+
+function updateOnlyPumpSheetLock(delta) {
+  onlypumpOpenSheetCount = Math.max(0, onlypumpOpenSheetCount + delta);
+  document.documentElement.classList.toggle("onlypump-sheet-open", onlypumpOpenSheetCount > 0);
+}
 
 function notifyOnlyPumpBackLayers() {
   window.dispatchEvent(new CustomEvent("onlypump:back-layers-change", {
@@ -1177,6 +1253,11 @@ function BottomSheetPanel({ children, className = "", onClose, priority = 150, s
   const [dragging, setDragging] = useState(false);
 
   useAppBackLayer(idRef.current, true, onClose, priority);
+
+  useEffect(() => {
+    updateOnlyPumpSheetLock(1);
+    return () => updateOnlyPumpSheetLock(-1);
+  }, []);
 
   const resetDrag = () => {
     dragRef.current = null;
@@ -2189,7 +2270,8 @@ const normalizeExerciseMeasurementSettings = (exercise = {}) => {
     measureRpeEnabled: exercise.measureRpeEnabled ?? exercise.measure_rpe_enabled ?? exerciseMeasurementDefaults.measureRpeEnabled,
     weightUnit: normalizeWeightUnit(exercise.weightUnit ?? exercise.weight_unit ?? exerciseMeasurementDefaults.weightUnit),
     distanceUnit: normalizeDistanceUnit(exercise.distanceUnit ?? exercise.distance_unit ?? exerciseMeasurementDefaults.distanceUnit),
-    doubleWeightInStats: Boolean(exercise.doubleWeightInStats ?? exercise.double_weight_in_stats ?? exerciseMeasurementDefaults.doubleWeightInStats),
+    doubleWeightInStats: Boolean(exercise.doubleWeightInStats ?? exercise.doubleCountInStatistics ?? exercise.double_count_in_statistics ?? exercise.double_weight_in_stats ?? exerciseMeasurementDefaults.doubleWeightInStats),
+    doubleCountInStatistics: Boolean(exercise.doubleWeightInStats ?? exercise.doubleCountInStatistics ?? exercise.double_count_in_statistics ?? exercise.double_weight_in_stats ?? exerciseMeasurementDefaults.doubleWeightInStats),
     measurementMode: mode,
     exerciseCategory,
     sourceExerciseId: onlypumpUuidPattern.test(String(rawSourceExerciseId || "")) ? rawSourceExerciseId : null,
@@ -4496,7 +4578,7 @@ function WorkoutFloatingActions({ open, setOpen, onOpenExercisePicker }) {
 
 function ExercisePickerSheet({ groups, activeGroup, setActiveGroup, search, setSearch, exercises, onAdd, onClose }) {
   return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[170] flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-    <BottomSheetPanel onClose={onClose} onClick={(e) => e.stopPropagation()} className="w-full max-w-3xl rounded-t-[2rem] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+    <BottomSheetPanel onClose={onClose} onClick={(e) => e.stopPropagation()} className="flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-3xl flex-col rounded-t-[2rem] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -4517,7 +4599,7 @@ function ExercisePickerSheet({ groups, activeGroup, setActiveGroup, search, setS
         </button>)}
       </div>
 
-      <div className="onlypump-list-50 mt-4 space-y-2 overflow-y-auto pr-1">
+      <div className="onlypump-sheet-scroll-list onlypump-list-50 mt-4 space-y-2 pr-1">
         {exercises.map(item => <button key={`${item.group}-${item.name}`} onClick={() => onAdd(item.name, item.group)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-4 text-left transition hover:bg-red-500/10">
           <div>
             <h3 className="text-sm font-semibold">{item.name}</h3>
@@ -4680,6 +4762,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measureRpeEnabled: source.measureRpeEnabled,
       weightUnit: source.weightUnit,
       doubleWeightInStats: source.doubleWeightInStats,
+      doubleCountInStatistics: source.doubleWeightInStats,
+      double_count_in_statistics: source.doubleWeightInStats,
       met: source.met,
       sets: sets.map(([weight, reps], index) => makeSet(weight, reps, index, completed)),
     };
@@ -5260,6 +5344,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       primaryMuscles: row.primary_muscles || row.primaryMuscles,
       secondaryMuscles: row.secondary_muscles || row.secondaryMuscles,
       countsInMuscleStats: row.counts_in_muscle_stats ?? row.countsInMuscleStats,
+      doubleWeightInStats: row.double_count_in_statistics ?? row.doubleCountInStatistics ?? row.double_weight_in_stats ?? row.doubleWeightInStats,
     });
     const primary = settings.primaryMuscles[0] || exerciseCategoryLabels[settings.exerciseCategory] || "Другое";
     return {
@@ -5356,16 +5441,18 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const openCustomExerciseEditor = (exercise = null) => {
     const category = normalizeExerciseCategory(exercise?.exerciseCategory || exercise?.category || selectedWorkout?.workoutType || "strength");
     const primary = (exercise?.primaryMuscles || [exercise?.muscleGroup]).filter(Boolean);
+    const settings = normalizeExerciseMeasurementSettings(exercise || { exerciseCategory: category });
     setCustomExerciseSheet({
       id: exercise?.sourceExerciseId || exercise?.id || null,
       name: exercise?.name || "",
       exerciseCategory: category,
       primaryMuscles: primary.length ? primary : (category === "strength" ? ["Грудь"] : []),
       secondaryMuscles: exercise?.secondaryMuscles || [],
-      measurementMode: normalizeMeasurementMode(exercise?.measurementMode, category === "strength" ? "weight_reps" : "time"),
-      weightUnit: normalizeWeightUnit(exercise?.weightUnit || profile?.default_weight_unit || "kg"),
-      distanceUnit: normalizeDistanceUnit(exercise?.distanceUnit || "km"),
-      countsInMuscleStats: exercise?.countsInMuscleStats ?? category === "strength",
+      measurementMode: normalizeMeasurementMode(exercise?.measurementMode || settings.measurementMode, category === "strength" ? "weight_reps" : "time"),
+      weightUnit: normalizeWeightUnit(exercise?.weightUnit || settings.weightUnit || profile?.default_weight_unit || "kg"),
+      distanceUnit: normalizeDistanceUnit(exercise?.distanceUnit || settings.distanceUnit || "km"),
+      countsInMuscleStats: exercise?.countsInMuscleStats ?? settings.countsInMuscleStats ?? category === "strength",
+      doubleWeightInStats: Boolean(exercise?.doubleWeightInStats ?? exercise?.doubleCountInStatistics ?? exercise?.double_count_in_statistics ?? settings.doubleWeightInStats),
       notes: exercise?.notes || "",
     });
   };
@@ -5388,6 +5475,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       weight_unit: normalizeWeightUnit(customExerciseSheet.weightUnit),
       distance_unit: normalizeDistanceUnit(customExerciseSheet.distanceUnit),
       counts_in_muscle_stats: Boolean(customExerciseSheet.countsInMuscleStats),
+      double_weight_in_stats: Boolean(customExerciseSheet.doubleWeightInStats),
+      double_count_in_statistics: Boolean(customExerciseSheet.doubleWeightInStats),
       notes: customExerciseSheet.notes || "",
     };
     const optimistic = mapExerciseLibraryRow({
@@ -5569,6 +5658,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_rpe_enabled: Boolean(measurementSettings.measureRpeEnabled),
       weight_unit: measurementSettings.weightUnit,
       double_weight_in_stats: Boolean(measurementSettings.doubleWeightInStats),
+      double_count_in_statistics: Boolean(measurementSettings.doubleWeightInStats),
     };
     console.log("Saving exercise rest/superset fields:", {
       rest_between_seconds: payload.rest_between_seconds,
@@ -5696,6 +5786,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_rpe_enabled: Boolean(measurementSettings.measureRpeEnabled),
       weight_unit: measurementSettings.weightUnit,
       double_weight_in_stats: Boolean(measurementSettings.doubleWeightInStats),
+      double_count_in_statistics: Boolean(measurementSettings.doubleWeightInStats),
     };
     console.log("Saving exercise rest/superset fields:", {
       rest_between_seconds: payload.rest_between_seconds,
@@ -5734,6 +5825,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_rpe_enabled: Boolean(measurementSettings.measureRpeEnabled),
       weight_unit: measurementSettings.weightUnit,
       double_weight_in_stats: Boolean(measurementSettings.doubleWeightInStats),
+      double_count_in_statistics: Boolean(measurementSettings.doubleWeightInStats),
     };
     console.log("Saving measurement settings:", {
       exerciseId: exercise.id,
@@ -8041,58 +8133,83 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return "План";
   };
 
-  const SchedulerWheelColumn = ({ label, value, options, onChange, className = "", size = "large" }) => {
-    const touchStartRef = useRef(null);
-    const heightClass = size === "small" ? "h-32" : "h-40";
+  const SchedulerWheelColumn = ({ label, value, options = [], onChange, className = "", size = "large" }) => {
+    const scrollRef = useRef(null);
+    const settleTimerRef = useRef(null);
+    const itemHeight = size === "small" ? 44 : 52;
+    const repeatCount = options.length > 1 ? 9 : 1;
+    const centerRepeat = Math.floor(repeatCount / 2);
     const selectedIndex = Math.max(0, options.findIndex(option => String(option.value) === String(value)));
-    const visibleOptions = [
-      options[selectedIndex - 1] || null,
-      options[selectedIndex] || options[0] || null,
-      options[selectedIndex + 1] || null,
-    ];
-    const step = (delta) => {
-      const nextIndex = Math.max(0, Math.min(options.length - 1, selectedIndex + delta));
-      const nextOption = options[nextIndex];
-      if (nextOption && String(nextOption.value) !== String(value)) onChange(nextOption.value);
+    const wheelOptions = useMemo(() => {
+      if (!options.length) return [];
+      return Array.from({ length: options.length * repeatCount }, (_, virtualIndex) => {
+        const baseIndex = virtualIndex % options.length;
+        return { ...options[baseIndex], baseIndex, virtualIndex };
+      });
+    }, [options, repeatCount]);
+
+    const scrollToIndex = (index, behavior = "auto") => {
+      const node = scrollRef.current;
+      if (!node || index < 0) return;
+      node.scrollTo({ top: index * itemHeight, behavior });
     };
-    const handleWheel = (event) => {
-      event.preventDefault();
-      step(event.deltaY > 0 ? 1 : -1);
+
+    const readCenteredOption = () => {
+      const node = scrollRef.current;
+      if (!node || !wheelOptions.length) return null;
+      const virtualIndex = Math.max(0, Math.min(wheelOptions.length - 1, Math.round(node.scrollTop / itemHeight)));
+      return wheelOptions[virtualIndex] || null;
     };
-    const handleTouchStart = (event) => {
-      touchStartRef.current = event.touches?.[0]?.clientY ?? null;
+
+    const normalizeScrollPosition = (option) => {
+      if (!option || options.length <= 1) return;
+      const centeredIndex = centerRepeat * options.length + option.baseIndex;
+      window.setTimeout(() => scrollToIndex(centeredIndex, "auto"), 130);
     };
-    const handleTouchEnd = (event) => {
-      const startY = touchStartRef.current;
-      touchStartRef.current = null;
-      if (startY === null) return;
-      const endY = event.changedTouches?.[0]?.clientY ?? startY;
-      const delta = endY - startY;
-      if (Math.abs(delta) < 18) return;
-      step(delta < 0 ? 1 : -1);
+
+    const commitCenteredOption = (behavior = "smooth") => {
+      const option = readCenteredOption();
+      if (!option) return;
+      scrollToIndex(option.virtualIndex, behavior);
+      if (String(option.value) !== String(value)) onChange(option.value);
+      normalizeScrollPosition(option);
     };
+
+    const handleScroll = () => {
+      window.clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = window.setTimeout(() => commitCenteredOption("smooth"), 110);
+    };
+
+    useEffect(() => {
+      if (!options.length) return undefined;
+      scrollToIndex(centerRepeat * options.length + selectedIndex, "auto");
+      return () => {
+        window.clearTimeout(settleTimerRef.current);
+      };
+    }, [options, selectedIndex, centerRepeat, itemHeight]);
+
     return <div className={`onlypump-field-surface rounded-[24px] bg-black/28 p-3 ${className}`}>
       <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">{label}</div>
       <div
-        className={`${heightClass} overflow-hidden rounded-2xl`}
-        onWheel={handleWheel}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
+        ref={scrollRef}
+        data-no-sheet-drag="true"
+        className="onlypump-wheel-scroll relative rounded-2xl"
+        onScroll={handleScroll}
+        style={{ "--onlypump-wheel-item-height": `${itemHeight}px`, height: `${itemHeight * 3}px`, paddingTop: `${itemHeight}px`, paddingBottom: `${itemHeight}px` }}
       >
-        <div className="grid h-full grid-rows-3 gap-1">
-          {visibleOptions.map((option, index) => {
-            const selected = index === 1;
-            return <button
-              key={`${option?.value || "empty"}-${index}`}
-              type="button"
-              disabled={!option}
-              onClick={() => option && (selected ? onChange(option.value) : step(index === 0 ? -1 : 1))}
-              className={`rounded-2xl px-2 text-center text-base font-black transition ${selected ? "bg-red-500 text-black shadow-lg shadow-red-500/20" : "bg-white/[0.03] text-zinc-500 hover:bg-white/8"} disabled:opacity-0`}
-            >
-              {option?.label || ""}
-            </button>;
-          })}
-        </div>
+        <div className="onlypump-wheel-center" />
+        {wheelOptions.map(option => {
+          const selected = String(option.value) === String(value);
+          return <button
+            key={`${option.value}-${option.virtualIndex}`}
+            type="button"
+            onClick={() => { onChange(option.value); scrollToIndex(option.virtualIndex, "smooth"); normalizeScrollPosition(option); }}
+            className={`onlypump-wheel-item relative z-10 flex w-full items-center justify-center rounded-2xl px-2 text-center text-base font-black transition ${selected ? "text-red-100" : "text-zinc-500"}`}
+            style={{ height: `${itemHeight}px` }}
+          >
+            {option.label}
+          </button>;
+        })}
       </div>
     </div>;
   };
@@ -8577,9 +8694,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const ExerciseBaseSheet = () => <div onClick={closeExerciseBase} className="onlypump-fullscreen-layer fixed inset-0 z-[190] flex items-end bg-black/35 backdrop-blur-sm">
-    <BottomSheetPanel onClose={closeExerciseBase} onClick={(e) => e.stopPropagation()} className="onlypump-bottom-sheet w-full rounded-t-[34px] border-t border-white/10 bg-zinc-950/92 px-5 pt-4 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+    <BottomSheetPanel onClose={closeExerciseBase} onClick={(e) => e.stopPropagation()} className="onlypump-bottom-sheet flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full flex-col rounded-t-[34px] border-t border-white/10 bg-zinc-950/92 px-5 pt-4 shadow-2xl shadow-black/70 backdrop-blur-2xl">
       <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
-      <div className="mx-auto max-w-[430px]">
+      <div className="mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-red-400">База упражнений</p>
@@ -8618,7 +8735,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           </button>)}
         </div>
 
-        <div className="onlypump-sheet-list mt-4 space-y-6 overflow-y-auto pr-1 onlypump-scrollbar-none">
+        <div className="onlypump-exercise-base-list mt-4 flex-1 space-y-6 pr-1 onlypump-scrollbar-none">
           {filteredExerciseGroups.length ? filteredExerciseGroups.map(section => <div key={section.group}>
             <h3 className="text-sm font-bold uppercase tracking-[0.16em] text-zinc-500">{section.group}</h3>
             <div className="mt-3 space-y-2">
@@ -8647,13 +8764,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           </div>) : <div className="rounded-2xl bg-black/25 p-5 text-sm text-zinc-500">Ничего не найдено.</div>}
         </div>
 
-        {exerciseBaseMode === "add" && <div className="onlypump-exercise-add-footer sticky bottom-0 mt-4 flex justify-center bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent pt-5">
+        {exerciseBaseMode === "add" && <div className="onlypump-exercise-add-footer mt-4 flex justify-center bg-transparent pb-[calc(var(--onlypump-safe-bottom)+4px)] pt-3">
           <button
             onClick={addPendingExercisesToWorkout}
             disabled={!pendingExerciseAdds.length}
             className="h-12 min-h-12 rounded-full bg-red-500 px-8 text-sm font-black text-black shadow-2xl shadow-red-500/20 transition active:scale-[0.98] disabled:bg-white/10 disabled:text-zinc-600 disabled:shadow-none"
           >
-            {pendingExerciseAdds.length === 1 ? "добавить упражнение" : "добавить упражнения"}
+            {pendingExerciseAdds.length === 1 ? "Добавить упражнение" : "Добавить упражнения"}
           </button>
         </div>}
       </div>
@@ -9245,6 +9362,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return isStrengthWorkout && workoutViewMode === "exercise" ? ActiveExerciseScreen() : WorkoutOverviewScreen();
   };
 
+  const customExerciseMode = customExerciseSheet
+    ? normalizeMeasurementMode(customExerciseSheet.measurementMode, customExerciseSheet.exerciseCategory === "strength" ? "weight_reps" : "time")
+    : "weight_reps";
+  const customExerciseShowsWeightUnit = customExerciseMode === "weight_reps" || customExerciseMode === "weight_time" || customExerciseMode === "weight_distance";
+  const customExerciseShowsDistanceUnit = customExerciseMode === "distance" || customExerciseMode === "weight_distance";
+
   return <>
     <Header title="Тренировки" subtitle="Дневник тренировок, готовые программы, недельный объём и упражнения."/>
     <div className="mt-6 w-full pb-32">
@@ -9620,25 +9743,31 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           <button onClick={() => setCustomExerciseSheet(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
         </div>
 
-        <div className="onlypump-sheet-list mt-5 flex-1 space-y-4 overflow-y-auto pr-1 onlypump-scrollbar-none">
+        <div className="onlypump-sheet-list onlypump-keyboard-aware-list mt-5 flex-1 space-y-4 overflow-y-auto pr-1 onlypump-scrollbar-none">
           <label className="block">
             <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название</span>
-            <input value={customExerciseSheet.name} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, name: e.target.value }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-base font-semibold outline-none ring-1 ring-white/10 focus:ring-red-500/60" placeholder="Например: подъём на платформу" />
+            <input value={customExerciseSheet.name} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, name: e.target.value }))} className="onlypump-field-input mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-base font-semibold text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-red-500/60 focus:ring-1 focus:ring-red-500/40" placeholder="Например: подъём на платформу" />
           </label>
 
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
               <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Тип</span>
-              <select value={customExerciseSheet.exerciseCategory} onChange={(e) => {
-                const category = normalizeExerciseCategory(e.target.value);
-                setCustomExerciseSheet(prev => ({
-                  ...prev,
-                  exerciseCategory: category,
-                  measurementMode: normalizeMeasurementMode(prev.measurementMode, category === "strength" ? "weight_reps" : "time"),
-                  countsInMuscleStats: category === "strength",
-                  primaryMuscles: category === "strength" ? (prev.primaryMuscles?.length ? prev.primaryMuscles : ["Грудь"]) : [],
-                }));
-              }} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">
+	              <select value={customExerciseSheet.exerciseCategory} onChange={(e) => {
+	                const category = normalizeExerciseCategory(e.target.value);
+	                setCustomExerciseSheet(prev => {
+	                  const previousMode = normalizeMeasurementMode(prev.measurementMode, category === "strength" ? "weight_reps" : "time");
+		                  const measurementMode = category === "strength"
+		                    ? (["weight_reps", "reps", "weight_time", "weight_distance"].includes(previousMode) ? previousMode : "weight_reps")
+	                    : (previousMode === "weight_reps" || previousMode === "reps" ? "time" : previousMode);
+	                  return {
+	                    ...prev,
+	                    exerciseCategory: category,
+	                    measurementMode,
+	                    countsInMuscleStats: category === "strength",
+	                    primaryMuscles: category === "strength" ? (prev.primaryMuscles?.length ? prev.primaryMuscles : ["Грудь"]) : [],
+	                  };
+	                });
+	              }} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">
                 {workoutTypeDefinitions.map(type => <option key={type.id} value={type.id}>{type.label}</option>)}
               </select>
             </label>
@@ -9650,7 +9779,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             </label>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3">
             <label className="block">
               <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Основная группа</span>
               <select disabled={customExerciseSheet.exerciseCategory !== "strength"} value={customExerciseSheet.primaryMuscles?.[0] || ""} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, primaryMuscles: e.target.value ? [e.target.value] : [] }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10 disabled:text-zinc-600">
@@ -9658,18 +9787,34 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                 {standardMuscleGroups.map(group => <option key={group} value={group}>{group}</option>)}
               </select>
             </label>
-            <label className="block">
+          </div>
+
+          {(customExerciseShowsWeightUnit || customExerciseShowsDistanceUnit) && <div className="grid grid-cols-2 gap-3">
+            {customExerciseShowsWeightUnit && <label className="block">
+              <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Ед. измерения</span>
+              <select value={customExerciseSheet.weightUnit} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, weightUnit: normalizeWeightUnit(e.target.value) }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">
+                <option value="kg">кг</option>
+                <option value="lb">lb</option>
+              </select>
+            </label>}
+            {customExerciseShowsDistanceUnit && <label className="block">
               <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Дистанция</span>
               <select value={customExerciseSheet.distanceUnit} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, distanceUnit: normalizeDistanceUnit(e.target.value) }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">
                 {Object.entries(distanceUnitLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
               </select>
-            </label>
-          </div>
+            </label>}
+          </div>}
 
-          <button type="button" onClick={() => setCustomExerciseSheet(prev => ({ ...prev, countsInMuscleStats: !prev.countsInMuscleStats }))} className={`flex w-full items-center justify-between rounded-2xl px-4 py-4 text-left font-semibold ${customExerciseSheet.countsInMuscleStats ? "bg-red-500/15 text-red-200 ring-1 ring-red-500/30" : "bg-black/30 text-zinc-500"}`}>
-            <span>Учитывать в силовой статистике</span>
+          {customExerciseSheet.exerciseCategory === "strength" && <button type="button" onClick={() => setCustomExerciseSheet(prev => ({ ...prev, countsInMuscleStats: !prev.countsInMuscleStats }))} className={`flex w-full items-center justify-between rounded-2xl px-4 py-4 text-left font-semibold ${customExerciseSheet.countsInMuscleStats ? "bg-red-500/15 text-red-200 ring-1 ring-red-500/30" : "bg-black/30 text-zinc-500"}`}>
+            <span>Учитывать в статистике мышц</span>
             <span>{customExerciseSheet.countsInMuscleStats ? "✓" : ""}</span>
-          </button>
+          </button>}
+          {customExerciseShowsWeightUnit && <button type="button" onClick={() => setCustomExerciseSheet(prev => ({ ...prev, doubleWeightInStats: !prev.doubleWeightInStats }))} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
+            <span>Удваивать в статистике</span>
+            <span className={`relative h-7 w-12 rounded-full transition ${customExerciseSheet.doubleWeightInStats ? "bg-red-500" : "bg-white/[0.12]"}`}>
+              <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${customExerciseSheet.doubleWeightInStats ? "left-6" : "left-1"}`} />
+            </span>
+          </button>}
         </div>
 
         <div className="mt-5 pb-[var(--onlypump-safe-bottom)]">
@@ -9732,10 +9877,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
     {exerciseMeasurementSheet && (() => {
       const exercise = (selectedWorkout?.exercises || []).find(item => item.id === exerciseMeasurementSheet.exerciseId);
-      const settings = normalizeExerciseMeasurementSettings(exerciseMeasurementSheet.draft || exercise || {});
-      const currentMode = settings.measurementMode;
-      const modeItems = workoutMeasurementModes.map(mode => [mode.id, mode.label]);
-      return <div onClick={() => setExerciseMeasurementSheet(null)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+	      const settings = normalizeExerciseMeasurementSettings(exerciseMeasurementSheet.draft || exercise || {});
+	      const currentMode = settings.measurementMode;
+	      const modeItems = workoutMeasurementModes.map(mode => [mode.id, mode.label]);
+	      const showWeightUnitSettings = Boolean(settings.measureWeightEnabled);
+	      const showDistanceUnitSettings = Boolean(settings.measureDistanceEnabled);
+	      return <div onClick={() => setExerciseMeasurementSheet(null)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/45 p-4 backdrop-blur-sm">
         <BottomSheetPanel onClose={() => setExerciseMeasurementSheet(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
           <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
           <div className="flex items-start justify-between gap-3">
@@ -9756,27 +9903,32 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             </button>)}
           </div>
 
-          <div className="mt-5 space-y-2">
-            {[
-              ["measureRirEnabled", "RIR"],
-              ["measureRpeEnabled", "RPE"],
-              ["doubleWeightInStats", "Считать вес в статистике ×2"],
-            ].map(([field, label]) => <button key={field} onClick={() => toggleExerciseMeasurementSetting(field)} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
-              <span>{label}</span>
-              <span className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-black ${settings[field] ? 'border-red-500 bg-red-500 text-black' : 'border-white/20 text-zinc-600'}`}>{settings[field] ? "✓" : ""}</span>
-            </button>)}
-          </div>
+	          <div className="mt-5 space-y-2">
+	            {[
+	              ["measureRirEnabled", "RIR"],
+	              ["measureRpeEnabled", "RPE"],
+	            ].map(([field, label]) => <button key={field} onClick={() => toggleExerciseMeasurementSetting(field)} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
+	              <span>{label}</span>
+	              <span className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-black ${settings[field] ? 'border-red-500 bg-red-500 text-black' : 'border-white/20 text-zinc-600'}`}>{settings[field] ? "✓" : ""}</span>
+	            </button>)}
+	            {showWeightUnitSettings && <button type="button" onClick={() => toggleExerciseMeasurementSetting("doubleWeightInStats")} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
+	              <span>Удваивать в статистике</span>
+	              <span className={`relative h-7 w-12 rounded-full transition ${settings.doubleWeightInStats ? "bg-red-500" : "bg-white/[0.12]"}`}>
+	                <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${settings.doubleWeightInStats ? "left-6" : "left-1"}`} />
+	              </span>
+	            </button>}
+	          </div>
 
-          <div className="mt-5 rounded-[24px] bg-white/[0.04] p-2">
-            <div className="grid grid-cols-2 gap-2">
-              {["kg", "lb"].map(unit => <button key={unit} onClick={() => setExerciseWeightUnit(unit)} className={`h-11 rounded-2xl text-sm font-black uppercase transition ${settings.weightUnit === unit ? 'bg-white text-black' : 'text-zinc-500 hover:bg-white/8'}`}>{unit}</button>)}
-            </div>
-          </div>
-          <div className="mt-3 rounded-[24px] bg-white/[0.04] p-2">
-            <div className="grid grid-cols-3 gap-2">
-              {Object.entries(distanceUnitLabels).map(([unit, label]) => <button key={unit} onClick={() => updateExerciseMeasurementDraft({ distanceUnit: unit })} className={`h-11 rounded-2xl text-sm font-black uppercase transition ${settings.distanceUnit === unit ? 'bg-white text-black' : 'text-zinc-500 hover:bg-white/8'}`}>{label}</button>)}
-            </div>
-          </div>
+	          {showWeightUnitSettings && <div className="mt-5 rounded-[24px] bg-white/[0.04] p-2">
+	            <div className="grid grid-cols-2 gap-2">
+	              {["kg", "lb"].map(unit => <button key={unit} onClick={() => setExerciseWeightUnit(unit)} className={`h-11 rounded-2xl text-sm font-black uppercase transition ${settings.weightUnit === unit ? 'bg-white text-black' : 'text-zinc-500 hover:bg-white/8'}`}>{unit}</button>)}
+	            </div>
+	          </div>}
+	          {showDistanceUnitSettings && <div className="mt-3 rounded-[24px] bg-white/[0.04] p-2">
+	            <div className="grid grid-cols-3 gap-2">
+	              {Object.entries(distanceUnitLabels).map(([unit, label]) => <button key={unit} onClick={() => updateExerciseMeasurementDraft({ distanceUnit: unit })} className={`h-11 rounded-2xl text-sm font-black uppercase transition ${settings.distanceUnit === unit ? 'bg-white text-black' : 'text-zinc-500 hover:bg-white/8'}`}>{label}</button>)}
+	            </div>
+	          </div>}
           <button onClick={saveExerciseMeasurementSettings} className="mt-5 h-12 w-full rounded-full bg-red-500 font-black text-black">Сохранить</button>
         </BottomSheetPanel>
       </div>;
