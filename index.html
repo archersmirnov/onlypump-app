@@ -2365,6 +2365,7 @@ const exerciseMeasurementDefaults = {
   measureRpeEnabled: false,
   weightUnit: "kg",
   doubleWeightInStats: false,
+  doubleCountInStatistics: false,
   measurementMode: "weight_reps",
   distanceUnit: "km",
   exerciseCategory: "strength",
@@ -2465,8 +2466,8 @@ const normalizeExerciseMeasurementSettings = (exercise = {}) => {
     measureRpeEnabled: exercise.measureRpeEnabled ?? exercise.measure_rpe_enabled ?? exerciseMeasurementDefaults.measureRpeEnabled,
     weightUnit: normalizeWeightUnit(exercise.weightUnit ?? exercise.weight_unit ?? exerciseMeasurementDefaults.weightUnit),
     distanceUnit: normalizeDistanceUnit(exercise.distanceUnit ?? exercise.distance_unit ?? exerciseMeasurementDefaults.distanceUnit),
-    doubleWeightInStats: Boolean(exercise.doubleWeightInStats ?? exercise.double_weight_in_stats ?? exercise.doubleCountInStatistics ?? exercise.double_count_in_statistics ?? exerciseMeasurementDefaults.doubleWeightInStats),
-    doubleCountInStatistics: Boolean(exercise.doubleCountInStatistics ?? exercise.double_count_in_statistics ?? exercise.doubleWeightInStats ?? exercise.double_weight_in_stats ?? exerciseMeasurementDefaults.doubleWeightInStats),
+    doubleWeightInStats: Boolean(exercise.doubleWeightInStats ?? exercise.double_weight_in_stats ?? exerciseMeasurementDefaults.doubleWeightInStats),
+    doubleCountInStatistics: Boolean(exercise.doubleCountInStatistics ?? exercise.double_count_in_statistics ?? exerciseMeasurementDefaults.doubleCountInStatistics),
     measurementMode: mode,
     exerciseCategory,
     sourceExerciseId: onlypumpUuidPattern.test(String(rawSourceExerciseId || "")) ? rawSourceExerciseId : null,
@@ -2482,7 +2483,7 @@ const getSetVolumeForExercise = (set = {}, exercise = {}) => {
   const weight = Number(set.weight ?? set.weight_kg ?? set.weight_value ?? 0);
   const reps = Number(set.reps ?? set.reps_value ?? 0);
   const baseVolume = (Number.isFinite(weight) ? weight : 0) * (Number.isFinite(reps) ? reps : 0);
-  return settings.doubleWeightInStats ? baseVolume * 2 : baseVolume;
+  return (settings.doubleWeightInStats || settings.doubleCountInStatistics) ? baseVolume * 2 : baseVolume;
 };
 function isStrengthStatsExercise(exercise = {}) {
   if (!exercise) return false;
@@ -5882,8 +5883,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       primaryMuscles: row.primary_muscles || row.primaryMuscles,
       secondaryMuscles: row.secondary_muscles || row.secondaryMuscles,
       countsInMuscleStats: row.counts_in_muscle_stats ?? row.countsInMuscleStats,
-      doubleWeightInStats: row.double_weight_in_stats ?? row.doubleWeightInStats ?? row.double_count_in_statistics ?? row.doubleCountInStatistics,
-      doubleCountInStatistics: row.double_count_in_statistics ?? row.doubleCountInStatistics ?? row.double_weight_in_stats ?? row.doubleWeightInStats,
+      doubleWeightInStats: row.double_weight_in_stats ?? row.doubleWeightInStats,
+      doubleCountInStatistics: row.double_count_in_statistics ?? row.doubleCountInStatistics,
     });
     const primary = settings.primaryMuscles[0] || exerciseCategoryLabels[settings.exerciseCategory] || "Другое";
     return {
@@ -5981,6 +5982,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const category = normalizeExerciseCategory(exercise?.exerciseCategory || exercise?.category || selectedWorkout?.workoutType || "strength");
     const primary = (exercise?.primaryMuscles || [exercise?.muscleGroup]).filter(Boolean);
     const settings = normalizeExerciseMeasurementSettings(exercise || { exerciseCategory: category });
+    const isEditingCustomExercise = Boolean(exercise);
     setCustomExerciseSheet({
       id: exercise?.sourceExerciseId || exercise?.id || null,
       name: exercise?.name || "",
@@ -5991,8 +5993,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       weightUnit: normalizeWeightUnit(exercise?.weightUnit || settings.weightUnit || profile?.default_weight_unit || "kg"),
       distanceUnit: normalizeDistanceUnit(exercise?.distanceUnit || settings.distanceUnit || "km"),
       countsInMuscleStats: exercise?.countsInMuscleStats ?? settings.countsInMuscleStats ?? category === "strength",
-      doubleWeightInStats: Boolean(exercise?.doubleWeightInStats ?? exercise?.double_weight_in_stats ?? settings.doubleWeightInStats),
-      doubleCountInStatistics: Boolean(exercise?.doubleCountInStatistics ?? exercise?.double_count_in_statistics ?? exercise?.doubleWeightInStats ?? exercise?.double_weight_in_stats ?? settings.doubleCountInStatistics),
+      doubleCountInStatistics: isEditingCustomExercise ? Boolean(exercise?.doubleCountInStatistics ?? exercise?.double_count_in_statistics ?? false) : false,
       notes: exercise?.notes || "",
     });
   };
@@ -6015,8 +6016,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       weight_unit: normalizeWeightUnit(customExerciseSheet.weightUnit),
       distance_unit: normalizeDistanceUnit(customExerciseSheet.distanceUnit),
       counts_in_muscle_stats: Boolean(customExerciseSheet.countsInMuscleStats),
-      double_weight_in_stats: Boolean(customExerciseSheet.doubleCountInStatistics ?? customExerciseSheet.doubleWeightInStats),
-      double_count_in_statistics: Boolean(customExerciseSheet.doubleCountInStatistics ?? customExerciseSheet.doubleWeightInStats),
+      double_count_in_statistics: Boolean(customExerciseSheet.doubleCountInStatistics),
       notes: customExerciseSheet.notes || "",
     };
     const optimistic = mapExerciseLibraryRow({
@@ -10782,6 +10782,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 	                    exerciseCategory: category,
 	                    measurementMode,
 	                    countsInMuscleStats: category === "strength",
+	                    doubleCountInStatistics: false,
 	                    primaryMuscles: category === "strength" ? (prev.primaryMuscles?.length ? prev.primaryMuscles : ["Грудь"]) : [],
 	                  };
 	                });
@@ -10830,12 +10831,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             </span>
           </button>}
 	          {customExerciseShowsWeightUnit && <button type="button" onClick={() => setCustomExerciseSheet(prev => {
-	            const nextValue = !Boolean(prev.doubleCountInStatistics ?? prev.doubleWeightInStats);
-	            return { ...prev, doubleCountInStatistics: nextValue, doubleWeightInStats: nextValue };
+	            const nextValue = !Boolean(prev.doubleCountInStatistics);
+	            return { ...prev, doubleCountInStatistics: nextValue };
 	          })} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
 		            <span>Удваивать в статистике</span>
-	            <span className={`onlypump-toggle-track relative h-7 w-12 rounded-full transition ${Boolean(customExerciseSheet.doubleCountInStatistics ?? customExerciseSheet.doubleWeightInStats) ? "is-on bg-red-500" : "bg-white/[0.12]"}`}>
-	              <span className={`onlypump-toggle-knob absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${Boolean(customExerciseSheet.doubleCountInStatistics ?? customExerciseSheet.doubleWeightInStats) ? "left-6" : "left-1"}`} />
+	            <span className={`onlypump-toggle-track relative h-7 w-12 rounded-full transition ${Boolean(customExerciseSheet.doubleCountInStatistics) ? "is-on bg-red-500" : "bg-white/[0.12]"}`}>
+	              <span className={`onlypump-toggle-knob absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${Boolean(customExerciseSheet.doubleCountInStatistics) ? "left-6" : "left-1"}`} />
 	            </span>
 	          </button>}
         </div>
