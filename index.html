@@ -2431,6 +2431,10 @@ const measurementSettingsFromMode = (mode) => {
     measureTimeEnabled: normalized.includes("time"),
   };
 };
+const shouldCountExerciseInMuscleStats = (category, mode) => {
+  return normalizeExerciseCategory(category) === "strength"
+    && Boolean(measurementSettingsFromMode(mode).measureWeightEnabled);
+};
 const measurementModeFromSettings = (exercise = {}) => {
   const explicit = exercise.measurementMode ?? exercise.measurement_mode;
   if (explicit) return normalizeMeasurementMode(explicit);
@@ -5983,16 +5987,18 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const primary = (exercise?.primaryMuscles || [exercise?.muscleGroup]).filter(Boolean);
     const settings = normalizeExerciseMeasurementSettings(exercise || { exerciseCategory: category });
     const isEditingCustomExercise = Boolean(exercise);
+    const measurementMode = normalizeMeasurementMode(exercise?.measurementMode || settings.measurementMode, category === "strength" ? "weight_reps" : "time");
+    const autoCountsInMuscleStats = shouldCountExerciseInMuscleStats(category, measurementMode);
     setCustomExerciseSheet({
       id: exercise?.sourceExerciseId || exercise?.id || null,
       name: exercise?.name || "",
       exerciseCategory: category,
       primaryMuscles: primary.length ? primary : (category === "strength" ? ["Грудь"] : []),
       secondaryMuscles: exercise?.secondaryMuscles || [],
-      measurementMode: normalizeMeasurementMode(exercise?.measurementMode || settings.measurementMode, category === "strength" ? "weight_reps" : "time"),
+      measurementMode,
       weightUnit: normalizeWeightUnit(exercise?.weightUnit || settings.weightUnit || profile?.default_weight_unit || "kg"),
       distanceUnit: normalizeDistanceUnit(exercise?.distanceUnit || settings.distanceUnit || "km"),
-      countsInMuscleStats: exercise?.countsInMuscleStats ?? settings.countsInMuscleStats ?? category === "strength",
+      countsInMuscleStats: isEditingCustomExercise ? Boolean(exercise?.countsInMuscleStats ?? exercise?.counts_in_muscle_stats ?? autoCountsInMuscleStats) : autoCountsInMuscleStats,
       doubleCountInStatistics: isEditingCustomExercise ? Boolean(exercise?.doubleCountInStatistics ?? exercise?.double_count_in_statistics ?? false) : false,
       notes: exercise?.notes || "",
     });
@@ -6006,16 +6012,17 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return;
     }
     const category = normalizeExerciseCategory(customExerciseSheet.exerciseCategory);
+    const measurementMode = normalizeMeasurementMode(customExerciseSheet.measurementMode, category === "strength" ? "weight_reps" : "time");
     const payload = {
       id: customExerciseSheet.id,
       exercise_name: name,
       exercise_category: category,
       primary_muscles: customExerciseSheet.primaryMuscles || [],
       secondary_muscles: customExerciseSheet.secondaryMuscles || [],
-      measurement_mode: normalizeMeasurementMode(customExerciseSheet.measurementMode, category === "strength" ? "weight_reps" : "time"),
+      measurement_mode: measurementMode,
       weight_unit: normalizeWeightUnit(customExerciseSheet.weightUnit),
       distance_unit: normalizeDistanceUnit(customExerciseSheet.distanceUnit),
-      counts_in_muscle_stats: Boolean(customExerciseSheet.countsInMuscleStats),
+      counts_in_muscle_stats: shouldCountExerciseInMuscleStats(category, measurementMode),
       double_count_in_statistics: Boolean(customExerciseSheet.doubleCountInStatistics),
       notes: customExerciseSheet.notes || "",
     };
@@ -10782,7 +10789,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	                    ...prev,
 	                    exerciseCategory: category,
 	                    measurementMode,
-	                    countsInMuscleStats: category === "strength",
+	                    countsInMuscleStats: shouldCountExerciseInMuscleStats(category, measurementMode),
 	                    doubleCountInStatistics: false,
 	                    primaryMuscles: category === "strength" ? (prev.primaryMuscles?.length ? prev.primaryMuscles : ["Грудь"]) : [],
 	                  };
@@ -10793,7 +10800,14 @@ const toggleExerciseMeasurementSetting = (field) => {
             </label>
             <label className="block">
               <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Измерение</span>
-              <select value={customExerciseSheet.measurementMode} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, measurementMode: normalizeMeasurementMode(e.target.value) }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">
+              <select value={customExerciseSheet.measurementMode} onChange={(e) => {
+                const measurementMode = normalizeMeasurementMode(e.target.value);
+                setCustomExerciseSheet(prev => ({
+                  ...prev,
+                  measurementMode,
+                  countsInMuscleStats: shouldCountExerciseInMuscleStats(prev.exerciseCategory, measurementMode),
+                }));
+              }} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">
                 {workoutMeasurementModes.map(mode => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
               </select>
             </label>
@@ -10825,12 +10839,6 @@ const toggleExerciseMeasurementSetting = (field) => {
             </label>}
           </div>}
 
-          {customExerciseSheet.exerciseCategory === "strength" && <button type="button" onClick={() => setCustomExerciseSheet(prev => ({ ...prev, countsInMuscleStats: !prev.countsInMuscleStats }))} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
-            <span>Учитывать в статистике</span>
-            <span className={`onlypump-toggle-track relative h-7 w-12 rounded-full transition ${customExerciseSheet.countsInMuscleStats ? "is-on bg-red-500" : "bg-white/[0.12]"}`}>
-              <span className={`onlypump-toggle-knob absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${customExerciseSheet.countsInMuscleStats ? "left-6" : "left-1"}`} />
-            </span>
-          </button>}
 	          {customExerciseShowsWeightUnit && <button type="button" onClick={() => setCustomExerciseSheet(prev => {
 	            const nextValue = !Boolean(prev.doubleCountInStatistics);
 	            return { ...prev, doubleCountInStatistics: nextValue };
