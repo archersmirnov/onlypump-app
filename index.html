@@ -396,8 +396,35 @@
       background: transparent !important;
     }
     .theme-light .onlypump-wheel-center {
-      background: rgba(239, 68, 68, 0.12);
-      border-color: rgba(220, 38, 38, 0.28);
+      background: rgba(239, 68, 68, 0.08);
+      border-color: rgba(220, 38, 38, 0.30);
+    }
+    .theme-light .onlypump-wheel-item.onlypump-wheel-selected {
+      color: #991b1b !important;
+      text-shadow: none;
+    }
+    .onlypump-exercise-add-button:disabled {
+      border-color: rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(161, 161, 170, 0.9);
+      box-shadow: none;
+    }
+    .theme-light .onlypump-exercise-add-button:disabled {
+      border-color: rgba(17, 24, 39, 0.14) !important;
+      background: rgba(255, 255, 255, 0.86) !important;
+      color: rgba(71, 85, 105, 0.78) !important;
+    }
+    .theme-light .onlypump-toggle-track {
+      background-color: #e5e7eb !important;
+      border: 1px solid rgba(17, 24, 39, 0.14);
+    }
+    .theme-light .onlypump-toggle-track.is-on {
+      background-color: #ef4444 !important;
+      border-color: rgba(220, 38, 38, 0.45);
+    }
+    .theme-light .onlypump-toggle-knob {
+      background-color: #ffffff !important;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
     }
   </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -2140,6 +2167,45 @@ const availableTrainingPrograms = [
   },
 ];
 
+const programDifficultyOptions = [
+  { id: "beginner", label: "Новичок", subtitle: "меньше подходов, мягкая прогрессия" },
+  { id: "intermediate", label: "Любитель", subtitle: "стандартная двойная прогрессия" },
+  { id: "advanced", label: "Опытный", subtitle: "осторожнее шаги и больше контроля" },
+];
+const programDifficultyDefaults = {
+  beginner: { setDelta: -1, smallStep: 1.25, bigStep: 2.5, regressionThreshold: 3 },
+  intermediate: { setDelta: 0, smallStep: 2.5, bigStep: 5, regressionThreshold: 2 },
+  advanced: { setDelta: 0, smallStep: 1.25, bigStep: 2.5, regressionThreshold: 2 },
+};
+const programPlanModeOptions = [
+  { id: "flexible", label: "Свободная настройка", subtitle: "можно сделать больше, план учтет факт" },
+  { id: "strict", label: "Жёсткий план", subtitle: "план держит цель, факт всё равно адаптирует будущие дни" },
+];
+const clampProgramNumber = (value, min, max) => Math.min(max, Math.max(min, Number(value || min)));
+const getProgramDurationBounds = (program = {}) => ({
+  min: Number(program.minDurationWeeks || program.min_duration_weeks || 4),
+  max: Number(program.maxDurationWeeks || program.max_duration_weeks || 16),
+  defaultValue: Number(program.defaultDurationWeeks || program.default_duration_weeks || 8),
+});
+const makeProgramTemplateWorkoutKey = (programId, dayIndex) => `${programId}-day-${dayIndex + 1}`;
+const makeProgramTemplateExerciseKey = (programId, dayIndex, exerciseIndex) => `${programId}-day-${dayIndex + 1}-exercise-${exerciseIndex + 1}`;
+const getProgramExerciseSetsCount = (exercise = {}) => {
+  if (Number.isFinite(Number(exercise.targetSets))) return Number(exercise.targetSets);
+  if (Number.isFinite(Number(exercise.target_sets))) return Number(exercise.target_sets);
+  return Math.max(1, (exercise.sets || []).length || 3);
+};
+const getProgramExerciseRepRange = (exercise = {}) => {
+  const reps = (exercise.sets || []).map(set => Number(Array.isArray(set) ? set[1] : set?.reps)).filter(Number.isFinite);
+  const defaultMin = reps.length ? Math.min(...reps) : 8;
+  const defaultMax = reps.length ? Math.max(...reps) : 12;
+  const min = Number(exercise.repMin || exercise.rep_min || defaultMin);
+  const max = Number(exercise.repMax || exercise.rep_max || defaultMax);
+  return {
+    min: Number.isFinite(min) ? min : 8,
+    max: Number.isFinite(max) ? Math.max(max, Number.isFinite(min) ? min : 8) : 12,
+  };
+};
+
 const trackerWorkout = workoutTemplates[1];
 
 const workoutWeekdayNames = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
@@ -2451,6 +2517,16 @@ const createWorkoutModel = (dateKey, patch = {}) => {
     exercises: patch.exercises ? cloneWorkoutExercises(patch.exercises) : defaultWorkoutExercisesForTitle(title),
     notes: patch.notes || "",
     templateId: patch.templateId,
+    userProgramId: patch.userProgramId ?? patch.user_program_id ?? null,
+    userProgramClientId: patch.userProgramClientId ?? patch.user_program_client_id ?? null,
+    programTemplateWorkoutId: patch.programTemplateWorkoutId ?? patch.program_template_workout_id ?? null,
+    programTemplateWorkoutKey: patch.programTemplateWorkoutKey ?? patch.program_template_workout_key ?? null,
+    programWeekNumber: patch.programWeekNumber ?? patch.program_week_number ?? null,
+    programDayIndex: patch.programDayIndex ?? patch.program_day_index ?? null,
+    programName: patch.programName ?? patch.program_name ?? null,
+    programPlanMode: patch.programPlanMode ?? patch.program_plan_mode ?? null,
+    programDifficulty: patch.programDifficulty ?? patch.program_difficulty ?? null,
+    isProgramGenerated: Boolean(patch.isProgramGenerated ?? patch.is_program_generated ?? false),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -2573,10 +2649,20 @@ const mapWorkoutExerciseFromApi = (row = {}, index = 0) => {
     restAfterSeconds: safeWorkoutModelNumber(row.rest_after_seconds ?? row.restAfterSeconds, 0),
     supersetId: supersetGroupId,
     supersetGroupId,
-    supersetOrder: supersetGroupId ? safeWorkoutModelNumber(row.superset_order ?? row.supersetOrder, index + 1) : null,
-    isSuperset: Boolean(row.is_superset || supersetGroupId),
-    ...measurementSettings,
-    note: row.notes || row.note || "",
+	    supersetOrder: supersetGroupId ? safeWorkoutModelNumber(row.superset_order ?? row.supersetOrder, index + 1) : null,
+	    isSuperset: Boolean(row.is_superset || supersetGroupId),
+	    userProgramExerciseSettingId: row.user_program_exercise_setting_id || row.userProgramExerciseSettingId || null,
+	    userProgramExerciseSettingClientId: row.user_program_exercise_setting_client_id || row.userProgramExerciseSettingClientId || null,
+	    programTemplateExerciseId: row.program_template_exercise_id || row.programTemplateExerciseId || null,
+	    programTemplateExerciseKey: row.program_template_exercise_key || row.programTemplateExerciseKey || null,
+	    plannedSets: row.planned_sets ?? row.plannedSets ?? null,
+	    plannedRepMin: row.planned_rep_min ?? row.plannedRepMin ?? null,
+	    plannedRepMax: row.planned_rep_max ?? row.plannedRepMax ?? null,
+	    plannedWeight: row.planned_weight ?? row.plannedWeight ?? null,
+	    plannedReps: row.planned_reps ?? row.plannedReps ?? null,
+	    progressionState: row.progression_state || row.progressionState || null,
+	    ...measurementSettings,
+	    note: row.notes || row.note || "",
     sets: [...sets]
       .sort((a, b) => safeWorkoutModelNumber(a.set_order ?? a.order) - safeWorkoutModelNumber(b.set_order ?? b.order))
       .map(mapWorkoutSetFromApi),
@@ -2615,9 +2701,19 @@ const mapWorkoutFromApi = (row = {}, index = 0, fallbackDateKey = formatDateKey(
     autoStoppedAt: row.auto_stopped_at || row.autoStoppedAt || null,
     finishedAt: row.finished_at || row.finishedAt || null,
     exercises: mappedExercises,
-    notes: row.notes || "",
-    templateId: row.template_id || row.templateId || null,
-    createdAt,
+	    notes: row.notes || "",
+	    templateId: row.template_id || row.templateId || null,
+	    userProgramId: row.user_program_id || row.userProgramId || null,
+	    userProgramClientId: row.user_program_client_id || row.userProgramClientId || null,
+	    programTemplateWorkoutId: row.program_template_workout_id || row.programTemplateWorkoutId || null,
+	    programTemplateWorkoutKey: row.program_template_workout_key || row.programTemplateWorkoutKey || null,
+	    programWeekNumber: row.program_week_number ?? row.programWeekNumber ?? null,
+	    programDayIndex: row.program_day_index ?? row.programDayIndex ?? null,
+	    programName: row.program_name || row.programName || null,
+	    programPlanMode: row.program_plan_mode || row.programPlanMode || null,
+	    programDifficulty: row.program_difficulty || row.programDifficulty || null,
+	    isProgramGenerated: Boolean(row.is_program_generated || row.isProgramGenerated),
+	    createdAt,
     updatedAt: row.updated_at || row.updatedAt || new Date().toISOString(),
   });
 };
@@ -4862,12 +4958,22 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       workoutType,
       status: normalizeWorkoutStatus(patch.status),
       startedAt: patch.startedAt !== undefined ? patch.startedAt : new Date().toISOString(),
-      exercises: patch.exercises ? cloneExercises(patch.exercises) : (workoutType === "strength" ? defaultExercisesForTitle(title) : []),
-      notes: patch.notes || "",
-      templateId: patch.templateId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+	      exercises: patch.exercises ? cloneExercises(patch.exercises) : (workoutType === "strength" ? defaultExercisesForTitle(title) : []),
+	      notes: patch.notes || "",
+	      templateId: patch.templateId,
+	      userProgramId: patch.userProgramId ?? patch.user_program_id ?? null,
+	      userProgramClientId: patch.userProgramClientId ?? patch.user_program_client_id ?? null,
+	      programTemplateWorkoutId: patch.programTemplateWorkoutId ?? patch.program_template_workout_id ?? null,
+	      programTemplateWorkoutKey: patch.programTemplateWorkoutKey ?? patch.program_template_workout_key ?? null,
+	      programWeekNumber: patch.programWeekNumber ?? patch.program_week_number ?? null,
+	      programDayIndex: patch.programDayIndex ?? patch.program_day_index ?? null,
+	      programName: patch.programName ?? patch.program_name ?? null,
+	      programPlanMode: patch.programPlanMode ?? patch.program_plan_mode ?? null,
+	      programDifficulty: patch.programDifficulty ?? patch.program_difficulty ?? null,
+	      isProgramGenerated: Boolean(patch.isProgramGenerated ?? patch.is_program_generated ?? false),
+	      createdAt: new Date().toISOString(),
+	      updatedAt: new Date().toISOString(),
+	    };
   };
 
   const buildInitialWorkouts = () => {
@@ -4880,6 +4986,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [activeTab, setActiveTab] = useState("diary");
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [programSettingsSheet, setProgramSettingsSheet] = useState(null);
+  const [programSaving, setProgramSaving] = useState(false);
   const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
   const [isExerciseBaseOpen, setIsExerciseBaseOpen] = useState(false);
   const [exerciseBaseMode, setExerciseBaseMode] = useState("view");
@@ -5193,58 +5301,359 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return sum + day.exercises.reduce((exerciseSum, exercise) => exerciseSum + exercise.sets.length, 0);
   }, 0);
 
-  const buildProgramExercises = (exercises = []) => exercises.map((exercise, index) => ({
-    ...makeExercise(index + 1, exercise.name, exercise.muscleGroup, exercise.sets, false),
-    restSeconds: exercise.restSeconds || 120,
-    blockType: exercise.blockType || "обычное",
-    note: exercise.note || "",
-  }));
+  const getProgramExerciseAlternatives = (exercise = {}) => {
+    const explicit = (exercise.alternatives || []).map(item => typeof item === "string" ? item : item.name).filter(Boolean);
+    const groupItems = (exerciseLibrary[exercise.muscleGroup] || []).filter(name => name !== exercise.name).slice(0, 3);
+    return Array.from(new Set([exercise.name, ...explicit, ...groupItems]));
+  };
 
-  const addProgramToWorkouts = async (program) => {
-    const createdWorkouts = program.days.map((day, index) => {
-      const dateKey = toDateKey(addLocalDays(selectedDate, day.offsetDays ?? index * 2));
-      return makeWorkout(dateKey, {
-        title: day.title,
-        programDayNumber: index + 1,
-        durationMinutes: 0,
-        totalVolumeKg: 0,
-        calories: 0,
-        estimatedCaloriesBurned: 0,
-        status: "planned",
-        startedAt: null,
-        exercises: buildProgramExercises(day.exercises),
-        notes: `${program.title}: ${program.description}`,
-        templateId: program.id,
+  const getProgramExerciseDefaultSettings = (program, dayIndex, exercise, exerciseIndex, difficulty = "intermediate") => {
+    const key = makeProgramTemplateExerciseKey(program.id, dayIndex, exerciseIndex);
+    const config = programDifficultyDefaults[difficulty] || programDifficultyDefaults.intermediate;
+    const reps = getProgramExerciseRepRange(exercise);
+    const muscle = exercise.muscleGroup || "Другое";
+    const bigLift = /ног|спин|ягод|груд/i.test(muscle);
+    const targetSets = Math.max(1, getProgramExerciseSetsCount(exercise) + config.setDelta);
+    return {
+      key,
+      clientId: `program-setting-${key}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      templateExerciseKey: key,
+      originalName: exercise.name,
+      selectedExerciseName: exercise.name,
+      selectedExerciseLibraryId: null,
+      muscleGroup: muscle,
+      alternatives: getProgramExerciseAlternatives(exercise),
+      targetSets,
+      repMin: reps.min,
+      repMax: reps.max,
+      progressionWeightStep: bigLift ? config.bigStep : config.smallStep,
+      progressionRepStep: 1,
+      progressionMode: "double_progression",
+      deloadWeightSteps: 1,
+      regressionThresholdSessions: config.regressionThreshold,
+      measurementMode: normalizeMeasurementMode(exercise.measurementMode || "weight_reps"),
+      targetWeight: Number((exercise.sets || [])[0]?.[0] || exercise.targetWeight || 0),
+    };
+  };
+
+  const createProgramSettingsDraft = (program) => {
+    const bounds = getProgramDurationBounds(program);
+    const difficulty = program.defaultDifficulty || program.default_difficulty || "intermediate";
+    const exerciseSettings = {};
+    (program.days || []).forEach((day, dayIndex) => {
+      (day.exercises || []).forEach((exercise, exerciseIndex) => {
+        const setting = getProgramExerciseDefaultSettings(program, dayIndex, exercise, exerciseIndex, difficulty);
+        exerciseSettings[setting.key] = setting;
       });
     });
+    return {
+      clientId: `program-client-${program.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      durationWeeks: clampProgramNumber(bounds.defaultValue, bounds.min, bounds.max),
+      difficulty,
+      planMode: "flexible",
+      startedAt: selectedDateKey,
+      exerciseSettings,
+    };
+  };
 
+  const openProgramSettings = (program) => {
+    setProgramSettingsSheet({ program, draft: createProgramSettingsDraft(program) });
+  };
+
+  const updateProgramSettingsDraft = (patcher) => {
+    setProgramSettingsSheet(prev => {
+      if (!prev) return prev;
+      const nextDraft = typeof patcher === "function" ? patcher(prev.draft) : { ...prev.draft, ...patcher };
+      return { ...prev, draft: nextDraft };
+    });
+  };
+
+  const updateProgramExerciseSetting = (settingKey, patch) => {
+    updateProgramSettingsDraft(draft => ({
+      ...draft,
+      exerciseSettings: {
+        ...draft.exerciseSettings,
+        [settingKey]: {
+          ...draft.exerciseSettings[settingKey],
+          ...patch,
+        },
+      },
+    }));
+  };
+
+  const rebuildProgramExerciseSettingsForDifficulty = (program, draft, difficulty) => {
+    const nextSettings = {};
+    (program.days || []).forEach((day, dayIndex) => {
+      (day.exercises || []).forEach((exercise, exerciseIndex) => {
+        const defaults = getProgramExerciseDefaultSettings(program, dayIndex, exercise, exerciseIndex, difficulty);
+        const previous = draft.exerciseSettings[defaults.key] || {};
+        nextSettings[defaults.key] = {
+          ...defaults,
+          selectedExerciseName: previous.selectedExerciseName || defaults.selectedExerciseName,
+          selectedExerciseLibraryId: previous.selectedExerciseLibraryId || defaults.selectedExerciseLibraryId,
+          repMin: previous.repMin ?? defaults.repMin,
+          repMax: previous.repMax ?? defaults.repMax,
+          targetWeight: previous.targetWeight ?? defaults.targetWeight,
+        };
+      });
+    });
+    return nextSettings;
+  };
+
+  const setProgramDifficulty = (difficulty) => {
+    setProgramSettingsSheet(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        draft: {
+          ...prev.draft,
+          difficulty,
+          exerciseSettings: rebuildProgramExerciseSettingsForDifficulty(prev.program, prev.draft, difficulty),
+        },
+      };
+    });
+  };
+
+  const getProgramProgressionTarget = (setting, sequenceIndex = 0, seed = {}) => {
+    const repMin = Number(setting.repMin || 8);
+    const repMax = Math.max(repMin, Number(setting.repMax || 12));
+    const repStep = Math.max(1, Number(setting.progressionRepStep || 1));
+    const weightStep = Number(setting.progressionWeightStep || 0);
+    const startReps = Number(seed.reps || repMin);
+    const startWeight = Number(seed.weight ?? setting.targetWeight ?? 0);
+    const rangeSize = Math.max(1, Math.floor((repMax - repMin) / repStep) + 1);
+    const cycle = Math.floor((sequenceIndex + Math.max(0, startReps - repMin)) / rangeSize);
+    const reps = repMin + ((sequenceIndex + Math.max(0, startReps - repMin)) % rangeSize) * repStep;
+    return {
+      weight: Math.max(0, startWeight + cycle * weightStep),
+      reps: Math.min(repMax, reps),
+    };
+  };
+
+  const buildProgramExercise = (program, dayIndex, exercise, exerciseIndex, draft, sequenceIndex) => {
+    const settingKey = makeProgramTemplateExerciseKey(program.id, dayIndex, exerciseIndex);
+    const setting = draft.exerciseSettings[settingKey] || getProgramExerciseDefaultSettings(program, dayIndex, exercise, exerciseIndex, draft.difficulty);
+    const target = getProgramProgressionTarget(setting, sequenceIndex);
+    const sets = Array.from({ length: Math.max(1, Number(setting.targetSets || 3)) }, () => [target.weight, target.reps]);
+    const base = makeExercise(exerciseIndex + 1, setting.selectedExerciseName, setting.muscleGroup || exercise.muscleGroup, sets, false, {
+      ...exercise,
+      name: setting.selectedExerciseName,
+      muscleGroup: setting.muscleGroup || exercise.muscleGroup,
+      measurementMode: setting.measurementMode,
+      primaryMuscles: [setting.muscleGroup || exercise.muscleGroup].filter(Boolean),
+    });
+    return {
+      ...base,
+      note: exercise.note || "Запиши фактический вес и повторы — следующая тренировка подстроится автоматически.",
+      userProgramExerciseSettingId: null,
+      userProgramExerciseSettingClientId: setting.clientId,
+      programTemplateExerciseId: null,
+      programTemplateExerciseKey: settingKey,
+      plannedSets: setting.targetSets,
+      plannedRepMin: setting.repMin,
+      plannedRepMax: setting.repMax,
+      plannedWeight: target.weight,
+      plannedReps: target.reps,
+      progressionState: {
+        mode: setting.progressionMode,
+        repMin: setting.repMin,
+        repMax: setting.repMax,
+        repStep: setting.progressionRepStep,
+        weightStep: setting.progressionWeightStep,
+        regressionThresholdSessions: setting.regressionThresholdSessions,
+        sequenceIndex,
+        planMode: draft.planMode,
+        difficulty: draft.difficulty,
+        missedSessions: 0,
+      },
+      sets: base.sets.map(set => ({
+        ...set,
+        weight: target.weight,
+        reps: target.reps,
+        weightValue: target.weight,
+        repsValue: target.reps,
+        status: "pending",
+        isCompleted: false,
+      })),
+    };
+  };
+
+  const buildProgramPlanWorkouts = (program, draft) => {
+    const occurrenceByKey = {};
+    const workoutsToCreate = [];
+    for (let weekIndex = 0; weekIndex < Number(draft.durationWeeks || 1); weekIndex += 1) {
+      (program.days || []).forEach((day, dayIndex) => {
+        const dateKey = toDateKey(addLocalDays(parseDateKey(draft.startedAt || selectedDateKey), weekIndex * 7 + (day.offsetDays ?? dayIndex * 2)));
+        const exercises = (day.exercises || []).map((exercise, exerciseIndex) => {
+          const settingKey = makeProgramTemplateExerciseKey(program.id, dayIndex, exerciseIndex);
+          const setting = draft.exerciseSettings[settingKey];
+          const progressionKey = `${setting?.selectedExerciseName || exercise.name}-${setting?.muscleGroup || exercise.muscleGroup}`.toLowerCase();
+          const sequenceIndex = occurrenceByKey[progressionKey] || 0;
+          occurrenceByKey[progressionKey] = sequenceIndex + 1;
+          return buildProgramExercise(program, dayIndex, exercise, exerciseIndex, draft, sequenceIndex);
+        });
+        workoutsToCreate.push(makeWorkout(dateKey, {
+          title: day.title,
+          programDayNumber: dayIndex + 1,
+          durationMinutes: 0,
+          totalVolumeKg: 0,
+          calories: 0,
+          estimatedCaloriesBurned: 0,
+          status: "planned",
+          startedAt: null,
+          exercises,
+          notes: `${program.title}: ${program.description}`,
+          templateId: program.id,
+          userProgramId: null,
+          userProgramClientId: draft.clientId,
+          programTemplateWorkoutId: null,
+          programTemplateWorkoutKey: makeProgramTemplateWorkoutKey(program.id, dayIndex),
+          programWeekNumber: weekIndex + 1,
+          programDayIndex: dayIndex + 1,
+          programName: program.title,
+          programPlanMode: draft.planMode,
+          programDifficulty: draft.difficulty,
+          isProgramGenerated: true,
+        }));
+      });
+    }
+    return workoutsToCreate;
+  };
+
+  const buildProgramExerciseSettingsPayload = (draft) => Object.values(draft.exerciseSettings || {}).map(setting => ({
+    client_id: setting.clientId,
+    template_exercise_key: setting.templateExerciseKey,
+    selected_exercise_library_id: setting.selectedExerciseLibraryId,
+    selected_exercise_name: setting.selectedExerciseName,
+    target_sets: Number(setting.targetSets || 3),
+    rep_min: Number(setting.repMin || 8),
+    rep_max: Number(setting.repMax || 12),
+    progression_weight_step: Number(setting.progressionWeightStep || 2.5),
+    progression_rep_step: Number(setting.progressionRepStep || 1),
+    progression_mode: setting.progressionMode || "double_progression",
+    deload_weight_steps: Number(setting.deloadWeightSteps || 1),
+    regression_threshold_sessions: Number(setting.regressionThresholdSessions || 2),
+    measurement_mode: setting.measurementMode || "weight_reps",
+  }));
+
+  const buildProgramCreatePayload = (program, draft, workoutsToCreate) => ({
+    client_id: draft.clientId,
+    program: {
+      id: program.id,
+      title: program.title,
+      name: program.title,
+      description: program.description,
+      goal: program.focus,
+    },
+    settings: {
+      client_id: draft.clientId,
+      template_key: program.id,
+      name: program.title,
+      started_at: draft.startedAt,
+      duration_weeks: Number(draft.durationWeeks || 1),
+      difficulty: draft.difficulty,
+      plan_mode: draft.planMode,
+      status: "active",
+    },
+    exercise_settings: buildProgramExerciseSettingsPayload(draft),
+    workouts: workoutsToCreate.map(workout => {
+      const { profile_id, ...workoutPayload } = buildWorkoutSupabasePayload(workout);
+      return {
+        client_id: workout.id,
+        workout: { client_id: workout.id, ...workoutPayload },
+        exercises: (workout.exercises || []).map(exercise => {
+          const { workout_id, ...exercisePayload } = buildExerciseSupabasePayload(null, exercise);
+          return {
+            client_id: exercise.id,
+            ...exercisePayload,
+            sets: (exercise.sets || []).map(set => {
+              const { workout_exercise_id, ...setPayload } = buildSetSupabasePayload(null, set);
+              return { client_id: set.id, ...setPayload };
+            }),
+          };
+        }),
+      };
+    }),
+  });
+
+  const applyProgramCreateResponse = (createdWorkouts, result) => {
+    const userProgram = pickApiRecord(result, "user_program");
+    const workoutRows = readApiArray(result, "workouts");
+    const exerciseRows = readApiArray(result, "workout_exercises", ["exercises"]);
+    const setRows = readApiArray(result, "workout_sets", ["sets"]);
+    const settingRows = readApiArray(result, "user_program_exercise_settings", ["exercise_settings"]);
+    const workoutByClient = new Map(workoutRows.map(row => [String(row.client_id || ""), row]));
+    const exerciseByClient = new Map(exerciseRows.map(row => [String(row.client_id || ""), row]));
+    const setByClient = new Map(setRows.map(row => [String(row.client_id || ""), row]));
+    const settingByClient = new Map(settingRows.map(row => [String(row.client_id || ""), row]));
+    const createdIds = new Set(createdWorkouts.map(item => item.id));
+    setWorkouts(prev => prev.map(workout => {
+      if (!createdIds.has(workout.id)) return workout;
+      const workoutRow = workoutByClient.get(String(workout.id)) || {};
+      return normalizeWorkoutSupersetMetadata({
+        ...workout,
+        supabaseId: workoutRow.id || workout.supabaseId,
+        userProgramId: userProgram?.id || workout.userProgramId,
+        userProgramClientId: userProgram?.client_id || workout.userProgramClientId,
+        pending: false,
+        isSaving: false,
+        isSyncing: false,
+        syncError: false,
+        exercises: (workout.exercises || []).map(exercise => {
+          const exerciseRow = exerciseByClient.get(String(exercise.id)) || {};
+          const settingRow = settingByClient.get(String(exercise.userProgramExerciseSettingClientId || "")) || {};
+          return {
+            ...exercise,
+            supabaseId: exerciseRow.id || exercise.supabaseId,
+            userProgramExerciseSettingId: settingRow.id || exerciseRow.user_program_exercise_setting_id || exercise.userProgramExerciseSettingId,
+            pending: false,
+            isSaving: false,
+            isSyncing: false,
+            syncError: false,
+            sets: (exercise.sets || []).map(set => {
+              const setRow = setByClient.get(String(set.id)) || {};
+              return {
+                ...set,
+                supabaseId: setRow.id || set.supabaseId,
+                pending: false,
+                isSaving: false,
+                isSyncing: false,
+                syncError: false,
+              };
+            }),
+          };
+        }),
+      });
+    }));
+  };
+
+  const addProgramToWorkouts = async (program, draft) => {
+    const createdWorkouts = buildProgramPlanWorkouts(program, draft).map(workout => normalizeWorkoutSupersetMetadata({
+      ...workout,
+      pending: canUseWorkoutApi,
+      isSaving: canUseWorkoutApi,
+      isSyncing: canUseWorkoutApi,
+    }));
     setIsTemplatesOpen(false);
     setIsAddMenuOpen(false);
-    setActiveTab("diary");
-
-    if (canUseWorkoutApi) {
-      const pendingWorkouts = createdWorkouts.map(workout => normalizeWorkoutSupersetMetadata({
-        ...workout,
-        pending: true,
-        isSaving: true,
-        isSyncing: true,
-      }));
-      setWorkouts(prev => [...pendingWorkouts, ...prev]);
-      setSelectedWorkout(null);
-      Promise.all(pendingWorkouts.map(async workout => {
-        const id = await createWorkoutTreeViaApi(workout, { programLog: true });
-        if (!id) patchWorkoutInState(workout.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
-        return id;
-      })).then(() => {
-        console.log("Program workout fully saved");
-      }).catch(error => {
-        console.error("Program workout save error", error);
-      });
-      return;
-    }
-
-    setWorkouts(prev => [...createdWorkouts, ...prev]);
+    setProgramSettingsSheet(null);
     setSelectedWorkout(null);
+    setActiveTab("diary");
+    setWorkouts(prev => [...createdWorkouts, ...prev]);
+
+    if (!canUseWorkoutApi) return;
+    setProgramSaving(true);
+    try {
+      const result = await callWorkoutsApi("create_user_program", buildProgramCreatePayload(program, draft, createdWorkouts));
+      applyProgramCreateResponse(createdWorkouts, result);
+      console.log("Program workout fully saved");
+    } catch (error) {
+      console.error("Program workout save error", error);
+      const createdIds = new Set(createdWorkouts.map(item => item.id));
+      setWorkouts(prev => prev.map(workout => createdIds.has(workout.id) ? { ...workout, isSaving: false, isSyncing: false, syncError: true } : workout));
+    } finally {
+      setProgramSaving(false);
+    }
   };
 
   const openWhatsNew = () => {
@@ -5612,10 +6021,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return recalculateWorkoutTotals(workout);
   };
 
-  const buildWorkoutSupabasePayload = (workout) => {
-    const totals = getWorkoutTotals(workout);
-    return {
-      profile_id: profile?.id,
+	  const buildWorkoutSupabasePayload = (workout) => {
+	    const totals = getWorkoutTotals(workout);
+	    const isProgramWorkout = Boolean(workout?.isProgramGenerated || workout?.userProgramId || workout?.userProgramClientId || workout?.programName);
+	    return {
+	      profile_id: profile?.id,
       workout_date: workout?.date || selectedDateKey,
       title: workout?.title || "Новая тренировка",
       status: normalizeWorkoutStatus(workout?.status),
@@ -5624,16 +6034,29 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       total_sets: totals.totalSets,
       total_volume: totals.totalVolume,
       duration_seconds: Math.max(0, safeWorkoutNumber(workout?.durationMinutes) * 60),
-      estimated_calories_burned: safeWorkoutNumber(workout?.estimatedCaloriesBurned ?? workout?.estimated_calories_burned ?? workout?.calories, 0),
-      started_at: workout?.startedAt || workout?.started_at || null,
-      auto_stopped_at: workout?.autoStoppedAt || workout?.auto_stopped_at || null,
-    };
-  };
+	      estimated_calories_burned: safeWorkoutNumber(workout?.estimatedCaloriesBurned ?? workout?.estimated_calories_burned ?? workout?.calories, 0),
+	      started_at: workout?.startedAt || workout?.started_at || null,
+	      auto_stopped_at: workout?.autoStoppedAt || workout?.auto_stopped_at || null,
+	      ...(isProgramWorkout ? {
+	        user_program_id: workout?.userProgramId || workout?.user_program_id || undefined,
+	        user_program_client_id: workout?.userProgramClientId || workout?.user_program_client_id || undefined,
+	        program_template_workout_id: workout?.programTemplateWorkoutId || workout?.program_template_workout_id || undefined,
+	        program_template_workout_key: workout?.programTemplateWorkoutKey || workout?.program_template_workout_key || undefined,
+	        program_week_number: workout?.programWeekNumber ?? workout?.program_week_number,
+	        program_day_index: workout?.programDayIndex ?? workout?.program_day_index,
+	        program_name: workout?.programName || workout?.program_name || undefined,
+	        program_plan_mode: workout?.programPlanMode || workout?.program_plan_mode || undefined,
+	        program_difficulty: workout?.programDifficulty || workout?.program_difficulty || undefined,
+	        is_program_generated: true,
+	      } : {}),
+	    };
+	  };
 
-  const buildExerciseSupabasePayload = (workoutSupabaseId, exercise) => {
-    const supersetGroupId = getExerciseSupersetGroupId(exercise);
-    const measurementSettings = normalizeExerciseMeasurementSettings(exercise);
-    const payload = {
+	  const buildExerciseSupabasePayload = (workoutSupabaseId, exercise) => {
+	    const supersetGroupId = getExerciseSupersetGroupId(exercise);
+	    const measurementSettings = normalizeExerciseMeasurementSettings(exercise);
+	    const isProgramExercise = Boolean(exercise?.userProgramExerciseSettingId || exercise?.userProgramExerciseSettingClientId || exercise?.programTemplateExerciseKey || exercise?.plannedSets);
+	    const payload = {
       workout_id: workoutSupabaseId,
       exercise_name: exercise?.name || "Упражнение",
       muscle_group: exercise?.muscleGroup || "Другое",
@@ -5656,10 +6079,22 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_time_enabled: Boolean(measurementSettings.measureTimeEnabled),
       measure_rir_enabled: Boolean(measurementSettings.measureRirEnabled),
       measure_rpe_enabled: Boolean(measurementSettings.measureRpeEnabled),
-      weight_unit: measurementSettings.weightUnit,
-      double_weight_in_stats: Boolean(measurementSettings.doubleWeightInStats),
-      double_count_in_statistics: Boolean(measurementSettings.doubleWeightInStats),
-    };
+	      weight_unit: measurementSettings.weightUnit,
+	      double_weight_in_stats: Boolean(measurementSettings.doubleWeightInStats),
+	      double_count_in_statistics: Boolean(measurementSettings.doubleWeightInStats),
+	      ...(isProgramExercise ? {
+	        user_program_exercise_setting_id: exercise?.userProgramExerciseSettingId || exercise?.user_program_exercise_setting_id || undefined,
+	        user_program_exercise_setting_client_id: exercise?.userProgramExerciseSettingClientId || exercise?.user_program_exercise_setting_client_id || undefined,
+	        program_template_exercise_id: exercise?.programTemplateExerciseId || exercise?.program_template_exercise_id || undefined,
+	        program_template_exercise_key: exercise?.programTemplateExerciseKey || exercise?.program_template_exercise_key || undefined,
+	        planned_sets: exercise?.plannedSets ?? exercise?.planned_sets,
+	        planned_rep_min: exercise?.plannedRepMin ?? exercise?.planned_rep_min,
+	        planned_rep_max: exercise?.plannedRepMax ?? exercise?.planned_rep_max,
+	        planned_weight: exercise?.plannedWeight ?? exercise?.planned_weight,
+	        planned_reps: exercise?.plannedReps ?? exercise?.planned_reps,
+	        progression_state: exercise?.progressionState || exercise?.progression_state || undefined,
+	      } : {}),
+	    };
     console.log("Saving exercise rest/superset fields:", {
       rest_between_seconds: payload.rest_between_seconds,
       rest_after_seconds: payload.rest_after_seconds,
@@ -5720,10 +6155,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const uniqueIds = (ids = []) => Array.from(new Set(ids.filter(Boolean).map(String)));
 
-  const buildWorkoutPatchPayload = (workout) => {
-    if (!workout?.supabaseId) return null;
-    const totals = getWorkoutTotals(workout);
-    const payload = {
+	  const buildWorkoutPatchPayload = (workout) => {
+	    if (!workout?.supabaseId) return null;
+	    const totals = getWorkoutTotals(workout);
+	    const isProgramWorkout = Boolean(workout?.isProgramGenerated || workout?.userProgramId || workout?.userProgramClientId || workout?.programName);
+	    const payload = {
       id: workout.supabaseId,
       title: workout.title || "Новая тренировка",
       status: normalizeWorkoutStatus(workout.status),
@@ -5732,10 +6168,22 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       total_sets: totals.totalSets,
       total_volume: totals.totalVolume,
       duration_seconds: Math.max(0, safeWorkoutNumber(workout.durationMinutes) * 60),
-      estimated_calories_burned: safeWorkoutNumber(workout.estimatedCaloriesBurned ?? workout.estimated_calories_burned ?? workout.calories, 0),
-      started_at: workout.startedAt || workout.started_at || null,
-      auto_stopped_at: workout.autoStoppedAt || workout.auto_stopped_at || null,
-    };
+	      estimated_calories_burned: safeWorkoutNumber(workout.estimatedCaloriesBurned ?? workout.estimated_calories_burned ?? workout.calories, 0),
+	      started_at: workout.startedAt || workout.started_at || null,
+	      auto_stopped_at: workout.autoStoppedAt || workout.auto_stopped_at || null,
+	      ...(isProgramWorkout ? {
+	        user_program_id: workout.userProgramId || workout.user_program_id || undefined,
+	        user_program_client_id: workout.userProgramClientId || workout.user_program_client_id || undefined,
+	        program_template_workout_id: workout.programTemplateWorkoutId || workout.program_template_workout_id || undefined,
+	        program_template_workout_key: workout.programTemplateWorkoutKey || workout.program_template_workout_key || undefined,
+	        program_week_number: workout.programWeekNumber ?? workout.program_week_number,
+	        program_day_index: workout.programDayIndex ?? workout.program_day_index,
+	        program_name: workout.programName || workout.program_name || undefined,
+	        program_plan_mode: workout.programPlanMode || workout.program_plan_mode || undefined,
+	        program_difficulty: workout.programDifficulty || workout.program_difficulty || undefined,
+	        is_program_generated: true,
+	      } : {}),
+	    };
     console.log("Saving workout totals:", payload);
     return payload;
   };
@@ -5757,11 +6205,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return payload;
   };
 
-  const buildExercisePatchPayload = (exercise) => {
-    if (!exercise?.supabaseId) return null;
-    const supersetGroupId = getExerciseSupersetGroupId(exercise);
-    const measurementSettings = normalizeExerciseMeasurementSettings(exercise);
-    const payload = {
+	  const buildExercisePatchPayload = (exercise) => {
+	    if (!exercise?.supabaseId) return null;
+	    const supersetGroupId = getExerciseSupersetGroupId(exercise);
+	    const measurementSettings = normalizeExerciseMeasurementSettings(exercise);
+	    const isProgramExercise = Boolean(exercise.userProgramExerciseSettingId || exercise.userProgramExerciseSettingClientId || exercise.programTemplateExerciseKey || exercise.plannedSets);
+	    const payload = {
       id: exercise.supabaseId,
       exercise_name: exercise.name || "Упражнение",
       muscle_group: exercise.muscleGroup || "Другое",
@@ -5784,10 +6233,22 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_time_enabled: Boolean(measurementSettings.measureTimeEnabled),
       measure_rir_enabled: Boolean(measurementSettings.measureRirEnabled),
       measure_rpe_enabled: Boolean(measurementSettings.measureRpeEnabled),
-      weight_unit: measurementSettings.weightUnit,
-      double_weight_in_stats: Boolean(measurementSettings.doubleWeightInStats),
-      double_count_in_statistics: Boolean(measurementSettings.doubleWeightInStats),
-    };
+	      weight_unit: measurementSettings.weightUnit,
+	      double_weight_in_stats: Boolean(measurementSettings.doubleWeightInStats),
+	      double_count_in_statistics: Boolean(measurementSettings.doubleWeightInStats),
+	      ...(isProgramExercise ? {
+	        user_program_exercise_setting_id: exercise.userProgramExerciseSettingId || exercise.user_program_exercise_setting_id || undefined,
+	        user_program_exercise_setting_client_id: exercise.userProgramExerciseSettingClientId || exercise.user_program_exercise_setting_client_id || undefined,
+	        program_template_exercise_id: exercise.programTemplateExerciseId || exercise.program_template_exercise_id || undefined,
+	        program_template_exercise_key: exercise.programTemplateExerciseKey || exercise.program_template_exercise_key || undefined,
+	        planned_sets: exercise.plannedSets ?? exercise.planned_sets,
+	        planned_rep_min: exercise.plannedRepMin ?? exercise.planned_rep_min,
+	        planned_rep_max: exercise.plannedRepMax ?? exercise.planned_rep_max,
+	        planned_weight: exercise.plannedWeight ?? exercise.planned_weight,
+	        planned_reps: exercise.plannedReps ?? exercise.planned_reps,
+	        progression_state: exercise.progressionState || exercise.progression_state || undefined,
+	      } : {}),
+	    };
     console.log("Saving exercise rest/superset fields:", {
       rest_between_seconds: payload.rest_between_seconds,
       rest_after_seconds: payload.rest_after_seconds,
@@ -6432,10 +6893,20 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       restAfterSeconds: safeWorkoutNumber(row.rest_after_seconds ?? row.restAfterSeconds, 0),
       supersetId: supersetGroupId,
       supersetGroupId,
-      supersetOrder: supersetGroupId ? safeWorkoutNumber(row.superset_order ?? row.supersetOrder, index + 1) : null,
-      isSuperset: Boolean(row.is_superset || supersetGroupId),
-      ...measurementSettings,
-      note: row.notes || "",
+	      supersetOrder: supersetGroupId ? safeWorkoutNumber(row.superset_order ?? row.supersetOrder, index + 1) : null,
+	      isSuperset: Boolean(row.is_superset || supersetGroupId),
+	      userProgramExerciseSettingId: row.user_program_exercise_setting_id || row.userProgramExerciseSettingId || null,
+	      userProgramExerciseSettingClientId: row.user_program_exercise_setting_client_id || row.userProgramExerciseSettingClientId || null,
+	      programTemplateExerciseId: row.program_template_exercise_id || row.programTemplateExerciseId || null,
+	      programTemplateExerciseKey: row.program_template_exercise_key || row.programTemplateExerciseKey || null,
+	      plannedSets: row.planned_sets ?? row.plannedSets ?? null,
+	      plannedRepMin: row.planned_rep_min ?? row.plannedRepMin ?? null,
+	      plannedRepMax: row.planned_rep_max ?? row.plannedRepMax ?? null,
+	      plannedWeight: row.planned_weight ?? row.plannedWeight ?? null,
+	      plannedReps: row.planned_reps ?? row.plannedReps ?? null,
+	      progressionState: row.progression_state || row.progressionState || null,
+	      ...measurementSettings,
+	      note: row.notes || "",
       sets: [...sets]
         .sort((a, b) => safeWorkoutNumber(a.set_order ?? a.order) - safeWorkoutNumber(b.set_order ?? b.order))
         .map(mapSupabaseSet),
@@ -6492,10 +6963,20 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       status,
       startedAt,
       autoStoppedAt: row.auto_stopped_at || row.autoStoppedAt || null,
-      exercises: mappedExercises,
-      notes: row.notes || "",
-      templateId: null,
-      createdAt,
+	      exercises: mappedExercises,
+	      notes: row.notes || "",
+	      templateId: row.template_id || row.templateId || null,
+	      userProgramId: row.user_program_id || row.userProgramId || null,
+	      userProgramClientId: row.user_program_client_id || row.userProgramClientId || null,
+	      programTemplateWorkoutId: row.program_template_workout_id || row.programTemplateWorkoutId || null,
+	      programTemplateWorkoutKey: row.program_template_workout_key || row.programTemplateWorkoutKey || null,
+	      programWeekNumber: row.program_week_number ?? row.programWeekNumber ?? null,
+	      programDayIndex: row.program_day_index ?? row.programDayIndex ?? null,
+	      programName: row.program_name || row.programName || null,
+	      programPlanMode: row.program_plan_mode || row.programPlanMode || null,
+	      programDifficulty: row.program_difficulty || row.programDifficulty || null,
+	      isProgramGenerated: Boolean(row.is_program_generated || row.isProgramGenerated),
+	      createdAt,
       updatedAt: row.updated_at || row.updatedAt || new Date().toISOString(),
     });
   };
@@ -8204,7 +8685,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             key={`${option.value}-${option.virtualIndex}`}
             type="button"
             onClick={() => { onChange(option.value); scrollToIndex(option.virtualIndex, "smooth"); normalizeScrollPosition(option); }}
-            className={`onlypump-wheel-item relative z-10 flex w-full items-center justify-center rounded-2xl px-2 text-center text-base font-black transition ${selected ? "text-red-100" : "text-zinc-500"}`}
+            className={`onlypump-wheel-item relative z-10 flex w-full items-center justify-center rounded-2xl px-2 text-center text-base font-black transition ${selected ? "onlypump-wheel-selected text-red-100" : "text-zinc-500"}`}
             style={{ height: `${itemHeight}px` }}
           >
             {option.label}
@@ -8375,6 +8856,141 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
   };
 
+  const getProgramWorkoutKey = (workout = {}) => workout.userProgramId || workout.userProgramClientId || null;
+  const getProgramExerciseProgressionKey = (exercise = {}) => (
+    exercise.userProgramExerciseSettingId
+    || exercise.userProgramExerciseSettingClientId
+    || exercise.programTemplateExerciseKey
+    || `${exercise.name}-${exercise.muscleGroup}`
+  );
+
+  const getBestCompletedProgramSet = (exercise = {}) => {
+    const completedSets = (exercise.sets || []).filter(set => getSetStatus(set) === "completed");
+    if (!completedSets.length) return null;
+    return completedSets.reduce((best, set) => {
+      const currentScore = safeWorkoutNumber(set.weight) * 1000 + safeWorkoutNumber(set.reps);
+      const bestScore = safeWorkoutNumber(best.weight) * 1000 + safeWorkoutNumber(best.reps);
+      return currentScore >= bestScore ? set : best;
+    }, completedSets[0]);
+  };
+
+  const advanceProgramTarget = (target, state = {}) => {
+    const repMin = Number(state.repMin || target.reps || 8);
+    const repMax = Math.max(repMin, Number(state.repMax || repMin + 4));
+    const repStep = Math.max(1, Number(state.repStep || state.progressionRepStep || 1));
+    const weightStep = Math.max(0, Number(state.weightStep || state.progressionWeightStep || 0));
+    if (Number(target.reps || 0) >= repMax) {
+      return { weight: Math.max(0, Number(target.weight || 0) + weightStep), reps: repMin };
+    }
+    return { weight: Math.max(0, Number(target.weight || 0)), reps: Math.min(repMax, Number(target.reps || repMin) + repStep) };
+  };
+
+  const getNextProgramTargetFromCompletedExercise = (exercise = {}) => {
+    const state = exercise.progressionState || {};
+    const repMin = Number(exercise.plannedRepMin ?? state.repMin ?? 8);
+    const repMax = Math.max(repMin, Number(exercise.plannedRepMax ?? state.repMax ?? 12));
+    const plannedReps = Number(exercise.plannedReps ?? state.plannedReps ?? repMin);
+    const plannedWeight = Number(exercise.plannedWeight ?? state.plannedWeight ?? 0);
+    const repStep = Math.max(1, Number(state.repStep || state.progressionRepStep || 1));
+    const weightStep = Math.max(0, Number(state.weightStep || state.progressionWeightStep || 0));
+    const threshold = Math.max(1, Number(state.regressionThresholdSessions || 2));
+    const bestSet = getBestCompletedProgramSet(exercise);
+    if (!bestSet) return { weight: plannedWeight, reps: plannedReps, state: { ...state, missedSessions: Number(state.missedSessions || 0) + 1 } };
+    const actualWeight = safeWorkoutNumber(bestSet.weight, plannedWeight);
+    const actualReps = safeWorkoutNumber(bestSet.reps, plannedReps);
+    const success = actualReps >= plannedReps;
+    if (success) {
+      const next = actualReps >= repMax
+        ? { weight: Math.max(0, actualWeight + weightStep), reps: repMin }
+        : { weight: Math.max(0, actualWeight), reps: Math.min(repMax, actualReps + repStep) };
+      return { ...next, state: { ...state, missedSessions: 0, lastActualWeight: actualWeight, lastActualReps: actualReps } };
+    }
+    const missedSessions = Number(state.missedSessions || 0) + 1;
+    if (missedSessions >= threshold) {
+      const nextWeight = plannedReps <= repMin ? Math.max(0, plannedWeight - weightStep) : plannedWeight;
+      return { weight: nextWeight, reps: repMin, state: { ...state, missedSessions: 0, lastActualWeight: actualWeight, lastActualReps: actualReps, deloadApplied: true } };
+    }
+    return { weight: plannedWeight, reps: plannedReps, state: { ...state, missedSessions, lastActualWeight: actualWeight, lastActualReps: actualReps } };
+  };
+
+  const applyProgramTargetToExercise = (exercise, target) => {
+    const nextState = {
+      ...(exercise.progressionState || {}),
+      ...(target.state || {}),
+      plannedWeight: target.weight,
+      plannedReps: target.reps,
+    };
+    return {
+      ...exercise,
+      plannedWeight: target.weight,
+      plannedReps: target.reps,
+      progressionState: nextState,
+      sets: (exercise.sets || []).map(set => getSetStatus(set) === "completed" ? set : ({
+        ...set,
+        weight: target.weight,
+        reps: target.reps,
+        weightValue: target.weight,
+        repsValue: target.reps,
+      })),
+    };
+  };
+
+  const adaptProgramProgressionAfterCompletion = (completedWorkout) => {
+    const programKey = getProgramWorkoutKey(completedWorkout);
+    if (!programKey) return;
+    const completedDateTime = parseDateKey(completedWorkout.date).getTime();
+    const currentWorkouts = workoutsRef.current.map(item => item.id === completedWorkout.id ? completedWorkout : item);
+    const seeds = {};
+    currentWorkouts
+      .filter(item => getProgramWorkoutKey(item) === programKey && item.status === "completed")
+      .sort((a, b) => parseDateKey(a.date).getTime() - parseDateKey(b.date).getTime())
+      .forEach(workout => {
+        (workout.exercises || []).forEach(exercise => {
+          const key = getProgramExerciseProgressionKey(exercise);
+          const target = getNextProgramTargetFromCompletedExercise(exercise);
+          if (target) seeds[key] = target;
+        });
+      });
+
+    const changed = [];
+    const nextWorkouts = currentWorkouts
+      .slice()
+      .sort((a, b) => parseDateKey(a.date).getTime() - parseDateKey(b.date).getTime())
+      .map(workout => {
+        const isFutureProgramWorkout = getProgramWorkoutKey(workout) === programKey
+          && workout.status === "planned"
+          && parseDateKey(workout.date).getTime() > completedDateTime;
+        if (!isFutureProgramWorkout) return workout;
+        let touched = false;
+        const nextWorkout = {
+          ...workout,
+          exercises: (workout.exercises || []).map(exercise => {
+            const key = getProgramExerciseProgressionKey(exercise);
+            const seed = seeds[key];
+            if (!seed) return exercise;
+            touched = true;
+            const nextExercise = applyProgramTargetToExercise(exercise, seed);
+            seeds[key] = {
+              ...advanceProgramTarget(seed, nextExercise.progressionState),
+              state: nextExercise.progressionState,
+            };
+            return nextExercise;
+          }),
+        };
+        if (touched) changed.push(nextWorkout);
+        return nextWorkout;
+      });
+
+    if (!changed.length) return;
+    const nextById = new Map(nextWorkouts.map(item => [item.id, item]));
+    setWorkouts(prev => prev.map(item => nextById.get(item.id) || item));
+    setSelectedWorkout(prev => prev ? (nextById.get(prev.id) || prev) : prev);
+    changed.forEach(workout => {
+      const patch = buildWorkoutTreePatch(workout);
+      if (patch) queueWorkoutPatch(workout.id, patch, { immediate: true });
+    });
+  };
+
   const saveCompletedWorkoutInBackground = async (workout, patch = buildWorkoutTreePatch(workout)) => {
     if (!workout?.supabaseId || !patch) {
       completionSaveRef.current = null;
@@ -8454,10 +9070,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setFinishChoiceSheet(null);
     setCompletionSaveError(null);
     completionSaveRef.current = null;
-    setCompletionDetailsOpen(false);
-    setCompletionSummarySheet(summary);
+	    setCompletionDetailsOpen(false);
+	    setCompletionSummarySheet(summary);
+	    adaptProgramProgressionAfterCompletion(nextWorkout);
 
-    if (nextWorkout.supabaseId) {
+	    if (nextWorkout.supabaseId) {
       saveCompletedWorkoutInBackground(nextWorkout);
     } else {
       setCompletionSaving(false);
@@ -8512,6 +9129,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   useAppBackLayer("workouts-exercise-base", isExerciseBaseOpen, closeExerciseBase, 160);
   useAppBackLayer("workouts-week-menu", Boolean(weekMenuGroup), () => setWeekMenuGroup(null), 155);
   useAppBackLayer("workouts-week-stats", weekStatsOpen, () => setWeekStatsOpen(false), 150);
+  useAppBackLayer("workouts-program-settings", Boolean(programSettingsSheet), () => setProgramSettingsSheet(null), 151);
   useAppBackLayer("workouts-templates", isTemplatesOpen, () => setIsTemplatesOpen(false), 145);
   useAppBackLayer("workouts-type-picker", Boolean(workoutTypePicker), () => setWorkoutTypePicker(null), 142);
   useAppBackLayer("workouts-add-menu", isAddMenuOpen, () => setIsAddMenuOpen(false), 140);
@@ -8599,8 +9217,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         <div className="text-[17px] font-semibold text-zinc-100">{workout.weekday}</div>
         <div className="mt-4 flex items-center gap-4">
           <div className="h-12 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: statusColor }} />
-          <div className="min-w-0">
-            <div className="break-words text-[23px] font-black leading-[1.08] tracking-[-0.04em] text-white">{workout.title}</div>
+	          <div className="min-w-0">
+	            {workout.isProgramGenerated && <div className="mb-2 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-[0.12em]">
+	              <span className="rounded-full bg-red-500/15 px-2 py-1 text-red-300">Программа</span>
+	              {workout.programWeekNumber && <span className="rounded-full bg-white/[0.07] px-2 py-1 text-zinc-400">Неделя {workout.programWeekNumber}</span>}
+	            </div>}
+	            <div className="break-words text-[23px] font-black leading-[1.08] tracking-[-0.04em] text-white">{workout.title}</div>
             <div className="mt-2 break-words text-[17px] font-medium text-zinc-400">
               {formatDuration(workout.durationMinutes)} · {formatVolume(getWorkoutVolume(workout))} · {workout.calories} ккал
             </div>
@@ -8768,7 +9390,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           <button
             onClick={addPendingExercisesToWorkout}
             disabled={!pendingExerciseAdds.length}
-            className="h-12 min-h-12 rounded-full bg-red-500 px-8 text-sm font-black text-black shadow-2xl shadow-red-500/20 transition active:scale-[0.98] disabled:bg-white/10 disabled:text-zinc-600 disabled:shadow-none"
+	            className="onlypump-exercise-add-button h-12 min-h-12 rounded-full border border-transparent bg-red-500 px-8 text-sm font-black text-black shadow-2xl shadow-red-500/20 transition active:scale-[0.98] disabled:cursor-not-allowed"
           >
             {pendingExerciseAdds.length === 1 ? "Добавить упражнение" : "Добавить упражнения"}
           </button>
@@ -8834,11 +9456,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
               className="w-full rounded-2xl bg-white/[0.08] px-4 py-3 text-[34px] font-black leading-none tracking-[-0.07em] text-white outline-none"
             /> : <h2 className="break-words text-[36px] font-black leading-none tracking-[-0.07em] text-white">{selectedWorkout.title}</h2>}
-            <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-zinc-400">
-              <span className="rounded-full bg-white/[0.08] px-3 py-2" style={{ color: workoutTypeMeta.color }}>{workoutTypeMeta.label}</span>
-              <span className="rounded-full bg-white/[0.08] px-3 py-2">{isStrengthWorkout ? `${completedSets}/${totalSets} подходов` : `${exercises.length} записей`}</span>
-            </div>
-          </div>
+	            <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-zinc-400">
+	              <span className="rounded-full bg-white/[0.08] px-3 py-2" style={{ color: workoutTypeMeta.color }}>{workoutTypeMeta.label}</span>
+	              <span className="rounded-full bg-white/[0.08] px-3 py-2">{isStrengthWorkout ? `${completedSets}/${totalSets} подходов` : `${exercises.length} записей`}</span>
+	              {selectedWorkout.isProgramGenerated && <span className="rounded-full bg-red-500/15 px-3 py-2 text-red-300">{selectedWorkout.programName || "Программа"} · неделя {selectedWorkout.programWeekNumber || 1}</span>}
+	            </div>
+	          </div>
 
           <div className="mt-7 grid grid-cols-3 gap-2 text-center">
             <div className={`rounded-2xl px-3 py-4 ${workoutIsActive ? "bg-red-500 text-black" : "bg-black/32"}`}>
@@ -8854,9 +9477,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               <div className="mt-2 text-xl font-black">{isStrengthWorkout ? selectedWorkout.calories || 0 : nonStrengthMetrics.calories || selectedWorkout.calories || 0}</div>
             </div>
           </div>
-          {workoutReachedTimeLimit && <div className="mt-3 rounded-2xl border border-red-500/30 bg-red-500/12 px-4 py-3 text-xs font-bold leading-5 text-red-200">
-            Таймер остановлен на 24:00:00. Заверши тренировку вручную, когда будешь готов.
-          </div>}
+	          {workoutReachedTimeLimit && <div className="mt-3 rounded-2xl border border-red-500/30 bg-red-500/12 px-4 py-3 text-xs font-bold leading-5 text-red-200">
+	            Таймер остановлен на 24:00:00. Заверши тренировку вручную, когда будешь готов.
+	          </div>}
+	          {selectedWorkout.isProgramGenerated && <div className="mt-3 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-xs font-semibold leading-5 text-red-100">
+	            Запиши фактический вес и повторы. Следующие planned-тренировки этой программы подстроятся автоматически.
+	          </div>}
 
           {isStrengthWorkout ? <VolumeLoadBar
             count={totalSets}
@@ -8887,12 +9513,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               const activityDuration = getActivityDurationSeconds(exercise);
               const activityDistance = getActivityDistance(exercise);
               const activityCalories = estimateActivityCalories(exercise, activitySet);
-              const setMetrics = !isStrengthWorkout
+	              const setMetrics = !isStrengthWorkout
                 ? `${formatSecondsTimer(activityDuration)}${activityDistance ? ` · ${activityDistance} ${distanceUnitLabels[exercise.distanceUnit] || "км"}` : ""} · ${activityCalories} ккал`
                 : (exercise.sets || []).length
                 ? (exercise.sets || []).map(set => `${formatWorkoutInputNumber(getDisplayWeight(set.weight || 0, exercise))} ${exerciseUnit === "lb" ? "lb" : "кг"} × ${Number(set.reps || 0)}`).join(', ')
                 : 'подходы не добавлены';
-              const exerciseCompletion = getExerciseCompletion(exercise);
+	              const exerciseCompletion = getExerciseCompletion(exercise);
+	              const programPlanText = exercise.plannedSets
+	                ? `План: ${exercise.plannedSets}×${exercise.plannedReps || exercise.plannedRepMin || 0}${exercise.plannedWeight ? ` · ${formatWorkoutInputNumber(getDisplayWeight(exercise.plannedWeight, exercise))} ${exerciseUnit === "lb" ? "lb" : "кг"}` : ""}`
+	                : "";
               const exerciseDone = exerciseCompletion.done;
               const exercisePartial = exerciseCompletion.partial;
               const selectedForEdit = selectedExerciseIds.includes(exercise.id);
@@ -8916,8 +9545,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                 <div>
                   <h4 className="break-words text-[21px] font-black leading-tight tracking-[-0.04em]">{exercise.name}</h4>
                   <p className="mt-1 text-xs font-semibold text-red-400">{exercise.muscleGroup}</p>
-                  <p className="mt-2 break-words text-sm leading-6 text-zinc-500">{setMetrics}</p>
-                  {isStrengthWorkout && <p className="mt-1 text-xs text-zinc-600">Отдых между: {formatSecondsTimer(exercise.restSeconds || 120)} · после: {exercise.restAfterSeconds ? formatSecondsTimer(exercise.restAfterSeconds) : "не задан"}</p>}
+	                  <p className="mt-2 break-words text-sm leading-6 text-zinc-500">{setMetrics}</p>
+	                  {programPlanText && <p className="mt-1 text-xs font-bold text-red-300">{programPlanText}</p>}
+	                  {isStrengthWorkout && <p className="mt-1 text-xs text-zinc-600">Отдых между: {formatSecondsTimer(exercise.restSeconds || 120)} · после: {exercise.restAfterSeconds ? formatSecondsTimer(exercise.restAfterSeconds) : "не задан"}</p>}
                 </div>
                 <button
                   type="button"
@@ -8939,8 +9569,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                 <div>
                   <h4 className="break-words text-[21px] font-black leading-tight tracking-[-0.04em]">{exercise.name}</h4>
                   <p className="mt-1 text-xs font-semibold text-red-400">{exercise.muscleGroup}</p>
-                  <p className="mt-2 break-words text-sm leading-6 text-zinc-500">{setMetrics}</p>
-                </div>
+	                  <p className="mt-2 break-words text-sm leading-6 text-zinc-500">{setMetrics}</p>
+	                  {programPlanText && <p className="mt-1 text-xs font-bold text-red-300">{programPlanText}</p>}
+	                </div>
               </button>;
 
               if (isEditingWorkout) {
@@ -9083,9 +9714,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       const showTimeField = Boolean(measurementSettings.measureTimeEnabled);
       const showDistanceField = Boolean(measurementSettings.measureDistanceEnabled);
       const showRirField = Boolean(measurementSettings.measureRirEnabled);
-      const showRpeField = Boolean(measurementSettings.measureRpeEnabled);
-      const weightUnitLabel = measurementSettings.weightUnit === "lb" ? "lb" : "кг";
-      const isCustomSetFieldActive = (set, field) => activeSetInput?.setId === set?.id && activeSetInput?.field === field;
+	      const showRpeField = Boolean(measurementSettings.measureRpeEnabled);
+	      const weightUnitLabel = measurementSettings.weightUnit === "lb" ? "lb" : "кг";
+	      const currentExercisePlanText = currentExercise?.plannedSets
+	        ? `${currentExercise.plannedSets}×${currentExercise.plannedReps || currentExercise.plannedRepMin || 0}${currentExercise.plannedWeight ? ` · ${formatWorkoutInputNumber(getDisplayWeight(currentExercise.plannedWeight, currentExercise))} ${weightUnitLabel}` : ""}`
+	        : "";
+	      const isCustomSetFieldActive = (set, field) => activeSetInput?.setId === set?.id && activeSetInput?.field === field;
       const keyboardContext = getActiveSetInputContext();
 
       const openExerciseMenu = (event) => {
@@ -9154,9 +9788,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                   onBlur={saveExerciseNameDraft}
                   onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                   className="w-full rounded-2xl bg-white/[0.06] px-4 py-3 text-center text-[32px] font-black leading-none tracking-[-0.07em] text-white outline-none"
-                /> : <h2 className="break-words text-[34px] font-black leading-none tracking-[-0.07em] text-white">{currentExercise.name}</h2>}
-                <p className="mt-3 text-sm font-semibold text-red-400">{currentExercise.muscleGroup}</p>
-                <p className="mt-2 text-xs text-zinc-600">{selectedWorkout.title}</p>
+	                /> : <h2 className="break-words text-[34px] font-black leading-none tracking-[-0.07em] text-white">{currentExercise.name}</h2>}
+	                <p className="mt-3 text-sm font-semibold text-red-400">{currentExercise.muscleGroup}</p>
+	                {currentExercisePlanText && <p className="mt-2 inline-flex rounded-full bg-red-500/15 px-3 py-1 text-xs font-black text-red-300">План: {currentExercisePlanText}</p>}
+	                <p className="mt-2 text-xs text-zinc-600">{selectedWorkout.title}</p>
               </div>
 
               <VolumeLoadBar
@@ -9690,13 +10325,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       </BottomSheetPanel>
     </div>}
 
-    {isTemplatesOpen && <div onClick={() => setIsTemplatesOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
-      <BottomSheetPanel onClose={() => setIsTemplatesOpen(false)} onClick={(e) => e.stopPropagation()} className="onlypump-modal-scroll mx-auto w-full max-w-[430px] overflow-y-auto rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl onlypump-scrollbar-none">
+	    {isTemplatesOpen && <div onClick={() => setIsTemplatesOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+	      <BottomSheetPanel onClose={() => setIsTemplatesOpen(false)} onClick={(e) => e.stopPropagation()} className="onlypump-modal-scroll mx-auto w-full max-w-[430px] overflow-y-auto rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl onlypump-scrollbar-none">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <h2 className="text-xl font-black tracking-[-0.03em]">Доступные программы</h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-500">Нажми программу — её тренировочные дни добавятся в календарь, начиная с {formatDayMonth(selectedDate)}.</p>
+        <p className="mt-2 text-sm leading-6 text-zinc-500">Нажми программу, настрой длительность, сложность и прогрессию. В календарь она добавится только после подтверждения.</p>
         <div className="mt-5 space-y-3">
-          {availableTrainingPrograms.map(program => <button key={program.id} onClick={() => addProgramToWorkouts(program)} className="w-full rounded-[24px] border border-white/10 bg-white/[0.04] p-4 text-left transition active:scale-[0.99] hover:border-red-500/40 hover:bg-red-500/10">
+          {availableTrainingPrograms.map(program => <button key={program.id} onClick={() => openProgramSettings(program)} className="w-full rounded-[24px] border border-white/10 bg-white/[0.04] p-4 text-left transition active:scale-[0.99] hover:border-red-500/40 hover:bg-red-500/10">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="break-words text-[22px] font-black leading-tight tracking-[-0.04em]">{program.title}</div>
@@ -9705,13 +10340,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                   <span className="rounded-full bg-white/[0.07] px-2.5 py-1 text-zinc-400">{program.focus}</span>
                 </div>
               </div>
-              <span className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-black text-black">{program.days.length} дня</span>
+              <span className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-black text-black">Настроить</span>
             </div>
             <p className="mt-3 text-sm leading-6 text-zinc-500">{program.description}</p>
             <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
               <div className="rounded-2xl bg-black/25 p-3"><span className="block text-zinc-500">Дней</span><b>{program.days.length}</b></div>
               <div className="rounded-2xl bg-black/25 p-3"><span className="block text-zinc-500">Подходов</span><b>{getProgramSetCount(program)}</b></div>
-              <div className="rounded-2xl bg-black/25 p-3"><span className="block text-zinc-500">Старт</span><b>{formatDayMonth(selectedDate)}</b></div>
+              <div className="rounded-2xl bg-black/25 p-3"><span className="block text-zinc-500">Недель</span><b>{getProgramDurationBounds(program).defaultValue}</b></div>
             </div>
             <div className="mt-4 space-y-2">
               {program.days.map((day, index) => <div key={day.title} className="rounded-2xl bg-black/25 p-3">
@@ -9724,10 +10359,126 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             </div>
           </button>)}
         </div>
-      </BottomSheetPanel>
-    </div>}
+	      </BottomSheetPanel>
+	    </div>}
 
-    {selectedWorkout && WorkoutDetailScreen()}
+	    {programSettingsSheet && (() => {
+	      const { program, draft } = programSettingsSheet;
+	      const bounds = getProgramDurationBounds(program);
+	      const exerciseSettings = draft.exerciseSettings || {};
+	      return <div onClick={() => !programSaving && setProgramSettingsSheet(null)} className="onlypump-modal-layer fixed inset-0 z-[152] flex items-end bg-black/55 p-3 backdrop-blur-sm">
+	        <BottomSheetPanel onClose={() => !programSaving && setProgramSettingsSheet(null)} onClick={(e) => e.stopPropagation()} className="mx-auto flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-[430px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+	          <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+	          <div className="flex items-start justify-between gap-3">
+	            <button disabled={programSaving} onClick={() => setProgramSettingsSheet(null)} className="mt-1 shrink-0 text-sm font-black text-zinc-400 disabled:opacity-40">Отмена</button>
+	            <div className="min-w-0 text-center">
+	              <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Программа</p>
+	              <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{program.title}</h2>
+	            </div>
+	            <button disabled={programSaving} onClick={() => setProgramSettingsSheet(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300 disabled:opacity-40">×</button>
+	          </div>
+
+	          <div className="onlypump-sheet-list mt-5 flex-1 space-y-4 overflow-y-auto pr-1 pb-3 onlypump-scrollbar-none">
+	            <div className="rounded-[24px] border border-red-500/20 bg-red-500/10 p-4">
+	              <p className="text-sm leading-6 text-zinc-300">Запиши фактический вес и повторы. Когда дойдёшь до верхней границы повторений, ONLYPUMP повысит вес и вернёт повторы к нижней границе. Если день не задался — просто запиши факт, будущий план адаптируется.</p>
+	            </div>
+
+	            <div className="rounded-[24px] bg-white/[0.04] p-4">
+	              <div className="flex items-center justify-between gap-3">
+	                <div>
+	                  <div className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Длительность</div>
+	                  <div className="mt-1 text-2xl font-black">{draft.durationWeeks} недель</div>
+	                </div>
+	                <div className="flex items-center gap-2">
+	                  <button onClick={() => updateProgramSettingsDraft(prev => ({ ...prev, durationWeeks: clampProgramNumber(prev.durationWeeks - 1, bounds.min, bounds.max) }))} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.08] text-xl font-black">−</button>
+	                  <button onClick={() => updateProgramSettingsDraft(prev => ({ ...prev, durationWeeks: clampProgramNumber(prev.durationWeeks + 1, bounds.min, bounds.max) }))} className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500 text-xl font-black text-black">+</button>
+	                </div>
+	              </div>
+	              <div className="mt-2 text-xs text-zinc-500">Можно выбрать от {bounds.min} до {bounds.max} недель. Старт: {formatDayMonth(parseDateKey(draft.startedAt))}.</div>
+	            </div>
+
+	            <div>
+	              <div className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Сложность</div>
+	              <div className="mt-2 grid grid-cols-1 gap-2">
+	                {programDifficultyOptions.map(option => <button key={option.id} onClick={() => setProgramDifficulty(option.id)} className={`rounded-2xl px-4 py-3 text-left transition ${draft.difficulty === option.id ? "bg-red-500 text-black" : "bg-white/[0.05] text-zinc-300 hover:bg-white/10"}`}>
+	                  <span className="block font-black">{option.label}</span>
+	                  <span className={`mt-1 block text-xs ${draft.difficulty === option.id ? "text-black/70" : "text-zinc-500"}`}>{option.subtitle}</span>
+	                </button>)}
+	              </div>
+	            </div>
+
+	            <div>
+	              <div className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Режим плана</div>
+	              <div className="mt-2 grid grid-cols-1 gap-2">
+	                {programPlanModeOptions.map(option => <button key={option.id} onClick={() => updateProgramSettingsDraft({ planMode: option.id })} className={`rounded-2xl px-4 py-3 text-left transition ${draft.planMode === option.id ? "bg-white text-black" : "bg-white/[0.05] text-zinc-300 hover:bg-white/10"}`}>
+	                  <span className="block font-black">{option.label}</span>
+	                  <span className={`mt-1 block text-xs ${draft.planMode === option.id ? "text-black/60" : "text-zinc-500"}`}>{option.subtitle}</span>
+	                </button>)}
+	              </div>
+	            </div>
+
+	            <div>
+	              <div className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Упражнения и прогрессия</div>
+	              <div className="mt-3 space-y-3">
+	                {(program.days || []).flatMap((day, dayIndex) => (day.exercises || []).map((exercise, exerciseIndex) => {
+	                  const settingKey = makeProgramTemplateExerciseKey(program.id, dayIndex, exerciseIndex);
+	                  const setting = exerciseSettings[settingKey] || getProgramExerciseDefaultSettings(program, dayIndex, exercise, exerciseIndex, draft.difficulty);
+	                  return <div key={settingKey} className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
+	                    <div className="flex items-start justify-between gap-3">
+	                      <div className="min-w-0">
+	                        <div className="break-words font-black">{setting.selectedExerciseName}</div>
+	                        <div className="mt-1 text-xs text-zinc-500">{day.title} · {setting.muscleGroup}</div>
+	                      </div>
+	                      <span className="shrink-0 rounded-full bg-red-500/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-300">{setting.repMin}-{setting.repMax}</span>
+	                    </div>
+	                    <label className="mt-3 block">
+	                      <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Альтернатива</span>
+	                      <select value={setting.selectedExerciseName} onChange={(e) => updateProgramExerciseSetting(settingKey, { selectedExerciseName: e.target.value })} className="mt-2 w-full rounded-2xl bg-black/30 px-3 py-3 text-sm font-bold outline-none ring-1 ring-white/10">
+	                        {(setting.alternatives || [setting.selectedExerciseName]).map(name => <option key={name} value={name}>{name}</option>)}
+	                      </select>
+	                    </label>
+	                    <div className="mt-3 grid grid-cols-3 gap-2">
+	                      <label className="block">
+	                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Подх.</span>
+	                        <input inputMode="numeric" value={setting.targetSets} onChange={(e) => updateProgramExerciseSetting(settingKey, { targetSets: Math.max(1, Number(e.target.value || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
+	                      </label>
+	                      <label className="block">
+	                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Мин</span>
+	                        <input inputMode="numeric" value={setting.repMin} onChange={(e) => updateProgramExerciseSetting(settingKey, { repMin: Math.max(1, Number(e.target.value || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
+	                      </label>
+	                      <label className="block">
+	                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Макс</span>
+	                        <input inputMode="numeric" value={setting.repMax} onChange={(e) => updateProgramExerciseSetting(settingKey, { repMax: Math.max(Number(setting.repMin || 1), Number(e.target.value || setting.repMin || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
+	                      </label>
+	                    </div>
+	                    <div className="mt-3 grid grid-cols-3 gap-2">
+	                      <label className="block">
+	                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Вес +</span>
+	                        <input inputMode="decimal" value={setting.progressionWeightStep} onChange={(e) => updateProgramExerciseSetting(settingKey, { progressionWeightStep: Number(String(e.target.value).replace(",", ".") || 0) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
+	                      </label>
+	                      <label className="block">
+	                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Повт. +</span>
+	                        <input inputMode="numeric" value={setting.progressionRepStep} onChange={(e) => updateProgramExerciseSetting(settingKey, { progressionRepStep: Math.max(1, Number(e.target.value || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
+	                      </label>
+	                      <label className="block">
+	                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Регресс</span>
+	                        <input inputMode="numeric" value={setting.regressionThresholdSessions} onChange={(e) => updateProgramExerciseSetting(settingKey, { regressionThresholdSessions: Math.max(1, Number(e.target.value || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
+	                      </label>
+	                    </div>
+	                  </div>;
+	                }))}
+	              </div>
+	            </div>
+	          </div>
+
+	          <div className="mt-4 pb-[var(--onlypump-safe-bottom)]">
+	            <button disabled={programSaving} onClick={() => addProgramToWorkouts(program, draft)} className="h-12 w-full rounded-full bg-red-500 font-black text-black transition active:scale-[0.98] disabled:opacity-60">{programSaving ? "Добавляю..." : "Добавить в план"}</button>
+	          </div>
+	        </BottomSheetPanel>
+	      </div>;
+	    })()}
+
+	    {selectedWorkout && WorkoutDetailScreen()}
 
     {isExerciseBaseOpen && ExerciseBaseSheet()}
 
@@ -9809,12 +10560,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             <span>Учитывать в статистике мышц</span>
             <span>{customExerciseSheet.countsInMuscleStats ? "✓" : ""}</span>
           </button>}
-          {customExerciseShowsWeightUnit && <button type="button" onClick={() => setCustomExerciseSheet(prev => ({ ...prev, doubleWeightInStats: !prev.doubleWeightInStats }))} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
-            <span>Удваивать в статистике</span>
-            <span className={`relative h-7 w-12 rounded-full transition ${customExerciseSheet.doubleWeightInStats ? "bg-red-500" : "bg-white/[0.12]"}`}>
-              <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${customExerciseSheet.doubleWeightInStats ? "left-6" : "left-1"}`} />
-            </span>
-          </button>}
+	          {customExerciseShowsWeightUnit && <button type="button" onClick={() => setCustomExerciseSheet(prev => ({ ...prev, doubleWeightInStats: !prev.doubleWeightInStats }))} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
+	            <span>Удваивать в статистике</span>
+	            <span className={`onlypump-toggle-track relative h-7 w-12 rounded-full transition ${customExerciseSheet.doubleWeightInStats ? "is-on bg-red-500" : "bg-white/[0.12]"}`}>
+	              <span className={`onlypump-toggle-knob absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${customExerciseSheet.doubleWeightInStats ? "left-6" : "left-1"}`} />
+	            </span>
+	          </button>}
         </div>
 
         <div className="mt-5 pb-[var(--onlypump-safe-bottom)]">
@@ -9911,12 +10662,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 	              <span>{label}</span>
 	              <span className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-black ${settings[field] ? 'border-red-500 bg-red-500 text-black' : 'border-white/20 text-zinc-600'}`}>{settings[field] ? "✓" : ""}</span>
 	            </button>)}
-	            {showWeightUnitSettings && <button type="button" onClick={() => toggleExerciseMeasurementSetting("doubleWeightInStats")} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
-	              <span>Удваивать в статистике</span>
-	              <span className={`relative h-7 w-12 rounded-full transition ${settings.doubleWeightInStats ? "bg-red-500" : "bg-white/[0.12]"}`}>
-	                <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${settings.doubleWeightInStats ? "left-6" : "left-1"}`} />
-	              </span>
-	            </button>}
+		            {showWeightUnitSettings && <button type="button" onClick={() => toggleExerciseMeasurementSetting("doubleWeightInStats")} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
+		              <span>Удваивать в статистике</span>
+		              <span className={`onlypump-toggle-track relative h-7 w-12 rounded-full transition ${settings.doubleWeightInStats ? "is-on bg-red-500" : "bg-white/[0.12]"}`}>
+		                <span className={`onlypump-toggle-knob absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${settings.doubleWeightInStats ? "left-6" : "left-1"}`} />
+		              </span>
+		            </button>}
 	          </div>
 
 	          {showWeightUnitSettings && <div className="mt-5 rounded-[24px] bg-white/[0.04] p-2">
