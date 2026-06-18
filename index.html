@@ -455,6 +455,20 @@
       background-color: #ffffff !important;
       box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
     }
+    .onlypump-loading-screen {
+      background: #070A12;
+      color: #f4f4f5;
+    }
+    .onlypump-loading-screen.theme-light {
+      background: #ffffff;
+      color: #111827;
+    }
+    .onlypump-loading-screen.theme-light .onlypump-loading-subtitle {
+      color: #6b7280;
+    }
+    .onlypump-loading-screen.theme-dark .onlypump-loading-subtitle {
+      color: #a1a1aa;
+    }
   </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1789,7 +1803,7 @@ const exerciseCategoryLabels = {
   cardio: "Кардио",
   yoga: "Йога",
   pilates: "Пилатес",
-  stretching: "Растяжка",
+  stretching: "Стретчинг",
 };
 const distanceUnitLabels = { km: "км", m: "м", mi: "мили" };
 const nonStrengthSystemExercises = [
@@ -2245,6 +2259,7 @@ const volumeStandards = {
   workoutMuscle: 6,
 };
 const standardMuscleGroups = ["Грудь", "Спина", "Плечи", "Руки", "Ноги", "Ягодицы", "Пресс"];
+const exerciseGroupFilterOrder = ["Все", ...standardMuscleGroups, "Кардио", "Йога", "Пилатес", "Стретчинг", "Растяжка"];
 const supersetPalette = ["#ef4444", "#f97316", "#facc15", "#22c55e", "#38bdf8", "#6366f1", "#d946ef"];
 const workoutStatusColors = {
   completed: "#22c55e",
@@ -8371,13 +8386,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
     if (type === "stretching") {
       if (durationMinutes > 0) return {
-        label: "Ачивка растяжки",
+        label: "Ачивка стретчинга",
         title: `${Math.round(durationMinutes).toLocaleString("ru-RU")} мин мобильности`,
-        subtitle: practiceCount > 1 ? `${practiceCount} блока растяжки` : "растяжка сохранена",
+        subtitle: practiceCount > 1 ? `${practiceCount} блока стретчинга` : "стретчинг сохранён",
       };
       if (practiceCount > 0) return {
-        label: "Ачивка растяжки",
-        title: "Растяжка сохранена",
+        label: "Ачивка стретчинга",
+        title: "Стретчинг сохранён",
         subtitle: `${practiceCount} ${practiceCount === 1 ? "запись" : "записи"} в тренировке`,
       };
     }
@@ -9329,7 +9344,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   }, [customExercises, selectedWorkout?.workoutType, exerciseBaseMode]);
   const exerciseGroups = useMemo(() => {
     const groups = availableExerciseItems.map(item => item.group || item.muscleGroup || exerciseCategoryLabels[item.exerciseCategory] || "Другое");
-    return ["Все", ...Array.from(new Set(groups))];
+    return Array.from(new Set([...exerciseGroupFilterOrder, ...groups].filter(Boolean)));
   }, [availableExerciseItems]);
   const filteredExerciseGroups = useMemo(() => {
     const query = exerciseSearch.trim().toLowerCase();
@@ -10824,7 +10839,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 	              <span className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-black ${settings[field] ? 'border-red-500 bg-red-500 text-black' : 'border-white/20 text-zinc-600'}`}>{settings[field] ? "✓" : ""}</span>
 	            </button>)}
 		            {showWeightUnitSettings && <button type="button" onClick={() => toggleExerciseMeasurementSetting("doubleWeightInStats")} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
-		              <span>Удваивать в статистике</span>
+		              <span>Множитель статистики x2</span>
 		              <span className={`onlypump-toggle-track relative h-7 w-12 rounded-full transition ${settings.doubleWeightInStats ? "is-on bg-red-500" : "bg-white/[0.12]"}`}>
 		                <span className={`onlypump-toggle-knob absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${settings.doubleWeightInStats ? "left-6" : "left-1"}`} />
 		              </span>
@@ -13933,6 +13948,21 @@ function MobilePreview({ active }) {
   return null;
 }
 
+function LoadingScreen({ theme = "dark" }) {
+  const normalizedTheme = theme === "light" ? "light" : "dark";
+  return <div className={`onlypump-loading-screen theme-${normalizedTheme} fixed inset-0 z-[9999] flex items-center justify-center px-6`}>
+    <div className="text-center">
+      <img
+        src="./assets/mascot/loader-run.gif"
+        alt="ONLYPUMP loading mascot"
+        className="mx-auto h-auto w-[180px]"
+      />
+      <h1 className="mt-6 text-2xl font-black tracking-[-0.04em]">Готовим приложение...</h1>
+      <p className="onlypump-loading-subtitle mt-2 text-sm font-semibold">Подгружаем данные</p>
+    </div>
+  </div>;
+}
+
 function OnlyPumpPlatform() {
   const telegramBootInitData = telegramWebApp?.initData || window.Telegram?.WebApp?.initData || "";
   const isTelegramBootMode = Boolean(telegramBootInitData);
@@ -14700,21 +14730,33 @@ function OnlyPumpPlatform() {
         });
         return;
       }
-      setAccessGateStatus(null);
-      setNutritionMarkedDateKeys(readCachedNutritionMarkersForProfile(activeProfile));
-      console.log("Loading app data...");
-      Promise.allSettled([
-        loadWorkoutsForProfile(activeProfile, result.status === "verified" ? initData : "", { useCache: true }),
-        loadNutritionForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey, { useCache: true }),
-        loadHealthForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey),
-      ]).then((results) => console.log("Initial app data refreshed", results.map(item => item.status)));
-      setProfileLoading(false);
-      setAppLoading(false);
-      console.log("Profile loaded", activeProfile);
-      console.log("ONLYPUMP READY", { mode: "app" });
-    };
-
-    bootstrapProfile();
+	      setAccessGateStatus(null);
+	      setNutritionMarkedDateKeys(readCachedNutritionMarkersForProfile(activeProfile));
+	      console.log("Loading app data...");
+	      const initialDataPromise = Promise.allSettled([
+	        loadWorkoutsForProfile(activeProfile, result.status === "verified" ? initData : "", { useCache: true }),
+	        loadNutritionForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey, { useCache: true }),
+	        loadHealthForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey),
+	      ]);
+	      const initialDataResults = await Promise.race([
+	        initialDataPromise,
+	        new Promise(resolve => window.setTimeout(() => resolve([{ status: "rejected", reason: "boot_load_timeout" }]), 15000)),
+	      ]);
+	      if (cancelled) return;
+	      console.log("Initial app data refreshed", initialDataResults.map(item => item.status));
+	      setProfileLoading(false);
+	      setAppLoading(false);
+	      console.log("Profile loaded", activeProfile);
+	      console.log("ONLYPUMP READY", { mode: "app" });
+	    };
+	
+	    bootstrapProfile().catch(error => {
+	      console.error("ONLYPUMP BOOTSTRAP ERROR", error);
+	      if (cancelled) return;
+	      setProfileLoading(false);
+	      setAppLoading(false);
+	      window.__ONLYPUMP_SHOW_CRASH__?.(error);
+	    });
 
     return () => {
       cancelled = true;
@@ -14762,13 +14804,7 @@ function OnlyPumpPlatform() {
   }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, handleNutritionAction, handleSaveProfile, handleSaveThemeSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog]);
 
   if (appLoading || profileLoading) {
-    return <div className={`onlypump-app-shell theme-${activeTheme} flex items-center justify-center bg-black px-6 text-zinc-100`}>
-      <div className="text-center">
-        <div className="mx-auto h-12 w-12 animate-pulse rounded-full bg-red-500/70" />
-        <h1 className="mt-5 text-2xl font-black tracking-[-0.04em]">ONLYPUMP</h1>
-        <p className="mt-2 text-sm text-zinc-500">Загрузка...</p>
-      </div>
-    </div>;
+    return <LoadingScreen theme={activeTheme}/>;
   }
 
   if (telegramRequired) {
