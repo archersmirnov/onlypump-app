@@ -357,6 +357,35 @@
     .theme-light textarea::placeholder {
       color: var(--onlypump-faint) !important;
     }
+    .onlypump-workout-title-input {
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      caret-color: #ef4444;
+    }
+    .onlypump-workout-title-input::selection {
+      background: rgba(239, 68, 68, 0.35);
+      color: #ffffff;
+    }
+    .theme-light .onlypump-workout-title-input {
+      background-color: rgba(255, 255, 255, 0.96) !important;
+      border-color: rgba(15, 23, 42, 0.18) !important;
+      color: #0f172a !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.75), 0 10px 24px rgba(15, 23, 42, 0.08);
+    }
+    .theme-light .onlypump-workout-title-input::selection {
+      background: rgba(239, 68, 68, 0.24);
+      color: #111827;
+    }
+    .onlypump-exercise-group-scroll {
+      width: 100%;
+      min-width: 0;
+      -webkit-overflow-scrolling: touch;
+      scroll-padding-inline: 1rem;
+    }
+    .onlypump-exercise-group-chip {
+      min-width: max-content;
+      white-space: nowrap;
+      line-height: 1;
+    }
     .theme-light [class*="shadow-black"] {
       --tw-shadow-color: var(--onlypump-shadow) !important;
       --tw-shadow: var(--tw-shadow-colored) !important;
@@ -2336,8 +2365,8 @@ const normalizeExerciseMeasurementSettings = (exercise = {}) => {
     measureRpeEnabled: exercise.measureRpeEnabled ?? exercise.measure_rpe_enabled ?? exerciseMeasurementDefaults.measureRpeEnabled,
     weightUnit: normalizeWeightUnit(exercise.weightUnit ?? exercise.weight_unit ?? exerciseMeasurementDefaults.weightUnit),
     distanceUnit: normalizeDistanceUnit(exercise.distanceUnit ?? exercise.distance_unit ?? exerciseMeasurementDefaults.distanceUnit),
-    doubleWeightInStats: Boolean(exercise.doubleWeightInStats ?? exercise.doubleCountInStatistics ?? exercise.double_count_in_statistics ?? exercise.double_weight_in_stats ?? exerciseMeasurementDefaults.doubleWeightInStats),
-    doubleCountInStatistics: Boolean(exercise.doubleWeightInStats ?? exercise.doubleCountInStatistics ?? exercise.double_count_in_statistics ?? exercise.double_weight_in_stats ?? exerciseMeasurementDefaults.doubleWeightInStats),
+    doubleWeightInStats: Boolean(exercise.doubleWeightInStats ?? exercise.double_weight_in_stats ?? exercise.doubleCountInStatistics ?? exercise.double_count_in_statistics ?? exerciseMeasurementDefaults.doubleWeightInStats),
+    doubleCountInStatistics: Boolean(exercise.doubleCountInStatistics ?? exercise.double_count_in_statistics ?? exercise.doubleWeightInStats ?? exercise.double_weight_in_stats ?? exerciseMeasurementDefaults.doubleWeightInStats),
     measurementMode: mode,
     exerciseCategory,
     sourceExerciseId: onlypumpUuidPattern.test(String(rawSourceExerciseId || "")) ? rawSourceExerciseId : null,
@@ -2607,8 +2636,8 @@ const pickWorkoutApiArray = (result, key, aliases = []) => {
 
 const mapWorkoutSetFromApi = (row = {}, index = 0) => {
   const completed = Boolean(row.is_completed);
-  const weightValue = safeWorkoutModelNumber(row.weight_value ?? row.weight_kg ?? row.weight);
-  const repsValue = safeWorkoutModelNumber(row.reps_value ?? row.reps);
+  const weightValue = safeWorkoutModelNumber(row.weight_kg ?? row.weight ?? row.weightValue ?? row.weight_value);
+  const repsValue = safeWorkoutModelNumber(row.reps ?? row.repsValue ?? row.reps_value);
   return {
     id: `set-supabase-${row.id || index}`,
     supabaseId: row.id || null,
@@ -4858,8 +4887,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measureRpeEnabled: source.measureRpeEnabled,
       weightUnit: source.weightUnit,
       doubleWeightInStats: source.doubleWeightInStats,
-      doubleCountInStatistics: source.doubleWeightInStats,
-      double_count_in_statistics: source.doubleWeightInStats,
+      doubleCountInStatistics: source.doubleCountInStatistics,
+      double_count_in_statistics: source.doubleCountInStatistics,
       met: source.met,
       sets: sets.map(([weight, reps], index) => makeSet(weight, reps, index, completed)),
     };
@@ -4876,8 +4905,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       id: `set-copy-${Date.now()}-${exerciseIndex}-${setIndex}-${Math.random().toString(16).slice(2)}`,
       supabaseId: null,
       order: set.order ?? setIndex + 1,
-      weight: emptySets ? 0 : Number(set.weight || 0),
-      reps: emptySets ? 0 : Number(set.reps || 0),
+      weight: emptySets ? 0 : Number(set.weight ?? set.weight_kg ?? set.weightValue ?? set.weight_value ?? 0),
+      reps: emptySets ? 0 : Number(set.reps ?? set.repsValue ?? set.reps_value ?? 0),
       workTimeSeconds: emptySets ? 0 : Number(set.workTimeSeconds || set.work_time_seconds || 0),
       rir: emptySets ? null : (set.rir ?? null),
       rpe: emptySets ? null : (set.rpe ?? null),
@@ -4887,8 +4916,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       restSeconds: Number(set.restSeconds || 120),
       restAfterSeconds: Number(set.restAfterSeconds || 0),
       isCompleted: !emptySets && Boolean(set.isCompleted ?? true),
-      weightValue: emptySets ? 0 : Number(set.weightValue ?? set.weight_value ?? set.weight ?? 0),
-      repsValue: emptySets ? 0 : Number(set.repsValue ?? set.reps_value ?? set.reps ?? 0),
+      weightValue: emptySets ? 0 : Number(set.weight ?? set.weight_kg ?? set.weightValue ?? set.weight_value ?? 0),
+      repsValue: emptySets ? 0 : Number(set.reps ?? set.repsValue ?? set.reps_value ?? 0),
       durationSeconds: emptySets ? 0 : Number(set.durationSeconds ?? set.duration_seconds ?? set.workTimeSeconds ?? 0),
       distanceValue: emptySets ? 0 : Number(set.distanceValue ?? set.distance_value ?? 0),
       manualCalories: emptySets ? null : (set.manualCalories ?? set.manual_calories ?? null),
@@ -5753,7 +5782,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       primaryMuscles: row.primary_muscles || row.primaryMuscles,
       secondaryMuscles: row.secondary_muscles || row.secondaryMuscles,
       countsInMuscleStats: row.counts_in_muscle_stats ?? row.countsInMuscleStats,
-      doubleWeightInStats: row.double_count_in_statistics ?? row.doubleCountInStatistics ?? row.double_weight_in_stats ?? row.doubleWeightInStats,
+      doubleWeightInStats: row.double_weight_in_stats ?? row.doubleWeightInStats ?? row.double_count_in_statistics ?? row.doubleCountInStatistics,
+      doubleCountInStatistics: row.double_count_in_statistics ?? row.doubleCountInStatistics ?? row.double_weight_in_stats ?? row.doubleWeightInStats,
     });
     const primary = settings.primaryMuscles[0] || exerciseCategoryLabels[settings.exerciseCategory] || "Другое";
     return {
@@ -5861,7 +5891,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       weightUnit: normalizeWeightUnit(exercise?.weightUnit || settings.weightUnit || profile?.default_weight_unit || "kg"),
       distanceUnit: normalizeDistanceUnit(exercise?.distanceUnit || settings.distanceUnit || "km"),
       countsInMuscleStats: exercise?.countsInMuscleStats ?? settings.countsInMuscleStats ?? category === "strength",
-      doubleWeightInStats: Boolean(exercise?.doubleWeightInStats ?? exercise?.doubleCountInStatistics ?? exercise?.double_count_in_statistics ?? settings.doubleWeightInStats),
+      doubleWeightInStats: Boolean(exercise?.doubleWeightInStats ?? exercise?.double_weight_in_stats ?? settings.doubleWeightInStats),
+      doubleCountInStatistics: Boolean(exercise?.doubleCountInStatistics ?? exercise?.double_count_in_statistics ?? exercise?.doubleWeightInStats ?? exercise?.double_weight_in_stats ?? settings.doubleCountInStatistics),
       notes: exercise?.notes || "",
     });
   };
@@ -5986,6 +6017,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   };
+  const pickSetActualNumber = (set, keys = []) => {
+    for (const key of keys) {
+      const value = set?.[key];
+      if (value === "" || value === null || value === undefined) continue;
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  };
   const formatWorkoutInputNumber = (value) => {
     const parsed = Number(value || 0);
     if (!Number.isFinite(parsed)) return "";
@@ -6001,6 +6041,28 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     if (field === "weight") return getStoredWeightKg(value, exercise);
     if (field === "rir" || field === "rpe") return optionalWorkoutNumber(value);
     return safeWorkoutNumber(value);
+  };
+  const applySetFieldValue = (set, field, value) => {
+    const next = { ...set, [field]: value };
+    if (field === "weight") {
+      next.weightValue = value;
+      next.weight_kg = value;
+      next.weight_value = value;
+    }
+    if (field === "reps") {
+      next.repsValue = value;
+      next.reps_value = value;
+    }
+    if (field === "durationSeconds" || field === "workTimeSeconds") {
+      next.durationSeconds = value;
+      next.workTimeSeconds = value;
+      next.duration_seconds = value;
+      next.work_time_seconds = value;
+    }
+    if (field === "distanceValue") next.distance_value = value;
+    if (field === "manualCalories") next.manual_calories = value;
+    if (field === "estimatedCalories") next.estimated_calories = value;
+    return next;
   };
 
   const recalculateWorkoutTotals = (workout) => {
@@ -6081,7 +6143,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_rpe_enabled: Boolean(measurementSettings.measureRpeEnabled),
 	      weight_unit: measurementSettings.weightUnit,
 	      double_weight_in_stats: Boolean(measurementSettings.doubleWeightInStats),
-	      double_count_in_statistics: Boolean(measurementSettings.doubleWeightInStats),
+	      double_count_in_statistics: Boolean(measurementSettings.doubleCountInStatistics),
 	      ...(isProgramExercise ? {
 	        user_program_exercise_setting_id: exercise?.userProgramExerciseSettingId || exercise?.user_program_exercise_setting_id || undefined,
 	        user_program_exercise_setting_client_id: exercise?.userProgramExerciseSettingClientId || exercise?.user_program_exercise_setting_client_id || undefined,
@@ -6115,13 +6177,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const buildSetSupabasePayload = (exerciseSupabaseId, set) => {
+    const actualWeight = pickSetActualNumber(set, ["weight", "weight_kg", "weightValue", "weight_value"]);
+    const actualReps = pickSetActualNumber(set, ["reps", "repsValue", "reps_value"]);
     const payload = {
       workout_exercise_id: exerciseSupabaseId,
       set_order: safeWorkoutNumber(set?.order, 1),
-      weight_kg: safeWorkoutNumber(set?.weight),
-      reps: safeWorkoutNumber(set?.reps),
-      weight_value: safeWorkoutNumber(set?.weightValue ?? set?.weight_value ?? set?.weight),
-      reps_value: safeWorkoutNumber(set?.repsValue ?? set?.reps_value ?? set?.reps),
+      weight_kg: actualWeight,
+      reps: actualReps,
+      weight_value: actualWeight,
+      reps_value: actualReps,
       duration_seconds: safeWorkoutNumber(set?.durationSeconds ?? set?.duration_seconds ?? set?.workTimeSeconds ?? set?.work_time_seconds, 0),
       distance_value: safeWorkoutNumber(set?.distanceValue ?? set?.distance_value, 0),
       manual_calories: optionalWorkoutNumber(set?.manualCalories ?? set?.manual_calories),
@@ -6235,7 +6299,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_rpe_enabled: Boolean(measurementSettings.measureRpeEnabled),
 	      weight_unit: measurementSettings.weightUnit,
 	      double_weight_in_stats: Boolean(measurementSettings.doubleWeightInStats),
-	      double_count_in_statistics: Boolean(measurementSettings.doubleWeightInStats),
+	      double_count_in_statistics: Boolean(measurementSettings.doubleCountInStatistics),
 	      ...(isProgramExercise ? {
 	        user_program_exercise_setting_id: exercise.userProgramExerciseSettingId || exercise.user_program_exercise_setting_id || undefined,
 	        user_program_exercise_setting_client_id: exercise.userProgramExerciseSettingClientId || exercise.user_program_exercise_setting_client_id || undefined,
@@ -6286,7 +6350,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_rpe_enabled: Boolean(measurementSettings.measureRpeEnabled),
       weight_unit: measurementSettings.weightUnit,
       double_weight_in_stats: Boolean(measurementSettings.doubleWeightInStats),
-      double_count_in_statistics: Boolean(measurementSettings.doubleWeightInStats),
+      double_count_in_statistics: Boolean(measurementSettings.doubleCountInStatistics),
     };
     console.log("Saving measurement settings:", {
       exerciseId: exercise.id,
@@ -6304,13 +6368,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const buildSetPatchPayload = (set) => {
     if (!set?.supabaseId) return null;
+    const actualWeight = pickSetActualNumber(set, ["weight", "weight_kg", "weightValue", "weight_value"]);
+    const actualReps = pickSetActualNumber(set, ["reps", "repsValue", "reps_value"]);
     const payload = {
       id: set.supabaseId,
       set_order: safeWorkoutNumber(set.order, 1),
-      weight_kg: safeWorkoutNumber(set.weight),
-      reps: safeWorkoutNumber(set.reps),
-      weight_value: safeWorkoutNumber(set.weightValue ?? set.weight_value ?? set.weight),
-      reps_value: safeWorkoutNumber(set.repsValue ?? set.reps_value ?? set.reps),
+      weight_kg: actualWeight,
+      reps: actualReps,
+      weight_value: actualWeight,
+      reps_value: actualReps,
       duration_seconds: safeWorkoutNumber(set.durationSeconds ?? set.duration_seconds ?? set.workTimeSeconds ?? set.work_time_seconds, 0),
       distance_value: safeWorkoutNumber(set.distanceValue ?? set.distance_value, 0),
       manual_calories: optionalWorkoutNumber(set.manualCalories ?? set.manual_calories),
@@ -6846,8 +6912,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const mapSupabaseSet = (row = {}, index = 0) => {
     const completed = Boolean(row.is_completed);
-    const weightValue = safeWorkoutNumber(row.weight_value ?? row.weight_kg ?? row.weight);
-    const repsValue = safeWorkoutNumber(row.reps_value ?? row.reps);
+    const weightValue = safeWorkoutNumber(row.weight_kg ?? row.weight ?? row.weightValue ?? row.weight_value);
+    const repsValue = safeWorkoutNumber(row.reps ?? row.repsValue ?? row.reps_value);
     const mappedSet = {
       id: `set-supabase-${row.id || index}`,
       supabaseId: row.id || null,
@@ -7336,7 +7402,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       ...workout,
       exercises: (workout.exercises || []).map(exercise => exercise.id === context.exercise.id ? {
         ...exercise,
-        sets: (exercise.sets || []).map((set, setIndex) => setIndex > context.setIndex ? { ...set, [context.field]: storedValue } : set),
+        sets: (exercise.sets || []).map((set, setIndex) => setIndex > context.setIndex ? applySetFieldValue(set, context.field, storedValue) : set),
       } : exercise),
       updatedAt: new Date().toISOString(),
     }));
@@ -7357,7 +7423,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       ...workout,
       exercises: (workout.exercises || []).map(exercise => exercise.id === exerciseId ? {
         ...exercise,
-        sets: (exercise.sets || []).map(set => set.id === setId ? { ...set, [field]: nextValue } : set),
+        sets: (exercise.sets || []).map(set => set.id === setId ? applySetFieldValue(set, field, nextValue) : set),
       } : exercise),
       updatedAt: new Date().toISOString(),
     });
@@ -7696,11 +7762,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const updateActiveSet = (setId, patch) => {
     const currentExercise = (selectedWorkout?.exercises || [])[activeExerciseIndex];
     const currentSet = (currentExercise?.sets || []).find(set => set.id === setId);
+    const applyPatchToSet = (set) => {
+      const next = Object.entries(patch || {}).reduce((item, [field, value]) => applySetFieldValue(item, field, value), set);
+      return { ...next, isCompleted: (patch.status || set.status) === "completed" };
+    };
     updateSelectedWorkoutModel(workout => ({
       ...workout,
       exercises: (workout.exercises || []).map((exercise, exerciseIndex) => exerciseIndex === activeExerciseIndex ? {
         ...exercise,
-        sets: (exercise.sets || []).map(set => set.id === setId ? { ...set, ...patch, isCompleted: (patch.status || set.status) === "completed" } : set),
+        sets: (exercise.sets || []).map(set => set.id === setId ? applyPatchToSet(set) : set),
       } : exercise),
       updatedAt: new Date().toISOString(),
     }));
@@ -8236,10 +8306,93 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     };
   };
 
+  const formatAchievementDistance = (distanceKm) => {
+    const value = Math.max(0, safeWorkoutNumber(distanceKm, 0));
+    if (!value) return "";
+    return value >= 10
+      ? `${Math.round(value).toLocaleString("ru-RU")} км`
+      : `${(Math.round(value * 10) / 10).toLocaleString("ru-RU")} км`;
+  };
+
+  const pickActivityAchievement = (workout, metrics = {}, totals = {}) => {
+    const type = normalizeWorkoutType(workout?.workoutType);
+    if (type === "strength") {
+      const volume = Math.max(0, safeWorkoutNumber(totals.totalVolume, 0));
+      return volume > 0 ? { label: "Ачивка тоннажа", ...pickTonnageAchievement(volume) } : null;
+    }
+    const durationMinutes = Math.max(0, safeWorkoutNumber(metrics.durationMinutes || (metrics.durationSeconds / 60), 0));
+    const distanceKm = Math.max(0, safeWorkoutNumber(metrics.distanceKm ?? metrics.distance, 0));
+    const caloriesValue = Math.max(0, safeWorkoutNumber(metrics.calories, 0));
+    const practiceCount = (workout?.exercises || []).filter(exercise => getActivityDurationSeconds(exercise) > 0 || getActivityDistance(exercise) > 0 || estimateActivityCalories(exercise) > 0).length;
+
+    if (type === "cardio") {
+      if (distanceKm > 0) return {
+        label: "Кардио-ачивка",
+        title: `Дистанция ${formatAchievementDistance(distanceKm)}`,
+        subtitle: `${Math.round(durationMinutes).toLocaleString("ru-RU")} мин движения · ${Math.round(caloriesValue).toLocaleString("ru-RU")} ккал`,
+      };
+      if (durationMinutes > 0) return {
+        label: "Кардио-ачивка",
+        title: `${Math.round(durationMinutes).toLocaleString("ru-RU")} мин кардио`,
+        subtitle: `${Math.round(caloriesValue).toLocaleString("ru-RU")} ккал за тренировку`,
+      };
+      if (caloriesValue > 0) return {
+        label: "Кардио-ачивка",
+        title: `${Math.round(caloriesValue).toLocaleString("ru-RU")} ккал`,
+        subtitle: "кардио-сессия сохранена",
+      };
+    }
+
+    if (type === "yoga") {
+      if (durationMinutes > 0) return {
+        label: "Ачивка практики",
+        title: `${Math.round(durationMinutes).toLocaleString("ru-RU")} мин йоги`,
+        subtitle: practiceCount > 1 ? `${practiceCount} практики в сессии` : "практика сохранена",
+      };
+      if (practiceCount > 0) return {
+        label: "Ачивка практики",
+        title: `${practiceCount} ${practiceCount === 1 ? "практика" : "практики"}`,
+        subtitle: "йога добавлена в историю",
+      };
+    }
+
+    if (type === "pilates") {
+      if (durationMinutes > 0) return {
+        label: "Пилатес-ачивка",
+        title: `${Math.round(durationMinutes).toLocaleString("ru-RU")} мин контроля`,
+        subtitle: practiceCount > 1 ? `${practiceCount} блока пилатеса` : "сессия пилатеса сохранена",
+      };
+      if (practiceCount > 0) return {
+        label: "Пилатес-ачивка",
+        title: `${practiceCount} ${practiceCount === 1 ? "блок" : "блока"}`,
+        subtitle: "пилатес добавлен в историю",
+      };
+    }
+
+    if (type === "stretching") {
+      if (durationMinutes > 0) return {
+        label: "Ачивка растяжки",
+        title: `${Math.round(durationMinutes).toLocaleString("ru-RU")} мин мобильности`,
+        subtitle: practiceCount > 1 ? `${practiceCount} блока растяжки` : "растяжка сохранена",
+      };
+      if (practiceCount > 0) return {
+        label: "Ачивка растяжки",
+        title: "Растяжка сохранена",
+        subtitle: `${practiceCount} ${practiceCount === 1 ? "запись" : "записи"} в тренировке`,
+      };
+    }
+
+    return null;
+  };
+
   const buildWorkoutCompletionSummary = (workout, durationSeconds, calories) => {
     const completedEntries = getCompletedSetsFromWorkout(workout);
     const totals = recalculateWorkoutTotals(workout);
     const exercises = workout?.exercises || [];
+    const workoutType = normalizeWorkoutType(workout?.workoutType);
+    const activityMetrics = workoutType === "strength"
+      ? null
+      : { ...getNonStrengthWorkoutMetrics(workout), durationSeconds, calories };
     const rirValues = completedEntries.map(set => optionalWorkoutNumber(set.rir)).filter(value => value !== null);
     const rpeValues = completedEntries.map(set => optionalWorkoutNumber(set.rpe)).filter(value => value !== null);
     const average = (values) => values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : null;
@@ -8283,7 +8436,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       volumeKg: totals.totalVolume,
       averageRir: average(rirValues),
       averageRpe: average(rpeValues),
-      achievement: pickTonnageAchievement(totals.totalVolume),
+      achievement: pickActivityAchievement(workout, activityMetrics || { durationSeconds, calories }, totals),
       muscles: Object.values(muscleMap).map(stat => ({
         ...stat,
         percent: totals.completedSets ? Math.round((stat.sets / totals.completedSets) * 100) : 0,
@@ -8377,19 +8530,25 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const getActivitySet = (exercise = {}) => (exercise.sets || [])[0] || {};
   const getActivityDurationSeconds = (exercise = {}) => safeWorkoutNumber(getActivitySet(exercise).durationSeconds ?? getActivitySet(exercise).duration_seconds ?? getActivitySet(exercise).workTimeSeconds, 0);
   const getActivityDistance = (exercise = {}) => safeWorkoutNumber(getActivitySet(exercise).distanceValue ?? getActivitySet(exercise).distance_value, 0);
-  const estimateActivityCalories = (exercise = {}, set = getActivitySet(exercise)) => {
+  const getActivityDistanceKm = (exercise = {}) => {
+    const distance = getActivityDistance(exercise);
+    const unit = normalizeDistanceUnit(exercise.distanceUnit ?? exercise.distance_unit ?? "km");
+    return unit === "m" ? distance / 1000 : distance;
+  };
+  const estimateActivityCalories = (exercise = {}, set = getActivitySet(exercise), fallbackWorkoutType = selectedWorkout?.workoutType || "cardio") => {
     const manual = optionalWorkoutNumber(set.manualCalories ?? set.manual_calories);
     if (manual !== null) return Math.max(0, Math.round(manual));
     const seconds = safeWorkoutNumber(set.durationSeconds ?? set.duration_seconds ?? set.workTimeSeconds, 0);
-    const workoutType = normalizeExerciseCategory(exercise.exerciseCategory, selectedWorkout?.workoutType || "cardio");
+    const workoutType = normalizeExerciseCategory(exercise.exerciseCategory, fallbackWorkoutType);
     return estimateWorkoutCalories(seconds, { workoutType, exercises: [exercise] });
   };
   const getNonStrengthWorkoutMetrics = (workout = selectedWorkout) => {
     const activities = workout?.exercises || [];
     const durationSeconds = activities.reduce((sum, exercise) => sum + getActivityDurationSeconds(exercise), 0);
     const distance = activities.reduce((sum, exercise) => sum + getActivityDistance(exercise), 0);
-    const calories = activities.reduce((sum, exercise) => sum + estimateActivityCalories(exercise), 0);
-    return { durationSeconds, durationMinutes: Math.round(durationSeconds / 60), distance, calories };
+    const distanceKm = activities.reduce((sum, exercise) => sum + getActivityDistanceKm(exercise), 0);
+    const calories = activities.reduce((sum, exercise) => sum + estimateActivityCalories(exercise, getActivitySet(exercise), workout?.workoutType), 0);
+    return { durationSeconds, durationMinutes: Math.round(durationSeconds / 60), distance, distanceKm, calories };
   };
   const openNonStrengthActivityEditor = (exercise) => {
     if (!exercise) return;
@@ -9347,11 +9506,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-black">+</span>
         </button>
 
-        <div className="mt-4 flex gap-2 overflow-x-auto pb-2 onlypump-scrollbar-none">
+        <div className="onlypump-exercise-group-scroll mt-4 flex gap-2 overflow-x-auto pb-2 onlypump-scrollbar-none">
           {exerciseGroups.map(group => <button
             key={group}
             onClick={() => setSelectedExerciseGroup(group)}
-            className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition ${selectedExerciseGroup === group ? 'bg-red-500 text-black' : 'bg-white/[0.06] text-zinc-400 hover:bg-white/10'}`}
+            className={`onlypump-exercise-group-chip shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition ${selectedExerciseGroup === group ? 'bg-red-500 text-black' : 'bg-white/[0.06] text-zinc-400 hover:bg-white/10'}`}
           >
             {group}
           </button>)}
@@ -9454,7 +9613,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               onChange={(e) => updateWorkoutTitleDraft(e.target.value)}
               onBlur={saveWorkoutTitleDraft}
               onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
-              className="w-full rounded-2xl bg-white/[0.08] px-4 py-3 text-[34px] font-black leading-none tracking-[-0.07em] text-white outline-none"
+              className="onlypump-workout-title-input w-full rounded-2xl bg-white/[0.08] px-4 py-3 text-[34px] font-black leading-none tracking-[-0.07em] text-white outline-none"
             /> : <h2 className="break-words text-[36px] font-black leading-none tracking-[-0.07em] text-white">{selectedWorkout.title}</h2>}
 	            <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-zinc-400">
 	              <span className="rounded-full bg-white/[0.08] px-3 py-2" style={{ color: workoutTypeMeta.color }}>{workoutTypeMeta.label}</span>
@@ -10049,11 +10208,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               className="onlypump-search-input w-full bg-transparent px-2 py-2 text-base outline-none placeholder:text-zinc-600"
             />
           </div>
-          <div className="mt-4 flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
+          <div className="onlypump-exercise-group-scroll mt-4 flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
             {exerciseGroups.map(group => <button
               key={group}
               onClick={() => setSelectedExerciseGroup(group)}
-              className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition ${selectedExerciseGroup === group ? 'bg-red-500 text-black' : 'bg-white/[0.06] text-zinc-400 hover:bg-white/10'}`}
+              className={`onlypump-exercise-group-chip shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition ${selectedExerciseGroup === group ? 'bg-red-500 text-black' : 'bg-white/[0.06] text-zinc-400 hover:bg-white/10'}`}
             >
               {group}
             </button>)}
@@ -10260,11 +10419,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             <div className="rounded-[22px] bg-black/30 p-4"><div className="text-xs text-zinc-500">Средний RPE</div><div className="mt-2 text-2xl font-black">{completionSummarySheet.averageRpe ?? "—"}</div></div>
           </div>}
 
-          <div className="mt-4 rounded-[28px] border border-red-500/25 bg-red-500/10 p-5 text-center">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-red-300">Ачивка тоннажа</p>
+          {completionSummarySheet.achievement && <div className="mt-4 rounded-[28px] border border-red-500/25 bg-red-500/10 p-5 text-center">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-red-300">{completionSummarySheet.achievement.label || "Ачивка"}</p>
             <h3 className="mt-3 text-2xl font-black tracking-[-0.04em] text-white">{completionSummarySheet.achievement.title}</h3>
             <p className="mt-2 text-sm text-zinc-400">{completionSummarySheet.achievement.subtitle}</p>
-          </div>
+          </div>}
 
           {(completionSaving || completionSaveError) && <div className={`mt-4 rounded-2xl border p-4 ${completionSaveError ? "border-red-500/30 bg-red-500/10" : "border-white/10 bg-white/[0.05]"}`}>
             <div className="flex items-center justify-between gap-3">
@@ -10556,9 +10715,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             </label>}
           </div>}
 
-          {customExerciseSheet.exerciseCategory === "strength" && <button type="button" onClick={() => setCustomExerciseSheet(prev => ({ ...prev, countsInMuscleStats: !prev.countsInMuscleStats }))} className={`flex w-full items-center justify-between rounded-2xl px-4 py-4 text-left font-semibold ${customExerciseSheet.countsInMuscleStats ? "bg-red-500/15 text-red-200 ring-1 ring-red-500/30" : "bg-black/30 text-zinc-500"}`}>
-            <span>Учитывать в статистике мышц</span>
-            <span>{customExerciseSheet.countsInMuscleStats ? "✓" : ""}</span>
+          {customExerciseSheet.exerciseCategory === "strength" && <button type="button" onClick={() => setCustomExerciseSheet(prev => ({ ...prev, countsInMuscleStats: !prev.countsInMuscleStats }))} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
+            <span>Учитывать в статистике</span>
+            <span className={`onlypump-toggle-track relative h-7 w-12 rounded-full transition ${customExerciseSheet.countsInMuscleStats ? "is-on bg-red-500" : "bg-white/[0.12]"}`}>
+              <span className={`onlypump-toggle-knob absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${customExerciseSheet.countsInMuscleStats ? "left-6" : "left-1"}`} />
+            </span>
           </button>}
 	          {customExerciseShowsWeightUnit && <button type="button" onClick={() => setCustomExerciseSheet(prev => ({ ...prev, doubleWeightInStats: !prev.doubleWeightInStats }))} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
 	            <span>Удваивать в статистике</span>
