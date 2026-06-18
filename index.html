@@ -450,6 +450,27 @@
       color: #111827 !important;
       border-color: rgba(220, 38, 38, 0.60);
     }
+    .onlypump-exercise-base-controls {
+      position: relative;
+      z-index: 3;
+      flex: 0 0 auto;
+      background: transparent;
+    }
+    .onlypump-exercise-base-list {
+      position: relative;
+      z-index: 1;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+    .onlypump-exercise-add-footer {
+      position: relative;
+      z-index: 4;
+      flex: 0 0 auto;
+    }
     .theme-light [class*="shadow-black"] {
       --tw-shadow-color: var(--onlypump-shadow) !important;
       --tw-shadow: var(--tw-shadow-colored) !important;
@@ -9574,34 +9595,36 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           <button onClick={closeExerciseBase} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-400">×</button>
         </div>
 
-        <div className="onlypump-search-shell mt-5 rounded-2xl px-4 py-3">
-          <input
-            value={exerciseSearch}
-            onChange={(e) => setExerciseSearch(e.target.value)}
-            placeholder="Поиск упражнения"
-            className="onlypump-search-input w-full bg-transparent text-base outline-none placeholder:text-zinc-600"
-          />
-        </div>
-        <button
-          type="button"
-          onClick={() => openCustomExerciseEditor()}
-          className="mt-3 flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-black transition active:scale-[0.98] hover:bg-white/[0.07]"
-        >
-          <span>Создать своё упражнение</span>
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-black">+</span>
-        </button>
-
-        <div className="onlypump-exercise-group-scroll mt-4 pb-2 onlypump-scrollbar-none">
-          {exerciseGroups.map(group => <button
-            key={group}
-            onClick={() => setSelectedExerciseGroup(group)}
-            className={`onlypump-exercise-group-chip text-xs font-semibold ${selectedExerciseGroup === group ? 'is-active' : ''}`}
+        <div className="onlypump-exercise-base-controls">
+          <div className="onlypump-search-shell mt-5 rounded-2xl px-4 py-3">
+            <input
+              value={exerciseSearch}
+              onChange={(e) => setExerciseSearch(e.target.value)}
+              placeholder="Поиск упражнения"
+              className="onlypump-search-input w-full bg-transparent text-base outline-none placeholder:text-zinc-600"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => openCustomExerciseEditor()}
+            className="mt-3 flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-black transition active:scale-[0.98] hover:bg-white/[0.07]"
           >
-            <span>{group}</span>
-          </button>)}
+            <span>Создать своё упражнение</span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-black">+</span>
+          </button>
+
+          <div className="onlypump-exercise-group-scroll mt-4 pb-3 onlypump-scrollbar-none">
+            {exerciseGroups.map(group => <button
+              key={group}
+              onClick={() => setSelectedExerciseGroup(group)}
+              className={`onlypump-exercise-group-chip text-xs font-semibold ${selectedExerciseGroup === group ? 'is-active' : ''}`}
+            >
+              <span>{group}</span>
+            </button>)}
+          </div>
         </div>
 
-        <div className="onlypump-exercise-base-list mt-4 flex-1 space-y-6 pr-1 onlypump-scrollbar-none">
+        <div className="onlypump-exercise-base-list mt-3 space-y-6 pr-1 pb-4 onlypump-scrollbar-none">
           {filteredExerciseGroups.length ? filteredExerciseGroups.map(section => <div key={section.group}>
             <h3 className="text-sm font-bold uppercase tracking-[0.16em] text-zinc-500">{section.group}</h3>
             <div className="mt-3 space-y-2">
@@ -14079,7 +14102,7 @@ const LOADING_PHRASES = [
 ];
 
 function getRandomLoadingPhrase(previousPhrase = "") {
-  if (!LOADING_PHRASES.length) return "Подгружаем данные";
+  if (!LOADING_PHRASES.length) return "";
   if (LOADING_PHRASES.length === 1) return LOADING_PHRASES[0];
   let nextPhrase = previousPhrase;
   while (nextPhrase === previousPhrase) {
@@ -14090,14 +14113,8 @@ function getRandomLoadingPhrase(previousPhrase = "") {
 
 function LoadingScreen({ theme = "dark" }) {
   const normalizedTheme = theme === "light" ? "light" : "dark";
-  const [phrase, setPhrase] = useState(() => getRandomLoadingPhrase());
+  const [phrase] = useState(() => getRandomLoadingPhrase());
   const [mascotFailed, setMascotFailed] = useState(false);
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      setPhrase(current => getRandomLoadingPhrase(current));
-    }, 2200);
-    return () => window.clearInterval(intervalId);
-  }, []);
   return <div className={`onlypump-loading-screen theme-${normalizedTheme} fixed inset-0 z-[9999] flex items-center justify-center px-6`}>
     <div className="text-center">
       {!mascotFailed ? <img
@@ -14106,8 +14123,7 @@ function LoadingScreen({ theme = "dark" }) {
         className="mx-auto h-auto w-[180px]"
         onError={() => setMascotFailed(true)}
       /> : <div className="mx-auto flex h-[180px] w-[180px] items-center justify-center rounded-full bg-red-500/15 text-3xl font-black text-red-500 ring-1 ring-red-500/30">OP</div>}
-      <h1 className="mt-6 text-2xl font-black tracking-[-0.04em]">Готовим приложение...</h1>
-      <p className="onlypump-loading-subtitle mt-3 text-lg font-bold">{phrase}</p>
+      {phrase && <p className="onlypump-loading-subtitle mt-5 text-lg font-bold">{phrase}</p>}
     </div>
   </div>;
 }
