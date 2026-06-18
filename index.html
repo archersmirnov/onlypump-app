@@ -334,6 +334,17 @@
       box-sizing: border-box;
       max-width: 100%;
       font-size: 16px !important;
+      caret-color: #ef4444;
+      color: var(--onlypump-text);
+    }
+    .onlypump-search-input::placeholder,
+    .onlypump-field-input::placeholder {
+      color: var(--onlypump-faint);
+    }
+    .theme-light .onlypump-search-input,
+    .theme-light .onlypump-field-input {
+      caret-color: #ef4444 !important;
+      color: #111827 !important;
     }
     .onlypump-search-shell {
       border: 1px solid rgba(255, 255, 255, 0.10);
@@ -375,16 +386,69 @@
       background: rgba(239, 68, 68, 0.24);
       color: #111827;
     }
+    .onlypump-custom-exercise-name-input {
+      border: 1px solid rgba(255, 255, 255, 0.14) !important;
+      background: rgba(0, 0, 0, 0.28) !important;
+      caret-color: #ef4444 !important;
+      color: #f4f4f5 !important;
+    }
+    .onlypump-custom-exercise-name-input:focus {
+      border-color: rgba(239, 68, 68, 0.65) !important;
+      box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.32);
+    }
+    .theme-light .onlypump-custom-exercise-name-input {
+      background: rgba(249, 250, 251, 0.96) !important;
+      border-color: rgba(15, 23, 42, 0.18) !important;
+      color: #111827 !important;
+    }
     .onlypump-exercise-group-scroll {
       width: 100%;
       min-width: 0;
+      display: flex;
+      gap: 0.5rem;
+      overflow-x: auto;
+      overflow-y: hidden;
+      white-space: nowrap;
       -webkit-overflow-scrolling: touch;
       scroll-padding-inline: 1rem;
     }
     .onlypump-exercise-group-chip {
+      position: relative;
+      display: inline-flex;
+      flex: 0 0 auto;
+      align-items: center;
+      justify-content: center;
+      min-height: 2.25rem;
       min-width: max-content;
+      border-radius: 999px;
+      padding: 0.625rem 1rem;
       white-space: nowrap;
       line-height: 1;
+      background: rgba(255, 255, 255, 0.06);
+      color: #a1a1aa;
+      border: 1px solid transparent;
+      text-align: center;
+      transition: background-color .18s ease, color .18s ease, border-color .18s ease;
+    }
+    .onlypump-exercise-group-chip > span {
+      position: relative;
+      z-index: 1;
+    }
+    .onlypump-exercise-group-chip.is-active {
+      background: #ef4444 !important;
+      color: #050505 !important;
+      border-color: rgba(239, 68, 68, 0.75);
+      box-shadow: 0 10px 24px rgba(239, 68, 68, 0.22);
+    }
+    .theme-light .onlypump-exercise-group-chip {
+      background: rgba(17, 24, 39, 0.06) !important;
+      color: #475569 !important;
+      border-color: rgba(17, 24, 39, 0.08);
+    }
+    .theme-light .onlypump-exercise-group-chip.is-active {
+      background: #ef4444 !important;
+      color: #111827 !important;
+      border-color: rgba(220, 38, 38, 0.60);
     }
     .theme-light [class*="shadow-black"] {
       --tw-shadow-color: var(--onlypump-shadow) !important;
@@ -2259,7 +2323,7 @@ const volumeStandards = {
   workoutMuscle: 6,
 };
 const standardMuscleGroups = ["Грудь", "Спина", "Плечи", "Руки", "Ноги", "Ягодицы", "Пресс"];
-const exerciseGroupFilterOrder = ["Все", ...standardMuscleGroups, "Кардио", "Йога", "Пилатес", "Стретчинг", "Растяжка"];
+const exerciseGroupFilterOrder = ["Все", ...standardMuscleGroups, "Кардио", "Йога", "Пилатес", "Стретчинг", "Другое"];
 const supersetPalette = ["#ef4444", "#f97316", "#facc15", "#22c55e", "#38bdf8", "#6366f1", "#d946ef"];
 const workoutStatusColors = {
   completed: "#22c55e",
@@ -5930,8 +5994,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       weight_unit: normalizeWeightUnit(customExerciseSheet.weightUnit),
       distance_unit: normalizeDistanceUnit(customExerciseSheet.distanceUnit),
       counts_in_muscle_stats: Boolean(customExerciseSheet.countsInMuscleStats),
-      double_weight_in_stats: Boolean(customExerciseSheet.doubleWeightInStats),
-      double_count_in_statistics: Boolean(customExerciseSheet.doubleWeightInStats),
+      double_weight_in_stats: Boolean(customExerciseSheet.doubleCountInStatistics ?? customExerciseSheet.doubleWeightInStats),
+      double_count_in_statistics: Boolean(customExerciseSheet.doubleCountInStatistics ?? customExerciseSheet.doubleWeightInStats),
       notes: customExerciseSheet.notes || "",
     };
     const optimistic = mapExerciseLibraryRow({
@@ -7835,7 +7899,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const toggleExerciseMeasurementSetting = (field) => {
-    updateExerciseMeasurementDraft(draft => ({ [field]: !Boolean(draft?.[field]) }));
+    updateExerciseMeasurementDraft(draft => {
+      if (field === "doubleCountInStatistics" || field === "doubleWeightInStats") {
+        const nextValue = !Boolean(draft?.doubleCountInStatistics ?? draft?.doubleWeightInStats);
+        return { doubleCountInStatistics: nextValue, doubleWeightInStats: nextValue };
+      }
+      return { [field]: !Boolean(draft?.[field]) };
+    });
   };
 
   const setExerciseWeightUnit = (weightUnit) => {
@@ -9521,13 +9591,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-black">+</span>
         </button>
 
-        <div className="onlypump-exercise-group-scroll mt-4 flex gap-2 overflow-x-auto pb-2 onlypump-scrollbar-none">
+        <div className="onlypump-exercise-group-scroll mt-4 pb-2 onlypump-scrollbar-none">
           {exerciseGroups.map(group => <button
             key={group}
             onClick={() => setSelectedExerciseGroup(group)}
-            className={`onlypump-exercise-group-chip shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition ${selectedExerciseGroup === group ? 'bg-red-500 text-black' : 'bg-white/[0.06] text-zinc-400 hover:bg-white/10'}`}
+            className={`onlypump-exercise-group-chip text-xs font-semibold ${selectedExerciseGroup === group ? 'is-active' : ''}`}
           >
-            {group}
+            <span>{group}</span>
           </button>)}
         </div>
 
@@ -10223,13 +10293,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               className="onlypump-search-input w-full bg-transparent px-2 py-2 text-base outline-none placeholder:text-zinc-600"
             />
           </div>
-          <div className="onlypump-exercise-group-scroll mt-4 flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
+          <div className="onlypump-exercise-group-scroll mt-4 pb-1 onlypump-scrollbar-none">
             {exerciseGroups.map(group => <button
               key={group}
               onClick={() => setSelectedExerciseGroup(group)}
-              className={`onlypump-exercise-group-chip shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition ${selectedExerciseGroup === group ? 'bg-red-500 text-black' : 'bg-white/[0.06] text-zinc-400 hover:bg-white/10'}`}
+              className={`onlypump-exercise-group-chip text-xs font-semibold ${selectedExerciseGroup === group ? 'is-active' : ''}`}
             >
-              {group}
+              <span>{group}</span>
             </button>)}
           </div>
           <div className="mt-6 space-y-6">
@@ -10671,7 +10741,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         <div className="onlypump-sheet-list onlypump-keyboard-aware-list mt-5 flex-1 space-y-4 overflow-y-auto pr-1 onlypump-scrollbar-none">
           <label className="block">
             <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название</span>
-            <input value={customExerciseSheet.name} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, name: e.target.value }))} className="onlypump-field-input mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-base font-semibold text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-red-500/60 focus:ring-1 focus:ring-red-500/40" placeholder="Например: подъём на платформу" />
+            <input value={customExerciseSheet.name} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, name: e.target.value }))} className="onlypump-field-input onlypump-custom-exercise-name-input mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-base font-semibold text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-red-500/60 focus:ring-1 focus:ring-red-500/40" placeholder="Например: подъём на платформу" />
           </label>
 
           <div className="grid grid-cols-2 gap-3">
@@ -10736,10 +10806,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               <span className={`onlypump-toggle-knob absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${customExerciseSheet.countsInMuscleStats ? "left-6" : "left-1"}`} />
             </span>
           </button>}
-	          {customExerciseShowsWeightUnit && <button type="button" onClick={() => setCustomExerciseSheet(prev => ({ ...prev, doubleWeightInStats: !prev.doubleWeightInStats }))} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
-	            <span>Удваивать в статистике</span>
-	            <span className={`onlypump-toggle-track relative h-7 w-12 rounded-full transition ${customExerciseSheet.doubleWeightInStats ? "is-on bg-red-500" : "bg-white/[0.12]"}`}>
-	              <span className={`onlypump-toggle-knob absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${customExerciseSheet.doubleWeightInStats ? "left-6" : "left-1"}`} />
+	          {customExerciseShowsWeightUnit && <button type="button" onClick={() => setCustomExerciseSheet(prev => {
+	            const nextValue = !Boolean(prev.doubleCountInStatistics ?? prev.doubleWeightInStats);
+	            return { ...prev, doubleCountInStatistics: nextValue, doubleWeightInStats: nextValue };
+	          })} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
+		            <span>Удваивать в статистике</span>
+	            <span className={`onlypump-toggle-track relative h-7 w-12 rounded-full transition ${Boolean(customExerciseSheet.doubleCountInStatistics ?? customExerciseSheet.doubleWeightInStats) ? "is-on bg-red-500" : "bg-white/[0.12]"}`}>
+	              <span className={`onlypump-toggle-knob absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${Boolean(customExerciseSheet.doubleCountInStatistics ?? customExerciseSheet.doubleWeightInStats) ? "left-6" : "left-1"}`} />
 	            </span>
 	          </button>}
         </div>
@@ -13948,17 +14021,93 @@ function MobilePreview({ active }) {
   return null;
 }
 
+const LOADING_PHRASES = [
+  "Спешу настроить базу данных",
+  "Бегу настроить всю аналитику",
+  "Спешу проверить работу всех кнопок",
+  "Спешу открыть все графики раньше тебя",
+  "Бегу проверить, добираешь ли ты норму белка",
+  "Бегу пока остальные ленятся",
+  "Бегу разбудить твои тренировки",
+  "Спешу открыть двери в ONLYPUMP",
+  "Бегу проверить, всё ли готово к старту",
+  "Спешу собрать твои данные в одном месте",
+  "Бегу включать режим прогресса",
+  "Спешу подготовить всё к тренировке",
+  "Бегу за твоими результатами",
+  "Спешу навести порядок в цифрах",
+  "Бегу пересчитывать твои подходы",
+  "Спешу проверить последние рекорды",
+  "Бегу искать лишние повторы",
+  "Спешу собрать тренировочную статистику",
+  "Бегу считать твой тоннаж",
+  "Спешу проверить, не филонишь ли ты",
+  "Бегу обновлять историю тренировок",
+  "Спешу сравнить тебя со вчерашним собой",
+  "Бегу искать потерянный белок",
+  "Спешу проверить твой холодильник",
+  "Бегу считать калории быстрее калькулятора",
+  "Спешу проверить баланс БЖУ",
+  "Бегу охранять твой дефицит",
+  "Спешу узнать, хватит ли белка мышцам",
+  "Бегу искать лишние перекусы",
+  "Спешу проверить запасы энергии",
+  "Бегу строить красивые графики",
+  "Спешу раскладывать всё по полочкам",
+  "Бегу искать закономерности",
+  "Спешу собрать статистику воедино",
+  "Бегу переводить хаос в аналитику",
+  "Спешу выяснить, что работает лучше всего",
+  "Бегу искать точки роста",
+  "Спешу превратить данные в прогресс",
+  "Бегу проверять уровень восстановления",
+  "Спешу узнать, готов ли ты к нагрузке",
+  "Бегу считать часы сна",
+  "Спешу оценить запас сил",
+  "Бегу проверять, не пора ли отдохнуть",
+  "Спешу напомнить организму восстановиться",
+  "Бегу быстрее твоего кардио",
+  "Спешу, пока мышцы не остыли",
+  "Бегу, потому что ходить слишком медленно",
+  "Спешу, пока мотивация не убежала",
+  "Бегу искать твой следующий рекорд",
+  "Спешу раньше, чем закончится разминка",
+  "Бегу, будто впереди бесплатный протеин",
+  "Спешу, как новичок к понедельнику",
+  "Бегу, пока остальные ищут оправдания",
+  "Спешу, потому что прогресс сам себя не построит"
+];
+
+function getRandomLoadingPhrase(previousPhrase = "") {
+  if (!LOADING_PHRASES.length) return "Подгружаем данные";
+  if (LOADING_PHRASES.length === 1) return LOADING_PHRASES[0];
+  let nextPhrase = previousPhrase;
+  while (nextPhrase === previousPhrase) {
+    nextPhrase = LOADING_PHRASES[Math.floor(Math.random() * LOADING_PHRASES.length)];
+  }
+  return nextPhrase;
+}
+
 function LoadingScreen({ theme = "dark" }) {
   const normalizedTheme = theme === "light" ? "light" : "dark";
+  const [phrase, setPhrase] = useState(() => getRandomLoadingPhrase());
+  const [mascotFailed, setMascotFailed] = useState(false);
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setPhrase(current => getRandomLoadingPhrase(current));
+    }, 2200);
+    return () => window.clearInterval(intervalId);
+  }, []);
   return <div className={`onlypump-loading-screen theme-${normalizedTheme} fixed inset-0 z-[9999] flex items-center justify-center px-6`}>
     <div className="text-center">
-      <img
+      {!mascotFailed ? <img
         src="./assets/mascot/loader-run.gif"
         alt="ONLYPUMP loading mascot"
         className="mx-auto h-auto w-[180px]"
-      />
+        onError={() => setMascotFailed(true)}
+      /> : <div className="mx-auto flex h-[180px] w-[180px] items-center justify-center rounded-full bg-red-500/15 text-3xl font-black text-red-500 ring-1 ring-red-500/30">OP</div>}
       <h1 className="mt-6 text-2xl font-black tracking-[-0.04em]">Готовим приложение...</h1>
-      <p className="onlypump-loading-subtitle mt-2 text-sm font-semibold">Подгружаем данные</p>
+      <p className="onlypump-loading-subtitle mt-3 text-lg font-bold">{phrase}</p>
     </div>
   </div>;
 }
