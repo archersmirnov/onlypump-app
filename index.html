@@ -279,6 +279,22 @@
       border-color: var(--onlypump-border) !important;
       color: var(--onlypump-text) !important;
     }
+    input[type="search"],
+    .onlypump-search-input,
+    .onlypump-field-input {
+      box-sizing: border-box;
+      max-width: 100%;
+      font-size: 16px !important;
+    }
+    .onlypump-field-surface {
+      border: 1px solid var(--onlypump-border);
+      background: var(--onlypump-input);
+    }
+    .theme-light .onlypump-field-surface {
+      background-color: rgba(249, 250, 251, 0.94) !important;
+      border-color: rgba(17, 24, 39, 0.14) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+    }
     .theme-light input::placeholder,
     .theme-light textarea::placeholder {
       color: var(--onlypump-faint) !important;
@@ -317,6 +333,9 @@
     .theme-light .onlypump-chart-segment-active {
       background-color: #111827 !important;
       color: #ffffff !important;
+    }
+    .theme-light .onlypump-exercise-add-footer {
+      background: transparent !important;
     }
   </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -485,14 +504,14 @@ const DEFAULT_PROFILE = {
   id: null,
   telegram_id: null,
   telegram_username: null,
-  first_name: "Артур",
+  first_name: "",
   last_name: "",
-  display_name: "Артур",
+  display_name: "Пользователь",
   display_name_locked: false,
   display_name_source: "telegram",
   display_name_updated_at: null,
-  weight_kg: 90,
-  height_cm: 180,
+  weight_kg: null,
+  height_cm: null,
   goal: "Рекомпозиция тела",
   sex: null,
   birth_date: null,
@@ -516,7 +535,7 @@ const DEFAULT_PROFILE = {
   manual_nutrition_targets_enabled: false,
   goal_type: "recomposition",
   goal_description: null,
-  target_weight_kg: 76,
+  target_weight_kg: null,
   deficit_percent: 10,
   goal_intensity_percent: 10,
   calories_target: 2500,
@@ -678,8 +697,8 @@ function buildFallbackProfile(overrides = {}) {
     ...DEFAULT_PROFILE,
     ...overrides,
     display_name: overrides.display_name || DEFAULT_PROFILE.display_name,
-    weight_kg: safeProfileNumber(overrides.weight_kg, DEFAULT_PROFILE.weight_kg),
-    height_cm: safeProfileNumber(overrides.height_cm, DEFAULT_PROFILE.height_cm),
+    weight_kg: optionalProfileNumber(overrides.weight_kg, DEFAULT_PROFILE.weight_kg),
+    height_cm: optionalProfileNumber(overrides.height_cm, DEFAULT_PROFILE.height_cm),
     goal: overrides.goal || DEFAULT_PROFILE.goal,
     sex: overrides.sex || DEFAULT_PROFILE.sex,
     birth_date: birthDate,
@@ -749,8 +768,8 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     display_name_locked: parseProfileBoolean(record.display_name_locked, fallback.display_name_locked ?? DEFAULT_PROFILE.display_name_locked),
     display_name_source: record.display_name_source || fallback.display_name_source || DEFAULT_PROFILE.display_name_source,
     display_name_updated_at: record.display_name_updated_at || fallback.display_name_updated_at || null,
-    weight_kg: safeProfileNumber(record.weight_kg, fallback.weight_kg || DEFAULT_PROFILE.weight_kg),
-    height_cm: safeProfileNumber(record.height_cm, fallback.height_cm || DEFAULT_PROFILE.height_cm),
+    weight_kg: optionalProfileNumber(record.weight_kg, fallback.weight_kg ?? DEFAULT_PROFILE.weight_kg),
+    height_cm: optionalProfileNumber(record.height_cm, fallback.height_cm ?? DEFAULT_PROFILE.height_cm),
     goal: record.goal || fallback.goal || DEFAULT_PROFILE.goal,
     sex: record.sex !== undefined ? (record.sex || null) : (fallback.sex || null),
     birth_date: birthDate,
@@ -2163,7 +2182,7 @@ const createWorkoutModel = (dateKey, patch = {}) => {
     weekday: workoutWeekdayNames[date.getDay()],
     title,
     programDayNumber: patch.programDayNumber || 1,
-    durationMinutes: patch.durationMinutes ?? 60,
+    durationMinutes: patch.durationMinutes ?? 0,
     totalVolumeKg: patch.totalVolumeKg ?? 0,
     calories: patch.calories ?? 0,
     estimatedCaloriesBurned: patch.estimatedCaloriesBurned ?? patch.estimated_calories_burned ?? patch.calories ?? 0,
@@ -2178,14 +2197,7 @@ const createWorkoutModel = (dateKey, patch = {}) => {
 };
 
 const buildInitialWorkoutModels = () => {
-  const today = parseDateKeyLocal(formatDateKey(new Date()));
-  return [
-    createWorkoutModel(formatDateKey(addLocalDaysToDate(today, -1)), { title: "1 ПушАп/ПулДаун", programDayNumber: 1, durationMinutes: 121, totalVolumeKg: 11592, calories: 137 }),
-    createWorkoutModel(formatDateKey(addLocalDaysToDate(today, -2)), { title: "4 ПушДаун/ПулАп", programDayNumber: 4, durationMinutes: 61, totalVolumeKg: 12814, calories: 350 }),
-    createWorkoutModel(formatDateKey(addLocalDaysToDate(today, -5)), { title: "3 ПулДаун/ПушАп", programDayNumber: 3, durationMinutes: 99, totalVolumeKg: 18817, calories: 170 }),
-    createWorkoutModel(formatDateKey(addLocalDaysToDate(today, -8)), { title: "2 Ноги / Ягодицы", programDayNumber: 2, durationMinutes: 83, totalVolumeKg: 14520, calories: 220 }),
-    createWorkoutModel(formatDateKey(addLocalDaysToDate(today, -10)), { title: "1 Верх тела", programDayNumber: 1, durationMinutes: 74, totalVolumeKg: 10340, calories: 166 }),
-  ];
+  return [];
 };
 
 const getWorkoutSets = (workout) => (workout?.exercises || []).flatMap(exercise => (exercise.sets || []).map(set => ({ ...set, __exercise: exercise })));
@@ -2308,6 +2320,9 @@ const mapWorkoutFromApi = (row = {}, index = 0, fallbackDateKey = formatDateKey(
   const dateKey = row.workout_date || row.date || fallbackDateKey;
   const date = parseDateKeyLocal(dateKey);
   const exercises = row.workout_exercises || row.exercises || row.workoutExercises || [];
+  const status = normalizeWorkoutStatus(row.status);
+  const createdAt = row.created_at || row.createdAt || new Date().toISOString();
+  const startedAt = row.started_at || row.startedAt || (status === "active" ? createdAt : null);
   const mappedExercises = [...exercises]
     .sort((a, b) => safeWorkoutModelNumber(a.exercise_order ?? a.order) - safeWorkoutModelNumber(b.exercise_order ?? b.order))
     .map(mapWorkoutExerciseFromApi);
@@ -2319,19 +2334,20 @@ const mapWorkoutFromApi = (row = {}, index = 0, fallbackDateKey = formatDateKey(
     weekday: workoutWeekdayNames[date.getDay()] || "",
     title: row.title || "Новая тренировка",
     programDayNumber: index + 1,
-    durationMinutes: safeWorkoutModelNumber(row.duration_minutes ?? row.durationMinutes ?? (row.duration_seconds !== undefined ? Number(row.duration_seconds) / 60 : undefined), 60),
+    durationMinutes: safeWorkoutModelNumber(row.duration_minutes ?? row.durationMinutes ?? (row.duration_seconds !== undefined ? Number(row.duration_seconds) / 60 : undefined), 0),
     totalVolumeKg,
     serverTotalSets: safeWorkoutModelNumber(row.total_sets ?? row.totalSets, 0),
     serverTotalVolume: safeWorkoutModelNumber(row.total_volume ?? row.totalVolume ?? row.totalVolumeKg, 0),
     calories: getWorkoutCaloriesFromRecord(row),
     estimatedCaloriesBurned: getWorkoutCaloriesFromRecord(row),
-    status: normalizeWorkoutStatus(row.status),
-    startedAt: row.started_at || row.startedAt || null,
+    status,
+    startedAt,
+    autoStoppedAt: row.auto_stopped_at || row.autoStoppedAt || null,
     finishedAt: row.finished_at || row.finishedAt || null,
     exercises: mappedExercises,
     notes: row.notes || "",
     templateId: row.template_id || row.templateId || null,
-    createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+    createdAt,
     updatedAt: row.updated_at || row.updatedAt || new Date().toISOString(),
   });
 };
@@ -2547,8 +2563,9 @@ const writeCachedAnalyticsForProfile = (profile, type, metric, period, selectedD
 
 const nutritionDayHasFood = (day) => {
   const hasItems = (day?.meals || []).some(meal => (meal.items || []).length > 0);
+  const hasManualEntry = Boolean(day?.manual_entry_enabled || day?.manualEntryEnabled);
   const hasCalories = Number(day?.totals?.calories || day?.calories_total || 0) > 0;
-  return hasItems || hasCalories;
+  return hasItems || (hasManualEntry && hasCalories);
 };
 
 const mergeNutritionMarkerKeys = (dateKeys = [], dateKey, hasFood) => {
@@ -2628,21 +2645,14 @@ const workoutDisplayInfo = (workout) => {
   };
 };
 
-const initialMeals = [
-  { id: 1, name: "Завтрак", food: "Омлет, тосты, ягоды", calories: 620, protein: 48, fat: 24, carbs: 54 },
-  { id: 2, name: "Обед", food: "Рис, курица, овощи", calories: 760, protein: 62, fat: 18, carbs: 88 },
-  { id: 3, name: "Перекус", food: "Йогурт, банан", calories: 310, protein: 32, fat: 4, carbs: 38 },
-  { id: 4, name: "Ужин", food: "Рыба, картофель, салат", calories: 630, protein: 52, fat: 22, carbs: 38 },
-];
-
 const initialNutritionGoal = {
-  calories: 2800,
-  protein: 190,
+  calories: 2500,
+  protein: 180,
   fat: 70,
-  carbs: 260,
+  carbs: 250,
 };
 
-function Progress({ value = 78 }) {
+function Progress({ value = 0 }) {
   return <div className="h-1.5 w-full rounded-full bg-zinc-800"><div style={{ width: `${value}%` }} className="h-full rounded-full bg-gradient-to-r from-red-700 to-red-500" /></div>;
 }
 
@@ -2981,16 +2991,23 @@ const buildWorkoutSummaryForDate = (dateKey, baseSummary = {}) => {
 };
 
 const buildMeasurementsForDate = (dateKey, baseMeasurements = {}) => {
-  const diff = getDayOffsetFromToday(dateKey);
-  if (diff === 0) return baseMeasurements;
-  const drift = diff * 0.08;
-  return {
-    ...baseMeasurements,
-    weight: Number(clampNumber(baseMeasurements.weight || 90, 40, 250) + drift).toFixed(1).replace(/\.0$/, ""),
-    bodyFat: Number(clampNumber(baseMeasurements.bodyFat || 12.9, 3, 60) + diff * 0.03).toFixed(1),
-    waist: Number(clampNumber(baseMeasurements.waist || 78, 40, 180) + diff * 0.05).toFixed(1).replace(/\.0$/, ""),
-    belly: Number(clampNumber(baseMeasurements.belly || 84, 40, 200) + diff * 0.06).toFixed(1).replace(/\.0$/, ""),
-  };
+  return baseMeasurements || {};
+};
+
+const hasPositiveMetric = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0;
+};
+
+const formatOptionalMetric = (value, unit = "") => hasPositiveMetric(value)
+  ? `${Number(value).toLocaleString("ru-RU")}${unit ? ` ${unit}` : ""}`
+  : "—";
+
+const formatMeasurementSummary = (measurements = {}) => {
+  const weight = formatOptionalMetric(measurements.weight, "кг");
+  const bodyFat = formatOptionalMetric(measurements.bodyFat, "%");
+  if (weight === "—" && bodyFat === "—") return "нет данных";
+  return `${weight} · ${bodyFat} жира`;
 };
 
 function InlineDateDataCard({ context = "home", dateKey, nutritionTotals, nutritionGoal = initialNutritionGoal, nutritionMeals = [], workout, workoutSummary, measurements = {}, profile }) {
@@ -3042,8 +3059,8 @@ function InlineDateDataCard({ context = "home", dateKey, nutritionTotals, nutrit
 
       {showProgress && <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <span className="rounded-full bg-red-500/10 px-3 py-1 text-[10px] uppercase tracking-wider text-red-400">Замеры</span>
-        <h3 className="mt-3 font-semibold">{measurements.weight || 90} кг · {measurements.bodyFat || 12.9}% жира</h3>
-        <p className="mt-2 text-xs text-zinc-500">Талия {measurements.waist || 78} см · живот {measurements.belly || 84} см</p>
+        <h3 className="mt-3 font-semibold">{formatMeasurementSummary(measurements)}</h3>
+        <p className="mt-2 text-xs text-zinc-500">Талия {formatOptionalMetric(measurements.waist, "см")} · живот {formatOptionalMetric(measurements.belly, "см")}</p>
       </div>}
     </div>
   </Card>;
@@ -3217,8 +3234,8 @@ function DayDataModal({ dateKey, context = "home", onClose, setActive, workout, 
 
         {showProgress && <button onClick={() => go("progress")} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:border-red-500/40 hover:bg-red-500/5">
           <span className="rounded-full bg-red-500/10 px-3 py-1 text-[10px] uppercase tracking-wider text-red-400">Замеры</span>
-          <h3 className="mt-3 text-lg font-semibold">{measurements.weight || 90} кг · {measurements.bodyFat || 12.9}% жира</h3>
-          <p className="mt-2 text-sm text-zinc-500">Талия {measurements.waist || 78} см · живот {measurements.belly || 84} см</p>
+          <h3 className="mt-3 text-lg font-semibold">{formatMeasurementSummary(measurements)}</h3>
+          <p className="mt-2 text-sm text-zinc-500">Талия {formatOptionalMetric(measurements.waist, "см")} · живот {formatOptionalMetric(measurements.belly, "см")}</p>
         </button>}
 
         {showMeals && <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
@@ -3264,11 +3281,10 @@ function Header({ title, subtitle }) {
 
 function StatStrip({ measurements, nutritionTotals, nutritionGoal, workoutSummary, recovery = 78 }) {
   const caloriesPercent = Math.min(100, nutritionGoal?.calories ? Math.round((nutritionTotals.calories / nutritionGoal.calories) * 100) : 0);
-  const weightDelta = measurements?.weight ? Number((measurements.weight - 90).toFixed(1)) : 0;
 
   const liveStats = [
-    { label: "Вес", value: `${measurements?.weight || 0} кг`, delta: `${weightDelta > 0 ? "+" : ""}${weightDelta} кг`, type: "line" },
-    { label: "Процент жира", value: `${measurements?.bodyFat || 12.6} %`, delta: "-0,3 %", type: "line" },
+    { label: "Вес", value: formatOptionalMetric(measurements?.weight, "кг"), delta: hasPositiveMetric(measurements?.weight) ? "замер" : "нет данных", type: "line" },
+    { label: "Процент жира", value: formatOptionalMetric(measurements?.bodyFat, "%"), delta: hasPositiveMetric(measurements?.bodyFat) ? "замер" : "нет данных", type: "line" },
     { label: "Тоннаж", value: `${workoutSummary.completedVolume.toLocaleString("ru-RU")} кг`, delta: `${workoutSummary.completedSets}/${workoutSummary.totalSets}`, type: "line" },
     { label: "Подходы", value: `${workoutSummary.completedSets}`, delta: `${workoutSummary.progress}%`, type: "bars" },
     { label: "Калории", value: `${nutritionTotals.calories}`, sub: `/ ${nutritionGoal.calories}`, delta: `${caloriesPercent}%`, type: "progress" },
@@ -3281,7 +3297,7 @@ function StatStrip({ measurements, nutritionTotals, nutritionGoal, workoutSummar
   </Card>;
 }
 
-function NutritionRing({ calories = 2320, goal = 2800 }) {
+function NutritionRing({ calories = 0, goal = initialNutritionGoal.calories }) {
   const percent = Math.min(100, goal ? Math.round((calories / goal) * 100) : 0);
 
   return <div className="relative flex h-28 w-28 items-center justify-center rounded-full" style={{background:`conic-gradient(#ef4444 0 ${percent}%, var(--chart-track) ${percent}% 100%)`}}><div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-zinc-950"><span className="text-xs text-zinc-400">Калории</span><span className="text-2xl">{calories}</span><span className="text-[10px] text-zinc-500">/ {goal} ккал</span></div></div>;
@@ -3824,13 +3840,14 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   }), { calories: 0, protein: 0, fat: 0, carbs: 0 }), [nutritionMeals]);
 
   const bodyProgress = useMemo(() => {
-    const startWeight = 90;
-    const targetWeight = progressGoal?.targetWeight || 76;
-    const currentWeight = measurements?.weight || 78.4;
+    const startWeight = profileNumber(profile?.start_weight_kg ?? profile?.weight_start_kg ?? null);
+    const targetWeight = profileNumber(progressGoal?.targetWeight || profile?.target_weight_kg);
+    const currentWeight = profileNumber(measurements?.weight || profile?.weight_kg);
+    if (!startWeight || !targetWeight || !currentWeight || startWeight === targetWeight) return 0;
     const total = Math.abs(startWeight - targetWeight) || 1;
     const done = Math.abs(startWeight - currentWeight);
     return Math.min(100, Math.round((done / total) * 100));
-  }, [measurements, progressGoal]);
+  }, [measurements, progressGoal, profile]);
 
   const selectedDateKey = controlledSelectedDateKey || formatDateKey(new Date());
   const setSelectedDateKey = controlledSetSelectedDateKey || (() => {});
@@ -3905,7 +3922,8 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const selectedWater = profileNonNegativeNumber(selectedHealthLog.water_ml, 0);
   const waterGoal = Math.max(1, profileNonNegativeNumber(selectedHealthLog.water_target_ml, DEFAULT_HEALTH_LOG.water_target_ml));
   const waterProgress = Math.min(100, Math.round((selectedWater / waterGoal) * 100));
-  const weightDelta = selectedMeasurements?.weight ? Number((Number(selectedMeasurements.weight) - 90).toFixed(1)) : 0;
+  const profileStartWeight = profileNumber(profile?.start_weight_kg ?? profile?.weight_start_kg ?? null);
+  const weightDelta = selectedMeasurements?.weight && profileStartWeight ? Number((Number(selectedMeasurements.weight) - profileStartWeight).toFixed(1)) : null;
   const displayName = getProfileDisplayName(profile);
   const homeVolumeUnit = normalizeWeightUnit(profile?.default_weight_unit || DEFAULT_PROFILE.default_weight_unit);
   const formatHomeVolume = (valueKg) => {
@@ -3997,9 +4015,9 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const renderWidget = (id) => {
     switch (id) {
       case "metricWeight":
-        return <MetricWidgetCard title="Вес" value={`${selectedMeasurements?.weight || 0} кг`} delta={`${weightDelta > 0 ? "+" : ""}${weightDelta} кг от старта`} progress={bodyProgress} icon={Scale} onClick={() => setWeightSheetOpen(true)}/>;
+        return <MetricWidgetCard title="Вес" value={formatOptionalMetric(selectedMeasurements?.weight, "кг")} delta={weightDelta == null ? "нет данных" : `${weightDelta > 0 ? "+" : ""}${weightDelta} кг от старта`} progress={bodyProgress} icon={Scale} onClick={() => setWeightSheetOpen(true)}/>;
       case "metricBodyFat":
-        return <MetricWidgetCard title="Процент жира" value={`${selectedMeasurements?.bodyFat || 12.6}%`} delta="−0,3% за неделю" progress={Math.max(0, 100 - Number(selectedMeasurements?.bodyFat || 12.6) * 4)} icon={Ruler} onClick={() => setActive("progress")}/>;
+        return <MetricWidgetCard title="Процент жира" value={formatOptionalMetric(selectedMeasurements?.bodyFat, "%")} delta={hasPositiveMetric(selectedMeasurements?.bodyFat) ? "по замерам" : "нет данных"} progress={hasPositiveMetric(selectedMeasurements?.bodyFat) ? Math.max(0, 100 - Number(selectedMeasurements.bodyFat) * 4) : 0} icon={Ruler} onClick={() => setActive("progress")}/>;
       case "metricTonnage":
         return <MetricWidgetCard title="Тоннаж" value={formatHomeVolumeKg(currentWeekWorkoutSummary.completedVolume)} sub={`из ${formatHomeVolumeKg(currentWeekWorkoutSummary.plannedVolume)} запланировано`} progress={currentWeekTonnageProgress} icon={Dumbbell} onClick={() => setActive("workouts")}/>;
       case "metricSets":
@@ -4302,7 +4320,7 @@ function ExercisePickerSheet({ groups, activeGroup, setActiveGroup, search, setS
       </div>
 
       <div className="mt-5 rounded-2xl bg-white/[0.04] px-4 py-3">
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Поиск упражнения" className="w-full bg-transparent text-sm outline-none placeholder:text-zinc-600" />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Поиск упражнения" className="onlypump-search-input w-full bg-transparent text-base outline-none placeholder:text-zinc-600" />
       </div>
 
       <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
@@ -4516,7 +4534,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       weekday: weekdayNames[date.getDay()],
       title,
       programDayNumber: patch.programDayNumber || 1,
-      durationMinutes: patch.durationMinutes ?? 60,
+      durationMinutes: patch.durationMinutes ?? 0,
       totalVolumeKg: patch.totalVolumeKg ?? 0,
       calories: patch.calories ?? 0,
       estimatedCaloriesBurned: patch.estimatedCaloriesBurned ?? patch.estimated_calories_burned ?? patch.calories ?? 0,
@@ -4531,14 +4549,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const buildInitialWorkouts = () => {
-    const today = parseDateKey(formatDateKey(new Date()));
-    return [
-      makeWorkout(toDateKey(addLocalDays(today, -1)), { title: "1 ПушАп/ПулДаун", programDayNumber: 1, durationMinutes: 121, totalVolumeKg: 11592, calories: 137 }),
-      makeWorkout(toDateKey(addLocalDays(today, -2)), { title: "4 ПушДаун/ПулАп", programDayNumber: 4, durationMinutes: 61, totalVolumeKg: 12814, calories: 350 }),
-      makeWorkout(toDateKey(addLocalDays(today, -5)), { title: "3 ПулДаун/ПушАп", programDayNumber: 3, durationMinutes: 99, totalVolumeKg: 18817, calories: 170 }),
-      makeWorkout(toDateKey(addLocalDays(today, -8)), { title: "2 Ноги / Ягодицы", programDayNumber: 2, durationMinutes: 83, totalVolumeKg: 14520, calories: 220 }),
-      makeWorkout(toDateKey(addLocalDays(today, -10)), { title: "1 Верх тела", programDayNumber: 1, durationMinutes: 74, totalVolumeKg: 10340, calories: 166 }),
-    ];
+    return [];
   };
 
   const fallbackWorkoutState = useState(buildInitialWorkouts);
@@ -4621,17 +4632,16 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return;
     }
 
-    if (selectedWorkout.status !== "active") {
-      setElapsedWorkoutTime(Math.max(0, Number(selectedWorkout.durationMinutes || 0) * 60));
+    if (normalizeWorkoutStatus(selectedWorkout.status) !== "active") {
+      setElapsedWorkoutTime(getWorkoutDurationSeconds(selectedWorkout));
       return;
     }
 
-    const startedAt = new Date(selectedWorkout.startedAt || Date.now()).getTime();
-    const tick = () => setElapsedWorkoutTime(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    const tick = () => setElapsedWorkoutTime(getWorkoutElapsedSeconds(selectedWorkout));
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [selectedWorkout?.id, selectedWorkout?.status, selectedWorkout?.startedAt, selectedWorkout?.durationMinutes]);
+  }, [selectedWorkout?.id, selectedWorkout?.status, selectedWorkout?.startedAt, selectedWorkout?.createdAt, selectedWorkout?.durationMinutes]);
 
   useEffect(() => {
     if (!restTimer || restTimer <= 0) return;
@@ -4822,7 +4832,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const targetDate = parseDateKey(targetDateKey);
     const workout = makeWorkout(targetDateKey, {
       title: patch.title || `Тренировка за ${targetDate.getDate()} ${months[targetDate.getMonth()]}`,
-      durationMinutes: patch.durationMinutes ?? 45,
+      durationMinutes: patch.durationMinutes ?? 0,
       totalVolumeKg: patch.totalVolumeKg ?? 0,
       calories: patch.calories ?? 0,
       estimatedCaloriesBurned: patch.estimatedCaloriesBurned ?? patch.estimated_calories_burned ?? patch.calories ?? 0,
@@ -5141,6 +5151,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       total_volume: totals.totalVolume,
       duration_seconds: Math.max(0, safeWorkoutNumber(workout?.durationMinutes) * 60),
       estimated_calories_burned: safeWorkoutNumber(workout?.estimatedCaloriesBurned ?? workout?.estimated_calories_burned ?? workout?.calories, 0),
+      started_at: workout?.startedAt || workout?.started_at || null,
+      auto_stopped_at: workout?.autoStoppedAt || workout?.auto_stopped_at || null,
     };
   };
 
@@ -5232,6 +5244,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       total_volume: totals.totalVolume,
       duration_seconds: Math.max(0, safeWorkoutNumber(workout.durationMinutes) * 60),
       estimated_calories_burned: safeWorkoutNumber(workout.estimatedCaloriesBurned ?? workout.estimated_calories_burned ?? workout.calories, 0),
+      started_at: workout.startedAt || workout.started_at || null,
+      auto_stopped_at: workout.autoStoppedAt || workout.auto_stopped_at || null,
     };
     console.log("Saving workout totals:", payload);
     return payload;
@@ -5246,6 +5260,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       total_volume: totals.totalVolume,
       duration_seconds: Math.max(0, safeWorkoutNumber(workout.durationMinutes) * 60),
       estimated_calories_burned: safeWorkoutNumber(workout.estimatedCaloriesBurned ?? workout.estimated_calories_burned ?? workout.calories, 0),
+      started_at: workout.startedAt || workout.started_at || null,
+      auto_stopped_at: workout.autoStoppedAt || workout.auto_stopped_at || null,
     };
     console.log("Saving workout totals:", payload);
     return payload;
@@ -5940,6 +5956,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const derivedTotals = getWorkoutTotals({ exercises: mappedExercises });
     const serverTotalSets = safeWorkoutNumber(row.total_sets ?? row.totalSets, 0);
     const serverTotalVolume = safeWorkoutNumber(row.total_volume ?? row.totalVolume ?? row.totalVolumeKg, 0);
+    const status = normalizeWorkoutStatus(row.status);
+    const createdAt = row.created_at || row.createdAt || new Date().toISOString();
+    const startedAt = row.started_at || row.startedAt || (status === "active" ? createdAt : null);
     return normalizeWorkoutSupersetMetadata({
       id: `workout-supabase-${row.id || index}`,
       supabaseId: row.id || null,
@@ -5947,19 +5966,20 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       weekday: weekdayNames[date.getDay()] || "",
       title: row.title || "Новая тренировка",
       programDayNumber: index + 1,
-      durationMinutes: safeWorkoutNumber(row.duration_minutes ?? row.durationMinutes ?? (row.duration_seconds !== undefined ? Number(row.duration_seconds) / 60 : undefined), 60),
+      durationMinutes: safeWorkoutNumber(row.duration_minutes ?? row.durationMinutes ?? (row.duration_seconds !== undefined ? Number(row.duration_seconds) / 60 : undefined), 0),
       totalVolumeKg: derivedTotals.totalVolume,
       serverTotalSets,
       serverTotalVolume,
       calories: getWorkoutCaloriesFromRecord(row),
       estimatedCaloriesBurned: getWorkoutCaloriesFromRecord(row),
-      status: normalizeWorkoutStatus(row.status),
-      startedAt: row.started_at || row.startedAt || row.created_at || row.createdAt || null,
+      status,
+      startedAt,
+      autoStoppedAt: row.auto_stopped_at || row.autoStoppedAt || null,
       exercises: mappedExercises,
       notes: row.notes || "",
       templateId: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt,
+      updatedAt: row.updated_at || row.updatedAt || new Date().toISOString(),
     });
   };
 
@@ -7133,9 +7153,28 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return `${m}:${String(sec).padStart(2, "0")}`;
   };
 
+  const MAX_ACTIVE_WORKOUT_SECONDS = 24 * 60 * 60;
+  const getWorkoutStartedAtMs = (workout) => {
+    const raw = workout?.startedAt || workout?.started_at || (normalizeWorkoutStatus(workout?.status) === "active" ? (workout?.createdAt || workout?.created_at) : null);
+    const parsed = raw ? new Date(raw).getTime() : NaN;
+    return Number.isFinite(parsed) ? parsed : Date.now();
+  };
+
+  const getWorkoutElapsedSeconds = (workout, fallbackSeconds = 0) => {
+    const startedAt = getWorkoutStartedAtMs(workout);
+    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+    return Math.min(MAX_ACTIVE_WORKOUT_SECONDS, Math.max(0, Number.isFinite(elapsed) ? elapsed : fallbackSeconds));
+  };
+
+  const getWorkoutDurationSeconds = (workout) => {
+    if (normalizeWorkoutStatus(workout?.status) === "active") return getWorkoutElapsedSeconds(workout);
+    return Math.max(0, safeWorkoutNumber(workout?.durationMinutes, 0) * 60);
+  };
+
   const estimateWorkoutCalories = (durationSeconds) => {
-    const minutes = Math.max(1, safeWorkoutNumber(durationSeconds, 45 * 60) / 60);
-    const profileWeightKg = safeWorkoutNumber(profile?.weight_kg, DEFAULT_PROFILE.weight_kg);
+    const minutes = Math.max(0, safeWorkoutNumber(durationSeconds, 0) / 60);
+    const profileWeightKg = safeWorkoutNumber(profile?.weight_kg, 0);
+    if (!profileWeightKg || !minutes) return 0;
     const met = 5;
     return Math.max(0, Math.round((met * 3.5 * profileWeightKg / 200) * minutes));
   };
@@ -7325,6 +7364,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       calories: 0,
       estimatedCaloriesBurned: 0,
       startedAt,
+      autoStoppedAt: null,
       updatedAt: new Date().toISOString(),
     });
     const nextWorkout = patch(workout);
@@ -7572,9 +7612,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const completeWorkoutAsIs = (workout = selectedWorkout) => {
     if (!workout) return;
-    const fallbackDurationSeconds = safeWorkoutNumber(workout.durationMinutes, 45) * 60;
-    const durationSeconds = Math.max(60, safeWorkoutNumber(elapsedWorkoutTime, 0) || fallbackDurationSeconds || 45 * 60);
-    const durationMinutes = Math.max(1, Math.round(durationSeconds / 60));
+    const durationSeconds = normalizeWorkoutStatus(workout.status) === "active"
+      ? getWorkoutElapsedSeconds(workout, safeWorkoutNumber(elapsedWorkoutTime, 0))
+      : getWorkoutDurationSeconds(workout);
+    const durationMinutes = Math.max(0, Math.round(durationSeconds / 60));
     const calories = estimateWorkoutCalories(durationSeconds);
     const finishedAt = new Date().toISOString();
     const withStatus = {
@@ -7632,7 +7673,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const closeExerciseBase = () => {
     setIsExerciseBaseOpen(false);
     setPendingExerciseAdds([]);
+    setExerciseSearch("");
   };
+
+  useEffect(() => {
+    if (!isExerciseBaseOpen && activeTab !== "exercises") setExerciseSearch("");
+  }, [isExerciseBaseOpen, activeTab]);
 
   useAppBackLayer("workouts-edit-error", Boolean(editError), () => setEditError(null), 190);
   useAppBackLayer("workouts-rest-editor", Boolean(restEditor), () => setRestEditor(null), 185);
@@ -7807,7 +7853,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             value={exerciseSearch}
             onChange={(e) => setExerciseSearch(e.target.value)}
             placeholder="Поиск упражнения"
-            className="w-full bg-transparent text-sm outline-none placeholder:text-zinc-600"
+            className="onlypump-search-input w-full bg-transparent text-base outline-none placeholder:text-zinc-600"
           />
         </div>
 
@@ -7847,7 +7893,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           </div>) : <div className="rounded-2xl bg-black/25 p-5 text-sm text-zinc-500">Ничего не найдено.</div>}
         </div>
 
-        {exerciseBaseMode === "add" && <div className="sticky bottom-0 mt-4 flex justify-center bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent pt-5">
+        {exerciseBaseMode === "add" && <div className="onlypump-exercise-add-footer sticky bottom-0 mt-4 flex justify-center bg-gradient-to-t from-zinc-950 via-zinc-950/95 to-transparent pt-5">
           <button
             onClick={addPendingExercisesToWorkout}
             disabled={!pendingExerciseAdds.length}
@@ -7914,8 +7960,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           </div>
 
           <div className="mt-7 grid grid-cols-3 gap-2 text-center">
-            <div className="rounded-2xl bg-black/32 px-3 py-4">
-              <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Время</div>
+            <div className={`rounded-2xl px-3 py-4 ${workoutIsActive ? "bg-red-500 text-black" : "bg-black/32"}`}>
+              <div className={`text-[10px] font-bold uppercase tracking-[0.16em] ${workoutIsActive ? "text-black/55" : "text-zinc-500"}`}>Время</div>
               <div className="mt-2 text-xl font-black">{workoutIsActive ? formatSecondsTimer(elapsedWorkoutTime) : formatDuration(selectedWorkout.durationMinutes || Math.round(elapsedWorkoutTime / 60))}</div>
             </div>
             <div className="rounded-2xl bg-black/32 px-3 py-4">
@@ -8029,7 +8075,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               <div className="truncate pr-1 text-right text-xs font-semibold text-zinc-500">{selectedExerciseCount ? `${selectedExerciseCount} выбрано` : "редакт."}</div>
               <button onClick={toggleWorkoutEditMode} className="flex h-12 w-12 items-center justify-center rounded-full bg-red-500 text-black"><Pencil size={20}/></button>
             </> : <>
-              <button onClick={() => workoutIsActive ? finishActiveWorkout() : workoutIsPlanned ? startWorkout(selectedWorkout) : openRepeatSheet(selectedWorkout)} className={`h-12 rounded-full px-5 text-base font-black transition active:scale-[0.98] ${workoutIsActive ? 'bg-white text-black' : 'bg-red-500 text-black'}`}>
+              <button onClick={() => workoutIsActive ? finishActiveWorkout() : workoutIsPlanned ? startWorkout(selectedWorkout) : openRepeatSheet(selectedWorkout)} className="h-12 rounded-full bg-red-500 px-5 text-base font-black text-black transition active:scale-[0.98]">
                 {workoutIsActive ? "Завершить" : workoutIsPlanned ? "Начать" : "Повторить"}
               </button>
               <button onClick={() => setDetailMenuOpen(true)} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/8 text-zinc-200"><Share2 size={20}/></button>
@@ -8132,11 +8178,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         ? "В обзор"
         : !currentSet
           ? "Дальше"
-          : getSetStatus(currentSet) !== "completed"
-            ? "Выполнить"
-            : exerciseCompleted
-              ? "Следующее"
-              : "Выбрать подход";
+            : getSetStatus(currentSet) !== "completed"
+              ? "Выполнить"
+              : exerciseCompleted
+                ? "Следующее"
+                : "Следующий";
       const menuSet = openMenu?.type === "set" ? currentSets.find(set => set.id === openMenu.setId) : null;
       const measurementSettings = normalizeExerciseMeasurementSettings(currentExercise || {});
       const showWeightField = Boolean(measurementSettings.measureWeightEnabled);
@@ -8442,7 +8488,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               value={exerciseSearch}
               onChange={(e) => setExerciseSearch(e.target.value)}
               placeholder="Поиск упражнения"
-              className="w-full bg-transparent px-2 py-2 text-sm outline-none placeholder:text-zinc-600"
+              className="onlypump-search-input w-full bg-transparent px-2 py-2 text-base outline-none placeholder:text-zinc-600"
             />
           </div>
           <div className="mt-4 flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
@@ -9238,11 +9284,32 @@ const normalizeNutritionDay = (result = {}, fallbackDate = formatDateKey(new Dat
     nutrition_items: [],
   }));
   const computedTotals = getNutritionDayTotalsFromMeals(meals);
+  const hasMealItems = meals.some(meal => (meal.items || []).length > 0);
+  const manualEntryEnabled = Boolean(day.manual_entry_enabled ?? day.manualEntryEnabled) && !hasMealItems;
+  const manualTotals = {
+    calories: roundCalories(day.manual_calories_total ?? day.manualCaloriesTotal ?? 0),
+    protein: roundMacro(day.manual_protein_total ?? day.manualProteinTotal ?? 0),
+    fat: roundMacro(day.manual_fat_total ?? day.manualFatTotal ?? 0),
+    carbs: roundMacro(day.manual_carbs_total ?? day.manualCarbsTotal ?? 0),
+  };
+  const displayTotals = manualEntryEnabled ? manualTotals : {
+    calories: roundCalories(day.calories_total ?? day.totals?.calories ?? computedTotals.calories),
+    protein: roundMacro(day.protein_total ?? day.totals?.protein ?? computedTotals.protein),
+    fat: roundMacro(day.fat_total ?? day.totals?.fat ?? computedTotals.fat),
+    carbs: roundMacro(day.carbs_total ?? day.totals?.carbs ?? computedTotals.carbs),
+  };
   const explicitCaloriesTarget = day.calories_target ?? day.goal?.calories;
   const caloriesTarget = Number(explicitCaloriesTarget ?? fallbackGoal.calories ?? initialNutritionGoal.calories);
   return {
     id: day.id || null,
     date: day.nutrition_date || day.date || fallbackDate,
+    manual_entry_enabled: manualEntryEnabled,
+    manualEntryEnabled,
+    manual_calories_total: manualTotals.calories,
+    manual_protein_total: manualTotals.protein,
+    manual_fat_total: manualTotals.fat,
+    manual_carbs_total: manualTotals.carbs,
+    manual_entry_updated_at: day.manual_entry_updated_at || day.manualEntryUpdatedAt || null,
     calories_target: explicitCaloriesTarget != null ? Number(explicitCaloriesTarget) : null,
     goal: {
       calories: caloriesTarget,
@@ -9250,12 +9317,7 @@ const normalizeNutritionDay = (result = {}, fallbackDate = formatDateKey(new Dat
       fat: Number(day.fat_target ?? day.goal?.fat ?? fallbackGoal.fat ?? initialNutritionGoal.fat),
       carbs: Number(day.carbs_target ?? day.goal?.carbs ?? fallbackGoal.carbs ?? initialNutritionGoal.carbs),
     },
-    totals: {
-      calories: roundCalories(day.calories_total ?? day.totals?.calories ?? computedTotals.calories),
-      protein: roundMacro(day.protein_total ?? day.totals?.protein ?? computedTotals.protein),
-      fat: roundMacro(day.fat_total ?? day.totals?.fat ?? computedTotals.fat),
-      carbs: roundMacro(day.carbs_total ?? day.totals?.carbs ?? computedTotals.carbs),
-    },
+    totals: displayTotals,
     meals,
     favorites: (result.favorites || []).map(favorite => ({ id: favorite.id, foodKey: favorite.food_key, foodSnapshot: favorite.food_snapshot || {} })),
     recentFoods: (result.recent_foods || []).map(mapNutritionItem),
@@ -9286,16 +9348,31 @@ const recalculateNutritionDayLocal = (day) => {
     return { ...meal, calories: roundCalories(totals.calories), protein: roundMacro(totals.protein), fat: roundMacro(totals.fat), carbs: roundMacro(totals.carbs) };
   });
   const totals = getNutritionDayTotalsFromMeals(meals);
+  const hasMealItems = meals.some(meal => (meal.items || []).length > 0);
+  const manualEntryEnabled = Boolean(day?.manual_entry_enabled || day?.manualEntryEnabled) && !hasMealItems;
+  const manualTotals = {
+    calories: roundCalories(day?.manual_calories_total ?? day?.manualCaloriesTotal ?? 0),
+    protein: roundMacro(day?.manual_protein_total ?? day?.manualProteinTotal ?? 0),
+    fat: roundMacro(day?.manual_fat_total ?? day?.manualFatTotal ?? 0),
+    carbs: roundMacro(day?.manual_carbs_total ?? day?.manualCarbsTotal ?? 0),
+  };
+  const displayTotals = manualEntryEnabled ? manualTotals : {
+    calories: roundCalories(totals.calories),
+    protein: roundMacro(totals.protein),
+    fat: roundMacro(totals.fat),
+    carbs: roundMacro(totals.carbs),
+  };
   return {
     ...day,
+    manual_entry_enabled: manualEntryEnabled,
+    manualEntryEnabled,
+    manual_calories_total: manualTotals.calories,
+    manual_protein_total: manualTotals.protein,
+    manual_fat_total: manualTotals.fat,
+    manual_carbs_total: manualTotals.carbs,
     meals,
-    totals: {
-      calories: roundCalories(totals.calories),
-      protein: roundMacro(totals.protein),
-      fat: roundMacro(totals.fat),
-      carbs: roundMacro(totals.carbs),
-    },
-    markedDateKeys: mergeNutritionMarkerKeys(day?.markedDateKeys || [], day?.date, totals.calories > 0 || meals.some(meal => (meal.items || []).length > 0)),
+    totals: displayTotals,
+    markedDateKeys: mergeNutritionMarkerKeys(day?.markedDateKeys || [], day?.date, manualEntryEnabled ? displayTotals.calories > 0 : (totals.calories > 0 || hasMealItems)),
   };
 };
 
@@ -9326,11 +9403,25 @@ const applyLocalNutritionAction = (day, action, payload = {}) => {
     const item = buildNutritionItemFromPayload(payload.item || payload);
     next = {
       ...next,
+      manual_entry_enabled: false,
+      manualEntryEnabled: false,
       meals: next.meals.map(meal => meal.type === payload.meal_type
         ? { ...meal, items: [...(meal.items || []), { ...item, itemOrder: (meal.items || []).length + 1 }] }
         : meal),
       recentFoods: [item, ...(next.recentFoods || []).filter(food => food.foodKey !== item.foodKey)].slice(0, 20),
       frequentFoods: [item, ...(next.frequentFoods || []).filter(food => food.foodKey !== item.foodKey)].slice(0, 20),
+    };
+  }
+  if (action === "save_manual_day_totals") {
+    next = {
+      ...next,
+      manual_entry_enabled: true,
+      manualEntryEnabled: true,
+      manual_calories_total: roundCalories(payload.manual_calories_total ?? payload.calories_total ?? payload.calories ?? 0),
+      manual_protein_total: roundMacro(payload.manual_protein_total ?? payload.protein_total ?? payload.protein ?? 0),
+      manual_fat_total: roundMacro(payload.manual_fat_total ?? payload.fat_total ?? payload.fat ?? 0),
+      manual_carbs_total: roundMacro(payload.manual_carbs_total ?? payload.carbs_total ?? payload.carbs ?? 0),
+      manual_entry_updated_at: new Date().toISOString(),
     };
   }
   if (action === "update_item") {
@@ -9382,6 +9473,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   const [activeEyeballTab, setActiveEyeballTab] = useState("all");
   const [foodSearch, setFoodSearch] = useState("");
   const [foodDraft, setFoodDraft] = useState(null);
+  const [manualEntryOpen, setManualEntryOpen] = useState(false);
   const [notice, setNotice] = useState(null);
   const [swipedItemId, setSwipedItemId] = useState(null);
   const [expandedMeals, setExpandedMeals] = useState({});
@@ -9391,9 +9483,11 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   useAppBackLayer("nutrition-meal-choice", mealChoiceOpen, () => setMealChoiceOpen(false), 142);
   useAppBackLayer("nutrition-food-picker", foodPickerOpen && !foodDraft, () => setFoodPickerOpen(false), 143);
   useAppBackLayer("nutrition-food-draft", Boolean(foodDraft), () => setFoodDraft(null), 144);
+  useAppBackLayer("nutrition-manual-entry", manualEntryOpen, () => setManualEntryOpen(false), 145);
 
   const totals = day.totals || { calories: 0, protein: 0, fat: 0, carbs: 0 };
   const goal = day.goal || nutritionGoal || initialNutritionGoal;
+  const dayHasItems = (day.meals || []).some(meal => (meal.items || []).length > 0);
   const percent = (value, target) => Math.min(100, Math.round((Number(value || 0) / Math.max(1, Number(target || 1))) * 100));
   const caloriesPercent = percent(totals.calories, goal.calories);
   const calorieTarget = roundCalories(day?.calories_target ?? 2500);
@@ -9404,6 +9498,10 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   useEffect(() => {
     if (day.goal) setNutritionGoal(day.goal);
   }, [day.goal?.calories, day.goal?.protein, day.goal?.fat, day.goal?.carbs]);
+
+  useEffect(() => {
+    if (!foodPickerOpen) setFoodSearch("");
+  }, [foodPickerOpen]);
 
   const showSoon = () => {
     setNotice("Функция появится позже");
@@ -9417,6 +9515,22 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   const showNutritionError = (message) => {
     setNotice(message);
     setTimeout(() => setNotice(null), 2400);
+  };
+
+  const saveManualNutritionTotals = async (values) => {
+    const result = await onNutritionAction("save_manual_day_totals", {
+      date: selectedDateKey,
+      manual_calories_total: values.calories,
+      manual_protein_total: values.protein,
+      manual_fat_total: values.fat,
+      manual_carbs_total: values.carbs,
+    });
+    if (result?.ok === false) {
+      showNutritionError("Не удалось сохранить КБЖУ");
+      return false;
+    }
+    setManualEntryOpen(false);
+    return true;
   };
 
   const toggleMealExpanded = (mealType) => {
@@ -9592,7 +9706,10 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
 
     <div className="mt-5 flex items-center justify-between gap-3">
       <h2 className="text-xl font-black tracking-[-0.03em]">Приемы пищи</h2>
-      <button onClick={openMealChoice} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/8 text-red-400"><Plus size={22}/></button>
+      <div className="flex items-center gap-2">
+        {!dayHasItems && <button onClick={() => setManualEntryOpen(true)} className="h-10 rounded-full bg-white/8 px-4 text-xs font-black text-zinc-200 transition hover:bg-white/12">Ввести КБЖУ вручную</button>}
+        <button onClick={openMealChoice} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/8 text-red-400"><Plus size={22}/></button>
+      </div>
     </div>
 
     <div className="mt-3 space-y-3 pb-24">
@@ -9693,11 +9810,18 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
             </div>}</div>
           </div>
           <div className="mt-4 rounded-2xl bg-white/[0.05] px-4 py-3">
-            <input value={foodSearch} onChange={(e) => setFoodSearch(e.target.value)} placeholder="Поиск: курица, роллы, мороженое..." className="w-full bg-transparent text-base outline-none placeholder:text-zinc-600" />
+            <input value={foodSearch} onChange={(e) => setFoodSearch(e.target.value)} placeholder="Поиск: курица, роллы, мороженое..." className="onlypump-search-input w-full bg-transparent text-base outline-none placeholder:text-zinc-600" />
           </div>
         </>}
       </BottomSheetPanel>
     </div>}
+
+    {manualEntryOpen && <ManualNutritionSheet
+      day={day}
+      dateKey={selectedDateKey}
+      onClose={() => setManualEntryOpen(false)}
+      onSave={saveManualNutritionTotals}
+    />}
 
     {foodDraft && <div onClick={() => setFoodDraft(null)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/60 p-3 backdrop-blur-sm">
       <BottomSheetPanel onClose={() => setFoodDraft(null)} onClick={(e) => e.stopPropagation()} className="mx-auto flex max-h-[calc(var(--onlypump-app-height)-24px)] w-full max-w-[500px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
@@ -9750,6 +9874,74 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
       </BottomSheetPanel>
     </div>}
   </>;
+}
+
+function ManualNutritionSheet({ day, dateKey, onSave, onClose }) {
+  const [draft, setDraft] = useState({
+    calories: day?.manual_entry_enabled ? String(day.manual_calories_total || day.totals?.calories || "") : "",
+    protein: day?.manual_entry_enabled ? String(day.manual_protein_total || day.totals?.protein || "") : "",
+    fat: day?.manual_entry_enabled ? String(day.manual_fat_total || day.totals?.fat || "") : "",
+    carbs: day?.manual_entry_enabled ? String(day.manual_carbs_total || day.totals?.carbs || "") : "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const set = (key, value) => {
+    setDraft(prev => ({ ...prev, [key]: value }));
+  };
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    const safeNumber = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    const ok = await onSave?.({
+      calories: Math.max(0, roundCalories(safeNumber(draft.calories))),
+      protein: Math.max(0, roundMacro(safeNumber(draft.protein))),
+      fat: Math.max(0, roundMacro(safeNumber(draft.fat))),
+      carbs: Math.max(0, roundMacro(safeNumber(draft.carbs))),
+    });
+    if (ok === false) setSaving(false);
+  };
+
+  const fields = [
+    ["calories", "Калории", "ккал"],
+    ["protein", "Белки", "г"],
+    ["fat", "Жиры", "г"],
+    ["carbs", "Углеводы", "г"],
+  ];
+
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[188] flex items-end bg-black/55 p-3 backdrop-blur-sm">
+    <BottomSheetPanel onClose={onClose} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20" />
+      <div className="flex items-start justify-between gap-3">
+        <button onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отмена</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">{formatCycleDate(dateKey)}</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">КБЖУ вручную</h2>
+        </div>
+        <button onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+      <div className="mt-5 space-y-3">
+        {fields.map(([key, label, unit]) => <label key={key} className="onlypump-field-surface flex items-center gap-3 rounded-2xl bg-white/[0.05] px-4 py-3">
+          <span className="w-24 shrink-0 text-sm font-bold text-zinc-400">{label}</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={draft[key]}
+            onChange={(e) => set(key, e.target.value)}
+            className="onlypump-field-input min-w-0 flex-1 bg-transparent text-right text-lg font-black outline-none"
+            placeholder="0"
+          />
+          <span className="w-10 shrink-0 text-right text-xs font-bold text-zinc-500">{unit}</span>
+        </label>)}
+      </div>
+      <button onClick={save} disabled={saving} className="mt-6 h-12 w-full rounded-full bg-red-500 text-sm font-black text-black transition active:scale-[0.98] disabled:opacity-60">
+        {saving ? "Сохраняю..." : "Сохранить"}
+      </button>
+    </BottomSheetPanel>
+  </div>;
 }
 
 function CalculatorsPage() {
@@ -10426,17 +10618,17 @@ function GoalIntensityBar({ goalType = "fat_loss", value = 10 }) {
 function ProgressPage({ workouts = [], measurements, setMeasurements, progressGoal, setProgressGoal, profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", selectedDateKey = formatDateKey(new Date()), setSelectedDateKey = () => {}, onProgressProfileSaved }) {
 
   const [previousMeasurements] = useState({
-    weight: 90,
-    bodyFat: 12.6,
-    neck: 39,
-    shoulders: 122,
-    chest: 106,
-    biceps: 37,
-    waist: 82,
-    belly: 88,
-    glutes: 102,
-    thigh: 60,
-    calf: 38,
+    weight: "",
+    bodyFat: "",
+    neck: "",
+    shoulders: "",
+    chest: "",
+    biceps: "",
+    waist: "",
+    belly: "",
+    glutes: "",
+    thigh: "",
+    calf: "",
   });
   const [progressMeasurements, setProgressMeasurements] = useState(() => progressMeasurementsFromRecord(profile, measurements));
   const [previousProgressMeasurements, setPreviousProgressMeasurements] = useState(previousMeasurements);
@@ -10494,6 +10686,7 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
 
   const goalType = progressGoal?.goalType || profile?.goal_type || "recomposition";
   const goalIntensityPercent = normalizeGoalIntensityPercent(goalType, progressGoal?.goalIntensityPercent ?? profile?.goal_intensity_percent ?? profile?.deficit_percent ?? 10);
+  const strengthTargetPercent = hasPositiveMetric(progressGoal?.targetStrength) ? Number(progressGoal.targetStrength) : null;
   const showGoalIntensity = goalUsesIntensity(goalType);
   const [goalIntensityInput, setGoalIntensityInput] = useState(() => String(goalIntensityPercent));
 
@@ -10635,19 +10828,26 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
   };
 
   const bodyProgress = useMemo(() => {
-    const weightStart = previousMeasurements.weight;
-    const weightCurrent = progressMeasurements.weight || measurements.weight;
-    const weightTarget = progressGoal.targetWeight;
-    const weightTotal = Math.abs(weightStart - weightTarget) || 1;
-    const weightDone = Math.abs(weightStart - weightCurrent);
+    const parts = [];
+    const weightStart = Number(previousMeasurements.weight);
+    const weightCurrent = Number(progressMeasurements.weight || measurements.weight);
+    const weightTarget = Number(progressGoal.targetWeight);
+    if (hasPositiveMetric(weightStart) && hasPositiveMetric(weightCurrent) && hasPositiveMetric(weightTarget) && weightStart !== weightTarget) {
+      const total = Math.abs(weightStart - weightTarget);
+      const done = Math.abs(weightStart - weightCurrent);
+      parts.push(Math.min(100, (done / total) * 100));
+    }
 
-    const waistStart = previousMeasurements.waist;
-    const waistCurrent = progressMeasurements.waist || measurements.waist;
-    const waistTarget = progressGoal.targetWaist;
-    const waistTotal = Math.abs(waistStart - waistTarget) || 1;
-    const waistDone = Math.abs(waistStart - waistCurrent);
+    const waistStart = Number(previousMeasurements.waist);
+    const waistCurrent = Number(progressMeasurements.waist || measurements.waist);
+    const waistTarget = Number(progressGoal.targetWaist);
+    if (hasPositiveMetric(waistStart) && hasPositiveMetric(waistCurrent) && hasPositiveMetric(waistTarget) && waistStart !== waistTarget) {
+      const total = Math.abs(waistStart - waistTarget);
+      const done = Math.abs(waistStart - waistCurrent);
+      parts.push(Math.min(100, (done / total) * 100));
+    }
 
-    return Math.min(100, Math.round(((weightDone / weightTotal) * 50) + ((waistDone / waistTotal) * 50)));
+    return parts.length ? Math.min(100, Math.round(parts.reduce((sum, value) => sum + value, 0) / parts.length)) : 0;
   }, [measurements, previousMeasurements, progressGoal, progressMeasurements]);
 
   return <><Header title="Прогресс" subtitle="Силовые показатели связаны с вкладкой тренировок. Замеры и цель можно менять вручную."/>
@@ -10670,7 +10870,7 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
         <div className="mt-5 grid gap-3 md:grid-cols-3">
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4"><p className="text-xs text-zinc-500">Упражнений</p><div className="mt-2 text-2xl">{strengthStats.list.length}</div></div>
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4"><p className="text-xs text-zinc-500">Тоннаж</p><div className="mt-2 text-2xl">{strengthStats.totalVolume.toLocaleString("ru-RU")} кг</div></div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4"><p className="text-xs text-zinc-500">Цель силы</p><div className="mt-2 text-2xl">+{progressGoal.targetStrength}%</div></div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4"><p className="text-xs text-zinc-500">Цель силы</p><div className="mt-2 text-2xl">{strengthTargetPercent ? `+${strengthTargetPercent}%` : "—"}</div></div>
         </div>
 
         <div className="mt-6 space-y-3">
@@ -10685,7 +10885,7 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
                 <div className="text-[10px] text-zinc-500">расчётный 1ПМ</div>
               </div>
             </div>
-            <div className="mt-3"><Progress value={Math.min(100, Math.round((item.oneRepMax / Math.max(1, item.oneRepMax * (1 + progressGoal.targetStrength / 100))) * 100))}/></div>
+            <div className="mt-3"><Progress value={strengthTargetPercent ? Math.min(100, Math.round((item.oneRepMax / Math.max(1, item.oneRepMax * (1 + strengthTargetPercent / 100))) * 100)) : 0}/></div>
           </div>)}
         </div>
       </Card>
@@ -11675,6 +11875,15 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", onSav
   const lightThemeSchedule = lightThemeAlways
     ? "всегда"
     : `${normalizeThemeTime(profile?.light_theme_start_time, DEFAULT_PROFILE.light_theme_start_time)} - ${normalizeThemeTime(profile?.light_theme_end_time, DEFAULT_PROFILE.light_theme_end_time)}`;
+  const profileWeightLabel = formatOptionalMetric(profile?.weight_kg, "кг");
+  const profileHeightLabel = formatOptionalMetric(profile?.height_cm, "см");
+  const profileSteps = profileNonNegativeNumber(profile?.steps_per_day, DEFAULT_PROFILE.steps_per_day);
+  const profileWorkouts = profileNonNegativeNumber(profile?.workouts_per_week, DEFAULT_PROFILE.workouts_per_week);
+  const profileActivityLabel = `${profileSteps.toLocaleString("ru-RU")} шагов · ${profileWorkouts} тр/нед`;
+  const hasNutritionTargets = Boolean(profile?.onboarding_completed) && [profile?.calories_target, profile?.protein_target, profile?.fat_target, profile?.carbs_target].every(hasPositiveMetric);
+  const profileNutritionLabel = hasNutritionTargets
+    ? `${profile.calories_target} / ${profile.protein_target} / ${profile.fat_target} / ${profile.carbs_target}`
+    : "заполните профиль";
 
   const toggleLightTheme = async (enabled) => {
     setThemeError("");
@@ -11695,7 +11904,7 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", onSav
 
   return <div className="profile-screen"><Header title="Личный кабинет" subtitle="Профиль, тариф, подписка, настройки, доступы и история платежей."/><PageGrid>
     <Card className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p></Card>
-    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? formatAgeRu(calculatedAge) : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profile.weight_kg || DEFAULT_PROFILE.weight_kg} кг</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profile.height_cm || DEFAULT_PROFILE.height_cm} см</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profile.steps_per_day || DEFAULT_PROFILE.steps_per_day} шагов · {profile.workouts_per_week ?? DEFAULT_PROFILE.workouts_per_week} тр/нед</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">КБЖУ</span><span>{profile.calories_target || 2500} / {profile.protein_target || 180} / {profile.fat_target || 70} / {profile.carbs_target || 250}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profile.manual_nutrition_targets_enabled ? "ручной" : "авто"}{profile.high_protein_enabled ? " · белок+" : ""}{profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><Button onClick={() => setEditOpen(true)} className="mt-5 w-full bg-white/8">Редактировать</Button></Card>
+    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? formatAgeRu(calculatedAge) : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profileWeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profileHeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profileActivityLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">КБЖУ</span><span>{profileNutritionLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profile.manual_nutrition_targets_enabled ? "ручной" : "авто"}{profile.high_protein_enabled ? " · белок+" : ""}{profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><Button onClick={() => setEditOpen(true)} className="mt-5 w-full bg-white/8">Редактировать</Button></Card>
     <Card className="p-5"><CreditCard className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Подписка</h2><p className="mt-2 text-zinc-400">Активна до {new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</p><Button className="mt-5 w-full bg-white/8">Управлять</Button></Card>
     <Card className="p-5"><ShieldCheck className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Доступы</h2><p className="mt-2 text-zinc-400">Все модули открыты</p><div className="mt-5 flex gap-2 text-xs text-zinc-500"><Lock size={14}/> 1PM bonus locked</div></Card>
 	    <Card className="p-5 xl:col-span-2"><Settings className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Настройки</h2>{["Уведомления", "Единицы измерения", "Интеграции", "Безопасность"].map(x=><div key={x} className="mt-3 rounded-lg bg-white/[0.03] p-3 text-sm">{x}</div>)}
@@ -11937,24 +12146,24 @@ function OnlyPumpPlatform() {
   const [progressGoal, setProgressGoal] = useState({
     title: "Рекомпозиция тела",
     goalType: "recomposition",
-    targetWeight: 76,
-    targetWaist: 74,
-    targetStrength: 15,
+    targetWeight: null,
+    targetWaist: null,
+    targetStrength: null,
     goalIntensityPercent: 10,
     deficitPercent: 10,
   });
   const [measurements, setMeasurements] = useState({
-    weight: 90,
-    bodyFat: 12.9,
-    neck: 39,
-    shoulders: 124,
-    chest: 108,
-    biceps: 38,
-    waist: 78,
-    belly: 84,
-    glutes: 104,
-    thigh: 61,
-    calf: 39,
+    weight: "",
+    bodyFat: "",
+    neck: "",
+    shoulders: "",
+    chest: "",
+    biceps: "",
+    waist: "",
+    belly: "",
+    glutes: "",
+    thigh: "",
+    calf: "",
   });
   const [profile, setProfile] = useState(() => isTelegramBootMode ? null : buildFallbackProfile());
   const [themeTick, setThemeTick] = useState(() => Date.now());
@@ -12314,7 +12523,7 @@ function OnlyPumpPlatform() {
     const dateKey = payload.date || nutritionDay?.date || globalSelectedDateKey;
     const payloadWithDate = { ...payload, date: dateKey };
     const canUseRemoteNutrition = profileStatus === "verified" && profileHasTestAccess(profile) && Boolean(telegramInitData && profile?.id);
-    const shouldOptimisticallyUpdate = ["add_item", "delete_item", "toggle_favorite"].includes(action);
+    const shouldOptimisticallyUpdate = ["add_item", "delete_item", "toggle_favorite", "save_manual_day_totals"].includes(action);
     const baseNutritionDay = nutritionDay?.date === dateKey ? nutritionDay : buildLocalNutritionDay(dateKey, nutritionGoal);
     const previousDay = baseNutritionDay;
     const previousMarkers = nutritionMarkedDateKeys;
