@@ -286,6 +286,15 @@
       max-width: 100%;
       font-size: 16px !important;
     }
+    .onlypump-search-shell {
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .theme-light .onlypump-search-shell {
+      background-color: rgba(249, 250, 251, 0.94) !important;
+      border-color: rgba(17, 24, 39, 0.14) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+    }
     .onlypump-field-surface {
       border: 1px solid var(--onlypump-border);
       background: var(--onlypump-input);
@@ -4319,7 +4328,7 @@ function ExercisePickerSheet({ groups, activeGroup, setActiveGroup, search, setS
         <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-full bg-white/5 text-zinc-300 transition hover:bg-white/10 hover:text-white">×</button>
       </div>
 
-      <div className="mt-5 rounded-2xl bg-white/[0.04] px-4 py-3">
+      <div className="onlypump-search-shell mt-5 rounded-2xl px-4 py-3">
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Поиск упражнения" className="onlypump-search-input w-full bg-transparent text-base outline-none placeholder:text-zinc-600" />
       </div>
 
@@ -7171,11 +7180,37 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return Math.max(0, safeWorkoutNumber(workout?.durationMinutes, 0) * 60);
   };
 
-  const estimateWorkoutCalories = (durationSeconds) => {
+  const getStrengthMetForMuscleGroup = (muscleGroup = "") => {
+    const text = String(muscleGroup || "").toLowerCase();
+    if (/(ног|бедр|квад|икр|ягод|glute|leg|quad|hamstring|calf)/i.test(text)) return 4.8;
+    if (/(спин|широч|тяг|back|pull)/i.test(text)) return 4.2;
+    if (/(груд|chest|жим)/i.test(text)) return 3.8;
+    if (/(плеч|дельт|shoulder)/i.test(text)) return 3.5;
+    if (/(рук|биц|триц|предплеч|arm|bicep|tricep)/i.test(text)) return 3.2;
+    return 3.6;
+  };
+
+  const estimateWorkoutCalories = (durationSeconds, workout = null) => {
     const minutes = Math.max(0, safeWorkoutNumber(durationSeconds, 0) / 60);
     const profileWeightKg = safeWorkoutNumber(profile?.weight_kg, 0);
     if (!profileWeightKg || !minutes) return 0;
-    const met = 5;
+    const completedEntries = workout ? getCompletedSetsFromWorkout(workout) : [];
+    const exercises = workout?.exercises || [];
+    const weightedMet = completedEntries.length
+      ? completedEntries.reduce((acc, set) => {
+        const exercise = set.__exercise || {};
+        const weight = Math.max(1, safeWorkoutNumber(set.reps, 1));
+        return { total: acc.total + getStrengthMetForMuscleGroup(exercise.muscleGroup) * weight, weight: acc.weight + weight };
+      }, { total: 0, weight: 0 })
+      : exercises.reduce((acc, exercise) => {
+        const weight = Math.max(1, (exercise.sets || []).length || 1);
+        return { total: acc.total + getStrengthMetForMuscleGroup(exercise.muscleGroup) * weight, weight: acc.weight + weight };
+      }, { total: 0, weight: 0 });
+    const baseMet = weightedMet.weight ? weightedMet.total / weightedMet.weight : 3.4;
+    const totalVolume = workout ? getWorkoutVolume(workout) : 0;
+    const density = totalVolume > 0 ? totalVolume / Math.max(1, profileWeightKg * minutes) : 0;
+    const volumeBump = Math.min(0.55, Math.max(0, (density - 1.1) * 0.14));
+    const met = Math.max(2.8, Math.min(5.5, baseMet + volumeBump));
     return Math.max(0, Math.round((met * 3.5 * profileWeightKg / 200) * minutes));
   };
 
@@ -7397,17 +7432,57 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return date.toISOString();
   };
 
+  const padTimePart = (value) => String(Math.max(0, safeWorkoutNumber(value, 0))).padStart(2, "0");
+  const clampDurationMinutes = (minutes) => Math.min(24 * 60, Math.max(0, Math.round(safeWorkoutNumber(minutes, 0))));
+  const durationPartsFromMinutes = (minutes) => {
+    const safe = clampDurationMinutes(minutes);
+    return {
+      hours: String(Math.floor(safe / 60)),
+      minutes: String(safe % 60),
+    };
+  };
+  const schedulerDurationMinutes = (scheduler = repeatScheduler) => {
+    const hours = Math.max(0, safeWorkoutNumber(scheduler?.durationHours, 0));
+    const minutes = Math.max(0, safeWorkoutNumber(scheduler?.durationMinutes, 0));
+    return clampDurationMinutes(hours >= 24 ? 24 * 60 : hours * 60 + minutes);
+  };
+
+  const updateRepeatSchedulerField = (key, value) => {
+    setRepeatScheduler(prev => prev ? ({ ...prev, [key]: value }) : prev);
+  };
+
+  const updateRepeatSchedulerDurationHours = (value) => {
+    const hour = Math.min(24, Math.max(0, safeWorkoutNumber(value, 0)));
+    setRepeatScheduler(prev => prev ? ({
+      ...prev,
+      durationHours: String(hour),
+      durationMinutes: hour >= 24 ? "0" : String(Math.min(59, safeWorkoutNumber(prev.durationMinutes, 0))),
+    }) : prev);
+  };
+
+  const updateRepeatSchedulerDurationMinutes = (value) => {
+    setRepeatScheduler(prev => {
+      if (!prev) return prev;
+      const hours = Math.min(24, Math.max(0, safeWorkoutNumber(prev.durationHours, 0)));
+      return {
+        ...prev,
+        durationMinutes: hours >= 24 ? "0" : String(Math.min(59, Math.max(0, safeWorkoutNumber(value, 0)))),
+      };
+    });
+  };
+
   const openRepeatScheduler = (workout, mode) => {
     const now = new Date();
+    const durationParts = durationPartsFromMinutes(safeWorkoutNumber(workout?.durationMinutes, 60));
     setRepeatSheetWorkout(null);
     setRepeatScheduler({
       workout,
       mode,
       dateKey: formatDateKey(now),
       hour: String(now.getHours()).padStart(2, "0"),
-      minute: String(Math.round(now.getMinutes() / 5) * 5 % 60).padStart(2, "0"),
-      durationHours: String(Math.floor(Number(workout?.durationMinutes || 60) / 60)),
-      durationMinutes: String(Number(workout?.durationMinutes || 60) % 60),
+      minute: String(now.getMinutes()).padStart(2, "0"),
+      durationHours: durationParts.hours,
+      durationMinutes: durationParts.minutes,
     });
   };
 
@@ -7419,23 +7494,24 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       mode: "new_planned",
       dateKey: selectedDateKey || formatDateKey(now),
       hour: String(now.getHours()).padStart(2, "0"),
-      minute: String(Math.round(now.getMinutes() / 5) * 5 % 60).padStart(2, "0"),
+      minute: String(now.getMinutes()).padStart(2, "0"),
       durationHours: "0",
-      durationMinutes: "45",
+      durationMinutes: "0",
     });
   };
 
   const openCompletedWorkoutScheduler = () => {
     const now = new Date();
+    const durationParts = durationPartsFromMinutes(45);
     setIsAddMenuOpen(false);
     setRepeatScheduler({
       workout: null,
       mode: "new_completed",
       dateKey: selectedDateKey || formatDateKey(now),
       hour: String(now.getHours()).padStart(2, "0"),
-      minute: String(Math.round(now.getMinutes() / 5) * 5 % 60).padStart(2, "0"),
-      durationHours: "0",
-      durationMinutes: "45",
+      minute: String(now.getMinutes()).padStart(2, "0"),
+      durationHours: durationParts.hours,
+      durationMinutes: durationParts.minutes,
     });
   };
 
@@ -7450,6 +7526,43 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     if (mode === "completed" || mode === "new_completed") return "Выполненная";
     if (mode === "new_planned") return "Новая тренировка";
     return "План";
+  };
+
+  const SchedulerWheelColumn = ({ label, value, options, onChange, className = "", size = "large" }) => {
+    const heightClass = size === "small" ? "h-36" : "h-56";
+    return <div className={`onlypump-field-surface rounded-[24px] bg-black/28 p-3 ${className}`}>
+      <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">{label}</div>
+      <div className={`${heightClass} snap-y overflow-y-auto rounded-2xl onlypump-scrollbar-none`}>
+        <div className="space-y-1 py-1">
+          {options.map(option => {
+            const selected = String(option.value) === String(value);
+            return <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              className={`block min-h-10 w-full snap-center rounded-2xl px-2 text-center text-base font-black transition ${selected ? "bg-red-500 text-black" : "text-zinc-300 hover:bg-white/8"}`}
+            >
+              {option.label}
+            </button>;
+          })}
+        </div>
+      </div>
+    </div>;
+  };
+
+  const schedulerDateOptions = () => Array.from({ length: 121 }, (_, index) => {
+    const offset = index - 60;
+    const date = addLocalDays(parseDateKey(formatDateKey(new Date())), offset);
+    const key = toDateKey(date);
+    return { value: key, label: formatDayMonth(date) };
+  });
+  const schedulerHourOptions = () => Array.from({ length: 24 }, (_, hour) => ({ value: padTimePart(hour), label: padTimePart(hour) }));
+  const schedulerMinuteOptions = () => Array.from({ length: 60 }, (_, minute) => ({ value: padTimePart(minute), label: padTimePart(minute) }));
+  const schedulerDurationHourOptions = () => Array.from({ length: 25 }, (_, hour) => ({ value: String(hour), label: String(hour) }));
+  const schedulerDurationMinuteOptions = (hours) => {
+    const maxed = safeWorkoutNumber(hours, 0) >= 24;
+    const length = maxed ? 1 : 60;
+    return Array.from({ length }, (_, minute) => ({ value: String(minute), label: padTimePart(minute) }));
   };
 
   const createPlannedWorkoutFromScheduler = async (scheduler) => {
@@ -7469,9 +7582,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const createCompletedWorkoutFromScheduler = async (scheduler) => {
     if (!scheduler) return;
-    const durationMinutes = Math.max(1, safeWorkoutNumber(scheduler.durationHours, 0) * 60 + safeWorkoutNumber(scheduler.durationMinutes, 0));
+    const durationMinutes = Math.max(1, schedulerDurationMinutes(scheduler));
     const startedAt = buildWorkoutDateTimeIso(scheduler.dateKey, scheduler.hour, scheduler.minute);
-    const calories = estimateWorkoutCalories(durationMinutes * 60);
+    const calories = estimateWorkoutCalories(durationMinutes * 60, { exercises: [] });
     setRepeatScheduler(null);
     await addWorkoutForDate({
       dateKey: scheduler.dateKey,
@@ -7502,7 +7615,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       dateKey: repeatScheduler.dateKey,
       hour: repeatScheduler.hour,
       minute: repeatScheduler.minute,
-      durationMinutes: Number(repeatScheduler.durationHours || 0) * 60 + Number(repeatScheduler.durationMinutes || 0),
+      durationMinutes: schedulerDurationMinutes(repeatScheduler),
     });
   };
 
@@ -7514,10 +7627,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       ? new Date().toISOString()
       : buildWorkoutDateTimeIso(targetDateKey, options.hour, options.minute);
     const durationMinutes = mode === "completed"
-      ? Math.max(1, safeWorkoutNumber(options.durationMinutes, workout.durationMinutes || 60))
+      ? Math.max(1, clampDurationMinutes(safeWorkoutNumber(options.durationMinutes, workout.durationMinutes || 60)))
       : 0;
-    const estimatedCalories = mode === "completed" ? estimateWorkoutCalories(durationMinutes * 60) : 0;
     const repeatedExercises = cloneExercisesForRepeat(workout.exercises || [], mode === "completed");
+    const estimatedCalories = mode === "completed" ? estimateWorkoutCalories(durationMinutes * 60, { exercises: repeatedExercises }) : 0;
     const repeatedTotals = recalculateWorkoutTotals({ exercises: repeatedExercises });
     const copy = makeWorkout(targetDateKey, {
       title: workout.title,
@@ -7616,16 +7729,19 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       ? getWorkoutElapsedSeconds(workout, safeWorkoutNumber(elapsedWorkoutTime, 0))
       : getWorkoutDurationSeconds(workout);
     const durationMinutes = Math.max(0, Math.round(durationSeconds / 60));
-    const calories = estimateWorkoutCalories(durationSeconds);
     const finishedAt = new Date().toISOString();
-    const withStatus = {
+    const baseCompletedWorkout = {
       ...workout,
       status: "completed",
       durationMinutes,
-      calories,
-      estimatedCaloriesBurned: calories,
       finishedAt,
       updatedAt: finishedAt,
+    };
+    const calories = estimateWorkoutCalories(durationSeconds, baseCompletedWorkout);
+    const withStatus = {
+      ...baseCompletedWorkout,
+      calories,
+      estimatedCaloriesBurned: calories,
     };
     const totals = recalculateWorkoutTotals(withStatus);
     const nextWorkout = {
@@ -7848,7 +7964,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           <button onClick={closeExerciseBase} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-400">×</button>
         </div>
 
-        <div className="mt-5 rounded-2xl border border-white/10 bg-black/30 px-4 py-3">
+        <div className="onlypump-search-shell mt-5 rounded-2xl px-4 py-3">
           <input
             value={exerciseSearch}
             onChange={(e) => setExerciseSearch(e.target.value)}
@@ -7916,6 +8032,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const totalVolume = getWorkoutVolume({ exercises });
     const workoutIsActive = selectedWorkout.status === "active";
     const workoutIsPlanned = selectedWorkout.status === "planned";
+    const workoutReachedTimeLimit = workoutIsActive && elapsedWorkoutTime >= MAX_ACTIVE_WORKOUT_SECONDS;
     const selectedExerciseCount = selectedExerciseIds.length;
     const supersetColorMap = exercises.reduce((acc, exercise) => {
       const supersetGroupId = getExerciseSupersetGroupId(exercise);
@@ -7973,6 +8090,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               <div className="mt-2 text-xl font-black">{selectedWorkout.calories || 0}</div>
             </div>
           </div>
+          {workoutReachedTimeLimit && <div className="mt-3 rounded-2xl border border-red-500/30 bg-red-500/12 px-4 py-3 text-xs font-bold leading-5 text-red-200">
+            Таймер остановлен на 24:00:00. Заверши тренировку вручную, когда будешь готов.
+          </div>}
 
           <VolumeLoadBar
             count={totalSets}
@@ -8235,6 +8355,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                 <div className="mt-1 text-sm font-black text-zinc-200">{currentExercise?.blockType || "обычное"}</div>
               </div>
             </div>
+            {workoutReachedTimeLimit && <div className="mt-3 rounded-2xl border border-red-500/30 bg-red-500/12 px-4 py-3 text-xs font-bold leading-5 text-red-200">
+              Таймер остановлен на 24:00:00. Тренировка остаётся активной до ручного завершения.
+            </div>}
           </div>
 
           <div className="pt-5">
@@ -8483,7 +8606,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           </div>
         </SecondaryContent>}
         {activeTab === "exercises" && <SecondaryContent title="Упражнения" description="Полная база упражнений: поиск по названию и сортировка по мышечным группам.">
-          <div className="mt-6 rounded-2xl border border-white/10 bg-black/25 p-3">
+          <div className="onlypump-search-shell mt-6 rounded-2xl p-3">
             <input
               value={exerciseSearch}
               onChange={(e) => setExerciseSearch(e.target.value)}
@@ -8576,72 +8699,44 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           <button onClick={() => setRepeatScheduler(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
         </div>
 
-        <div className="mt-6 grid grid-cols-[1.5fr_0.8fr_0.8fr] gap-3">
-          <label className="rounded-[24px] bg-black/28 p-3">
-            <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Дата</div>
-            <select
-              size="8"
-              value={repeatScheduler.dateKey}
-              onChange={(e) => setRepeatScheduler(prev => ({ ...prev, dateKey: e.target.value }))}
-              className="h-56 w-full bg-transparent text-center text-base font-black outline-none onlypump-scrollbar-none"
-            >
-              {Array.from({ length: 121 }, (_, index) => {
-                const offset = index - 60;
-                const date = addLocalDays(parseDateKey(formatDateKey(new Date())), offset);
-                const key = toDateKey(date);
-                return <option key={key} value={key}>{formatDayMonth(date)}</option>;
-              })}
-            </select>
-          </label>
-          <label className="rounded-[24px] bg-black/28 p-3">
-            <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Час</div>
-            <select
-              size="8"
-              value={repeatScheduler.hour}
-              onChange={(e) => setRepeatScheduler(prev => ({ ...prev, hour: e.target.value }))}
-              className="h-56 w-full bg-transparent text-center text-xl font-black outline-none onlypump-scrollbar-none"
-            >
-              {Array.from({ length: 24 }, (_, hour) => <option key={hour} value={String(hour).padStart(2, "0")}>{String(hour).padStart(2, "0")}</option>)}
-            </select>
-          </label>
-          <label className="rounded-[24px] bg-black/28 p-3">
-            <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Мин</div>
-            <select
-              size="8"
-              value={repeatScheduler.minute}
-              onChange={(e) => setRepeatScheduler(prev => ({ ...prev, minute: e.target.value }))}
-              className="h-56 w-full bg-transparent text-center text-xl font-black outline-none onlypump-scrollbar-none"
-            >
-              {Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, "0")).map(minute => <option key={minute} value={minute}>{minute}</option>)}
-            </select>
-          </label>
+        <div className="mt-6 grid grid-cols-[1.45fr_0.78fr_0.78fr] gap-3">
+          <SchedulerWheelColumn
+            label="Дата"
+            value={repeatScheduler.dateKey}
+            options={schedulerDateOptions()}
+            onChange={(value) => updateRepeatSchedulerField("dateKey", value)}
+          />
+          <SchedulerWheelColumn
+            label="Час"
+            value={repeatScheduler.hour}
+            options={schedulerHourOptions()}
+            onChange={(value) => updateRepeatSchedulerField("hour", value)}
+          />
+          <SchedulerWheelColumn
+            label="Мин"
+            value={repeatScheduler.minute}
+            options={schedulerMinuteOptions()}
+            onChange={(value) => updateRepeatSchedulerField("minute", value)}
+          />
         </div>
 
         {(repeatScheduler.mode === "completed" || repeatScheduler.mode === "new_completed") && <div className="mt-4">
           <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">Длительность</div>
           <div className="grid grid-cols-2 gap-3">
-          <label className="rounded-[24px] bg-black/28 p-3">
-            <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Часы</div>
-            <select
-              size="5"
+            <SchedulerWheelColumn
+              label="Часы"
+              size="small"
               value={repeatScheduler.durationHours}
-              onChange={(e) => setRepeatScheduler(prev => ({ ...prev, durationHours: e.target.value }))}
-              className="h-36 w-full bg-transparent text-center text-xl font-black outline-none onlypump-scrollbar-none"
-            >
-              {Array.from({ length: 6 }, (_, hour) => <option key={hour} value={String(hour)}>{hour}</option>)}
-            </select>
-          </label>
-          <label className="rounded-[24px] bg-black/28 p-3">
-            <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Минуты</div>
-            <select
-              size="5"
+              options={schedulerDurationHourOptions()}
+              onChange={updateRepeatSchedulerDurationHours}
+            />
+            <SchedulerWheelColumn
+              label="Минуты"
+              size="small"
               value={repeatScheduler.durationMinutes}
-              onChange={(e) => setRepeatScheduler(prev => ({ ...prev, durationMinutes: e.target.value }))}
-              className="h-36 w-full bg-transparent text-center text-xl font-black outline-none onlypump-scrollbar-none"
-            >
-              {Array.from({ length: 12 }, (_, index) => String(index * 5)).map(minute => <option key={minute} value={minute}>{minute}</option>)}
-            </select>
-          </label>
+              options={schedulerDurationMinuteOptions(repeatScheduler.durationHours)}
+              onChange={updateRepeatSchedulerDurationMinutes}
+            />
           </div>
         </div>}
 
@@ -9707,7 +9802,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
     <div className="mt-5 flex items-center justify-between gap-3">
       <h2 className="text-xl font-black tracking-[-0.03em]">Приемы пищи</h2>
       <div className="flex items-center gap-2">
-        {!dayHasItems && <button onClick={() => setManualEntryOpen(true)} className="h-10 rounded-full bg-white/8 px-4 text-xs font-black text-zinc-200 transition hover:bg-white/12">Ввести КБЖУ вручную</button>}
+        {!dayHasItems && <button onClick={() => setManualEntryOpen(true)} className="min-h-10 rounded-full border border-red-500/60 bg-red-500/12 px-4 py-2 text-xs font-black text-red-300 transition hover:bg-red-500 hover:text-black">Внести КБЖУ вручную</button>}
         <button onClick={openMealChoice} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/8 text-red-400"><Plus size={22}/></button>
       </div>
     </div>
@@ -9809,7 +9904,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
                       : "Ничего не найдено. Попробуй другое название."}
             </div>}</div>
           </div>
-          <div className="mt-4 rounded-2xl bg-white/[0.05] px-4 py-3">
+          <div className="onlypump-search-shell mt-4 rounded-2xl px-4 py-3">
             <input value={foodSearch} onChange={(e) => setFoodSearch(e.target.value)} placeholder="Поиск: курица, роллы, мороженое..." className="onlypump-search-input w-full bg-transparent text-base outline-none placeholder:text-zinc-600" />
           </div>
         </>}
