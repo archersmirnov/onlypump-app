@@ -2466,7 +2466,7 @@ const normalizeExerciseMeasurementSettings = (exercise = {}) => {
     measureRpeEnabled: exercise.measureRpeEnabled ?? exercise.measure_rpe_enabled ?? exerciseMeasurementDefaults.measureRpeEnabled,
     weightUnit: normalizeWeightUnit(exercise.weightUnit ?? exercise.weight_unit ?? exerciseMeasurementDefaults.weightUnit),
     distanceUnit: normalizeDistanceUnit(exercise.distanceUnit ?? exercise.distance_unit ?? exerciseMeasurementDefaults.distanceUnit),
-    doubleWeightInStats: Boolean(exercise.doubleWeightInStats ?? exercise.double_weight_in_stats ?? exerciseMeasurementDefaults.doubleWeightInStats),
+    doubleWeightInStats: Boolean(exercise.doubleCountInStatistics ?? exercise.double_count_in_statistics ?? exercise.doubleWeightInStats ?? exercise.double_weight_in_stats ?? exerciseMeasurementDefaults.doubleWeightInStats),
     doubleCountInStatistics: Boolean(exercise.doubleCountInStatistics ?? exercise.double_count_in_statistics ?? exerciseMeasurementDefaults.doubleCountInStatistics),
     measurementMode: mode,
     exerciseCategory,
@@ -2483,7 +2483,7 @@ const getSetVolumeForExercise = (set = {}, exercise = {}) => {
   const weight = Number(set.weight ?? set.weight_kg ?? set.weight_value ?? 0);
   const reps = Number(set.reps ?? set.reps_value ?? 0);
   const baseVolume = (Number.isFinite(weight) ? weight : 0) * (Number.isFinite(reps) ? reps : 0);
-  return (settings.doubleWeightInStats || settings.doubleCountInStatistics) ? baseVolume * 2 : baseVolume;
+  return settings.doubleCountInStatistics ? baseVolume * 2 : baseVolume;
 };
 function isStrengthStatsExercise(exercise = {}) {
   if (!exercise) return false;
@@ -4987,7 +4987,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measureRirEnabled: source.measureRirEnabled,
       measureRpeEnabled: source.measureRpeEnabled,
       weightUnit: source.weightUnit,
-      doubleWeightInStats: source.doubleWeightInStats,
+      doubleWeightInStats: source.doubleCountInStatistics,
       doubleCountInStatistics: source.doubleCountInStatistics,
       double_count_in_statistics: source.doubleCountInStatistics,
       met: source.met,
@@ -5883,7 +5883,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       primaryMuscles: row.primary_muscles || row.primaryMuscles,
       secondaryMuscles: row.secondary_muscles || row.secondaryMuscles,
       countsInMuscleStats: row.counts_in_muscle_stats ?? row.countsInMuscleStats,
-      doubleWeightInStats: row.double_weight_in_stats ?? row.doubleWeightInStats,
+      doubleWeightInStats: row.double_count_in_statistics ?? row.doubleCountInStatistics ?? row.double_weight_in_stats ?? row.doubleWeightInStats,
       doubleCountInStatistics: row.double_count_in_statistics ?? row.doubleCountInStatistics,
     });
     const primary = settings.primaryMuscles[0] || exerciseCategoryLabels[settings.exerciseCategory] || "Другое";
@@ -6242,7 +6242,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_rir_enabled: Boolean(measurementSettings.measureRirEnabled),
       measure_rpe_enabled: Boolean(measurementSettings.measureRpeEnabled),
 	      weight_unit: measurementSettings.weightUnit,
-	      double_weight_in_stats: Boolean(measurementSettings.doubleWeightInStats),
+	      double_weight_in_stats: Boolean(measurementSettings.doubleCountInStatistics),
 	      double_count_in_statistics: Boolean(measurementSettings.doubleCountInStatistics),
 	      ...(isProgramExercise ? {
 	        user_program_exercise_setting_id: exercise?.userProgramExerciseSettingId || exercise?.user_program_exercise_setting_id || undefined,
@@ -6269,7 +6269,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_rir_enabled: payload.measure_rir_enabled,
       measure_rpe_enabled: payload.measure_rpe_enabled,
       weight_unit: payload.weight_unit,
-      double_weight_in_stats: payload.double_weight_in_stats,
+      double_count_in_statistics: payload.double_count_in_statistics,
     });
     console.log("Saving exercise measurement settings:", payload);
     if (supersetGroupId) console.log("Saving superset exercise:", payload);
@@ -6398,7 +6398,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_rir_enabled: Boolean(measurementSettings.measureRirEnabled),
       measure_rpe_enabled: Boolean(measurementSettings.measureRpeEnabled),
 	      weight_unit: measurementSettings.weightUnit,
-	      double_weight_in_stats: Boolean(measurementSettings.doubleWeightInStats),
+	      double_weight_in_stats: Boolean(measurementSettings.doubleCountInStatistics),
 	      double_count_in_statistics: Boolean(measurementSettings.doubleCountInStatistics),
 	      ...(isProgramExercise ? {
 	        user_program_exercise_setting_id: exercise.userProgramExerciseSettingId || exercise.user_program_exercise_setting_id || undefined,
@@ -6425,7 +6425,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_rir_enabled: payload.measure_rir_enabled,
       measure_rpe_enabled: payload.measure_rpe_enabled,
       weight_unit: payload.weight_unit,
-      double_weight_in_stats: payload.double_weight_in_stats,
+      double_count_in_statistics: payload.double_count_in_statistics,
     });
     console.log("Saving exercise measurement settings:", payload);
     return payload;
@@ -6449,7 +6449,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_rir_enabled: Boolean(measurementSettings.measureRirEnabled),
       measure_rpe_enabled: Boolean(measurementSettings.measureRpeEnabled),
       weight_unit: measurementSettings.weightUnit,
-      double_weight_in_stats: Boolean(measurementSettings.doubleWeightInStats),
+      double_weight_in_stats: Boolean(measurementSettings.doubleCountInStatistics),
       double_count_in_statistics: Boolean(measurementSettings.doubleCountInStatistics),
     };
     console.log("Saving measurement settings:", {
@@ -6461,7 +6461,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_rir_enabled: payload.measure_rir_enabled,
       measure_rpe_enabled: payload.measure_rpe_enabled,
       weight_unit: payload.weight_unit,
-      double_weight_in_stats: payload.double_weight_in_stats,
+      double_count_in_statistics: payload.double_count_in_statistics,
     });
     return payload;
   };
@@ -7089,7 +7089,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measure_rir_enabled: mappedExercise.measureRirEnabled,
       measure_rpe_enabled: mappedExercise.measureRpeEnabled,
       weight_unit: mappedExercise.weightUnit,
-      double_weight_in_stats: mappedExercise.doubleWeightInStats,
+      double_count_in_statistics: mappedExercise.doubleCountInStatistics,
     });
     console.log("Loaded superset fields:", {
       superset_group_id: mappedExercise.supersetGroupId,
@@ -7919,11 +7919,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
   };
 
-  const toggleExerciseMeasurementSetting = (field) => {
+const toggleExerciseMeasurementSetting = (field) => {
     updateExerciseMeasurementDraft(draft => {
-      if (field === "doubleCountInStatistics" || field === "doubleWeightInStats") {
-        const nextValue = !Boolean(draft?.doubleCountInStatistics ?? draft?.doubleWeightInStats);
-        return { doubleCountInStatistics: nextValue, doubleWeightInStats: nextValue };
+      if (field === "doubleCountInStatistics") {
+        const nextValue = !Boolean(draft?.doubleCountInStatistics);
+        return { doubleCountInStatistics: nextValue };
       }
       return { [field]: !Boolean(draft?.[field]) };
     });
@@ -9575,7 +9575,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       measureTimeEnabled: source.measureTimeEnabled,
       measureDistanceEnabled: source.measureDistanceEnabled,
       weightUnit: source.weightUnit,
-      doubleWeightInStats: source.doubleWeightInStats,
+      doubleCountInStatistics: source.doubleCountInStatistics,
+      double_count_in_statistics: source.doubleCountInStatistics,
     });
     setIsExerciseBaseOpen(false);
   };
@@ -10935,10 +10936,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 	              <span>{label}</span>
 	              <span className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-black ${settings[field] ? 'border-red-500 bg-red-500 text-black' : 'border-white/20 text-zinc-600'}`}>{settings[field] ? "✓" : ""}</span>
 	            </button>)}
-		            {showWeightUnitSettings && <button type="button" onClick={() => toggleExerciseMeasurementSetting("doubleWeightInStats")} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
-		              <span>Множитель статистики x2</span>
-		              <span className={`onlypump-toggle-track relative h-7 w-12 rounded-full transition ${settings.doubleWeightInStats ? "is-on bg-red-500" : "bg-white/[0.12]"}`}>
-		                <span className={`onlypump-toggle-knob absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${settings.doubleWeightInStats ? "left-6" : "left-1"}`} />
+		            {showWeightUnitSettings && <button type="button" onClick={() => toggleExerciseMeasurementSetting("doubleCountInStatistics")} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
+		              <span>Удваивать в статистике</span>
+		              <span className={`onlypump-toggle-track relative h-7 w-12 rounded-full transition ${settings.doubleCountInStatistics ? "is-on bg-red-500" : "bg-white/[0.12]"}`}>
+		                <span className={`onlypump-toggle-knob absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${settings.doubleCountInStatistics ? "left-6" : "left-1"}`} />
 		              </span>
 		            </button>}
 	          </div>
