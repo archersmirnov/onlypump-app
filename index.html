@@ -2207,10 +2207,14 @@ const getSetVolumeForExercise = (set = {}, exercise = {}) => {
   const baseVolume = (Number.isFinite(weight) ? weight : 0) * (Number.isFinite(reps) ? reps : 0);
   return settings.doubleWeightInStats ? baseVolume * 2 : baseVolume;
 };
-const isStrengthStatsExerciseGlobal = (exercise = {}) => {
+function isStrengthStatsExercise(exercise = {}) {
+  if (!exercise) return false;
   const settings = normalizeExerciseMeasurementSettings(exercise);
-  return settings.exerciseCategory === "strength" && settings.countsInMuscleStats !== false;
-};
+  const allowedModes = ["weight_reps", "reps", "weight_time", "weight_distance"];
+  return settings.exerciseCategory === "strength"
+    && settings.countsInMuscleStats !== false
+    && allowedModes.includes(settings.measurementMode || "weight_reps");
+}
 const getExerciseSupersetGroupId = (exercise = {}) => normalizeSupersetGroupId(exercise.supersetGroupId || exercise.supersetId || exercise.superset_group_id);
 const normalizeWorkoutSupersetMetadata = (workout) => {
   if (!workout) return workout;
@@ -5220,10 +5224,6 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const getSetStatus = (set) => set.status || (set.isCompleted ? "completed" : "pending");
   const isWorkingSet = (set) => (set?.type || "working") !== "warmup";
   const isCompletedSet = (set) => getSetStatus(set) === "completed";
-  const isStrengthStatsExercise = (exercise = {}) => {
-    const settings = normalizeExerciseMeasurementSettings(exercise);
-    return settings.exerciseCategory === "strength" && settings.countsInMuscleStats !== false;
-  };
 
   const getCompletedSetsFromWorkout = (workout) => (workout?.exercises || [])
     .flatMap(exercise => (exercise.sets || []).map(set => ({ ...set, __exercise: exercise })))
@@ -11550,7 +11550,7 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
       ...exercise,
       workoutTitle: workout.title,
       workoutDate: workout.date,
-    }))).filter(isStrengthStatsExerciseGlobal);
+    }))).filter(isStrengthStatsExercise);
     const grouped = exercises.reduce((acc, exercise) => {
       const sets = exercise.sets || [];
       const bestSet = sets.reduce((best, set) => {
