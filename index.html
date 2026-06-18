@@ -1628,6 +1628,89 @@ const exerciseLibrary = {
   ]
 };
 
+const workoutTypeDefinitions = [
+  { id: "strength", label: "Силовая", shortLabel: "Сила", title: "Силовая тренировка", color: "#ef4444", met: 3.8 },
+  { id: "cardio", label: "Кардио", shortLabel: "Кардио", title: "Кардио", color: "#22c55e", met: 7.2 },
+  { id: "yoga", label: "Йога", shortLabel: "Йога", title: "Йога", color: "#38bdf8", met: 3.0 },
+  { id: "pilates", label: "Пилатес", shortLabel: "Пилатес", title: "Пилатес", color: "#a78bfa", met: 3.4 },
+  { id: "stretching", label: "Растяжка", shortLabel: "Растяжка", title: "Растяжка", color: "#f59e0b", met: 2.4 },
+];
+const workoutTypeIds = workoutTypeDefinitions.map(item => item.id);
+const workoutTypeById = Object.fromEntries(workoutTypeDefinitions.map(item => [item.id, item]));
+const workoutMeasurementModes = [
+  { id: "weight_reps", label: "Вес + повторы", fields: ["weight", "reps"] },
+  { id: "reps", label: "Повторы", fields: ["reps"] },
+  { id: "time", label: "Время", fields: ["duration"] },
+  { id: "distance", label: "Дистанция", fields: ["distance"] },
+  { id: "weight_time", label: "Вес + время", fields: ["weight", "duration"] },
+  { id: "weight_distance", label: "Вес + дистанция", fields: ["weight", "distance"] },
+];
+const workoutMeasurementModeIds = workoutMeasurementModes.map(item => item.id);
+const measurementModeById = Object.fromEntries(workoutMeasurementModes.map(item => [item.id, item]));
+const exerciseCategoryLabels = {
+  strength: "Силовые",
+  cardio: "Кардио",
+  yoga: "Йога",
+  pilates: "Пилатес",
+  stretching: "Растяжка",
+};
+const distanceUnitLabels = { km: "км", m: "м", mi: "мили" };
+const nonStrengthSystemExercises = [
+  { name: "Ходьба", category: "cardio", muscleGroup: "Кардио", measurementMode: "distance", distanceUnit: "km", met: 4.0 },
+  { name: "Бег", category: "cardio", muscleGroup: "Кардио", measurementMode: "distance", distanceUnit: "km", met: 8.8 },
+  { name: "Zone 2 Run", category: "cardio", muscleGroup: "Кардио", measurementMode: "time", distanceUnit: "km", met: 7.0 },
+  { name: "SkiErg", category: "cardio", muscleGroup: "Кардио", measurementMode: "distance", distanceUnit: "m", met: 8.0 },
+  { name: "RowErg", category: "cardio", muscleGroup: "Кардио", measurementMode: "distance", distanceUnit: "m", met: 7.0 },
+  { name: "Air Bike", category: "cardio", muscleGroup: "Кардио", measurementMode: "time", distanceUnit: "km", met: 8.0 },
+  { name: "Эллипс", category: "cardio", muscleGroup: "Кардио", measurementMode: "time", distanceUnit: "km", met: 5.0 },
+  { name: "Виньяса", category: "yoga", muscleGroup: "Йога", measurementMode: "time", met: 3.3 },
+  { name: "Хатха-йога", category: "yoga", muscleGroup: "Йога", measurementMode: "time", met: 2.5 },
+  { name: "Мобилити-йога", category: "yoga", muscleGroup: "Йога", measurementMode: "time", met: 2.8 },
+  { name: "Пилатес мат", category: "pilates", muscleGroup: "Пилатес", measurementMode: "time", met: 3.2 },
+  { name: "Пилатес реформер", category: "pilates", muscleGroup: "Пилатес", measurementMode: "time", met: 3.8 },
+  { name: "Core pilates", category: "pilates", muscleGroup: "Пилатес", measurementMode: "time", met: 3.5 },
+  { name: "Растяжка всего тела", category: "stretching", muscleGroup: "Растяжка", measurementMode: "time", met: 2.3 },
+  { name: "Мобилити", category: "stretching", muscleGroup: "Растяжка", measurementMode: "time", met: 2.6 },
+  { name: "МФР", category: "stretching", muscleGroup: "Растяжка", measurementMode: "time", met: 2.2 },
+];
+const systemExerciseLibraryItems = [
+  ...Object.entries(exerciseLibrary).filter(([group]) => group !== "Кардио").flatMap(([group, names]) => names.map(name => {
+    const isCardio = group === "Кардио";
+    return {
+      id: `system-${group}-${name}`,
+      sourceExerciseId: null,
+      name,
+      group,
+      muscleGroup: group,
+      category: isCardio ? "cardio" : "strength",
+      exerciseCategory: isCardio ? "cardio" : "strength",
+      primaryMuscles: isCardio ? [] : [group],
+      secondaryMuscles: [],
+      measurementMode: isCardio ? "time" : "weight_reps",
+      distanceUnit: "km",
+      countsInMuscleStats: !isCardio,
+      isCustom: false,
+      met: isCardio ? 6.5 : null,
+    };
+  })),
+  ...nonStrengthSystemExercises.map(item => ({
+    id: `system-${item.category}-${item.name}`,
+    sourceExerciseId: null,
+    name: item.name,
+    group: exerciseCategoryLabels[item.category] || item.muscleGroup,
+    muscleGroup: item.muscleGroup,
+    category: item.category,
+    exerciseCategory: item.category,
+    primaryMuscles: [],
+    secondaryMuscles: [],
+    measurementMode: item.measurementMode,
+    distanceUnit: item.distanceUnit || "km",
+    countsInMuscleStats: false,
+    isCustom: false,
+    met: item.met || workoutTypeById[item.category]?.met || 3,
+  })),
+];
+
 const withDefaults = (program) => program.map(ex => ({
   tempo: ex.tempo || "средне",
   rest: ex.rest || 120,
@@ -2006,6 +2089,12 @@ const exerciseMeasurementDefaults = {
   measureRpeEnabled: false,
   weightUnit: "kg",
   doubleWeightInStats: false,
+  measurementMode: "weight_reps",
+  distanceUnit: "km",
+  exerciseCategory: "strength",
+  primaryMuscles: [],
+  secondaryMuscles: [],
+  countsInMuscleStats: true,
 };
 const onlypumpUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const createOnlyPumpUuid = () => {
@@ -2027,24 +2116,100 @@ const normalizeWeightUnit = (value) => {
   const normalized = String(value ?? "kg").trim().toLowerCase();
   return normalized === "lb" || normalized === "lbs" || normalized === "pound" || normalized === "pounds" ? "lb" : "kg";
 };
+const normalizeWorkoutType = (value) => {
+  const normalized = String(value || "strength").trim().toLowerCase();
+  return workoutTypeIds.includes(normalized) ? normalized : "strength";
+};
+const getWorkoutTypeMeta = (value) => workoutTypeById[normalizeWorkoutType(value)] || workoutTypeById.strength;
+const normalizeExerciseCategory = (value, fallback = "strength") => {
+  const normalized = String(value || fallback || "strength").trim().toLowerCase();
+  return workoutTypeIds.includes(normalized) ? normalized : normalizeWorkoutType(fallback);
+};
+const normalizeMeasurementMode = (value, fallback = "weight_reps") => {
+  const normalized = String(value || fallback || "weight_reps").trim().toLowerCase();
+  return workoutMeasurementModeIds.includes(normalized) ? normalized : "weight_reps";
+};
+const normalizeDistanceUnit = (value, fallback = "km") => {
+  const normalized = String(value || fallback || "km").trim().toLowerCase();
+  return distanceUnitLabels[normalized] ? normalized : "km";
+};
+const asTextArray = (value) => {
+  if (Array.isArray(value)) return value.map(item => String(item || "").trim()).filter(Boolean);
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return asTextArray(parsed);
+    } catch (_) {}
+    return trimmed.split(",").map(item => item.trim()).filter(Boolean);
+  }
+  return [];
+};
+const measurementSettingsFromMode = (mode) => {
+  const normalized = normalizeMeasurementMode(mode);
+  return {
+    measureWeightEnabled: normalized.includes("weight"),
+    measureRepsEnabled: normalized.includes("reps"),
+    measureTimeEnabled: normalized.includes("time"),
+  };
+};
+const measurementModeFromSettings = (exercise = {}) => {
+  const explicit = exercise.measurementMode ?? exercise.measurement_mode;
+  if (explicit) return normalizeMeasurementMode(explicit);
+  const weight = Boolean(exercise.measureWeightEnabled ?? exercise.measure_weight_enabled);
+  const reps = Boolean(exercise.measureRepsEnabled ?? exercise.measure_reps_enabled);
+  const time = Boolean(exercise.measureTimeEnabled ?? exercise.measure_time_enabled);
+  const distance = Boolean(exercise.measureDistanceEnabled ?? exercise.measure_distance_enabled);
+  if (weight && reps) return "weight_reps";
+  if (weight && time) return "weight_time";
+  if (weight && distance) return "weight_distance";
+  if (distance) return "distance";
+  if (time) return "time";
+  if (reps) return "reps";
+  return "weight_reps";
+};
 const kgToLb = (value) => Number(value || 0) * 2.2046226218;
 const lbToKg = (value) => Number(value || 0) / 2.2046226218;
-const normalizeExerciseMeasurementSettings = (exercise = {}) => ({
-  measureWeightEnabled: exercise.measureWeightEnabled ?? exercise.measure_weight_enabled ?? exerciseMeasurementDefaults.measureWeightEnabled,
-  measureRepsEnabled: exercise.measureRepsEnabled ?? exercise.measure_reps_enabled ?? exerciseMeasurementDefaults.measureRepsEnabled,
-  measureTimeEnabled: exercise.measureTimeEnabled ?? exercise.measure_time_enabled ?? exerciseMeasurementDefaults.measureTimeEnabled,
-  measureRirEnabled: exercise.measureRirEnabled ?? exercise.measure_rir_enabled ?? exerciseMeasurementDefaults.measureRirEnabled,
-  measureRpeEnabled: exercise.measureRpeEnabled ?? exercise.measure_rpe_enabled ?? exerciseMeasurementDefaults.measureRpeEnabled,
-  weightUnit: normalizeWeightUnit(exercise.weightUnit ?? exercise.weight_unit ?? exerciseMeasurementDefaults.weightUnit),
-  doubleWeightInStats: Boolean(exercise.doubleWeightInStats ?? exercise.double_weight_in_stats ?? exerciseMeasurementDefaults.doubleWeightInStats),
-});
+const normalizeExerciseMeasurementSettings = (exercise = {}) => {
+  const exerciseCategory = normalizeExerciseCategory(exercise.exerciseCategory ?? exercise.exercise_category ?? exercise.category, "strength");
+  const mode = normalizeMeasurementMode(measurementModeFromSettings(exercise), exerciseCategory === "strength" ? "weight_reps" : "time");
+  const modeDefaults = measurementSettingsFromMode(mode);
+  const primaryMuscles = asTextArray(exercise.primaryMuscles ?? exercise.primary_muscles);
+  const secondaryMuscles = asTextArray(exercise.secondaryMuscles ?? exercise.secondary_muscles);
+  const countsDefault = exerciseCategory === "strength";
+  const modeHasDistance = mode === "distance" || mode === "weight_distance";
+  const rawSourceExerciseId = exercise.sourceExerciseId ?? exercise.source_exercise_id ?? null;
+  return {
+    measureWeightEnabled: exercise.measureWeightEnabled ?? exercise.measure_weight_enabled ?? modeDefaults.measureWeightEnabled,
+    measureRepsEnabled: exercise.measureRepsEnabled ?? exercise.measure_reps_enabled ?? modeDefaults.measureRepsEnabled,
+    measureTimeEnabled: exercise.measureTimeEnabled ?? exercise.measure_time_enabled ?? modeDefaults.measureTimeEnabled,
+    measureDistanceEnabled: exercise.measureDistanceEnabled ?? exercise.measure_distance_enabled ?? modeHasDistance,
+    measureRirEnabled: exercise.measureRirEnabled ?? exercise.measure_rir_enabled ?? exerciseMeasurementDefaults.measureRirEnabled,
+    measureRpeEnabled: exercise.measureRpeEnabled ?? exercise.measure_rpe_enabled ?? exerciseMeasurementDefaults.measureRpeEnabled,
+    weightUnit: normalizeWeightUnit(exercise.weightUnit ?? exercise.weight_unit ?? exerciseMeasurementDefaults.weightUnit),
+    distanceUnit: normalizeDistanceUnit(exercise.distanceUnit ?? exercise.distance_unit ?? exerciseMeasurementDefaults.distanceUnit),
+    doubleWeightInStats: Boolean(exercise.doubleWeightInStats ?? exercise.double_weight_in_stats ?? exerciseMeasurementDefaults.doubleWeightInStats),
+    measurementMode: mode,
+    exerciseCategory,
+    sourceExerciseId: onlypumpUuidPattern.test(String(rawSourceExerciseId || "")) ? rawSourceExerciseId : null,
+    primaryMuscles,
+    secondaryMuscles,
+    countsInMuscleStats: Boolean(exercise.countsInMuscleStats ?? exercise.counts_in_muscle_stats ?? countsDefault),
+  };
+};
 const getSetVolumeForExercise = (set = {}, exercise = {}) => {
   const settings = normalizeExerciseMeasurementSettings(exercise);
+  if (!settings.countsInMuscleStats || settings.exerciseCategory !== "strength") return 0;
   if (!settings.measureWeightEnabled || !settings.measureRepsEnabled) return 0;
-  const weight = Number(set.weight || set.weight_kg || 0);
-  const reps = Number(set.reps || 0);
+  const weight = Number(set.weight ?? set.weight_kg ?? set.weight_value ?? 0);
+  const reps = Number(set.reps ?? set.reps_value ?? 0);
   const baseVolume = (Number.isFinite(weight) ? weight : 0) * (Number.isFinite(reps) ? reps : 0);
   return settings.doubleWeightInStats ? baseVolume * 2 : baseVolume;
+};
+const isStrengthStatsExerciseGlobal = (exercise = {}) => {
+  const settings = normalizeExerciseMeasurementSettings(exercise);
+  return settings.exerciseCategory === "strength" && settings.countsInMuscleStats !== false;
 };
 const getExerciseSupersetGroupId = (exercise = {}) => normalizeSupersetGroupId(exercise.supersetGroupId || exercise.supersetId || exercise.superset_group_id);
 const normalizeWorkoutSupersetMetadata = (workout) => {
@@ -2280,12 +2445,20 @@ const pickWorkoutApiArray = (result, key, aliases = []) => {
 
 const mapWorkoutSetFromApi = (row = {}, index = 0) => {
   const completed = Boolean(row.is_completed);
+  const weightValue = safeWorkoutModelNumber(row.weight_value ?? row.weight_kg ?? row.weight);
+  const repsValue = safeWorkoutModelNumber(row.reps_value ?? row.reps);
   return {
     id: `set-supabase-${row.id || index}`,
     supabaseId: row.id || null,
     order: safeWorkoutModelNumber(row.set_order ?? row.order, index + 1),
-    weight: safeWorkoutModelNumber(row.weight_kg ?? row.weight),
-    reps: safeWorkoutModelNumber(row.reps),
+    weight: weightValue,
+    reps: repsValue,
+    weightValue,
+    repsValue,
+    durationSeconds: safeWorkoutModelNumber(row.duration_seconds ?? row.durationSeconds ?? row.work_time_seconds ?? row.workTimeSeconds, 0),
+    distanceValue: safeWorkoutModelNumber(row.distance_value ?? row.distanceValue, 0),
+    manualCalories: row.manual_calories ?? row.manualCalories ?? null,
+    estimatedCalories: safeWorkoutModelNumber(row.estimated_calories ?? row.estimatedCalories, 0),
     rir: row.rir ?? null,
     rpe: row.rpe ?? null,
     workTimeSeconds: safeWorkoutModelNumber(row.work_time_seconds ?? row.workTimeSeconds, 0),
@@ -2302,6 +2475,7 @@ const mapWorkoutSetFromApi = (row = {}, index = 0) => {
 const mapWorkoutExerciseFromApi = (row = {}, index = 0) => {
   const supersetGroupId = normalizeSupersetGroupId(row.superset_group_id || row.supersetGroupId || row.supersetId);
   const sets = row.workout_sets || row.sets || row.workoutSets || [];
+  const measurementSettings = normalizeExerciseMeasurementSettings(row);
   return {
     id: `exercise-supabase-${row.id || index}`,
     supabaseId: row.id || null,
@@ -2315,7 +2489,7 @@ const mapWorkoutExerciseFromApi = (row = {}, index = 0) => {
     supersetGroupId,
     supersetOrder: supersetGroupId ? safeWorkoutModelNumber(row.superset_order ?? row.supersetOrder, index + 1) : null,
     isSuperset: Boolean(row.is_superset || supersetGroupId),
-    ...normalizeExerciseMeasurementSettings(row),
+    ...measurementSettings,
     note: row.notes || row.note || "",
     sets: [...sets]
       .sort((a, b) => safeWorkoutModelNumber(a.set_order ?? a.order) - safeWorkoutModelNumber(b.set_order ?? b.order))
@@ -2342,6 +2516,7 @@ const mapWorkoutFromApi = (row = {}, index = 0, fallbackDateKey = formatDateKey(
     date: dateKey,
     weekday: workoutWeekdayNames[date.getDay()] || "",
     title: row.title || "Новая тренировка",
+    workoutType: normalizeWorkoutType(row.workout_type ?? row.workoutType),
     programDayNumber: index + 1,
     durationMinutes: safeWorkoutModelNumber(row.duration_minutes ?? row.durationMinutes ?? (row.duration_seconds !== undefined ? Number(row.duration_seconds) / 60 : undefined), 0),
     totalVolumeKg,
@@ -4436,6 +4611,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     order: index + 1,
     weight,
     reps,
+    weightValue: weight,
+    repsValue: reps,
+    durationSeconds: 0,
+    distanceValue: 0,
+    manualCalories: null,
+    estimatedCalories: 0,
     workTimeSeconds: 0,
     rir: null,
     rpe: null,
@@ -4447,22 +4628,58 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     isCompleted: completed,
   });
 
-  const makeExercise = (order, name, muscleGroup, sets = [], completed = true) => ({
-    id: `exercise-${Date.now()}-${order}-${Math.random().toString(16).slice(2)}`,
-    supabaseId: null,
-    order,
-    name,
-    muscleGroup,
-    blockType: "обычное",
-    restSeconds: 120,
-    restAfterSeconds: 0,
-    supersetId: null,
-    supersetGroupId: null,
-    supersetOrder: null,
-    isSuperset: false,
-    ...exerciseMeasurementDefaults,
-    sets: sets.map(([weight, reps], index) => makeSet(weight, reps, index, completed)),
-  });
+  const normalizeExerciseSourceItem = (item = {}) => {
+    const source = typeof item === "string" ? { name: item } : item;
+    const settings = normalizeExerciseMeasurementSettings({
+      ...source,
+      exerciseCategory: source.exerciseCategory || source.category || (source.muscleGroup === "Кардио" ? "cardio" : "strength"),
+      measurementMode: source.measurementMode || source.measurement_mode || (source.muscleGroup === "Кардио" ? "time" : "weight_reps"),
+      primaryMuscles: source.primaryMuscles || source.primary_muscles || (source.muscleGroup && source.muscleGroup !== "Кардио" ? [source.muscleGroup] : []),
+    });
+    return {
+      name: source.name || source.exercise_name || "Упражнение",
+      muscleGroup: source.muscleGroup || source.muscle_group || source.group || "Другое",
+      group: source.group || source.muscleGroup || source.muscle_group || "Другое",
+      isCustom: Boolean(source.isCustom ?? source.is_custom),
+      met: source.met ?? source.met_value ?? null,
+      ...settings,
+    };
+  };
+
+  const makeExercise = (order, name, muscleGroup, sets = [], completed = true, sourceItem = {}) => {
+    const source = normalizeExerciseSourceItem({ ...sourceItem, name, muscleGroup });
+    return {
+      id: `exercise-${Date.now()}-${order}-${Math.random().toString(16).slice(2)}`,
+      supabaseId: null,
+      order,
+      name: source.name,
+      muscleGroup: source.muscleGroup,
+      blockType: "обычное",
+      restSeconds: 120,
+      restAfterSeconds: 0,
+      supersetId: null,
+      supersetGroupId: null,
+      supersetOrder: null,
+      isSuperset: false,
+      sourceExerciseId: source.sourceExerciseId || null,
+      exerciseCategory: source.exerciseCategory,
+      primaryMuscles: source.primaryMuscles,
+      secondaryMuscles: source.secondaryMuscles,
+      measurementMode: source.measurementMode,
+      distanceUnit: source.distanceUnit,
+      countsInMuscleStats: source.countsInMuscleStats,
+      measureWeightEnabled: source.measureWeightEnabled,
+      measureRepsEnabled: source.measureRepsEnabled,
+      measureTimeEnabled: source.measureTimeEnabled,
+      measureDistanceEnabled: source.measureDistanceEnabled,
+      measureRirEnabled: source.measureRirEnabled,
+      measureRpeEnabled: source.measureRpeEnabled,
+      weightUnit: source.weightUnit,
+      doubleWeightInStats: source.doubleWeightInStats,
+      met: source.met,
+      sets: sets.map(([weight, reps], index) => makeSet(weight, reps, index, completed)),
+    };
+  };
 
   const cloneExercises = (exercises = [], emptySets = false) => exercises.map((exercise, exerciseIndex) => ({
     ...exercise,
@@ -4486,6 +4703,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       restSeconds: Number(set.restSeconds || 120),
       restAfterSeconds: Number(set.restAfterSeconds || 0),
       isCompleted: !emptySets && Boolean(set.isCompleted ?? true),
+      weightValue: emptySets ? 0 : Number(set.weightValue ?? set.weight_value ?? set.weight ?? 0),
+      repsValue: emptySets ? 0 : Number(set.repsValue ?? set.reps_value ?? set.reps ?? 0),
+      durationSeconds: emptySets ? 0 : Number(set.durationSeconds ?? set.duration_seconds ?? set.workTimeSeconds ?? 0),
+      distanceValue: emptySets ? 0 : Number(set.distanceValue ?? set.distance_value ?? 0),
+      manualCalories: emptySets ? null : (set.manualCalories ?? set.manual_calories ?? null),
+      estimatedCalories: emptySets ? 0 : Number(set.estimatedCalories ?? set.estimated_calories ?? 0),
     })),
   }));
 
@@ -4536,6 +4759,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const makeWorkout = (dateKey, patch = {}) => {
     const date = parseDateKey(dateKey);
     const title = patch.title || "Новая тренировка";
+    const workoutType = normalizeWorkoutType(patch.workoutType ?? patch.workout_type);
     return {
       id: `workout-${dateKey}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       supabaseId: null,
@@ -4547,9 +4771,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       totalVolumeKg: patch.totalVolumeKg ?? 0,
       calories: patch.calories ?? 0,
       estimatedCaloriesBurned: patch.estimatedCaloriesBurned ?? patch.estimated_calories_burned ?? patch.calories ?? 0,
+      workoutType,
       status: normalizeWorkoutStatus(patch.status),
       startedAt: patch.startedAt !== undefined ? patch.startedAt : new Date().toISOString(),
-      exercises: patch.exercises ? cloneExercises(patch.exercises) : defaultExercisesForTitle(title),
+      exercises: patch.exercises ? cloneExercises(patch.exercises) : (workoutType === "strength" ? defaultExercisesForTitle(title) : []),
       notes: patch.notes || "",
       templateId: patch.templateId,
       createdAt: new Date().toISOString(),
@@ -4599,6 +4824,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [exerciseMeasurementSheet, setExerciseMeasurementSheet] = useState(null);
   const [exerciseNotesSheet, setExerciseNotesSheet] = useState(null);
   const [exerciseStatsSheet, setExerciseStatsSheet] = useState(null);
+  const [workoutTypePicker, setWorkoutTypePicker] = useState(null);
+  const [customExercises, setCustomExercises] = useState([]);
+  const [customExerciseSheet, setCustomExerciseSheet] = useState(null);
+  const [nonStrengthActivityEditor, setNonStrengthActivityEditor] = useState(null);
   const [pendingExerciseAdds, setPendingExerciseAdds] = useState([]);
   const [workoutTitleDraft, setWorkoutTitleDraft] = useState("");
   const [exerciseNameDraft, setExerciseNameDraft] = useState("");
@@ -4780,6 +5009,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const getMuscleSetStats = (workout) => {
     const stats = {};
     (workout?.exercises || []).forEach(exercise => {
+      if (!isStrengthStatsExercise(exercise)) return;
       const group = exercise.muscleGroup || "Другое";
       if (!stats[group]) stats[group] = { muscleGroup: group, sets: 0, volume: 0 };
       stats[group].sets += (exercise.sets || []).length;
@@ -4795,6 +5025,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }, {});
     items.forEach(workout => {
       (workout?.exercises || []).forEach(exercise => {
+        if (!isStrengthStatsExercise(exercise)) return;
         const group = exercise.muscleGroup || "Другое";
         if (!stats[group]) stats[group] = { muscleGroup: group, sets: 0, volume: 0, workouts: new Set(), order: standardMuscleGroups.length };
         stats[group].sets += (exercise.sets || []).length;
@@ -4846,6 +5077,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       calories: patch.calories ?? 0,
       estimatedCaloriesBurned: patch.estimatedCaloriesBurned ?? patch.estimated_calories_burned ?? patch.calories ?? 0,
       status: patch.status,
+      workoutType: patch.workoutType ?? patch.workout_type,
       startedAt: patch.startedAt,
       templateId: patch.templateId,
       exercises: patch.exercises,
@@ -4988,6 +5220,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const getSetStatus = (set) => set.status || (set.isCompleted ? "completed" : "pending");
   const isWorkingSet = (set) => (set?.type || "working") !== "warmup";
   const isCompletedSet = (set) => getSetStatus(set) === "completed";
+  const isStrengthStatsExercise = (exercise = {}) => {
+    const settings = normalizeExerciseMeasurementSettings(exercise);
+    return settings.exerciseCategory === "strength" && settings.countsInMuscleStats !== false;
+  };
+
   const getCompletedSetsFromWorkout = (workout) => (workout?.exercises || [])
     .flatMap(exercise => (exercise.sets || []).map(set => ({ ...set, __exercise: exercise })))
     .filter(isCompletedSet);
@@ -5008,6 +5245,50 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const canUseWorkoutApi = Boolean(telegramInitData && profile?.id);
+
+  const getCustomExerciseCacheKey = () => `onlypump_custom_exercises_${profile?.id || profile?.telegram_id || "local"}`;
+  const mapExerciseLibraryRow = (row = {}) => {
+    const rawId = row.id || row.sourceExerciseId || null;
+    const sourceExerciseId = onlypumpUuidPattern.test(String(rawId || "")) ? rawId : null;
+    const settings = normalizeExerciseMeasurementSettings({
+      ...row,
+      sourceExerciseId,
+      exerciseCategory: row.exercise_category || row.exerciseCategory,
+      measurementMode: row.measurement_mode || row.measurementMode,
+      distanceUnit: row.distance_unit || row.distanceUnit,
+      weightUnit: row.weight_unit || row.weightUnit,
+      primaryMuscles: row.primary_muscles || row.primaryMuscles,
+      secondaryMuscles: row.secondary_muscles || row.secondaryMuscles,
+      countsInMuscleStats: row.counts_in_muscle_stats ?? row.countsInMuscleStats,
+    });
+    const primary = settings.primaryMuscles[0] || exerciseCategoryLabels[settings.exerciseCategory] || "Другое";
+    return {
+      id: rawId || `custom-${row.exercise_name || row.name}`,
+      sourceExerciseId,
+      name: row.exercise_name || row.name || "Упражнение",
+      group: row.group || primary,
+      muscleGroup: row.muscle_group || row.muscleGroup || primary,
+      isCustom: Boolean(row.is_custom ?? row.isCustom ?? true),
+      notes: row.notes || "",
+      ...settings,
+    };
+  };
+  const readCachedCustomExercises = () => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(getCustomExerciseCacheKey()) || "[]");
+      return Array.isArray(parsed) ? parsed.map(mapExerciseLibraryRow) : [];
+    } catch (error) {
+      console.log("Custom exercises cache error", error);
+      return [];
+    }
+  };
+  const writeCachedCustomExercises = (items = []) => {
+    try {
+      localStorage.setItem(getCustomExerciseCacheKey(), JSON.stringify(items));
+    } catch (error) {
+      console.log("Custom exercises cache error", error);
+    }
+  };
 
   const logSupabaseWorkoutError = (error) => {
     console.error("onlypump-workouts-api error:", error);
@@ -5048,6 +5329,100 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       console.error("Workouts API error:", error);
       console.error("onlypump-workouts-api error:", { action, error });
       throw error;
+    }
+  };
+
+  useEffect(() => {
+    setCustomExercises(readCachedCustomExercises());
+    if (!canUseWorkoutApi) return;
+    let cancelled = false;
+    callWorkoutsApi("load_exercise_library", { profile_id: profile.id })
+      .then(result => {
+        if (cancelled) return;
+        const rows = readApiArray(result, "exercise_library", ["exercises", "items"]);
+        const mapped = rows.map(mapExerciseLibraryRow).filter(item => item.isCustom || item.sourceExerciseId);
+        setCustomExercises(mapped);
+        writeCachedCustomExercises(mapped);
+      })
+      .catch(error => {
+        console.error("Supabase workout error", { action: "load_exercise_library", error });
+        if (!cancelled) setCustomExercises(readCachedCustomExercises());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canUseWorkoutApi, profile?.id, telegramInitData]);
+
+  const openCustomExerciseEditor = (exercise = null) => {
+    const category = normalizeExerciseCategory(exercise?.exerciseCategory || exercise?.category || selectedWorkout?.workoutType || "strength");
+    const primary = (exercise?.primaryMuscles || [exercise?.muscleGroup]).filter(Boolean);
+    setCustomExerciseSheet({
+      id: exercise?.sourceExerciseId || exercise?.id || null,
+      name: exercise?.name || "",
+      exerciseCategory: category,
+      primaryMuscles: primary.length ? primary : (category === "strength" ? ["Грудь"] : []),
+      secondaryMuscles: exercise?.secondaryMuscles || [],
+      measurementMode: normalizeMeasurementMode(exercise?.measurementMode, category === "strength" ? "weight_reps" : "time"),
+      weightUnit: normalizeWeightUnit(exercise?.weightUnit || profile?.default_weight_unit || "kg"),
+      distanceUnit: normalizeDistanceUnit(exercise?.distanceUnit || "km"),
+      countsInMuscleStats: exercise?.countsInMuscleStats ?? category === "strength",
+      notes: exercise?.notes || "",
+    });
+  };
+
+  const saveCustomExercise = async () => {
+    if (!customExerciseSheet) return;
+    const name = customExerciseSheet.name.trim();
+    if (!name) {
+      setEditError({ title: "Нужно название", description: "Введи название упражнения, чтобы сохранить его в базу." });
+      return;
+    }
+    const category = normalizeExerciseCategory(customExerciseSheet.exerciseCategory);
+    const payload = {
+      id: customExerciseSheet.id,
+      exercise_name: name,
+      exercise_category: category,
+      primary_muscles: customExerciseSheet.primaryMuscles || [],
+      secondary_muscles: customExerciseSheet.secondaryMuscles || [],
+      measurement_mode: normalizeMeasurementMode(customExerciseSheet.measurementMode, category === "strength" ? "weight_reps" : "time"),
+      weight_unit: normalizeWeightUnit(customExerciseSheet.weightUnit),
+      distance_unit: normalizeDistanceUnit(customExerciseSheet.distanceUnit),
+      counts_in_muscle_stats: Boolean(customExerciseSheet.countsInMuscleStats),
+      notes: customExerciseSheet.notes || "",
+    };
+    const optimistic = mapExerciseLibraryRow({
+      ...payload,
+      id: customExerciseSheet.id || `local-custom-${Date.now()}`,
+      is_custom: true,
+    });
+    setCustomExercises(prev => {
+      const next = customExerciseSheet.id
+        ? prev.map(item => item.sourceExerciseId === customExerciseSheet.id || item.id === customExerciseSheet.id ? optimistic : item)
+        : [...prev, optimistic];
+      writeCachedCustomExercises(next);
+      return next;
+    });
+    setCustomExerciseSheet(null);
+    if (!canUseWorkoutApi) return;
+    try {
+      const result = await callWorkoutsApi(customExerciseSheet.id ? "update_custom_exercise" : "create_custom_exercise", {
+        profile_id: profile.id,
+        exercise: payload,
+        ...payload,
+      });
+      const row = pickApiRecord(result, "exercise") || pickApiRecord(result, "exercise_library_item");
+      if (row) {
+        const saved = mapExerciseLibraryRow(row);
+        setCustomExercises(prev => {
+          const withoutOptimistic = prev.filter(item => item.id !== optimistic.id && item.sourceExerciseId !== saved.sourceExerciseId);
+          const next = [...withoutOptimistic, saved];
+          writeCachedCustomExercises(next);
+          return next;
+        });
+      }
+    } catch (error) {
+      console.error("Supabase workout error", { action: "save_custom_exercise", error });
+      setEditError({ title: "Не удалось сохранить упражнение", description: "Упражнение осталось локально. Проверь соединение и попробуй ещё раз." });
     }
   };
 
@@ -5155,6 +5530,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       workout_date: workout?.date || selectedDateKey,
       title: workout?.title || "Новая тренировка",
       status: normalizeWorkoutStatus(workout?.status),
+      workout_type: normalizeWorkoutType(workout?.workoutType ?? workout?.workout_type),
       notes: workout?.notes || "",
       total_sets: totals.totalSets,
       total_volume: totals.totalVolume,
@@ -5179,6 +5555,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       superset_group_id: supersetGroupId,
       superset_order: supersetGroupId ? safeWorkoutNumber(exercise?.supersetOrder, 1) : null,
       is_superset: Boolean(supersetGroupId),
+      source_exercise_id: measurementSettings.sourceExerciseId,
+      exercise_category: measurementSettings.exerciseCategory,
+      primary_muscles: measurementSettings.primaryMuscles,
+      secondary_muscles: measurementSettings.secondaryMuscles,
+      measurement_mode: measurementSettings.measurementMode,
+      distance_unit: measurementSettings.distanceUnit,
+      counts_in_muscle_stats: Boolean(measurementSettings.countsInMuscleStats),
       measure_weight_enabled: Boolean(measurementSettings.measureWeightEnabled),
       measure_reps_enabled: Boolean(measurementSettings.measureRepsEnabled),
       measure_time_enabled: Boolean(measurementSettings.measureTimeEnabled),
@@ -5212,6 +5595,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       set_order: safeWorkoutNumber(set?.order, 1),
       weight_kg: safeWorkoutNumber(set?.weight),
       reps: safeWorkoutNumber(set?.reps),
+      weight_value: safeWorkoutNumber(set?.weightValue ?? set?.weight_value ?? set?.weight),
+      reps_value: safeWorkoutNumber(set?.repsValue ?? set?.reps_value ?? set?.reps),
+      duration_seconds: safeWorkoutNumber(set?.durationSeconds ?? set?.duration_seconds ?? set?.workTimeSeconds ?? set?.work_time_seconds, 0),
+      distance_value: safeWorkoutNumber(set?.distanceValue ?? set?.distance_value, 0),
+      manual_calories: optionalWorkoutNumber(set?.manualCalories ?? set?.manual_calories),
+      estimated_calories: safeWorkoutNumber(set?.estimatedCalories ?? set?.estimated_calories, 0),
       rir: optionalWorkoutNumber(set?.rir),
       rpe: optionalWorkoutNumber(set?.rpe),
       work_time_seconds: safeWorkoutNumber(set?.workTimeSeconds ?? set?.work_time_seconds, 0),
@@ -5248,6 +5637,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       id: workout.supabaseId,
       title: workout.title || "Новая тренировка",
       status: normalizeWorkoutStatus(workout.status),
+      workout_type: normalizeWorkoutType(workout.workoutType ?? workout.workout_type),
       notes: workout.notes || "",
       total_sets: totals.totalSets,
       total_volume: totals.totalVolume,
@@ -5267,6 +5657,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       id: workout.supabaseId,
       total_sets: totals.totalSets,
       total_volume: totals.totalVolume,
+      workout_type: normalizeWorkoutType(workout.workoutType ?? workout.workout_type),
       duration_seconds: Math.max(0, safeWorkoutNumber(workout.durationMinutes) * 60),
       estimated_calories_burned: safeWorkoutNumber(workout.estimatedCaloriesBurned ?? workout.estimated_calories_burned ?? workout.calories, 0),
       started_at: workout.startedAt || workout.started_at || null,
@@ -5291,6 +5682,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       superset_group_id: supersetGroupId,
       superset_order: supersetGroupId ? safeWorkoutNumber(exercise.supersetOrder, 1) : null,
       is_superset: Boolean(supersetGroupId),
+      source_exercise_id: measurementSettings.sourceExerciseId,
+      exercise_category: measurementSettings.exerciseCategory,
+      primary_muscles: measurementSettings.primaryMuscles,
+      secondary_muscles: measurementSettings.secondaryMuscles,
+      measurement_mode: measurementSettings.measurementMode,
+      distance_unit: measurementSettings.distanceUnit,
+      counts_in_muscle_stats: Boolean(measurementSettings.countsInMuscleStats),
       measure_weight_enabled: Boolean(measurementSettings.measureWeightEnabled),
       measure_reps_enabled: Boolean(measurementSettings.measureRepsEnabled),
       measure_time_enabled: Boolean(measurementSettings.measureTimeEnabled),
@@ -5326,6 +5724,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const payload = {
       id: exercise.supabaseId,
       notes: exercise.note || exercise.notes || "",
+      measurement_mode: measurementSettings.measurementMode,
+      distance_unit: measurementSettings.distanceUnit,
+      counts_in_muscle_stats: Boolean(measurementSettings.countsInMuscleStats),
       measure_weight_enabled: Boolean(measurementSettings.measureWeightEnabled),
       measure_reps_enabled: Boolean(measurementSettings.measureRepsEnabled),
       measure_time_enabled: Boolean(measurementSettings.measureTimeEnabled),
@@ -5355,6 +5756,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       set_order: safeWorkoutNumber(set.order, 1),
       weight_kg: safeWorkoutNumber(set.weight),
       reps: safeWorkoutNumber(set.reps),
+      weight_value: safeWorkoutNumber(set.weightValue ?? set.weight_value ?? set.weight),
+      reps_value: safeWorkoutNumber(set.repsValue ?? set.reps_value ?? set.reps),
+      duration_seconds: safeWorkoutNumber(set.durationSeconds ?? set.duration_seconds ?? set.workTimeSeconds ?? set.work_time_seconds, 0),
+      distance_value: safeWorkoutNumber(set.distanceValue ?? set.distance_value, 0),
+      manual_calories: optionalWorkoutNumber(set.manualCalories ?? set.manual_calories),
+      estimated_calories: safeWorkoutNumber(set.estimatedCalories ?? set.estimated_calories, 0),
       rir: optionalWorkoutNumber(set.rir),
       rpe: optionalWorkoutNumber(set.rpe),
       work_time_seconds: safeWorkoutNumber(set.workTimeSeconds ?? set.work_time_seconds, 0),
@@ -5886,12 +6293,20 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const mapSupabaseSet = (row = {}, index = 0) => {
     const completed = Boolean(row.is_completed);
+    const weightValue = safeWorkoutNumber(row.weight_value ?? row.weight_kg ?? row.weight);
+    const repsValue = safeWorkoutNumber(row.reps_value ?? row.reps);
     const mappedSet = {
       id: `set-supabase-${row.id || index}`,
       supabaseId: row.id || null,
       order: safeWorkoutNumber(row.set_order ?? row.order, index + 1),
-      weight: safeWorkoutNumber(row.weight_kg ?? row.weight),
-      reps: safeWorkoutNumber(row.reps),
+      weight: weightValue,
+      reps: repsValue,
+      weightValue,
+      repsValue,
+      durationSeconds: safeWorkoutNumber(row.duration_seconds ?? row.durationSeconds ?? row.work_time_seconds ?? row.workTimeSeconds, 0),
+      distanceValue: safeWorkoutNumber(row.distance_value ?? row.distanceValue, 0),
+      manualCalories: row.manual_calories ?? row.manualCalories ?? null,
+      estimatedCalories: safeWorkoutNumber(row.estimated_calories ?? row.estimatedCalories, 0),
       rir: row.rir ?? null,
       rpe: row.rpe ?? null,
       workTimeSeconds: safeWorkoutNumber(row.work_time_seconds ?? row.workTimeSeconds, 0),
@@ -5974,6 +6389,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       date: dateKey,
       weekday: weekdayNames[date.getDay()] || "",
       title: row.title || "Новая тренировка",
+      workoutType: normalizeWorkoutType(row.workout_type ?? row.workoutType),
       programDayNumber: index + 1,
       durationMinutes: safeWorkoutNumber(row.duration_minutes ?? row.durationMinutes ?? (row.duration_seconds !== undefined ? Number(row.duration_seconds) / 60 : undefined), 0),
       totalVolumeKg: derivedTotals.totalVolume,
@@ -6752,13 +7168,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const setExerciseMeasurementMode = (mode) => {
-    const modes = {
-      weight_reps: { measureWeightEnabled: true, measureRepsEnabled: true, measureTimeEnabled: false },
-      weight_time: { measureWeightEnabled: true, measureRepsEnabled: false, measureTimeEnabled: true },
-      reps: { measureWeightEnabled: false, measureRepsEnabled: true, measureTimeEnabled: false },
-      weight: { measureWeightEnabled: true, measureRepsEnabled: false, measureTimeEnabled: false },
-    };
-    updateExerciseMeasurementDraft(modes[mode] || modes.weight_reps);
+    const normalized = normalizeMeasurementMode(mode);
+    updateExerciseMeasurementDraft({
+      ...measurementSettingsFromMode(normalized),
+      measureDistanceEnabled: normalized === "distance" || normalized === "weight_distance",
+      measurementMode: normalized,
+    });
   };
 
   const toggleExerciseMeasurementSetting = (field) => {
@@ -7194,6 +7609,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const minutes = Math.max(0, safeWorkoutNumber(durationSeconds, 0) / 60);
     const profileWeightKg = safeWorkoutNumber(profile?.weight_kg, 0);
     if (!profileWeightKg || !minutes) return 0;
+    const workoutType = normalizeWorkoutType(workout?.workoutType);
+    if (workoutType !== "strength") {
+      const met = getWorkoutTypeMeta(workoutType).met || 3;
+      return Math.max(0, Math.round((met * 3.5 * profileWeightKg / 200) * minutes));
+    }
     const completedEntries = workout ? getCompletedSetsFromWorkout(workout) : [];
     const exercises = workout?.exercises || [];
     const weightedMet = completedEntries.length
@@ -7250,7 +7670,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const rirValues = completedEntries.map(set => optionalWorkoutNumber(set.rir)).filter(value => value !== null);
     const rpeValues = completedEntries.map(set => optionalWorkoutNumber(set.rpe)).filter(value => value !== null);
     const average = (values) => values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : null;
-    const muscleMap = completedEntries.reduce((map, set) => {
+    const muscleMap = completedEntries.filter(set => isStrengthStatsExercise(set.__exercise || {})).reduce((map, set) => {
       const exercise = set.__exercise || {};
       const group = exercise.muscleGroup || "Другое";
       if (!map[group]) map[group] = { muscleGroup: group, sets: 0, volume: 0 };
@@ -7299,19 +7719,32 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     };
   };
 
-  const addExerciseToSelectedWorkout = (name, muscleGroup) => {
-    addExercisesToSelectedWorkout([{ name, muscleGroup }]);
+  const addExerciseToSelectedWorkout = (name, muscleGroup, sourceItem = {}) => {
+    addExercisesToSelectedWorkout([{ ...sourceItem, name, muscleGroup }]);
   };
 
   const addExercisesToSelectedWorkout = async (items = []) => {
     if (!selectedWorkout) return;
     const completedByDefault = normalizeWorkoutStatus(selectedWorkout.status) === "completed";
     const completedAt = completedByDefault ? new Date().toISOString() : null;
+    const selectedWorkoutType = normalizeWorkoutType(selectedWorkout.workoutType);
     const additions = items.map((item, index) => {
-      const exercise = makeExercise((selectedWorkout.exercises || []).length + index + 1, item.name, item.muscleGroup, [[0, 0], [0, 0], [0, 0]], completedByDefault);
+      const source = normalizeExerciseSourceItem(item);
+      const sourceCategory = normalizeExerciseCategory(source.exerciseCategory, selectedWorkoutType);
+      const defaultSets = selectedWorkoutType === "strength" && sourceCategory === "strength" ? [[0, 0], [0, 0], [0, 0]] : [[0, 0]];
+      const exercise = makeExercise((selectedWorkout.exercises || []).length + index + 1, source.name, source.muscleGroup, defaultSets, completedByDefault, source);
       return {
         ...exercise,
-        sets: (exercise.sets || []).map(set => ({ ...set, completedAt })),
+        sets: (exercise.sets || []).map(set => ({
+          ...set,
+          completedAt,
+          restSeconds: sourceCategory === "strength" ? set.restSeconds : 0,
+          restAfterSeconds: sourceCategory === "strength" ? set.restAfterSeconds : 0,
+          durationSeconds: sourceCategory === "strength" ? set.durationSeconds : 0,
+          distanceValue: 0,
+          manualCalories: null,
+          estimatedCalories: 0,
+        })),
         pending: canUseWorkoutApi,
         isSaving: canUseWorkoutApi,
         isSyncing: canUseWorkoutApi,
@@ -7348,13 +7781,17 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setSelectedWorkout(prev => prev ? patch(prev) : prev);
   };
 
-  const exercisePickerKey = (name, muscleGroup) => `${muscleGroup}::${name}`;
+  const exercisePickerKey = (itemOrName, muscleGroup = "") => {
+    const item = typeof itemOrName === "object" ? itemOrName : { name: itemOrName, muscleGroup };
+    return `${item.sourceExerciseId || item.id || item.muscleGroup || item.group || muscleGroup}::${item.name || itemOrName}`;
+  };
 
-  const togglePendingExerciseAdd = (name, muscleGroup) => {
-    const key = exercisePickerKey(name, muscleGroup);
+  const togglePendingExerciseAdd = (itemOrName, muscleGroup = "") => {
+    const item = normalizeExerciseSourceItem(typeof itemOrName === "object" ? itemOrName : { name: itemOrName, muscleGroup });
+    const key = exercisePickerKey(item);
     setPendingExerciseAdds(prev => prev.some(item => item.key === key)
       ? prev.filter(item => item.key !== key)
-      : [...prev, { key, name, muscleGroup }]);
+      : [...prev, { key, ...item }]);
   };
 
   const addPendingExercisesToWorkout = async () => {
@@ -7362,6 +7799,72 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     addExercisesToSelectedWorkout(pendingExerciseAdds);
     setPendingExerciseAdds([]);
     setIsExerciseBaseOpen(false);
+  };
+
+  const getActivitySet = (exercise = {}) => (exercise.sets || [])[0] || {};
+  const getActivityDurationSeconds = (exercise = {}) => safeWorkoutNumber(getActivitySet(exercise).durationSeconds ?? getActivitySet(exercise).duration_seconds ?? getActivitySet(exercise).workTimeSeconds, 0);
+  const getActivityDistance = (exercise = {}) => safeWorkoutNumber(getActivitySet(exercise).distanceValue ?? getActivitySet(exercise).distance_value, 0);
+  const estimateActivityCalories = (exercise = {}, set = getActivitySet(exercise)) => {
+    const manual = optionalWorkoutNumber(set.manualCalories ?? set.manual_calories);
+    if (manual !== null) return Math.max(0, Math.round(manual));
+    const seconds = safeWorkoutNumber(set.durationSeconds ?? set.duration_seconds ?? set.workTimeSeconds, 0);
+    const workoutType = normalizeExerciseCategory(exercise.exerciseCategory, selectedWorkout?.workoutType || "cardio");
+    return estimateWorkoutCalories(seconds, { workoutType, exercises: [exercise] });
+  };
+  const getNonStrengthWorkoutMetrics = (workout = selectedWorkout) => {
+    const activities = workout?.exercises || [];
+    const durationSeconds = activities.reduce((sum, exercise) => sum + getActivityDurationSeconds(exercise), 0);
+    const distance = activities.reduce((sum, exercise) => sum + getActivityDistance(exercise), 0);
+    const calories = activities.reduce((sum, exercise) => sum + estimateActivityCalories(exercise), 0);
+    return { durationSeconds, durationMinutes: Math.round(durationSeconds / 60), distance, calories };
+  };
+  const openNonStrengthActivityEditor = (exercise) => {
+    if (!exercise) return;
+    const set = getActivitySet(exercise);
+    setNonStrengthActivityEditor({
+      exerciseId: exercise.id,
+      title: exercise.name,
+      durationMinutes: String(Math.floor(getActivityDurationSeconds(exercise) / 60)),
+      distanceValue: String(getActivityDistance(exercise) || ""),
+      manualCalories: set.manualCalories ?? set.manual_calories ?? "",
+    });
+  };
+  const saveNonStrengthActivityEditor = () => {
+    if (!nonStrengthActivityEditor || !selectedWorkout) return;
+    const durationSeconds = Math.max(0, Math.round(safeWorkoutNumber(nonStrengthActivityEditor.durationMinutes, 0) * 60));
+    const distanceValue = Math.max(0, safeWorkoutNumber(nonStrengthActivityEditor.distanceValue, 0));
+    const manualCalories = optionalWorkoutNumber(nonStrengthActivityEditor.manualCalories);
+    updateSelectedWorkoutModel(workout => {
+      const nextExercises = (workout.exercises || []).map(exercise => {
+        if (exercise.id !== nonStrengthActivityEditor.exerciseId) return exercise;
+        const currentSet = getActivitySet(exercise);
+        const nextSet = {
+          ...currentSet,
+          order: currentSet.order || 1,
+          status: normalizeWorkoutStatus(workout.status) === "planned" ? "pending" : "completed",
+          isCompleted: normalizeWorkoutStatus(workout.status) !== "planned",
+          durationSeconds,
+          workTimeSeconds: durationSeconds,
+          distanceValue,
+          manualCalories,
+          estimatedCalories: manualCalories ?? estimateWorkoutCalories(durationSeconds, { workoutType: normalizeExerciseCategory(exercise.exerciseCategory, workout.workoutType), exercises: [exercise] }),
+        };
+        return {
+          ...exercise,
+          sets: [nextSet],
+        };
+      });
+      const nextWorkout = { ...workout, exercises: nextExercises };
+      const metrics = getNonStrengthWorkoutMetrics(nextWorkout);
+      return {
+        ...nextWorkout,
+        durationMinutes: metrics.durationMinutes || workout.durationMinutes || 0,
+        calories: metrics.calories,
+        estimatedCaloriesBurned: metrics.calories,
+        updatedAt: new Date().toISOString(),
+      };
+    }, { immediate: true });
+    setNonStrengthActivityEditor(null);
   };
 
   const setWorkoutSetCompletionState = (workout, completed = false) => {
@@ -7478,6 +7981,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setRepeatScheduler({
       workout,
       mode,
+      workoutType: normalizeWorkoutType(workout?.workoutType),
       dateKey: formatDateKey(now),
       hour: String(now.getHours()).padStart(2, "0"),
       minute: String(now.getMinutes()).padStart(2, "0"),
@@ -7486,12 +7990,19 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
   };
 
-  const openPlanWorkoutScheduler = () => {
+  const openWorkoutTypePicker = (mode) => {
+    setIsAddMenuOpen(false);
+    setWorkoutTypePicker({ mode });
+  };
+
+  const openPlanWorkoutScheduler = (workoutType = "strength") => {
     const now = new Date();
     setIsAddMenuOpen(false);
+    setWorkoutTypePicker(null);
     setRepeatScheduler({
       workout: null,
       mode: "new_planned",
+      workoutType: normalizeWorkoutType(workoutType),
       dateKey: selectedDateKey || formatDateKey(now),
       hour: String(now.getHours()).padStart(2, "0"),
       minute: String(now.getMinutes()).padStart(2, "0"),
@@ -7500,13 +8011,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
   };
 
-  const openCompletedWorkoutScheduler = () => {
+  const openCompletedWorkoutScheduler = (workoutType = "strength") => {
     const now = new Date();
     const durationParts = durationPartsFromMinutes(45);
     setIsAddMenuOpen(false);
+    setWorkoutTypePicker(null);
     setRepeatScheduler({
       workout: null,
       mode: "new_completed",
+      workoutType: normalizeWorkoutType(workoutType),
       dateKey: selectedDateKey || formatDateKey(now),
       hour: String(now.getHours()).padStart(2, "0"),
       minute: String(now.getMinutes()).padStart(2, "0"),
@@ -7529,20 +8042,54 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const SchedulerWheelColumn = ({ label, value, options, onChange, className = "", size = "large" }) => {
-    const heightClass = size === "small" ? "h-36" : "h-56";
+    const touchStartRef = useRef(null);
+    const heightClass = size === "small" ? "h-32" : "h-40";
+    const selectedIndex = Math.max(0, options.findIndex(option => String(option.value) === String(value)));
+    const visibleOptions = [
+      options[selectedIndex - 1] || null,
+      options[selectedIndex] || options[0] || null,
+      options[selectedIndex + 1] || null,
+    ];
+    const step = (delta) => {
+      const nextIndex = Math.max(0, Math.min(options.length - 1, selectedIndex + delta));
+      const nextOption = options[nextIndex];
+      if (nextOption && String(nextOption.value) !== String(value)) onChange(nextOption.value);
+    };
+    const handleWheel = (event) => {
+      event.preventDefault();
+      step(event.deltaY > 0 ? 1 : -1);
+    };
+    const handleTouchStart = (event) => {
+      touchStartRef.current = event.touches?.[0]?.clientY ?? null;
+    };
+    const handleTouchEnd = (event) => {
+      const startY = touchStartRef.current;
+      touchStartRef.current = null;
+      if (startY === null) return;
+      const endY = event.changedTouches?.[0]?.clientY ?? startY;
+      const delta = endY - startY;
+      if (Math.abs(delta) < 18) return;
+      step(delta < 0 ? 1 : -1);
+    };
     return <div className={`onlypump-field-surface rounded-[24px] bg-black/28 p-3 ${className}`}>
       <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">{label}</div>
-      <div className={`${heightClass} snap-y overflow-y-auto rounded-2xl onlypump-scrollbar-none`}>
-        <div className="space-y-1 py-1">
-          {options.map(option => {
-            const selected = String(option.value) === String(value);
+      <div
+        className={`${heightClass} overflow-hidden rounded-2xl`}
+        onWheel={handleWheel}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
+        <div className="grid h-full grid-rows-3 gap-1">
+          {visibleOptions.map((option, index) => {
+            const selected = index === 1;
             return <button
-              key={option.value}
+              key={`${option?.value || "empty"}-${index}`}
               type="button"
-              onClick={() => onChange(option.value)}
-              className={`block min-h-10 w-full snap-center rounded-2xl px-2 text-center text-base font-black transition ${selected ? "bg-red-500 text-black" : "text-zinc-300 hover:bg-white/8"}`}
+              disabled={!option}
+              onClick={() => option && (selected ? onChange(option.value) : step(index === 0 ? -1 : 1))}
+              className={`rounded-2xl px-2 text-center text-base font-black transition ${selected ? "bg-red-500 text-black shadow-lg shadow-red-500/20" : "bg-white/[0.03] text-zinc-500 hover:bg-white/8"} disabled:opacity-0`}
             >
-              {option.label}
+              {option?.label || ""}
             </button>;
           })}
         </div>
@@ -7573,6 +8120,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       dateKey: scheduler.dateKey,
       title: "Запланированная тренировка",
       status: "planned",
+      workoutType: scheduler.workoutType || "strength",
       durationMinutes: 0,
       calories: 0,
       exercises: [],
@@ -7584,12 +8132,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     if (!scheduler) return;
     const durationMinutes = Math.max(1, schedulerDurationMinutes(scheduler));
     const startedAt = buildWorkoutDateTimeIso(scheduler.dateKey, scheduler.hour, scheduler.minute);
-    const calories = estimateWorkoutCalories(durationMinutes * 60, { exercises: [] });
+    const workoutType = normalizeWorkoutType(scheduler.workoutType);
+    const calories = estimateWorkoutCalories(durationMinutes * 60, { workoutType, exercises: [] });
     setRepeatScheduler(null);
     await addWorkoutForDate({
       dateKey: scheduler.dateKey,
       title: "Выполненная тренировка",
       status: "completed",
+      workoutType,
       durationMinutes,
       totalVolumeKg: 0,
       calories,
@@ -7623,6 +8173,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const mode = options.mode || "now";
     const targetDateKey = mode === "now" ? formatDateKey(new Date()) : (options.dateKey || selectedDateKey);
     const status = mode === "planned" ? "planned" : mode === "completed" ? "completed" : "active";
+    const workoutType = normalizeWorkoutType(workout?.workoutType);
     const startedAt = mode === "now"
       ? new Date().toISOString()
       : buildWorkoutDateTimeIso(targetDateKey, options.hour, options.minute);
@@ -7630,7 +8181,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       ? Math.max(1, clampDurationMinutes(safeWorkoutNumber(options.durationMinutes, workout.durationMinutes || 60)))
       : 0;
     const repeatedExercises = cloneExercisesForRepeat(workout.exercises || [], mode === "completed");
-    const estimatedCalories = mode === "completed" ? estimateWorkoutCalories(durationMinutes * 60, { exercises: repeatedExercises }) : 0;
+    const estimatedCalories = mode === "completed" ? estimateWorkoutCalories(durationMinutes * 60, { workoutType, exercises: repeatedExercises }) : 0;
     const repeatedTotals = recalculateWorkoutTotals({ exercises: repeatedExercises });
     const copy = makeWorkout(targetDateKey, {
       title: workout.title,
@@ -7639,6 +8190,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       totalVolumeKg: mode === "completed" ? repeatedTotals.totalVolume : 0,
       calories: estimatedCalories,
       estimatedCaloriesBurned: estimatedCalories,
+      workoutType,
       status,
       startedAt,
       exercises: repeatedExercises,
@@ -7678,6 +8230,32 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       setRestTimer(null);
       restAdvanceRef.current = null;
     }
+  };
+
+  const createWorkoutFromTypePicker = async (workoutType) => {
+    const type = normalizeWorkoutType(workoutType);
+    const mode = workoutTypePicker?.mode;
+    setWorkoutTypePicker(null);
+    if (mode === "planned") {
+      openPlanWorkoutScheduler(type);
+      return;
+    }
+    if (mode === "completed") {
+      openCompletedWorkoutScheduler(type);
+      return;
+    }
+    const meta = getWorkoutTypeMeta(type);
+    await addWorkoutForDate({
+      title: type === "strength" ? "Пустая тренировка" : meta.title,
+      status: "active",
+      workoutType: type,
+      durationMinutes: 0,
+      totalVolumeKg: 0,
+      calories: 0,
+      estimatedCaloriesBurned: 0,
+      exercises: [],
+      startedAt: new Date().toISOString(),
+    });
   };
 
   const saveCompletedWorkoutInBackground = async (workout, patch = buildWorkoutTreePatch(workout)) => {
@@ -7783,6 +8361,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const openExerciseBase = (mode = "view") => {
     setExerciseBaseMode(mode);
     if (mode === "add") setPendingExerciseAdds([]);
+    setSelectedExerciseGroup("Все");
     setIsExerciseBaseOpen(true);
   };
 
@@ -7801,6 +8380,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   useAppBackLayer("workouts-exercise-stats", Boolean(exerciseStatsSheet), () => setExerciseStatsSheet(null), 184);
   useAppBackLayer("workouts-exercise-notes", Boolean(exerciseNotesSheet), () => setExerciseNotesSheet(null), 183);
   useAppBackLayer("workouts-exercise-measurement", Boolean(exerciseMeasurementSheet), () => setExerciseMeasurementSheet(null), 182);
+  useAppBackLayer("workouts-non-strength-editor", Boolean(nonStrengthActivityEditor), () => setNonStrengthActivityEditor(null), 182);
+  useAppBackLayer("workouts-custom-exercise", Boolean(customExerciseSheet), () => setCustomExerciseSheet(null), 181);
   useAppBackLayer("workouts-superset-cancel", Boolean(supersetCancelPrompt), () => setSupersetCancelPrompt(null), 181);
   useAppBackLayer("workouts-rest-menu", restMenuOpen, () => setRestMenuOpen(false), 180);
   useAppBackLayer("workouts-custom-set-keyboard", Boolean(activeSetInput), closeCustomSetKeyboard, 179);
@@ -7815,6 +8396,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   useAppBackLayer("workouts-week-menu", Boolean(weekMenuGroup), () => setWeekMenuGroup(null), 155);
   useAppBackLayer("workouts-week-stats", weekStatsOpen, () => setWeekStatsOpen(false), 150);
   useAppBackLayer("workouts-templates", isTemplatesOpen, () => setIsTemplatesOpen(false), 145);
+  useAppBackLayer("workouts-type-picker", Boolean(workoutTypePicker), () => setWorkoutTypePicker(null), 142);
   useAppBackLayer("workouts-add-menu", isAddMenuOpen, () => setIsAddMenuOpen(false), 140);
   useAppBackLayer("workouts-edit-mode", Boolean(selectedWorkout && isEditingWorkout), () => setIsEditingWorkout(false), 90);
   useAppBackLayer("workouts-exercise-screen", Boolean(selectedWorkout && workoutViewMode === "exercise"), () => { setWorkoutViewMode("overview"); setOpenMenu(null); }, 85);
@@ -7830,17 +8412,45 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const [exerciseSearch, setExerciseSearch] = useState("");
   const [selectedExerciseGroup, setSelectedExerciseGroup] = useState("Все");
-  const exerciseGroups = ["Все", ...Object.keys(exerciseLibrary)];
+  const exercisePickerWorkoutType = normalizeWorkoutType(selectedWorkout?.workoutType);
+  const availableExerciseItems = useMemo(() => {
+    const normalizedCustom = customExercises.map(mapExerciseLibraryRow);
+    const items = [...systemExerciseLibraryItems, ...normalizedCustom].map(normalizeExerciseSourceItem);
+    const seen = new Set();
+    return items
+      .filter(item => {
+        const category = normalizeExerciseCategory(item.exerciseCategory);
+        if (selectedWorkout && (exerciseBaseMode === "add" || exerciseBaseMode === "replace")) {
+          if (exercisePickerWorkoutType === "strength") return category === "strength" || category === "cardio";
+          return category === exercisePickerWorkoutType;
+        }
+        return true;
+      })
+      .filter(item => {
+        const key = `${item.exerciseCategory}-${item.name}-${item.sourceExerciseId || ""}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }, [customExercises, selectedWorkout?.workoutType, exerciseBaseMode]);
+  const exerciseGroups = useMemo(() => {
+    const groups = availableExerciseItems.map(item => item.group || item.muscleGroup || exerciseCategoryLabels[item.exerciseCategory] || "Другое");
+    return ["Все", ...Array.from(new Set(groups))];
+  }, [availableExerciseItems]);
   const filteredExerciseGroups = useMemo(() => {
     const query = exerciseSearch.trim().toLowerCase();
-    return Object.entries(exerciseLibrary)
-      .filter(([group]) => selectedExerciseGroup === "Все" || group === selectedExerciseGroup)
-      .map(([group, exercises]) => ({
+    return exerciseGroups
+      .filter(group => group !== "Все")
+      .filter(group => selectedExerciseGroup === "Все" || group === selectedExerciseGroup)
+      .map(group => ({
         group,
-        exercises: exercises.filter(exercise => !query || exercise.toLowerCase().includes(query)),
+        exercises: availableExerciseItems.filter(exercise => {
+          const exerciseGroup = exercise.group || exercise.muscleGroup || exerciseCategoryLabels[exercise.exerciseCategory] || "Другое";
+          return exerciseGroup === group && (!query || exercise.name.toLowerCase().includes(query));
+        }),
       }))
       .filter(section => section.exercises.length);
-  }, [exerciseSearch, selectedExerciseGroup]);
+  }, [exerciseSearch, selectedExerciseGroup, exerciseGroups, availableExerciseItems]);
 
   const WorkoutCard = ({ workout }) => {
     const pointerTimerRef = useRef(null);
@@ -7944,8 +8554,25 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
 
 
-  const replaceActiveExercise = (name, muscleGroup) => {
-    updateActiveExercise({ name, muscleGroup });
+  const replaceActiveExercise = (name, muscleGroup, sourceItem = {}) => {
+    const source = normalizeExerciseSourceItem({ ...sourceItem, name, muscleGroup });
+    updateActiveExercise({
+      name: source.name,
+      muscleGroup: source.muscleGroup,
+      sourceExerciseId: source.sourceExerciseId,
+      exerciseCategory: source.exerciseCategory,
+      primaryMuscles: source.primaryMuscles,
+      secondaryMuscles: source.secondaryMuscles,
+      measurementMode: source.measurementMode,
+      distanceUnit: source.distanceUnit,
+      countsInMuscleStats: source.countsInMuscleStats,
+      measureWeightEnabled: source.measureWeightEnabled,
+      measureRepsEnabled: source.measureRepsEnabled,
+      measureTimeEnabled: source.measureTimeEnabled,
+      measureDistanceEnabled: source.measureDistanceEnabled,
+      weightUnit: source.weightUnit,
+      doubleWeightInStats: source.doubleWeightInStats,
+    });
     setIsExerciseBaseOpen(false);
   };
 
@@ -7972,6 +8599,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             className="onlypump-search-input w-full bg-transparent text-base outline-none placeholder:text-zinc-600"
           />
         </div>
+        <button
+          type="button"
+          onClick={() => openCustomExerciseEditor()}
+          className="mt-3 flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-black transition active:scale-[0.98] hover:bg-white/[0.07]"
+        >
+          <span>Создать своё упражнение</span>
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-black">+</span>
+        </button>
 
         <div className="mt-4 flex gap-2 overflow-x-auto pb-2 onlypump-scrollbar-none">
           {exerciseGroups.map(group => <button
@@ -7988,20 +8623,23 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             <h3 className="text-sm font-bold uppercase tracking-[0.16em] text-zinc-500">{section.group}</h3>
             <div className="mt-3 space-y-2">
               {section.exercises.map(exercise => {
-                const key = exercisePickerKey(exercise, section.group);
+                const key = exercisePickerKey(exercise);
                 const selected = pendingExerciseAdds.some(item => item.key === key);
                 return <button
-                  key={`${section.group}-${exercise}`}
+                  key={`${section.group}-${exercise.name}-${exercise.id || exercise.sourceExerciseId || ""}`}
                   onClick={() => {
                     if (exerciseBaseMode === "add") {
-                      togglePendingExerciseAdd(exercise, section.group);
+                      togglePendingExerciseAdd(exercise);
                       return;
                     }
-                    if (exerciseBaseMode === "replace") replaceActiveExercise(exercise, section.group);
+                    if (exerciseBaseMode === "replace") replaceActiveExercise(exercise.name, exercise.muscleGroup, exercise);
                   }}
                   className={`flex w-full items-center justify-between rounded-2xl p-4 text-left font-semibold transition active:scale-[0.98] ${selected ? 'bg-red-500/15 text-white ring-1 ring-red-500/40' : 'bg-black/30 hover:bg-white/[0.06]'}`}
                 >
-                  <span>{exercise}</span>
+                  <span>
+                    <span className="block">{exercise.name}</span>
+                    <span className="mt-1 block text-xs font-semibold text-zinc-500">{exercise.isCustom ? "своё · " : ""}{measurementModeById[exercise.measurementMode]?.label || "измерение"} · {exerciseCategoryLabels[exercise.exerciseCategory] || exercise.muscleGroup}</span>
+                  </span>
                   <span className={`flex h-8 w-8 items-center justify-center rounded-full ${selected ? 'bg-red-500 text-black' : 'bg-white/8 text-red-400'}`}>{exerciseBaseMode === "add" ? selected ? "✓" : "+" : exerciseBaseMode === "replace" ? "↔" : ""}</span>
                 </button>;
               })}
@@ -8030,6 +8668,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const totalSets = exercises.flatMap(exercise => exercise.sets || []).length;
     const completedSets = exercises.flatMap(exercise => exercise.sets || []).filter(set => getSetStatus(set) === "completed").length;
     const totalVolume = getWorkoutVolume({ exercises });
+    const workoutType = normalizeWorkoutType(selectedWorkout.workoutType);
+    const workoutTypeMeta = getWorkoutTypeMeta(workoutType);
+    const isStrengthWorkout = workoutType === "strength";
+    const nonStrengthMetrics = getNonStrengthWorkoutMetrics(selectedWorkout);
     const workoutIsActive = selectedWorkout.status === "active";
     const workoutIsPlanned = selectedWorkout.status === "planned";
     const workoutReachedTimeLimit = workoutIsActive && elapsedWorkoutTime >= MAX_ACTIVE_WORKOUT_SECONDS;
@@ -8044,6 +8686,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
     const openExerciseFromOverview = (exerciseIndex) => {
       const exercise = exercises[exerciseIndex];
+      if (!isStrengthWorkout) {
+        openNonStrengthActivityEditor(exercise);
+        return;
+      }
       setActiveExerciseIndex(exerciseIndex);
       setActiveSetId(getFirstActiveSetId(exercise));
       setWorkoutViewMode("exercise");
@@ -8072,36 +8718,40 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
               className="w-full rounded-2xl bg-white/[0.08] px-4 py-3 text-[34px] font-black leading-none tracking-[-0.07em] text-white outline-none"
             /> : <h2 className="break-words text-[36px] font-black leading-none tracking-[-0.07em] text-white">{selectedWorkout.title}</h2>}
             <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-zinc-400">
-              <span className="rounded-full bg-white/[0.08] px-3 py-2">{completedSets}/{totalSets} подходов</span>
+              <span className="rounded-full bg-white/[0.08] px-3 py-2" style={{ color: workoutTypeMeta.color }}>{workoutTypeMeta.label}</span>
+              <span className="rounded-full bg-white/[0.08] px-3 py-2">{isStrengthWorkout ? `${completedSets}/${totalSets} подходов` : `${exercises.length} записей`}</span>
             </div>
           </div>
 
           <div className="mt-7 grid grid-cols-3 gap-2 text-center">
             <div className={`rounded-2xl px-3 py-4 ${workoutIsActive ? "bg-red-500 text-black" : "bg-black/32"}`}>
               <div className={`text-[10px] font-bold uppercase tracking-[0.16em] ${workoutIsActive ? "text-black/55" : "text-zinc-500"}`}>Время</div>
-              <div className="mt-2 text-xl font-black">{workoutIsActive ? formatSecondsTimer(elapsedWorkoutTime) : formatDuration(selectedWorkout.durationMinutes || Math.round(elapsedWorkoutTime / 60))}</div>
+              <div className="mt-2 text-xl font-black">{workoutIsActive ? formatSecondsTimer(elapsedWorkoutTime) : formatDuration((isStrengthWorkout ? selectedWorkout.durationMinutes : nonStrengthMetrics.durationMinutes) || Math.round(elapsedWorkoutTime / 60))}</div>
             </div>
             <div className="rounded-2xl bg-black/32 px-3 py-4">
-              <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Объем</div>
-              <div className="mt-2 text-xl font-black">{formatVolumeNumber(totalVolume)}</div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">{isStrengthWorkout ? "Объем" : "Дистанц."}</div>
+              <div className="mt-2 text-xl font-black">{isStrengthWorkout ? formatVolumeNumber(totalVolume) : `${Math.round(nonStrengthMetrics.distance * 10) / 10}`}</div>
             </div>
             <div className="rounded-2xl bg-black/32 px-3 py-4">
               <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Калории</div>
-              <div className="mt-2 text-xl font-black">{selectedWorkout.calories || 0}</div>
+              <div className="mt-2 text-xl font-black">{isStrengthWorkout ? selectedWorkout.calories || 0 : nonStrengthMetrics.calories || selectedWorkout.calories || 0}</div>
             </div>
           </div>
           {workoutReachedTimeLimit && <div className="mt-3 rounded-2xl border border-red-500/30 bg-red-500/12 px-4 py-3 text-xs font-bold leading-5 text-red-200">
             Таймер остановлен на 24:00:00. Заверши тренировку вручную, когда будешь готов.
           </div>}
 
-          <VolumeLoadBar
+          {isStrengthWorkout ? <VolumeLoadBar
             count={totalSets}
             title="Объем тренировки"
             subtitle="подходов"
             experiencedAt={volumeStandards.workoutTotal}
             onClick={() => setMuscleStatsOpen(true)}
             className="mt-4 bg-black/28"
-          />
+          /> : <div className="mt-4 rounded-[24px] bg-black/28 p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">Активности</p>
+            <h3 className="mt-1 text-lg font-black tracking-[-0.03em]">{exercises.length} записей · {nonStrengthMetrics.calories} ккал</h3>
+          </div>}
         </div>
 
         <div className="px-5 pt-6">
@@ -8116,7 +8766,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           <div className="overflow-hidden rounded-[28px] border border-white/10 bg-zinc-950/80">
             {exercises.length ? exercises.map((exercise, index) => {
               const exerciseUnit = getExerciseWeightUnit(exercise);
-              const setMetrics = (exercise.sets || []).length
+              const activitySet = getActivitySet(exercise);
+              const activityDuration = getActivityDurationSeconds(exercise);
+              const activityDistance = getActivityDistance(exercise);
+              const activityCalories = estimateActivityCalories(exercise, activitySet);
+              const setMetrics = !isStrengthWorkout
+                ? `${formatSecondsTimer(activityDuration)}${activityDistance ? ` · ${activityDistance} ${distanceUnitLabels[exercise.distanceUnit] || "км"}` : ""} · ${activityCalories} ккал`
+                : (exercise.sets || []).length
                 ? (exercise.sets || []).map(set => `${formatWorkoutInputNumber(getDisplayWeight(set.weight || 0, exercise))} ${exerciseUnit === "lb" ? "lb" : "кг"} × ${Number(set.reps || 0)}`).join(', ')
                 : 'подходы не добавлены';
               const exerciseCompletion = getExerciseCompletion(exercise);
@@ -8144,7 +8800,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                   <h4 className="break-words text-[21px] font-black leading-tight tracking-[-0.04em]">{exercise.name}</h4>
                   <p className="mt-1 text-xs font-semibold text-red-400">{exercise.muscleGroup}</p>
                   <p className="mt-2 break-words text-sm leading-6 text-zinc-500">{setMetrics}</p>
-                  <p className="mt-1 text-xs text-zinc-600">Отдых между: {formatSecondsTimer(exercise.restSeconds || 120)} · после: {exercise.restAfterSeconds ? formatSecondsTimer(exercise.restAfterSeconds) : "не задан"}</p>
+                  {isStrengthWorkout && <p className="mt-1 text-xs text-zinc-600">Отдых между: {formatSecondsTimer(exercise.restSeconds || 120)} · после: {exercise.restAfterSeconds ? formatSecondsTimer(exercise.restAfterSeconds) : "не задан"}</p>}
                 </div>
                 <button
                   type="button"
@@ -8308,6 +8964,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       const showWeightField = Boolean(measurementSettings.measureWeightEnabled);
       const showRepsField = Boolean(measurementSettings.measureRepsEnabled);
       const showTimeField = Boolean(measurementSettings.measureTimeEnabled);
+      const showDistanceField = Boolean(measurementSettings.measureDistanceEnabled);
       const showRirField = Boolean(measurementSettings.measureRirEnabled);
       const showRpeField = Boolean(measurementSettings.measureRpeEnabled);
       const weightUnitLabel = measurementSettings.weightUnit === "lb" ? "lb" : "кг";
@@ -8401,7 +9058,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                     { label: "delete", icon: "🗑", className: "bg-red-500", onClick: () => removeSetFromActiveExercise(set.id) },
                   ]}>
                     <div onClick={() => setActiveSetId(set.id)} className={`px-3 py-4 transition ${status === 'completed' ? 'bg-emerald-500/10' : active ? 'bg-red-500/10' : 'hover:bg-white/[0.03]'}`}>
-                      <div className={`grid items-center gap-2 ${(showWeightField && (showRepsField || showTimeField)) ? 'grid-cols-[48px_1fr_34px_1fr]' : 'grid-cols-[48px_1fr]'}`}>
+                      <div className={`grid items-center gap-2 ${(showWeightField && (showRepsField || showTimeField || showDistanceField)) ? 'grid-cols-[48px_1fr_34px_1fr]' : 'grid-cols-[48px_1fr]'}`}>
                         <button onClick={(e) => { e.stopPropagation(); openSetMenu(e, set); }} className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-black transition ${status === 'completed' ? 'bg-emerald-500 text-black' : status === 'skipped' ? 'bg-zinc-700 text-zinc-400' : active ? 'bg-white text-black' : 'bg-white/[0.08] text-zinc-300'}`}>
                           {status === "completed" ? "✓" : (set.order || setIndex + 1)}
                         </button>
@@ -8417,7 +9074,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                           <span className="ml-1 text-xs text-zinc-500">{weightUnitLabel}</span>
                         </button>}
 
-                        {showWeightField && (showRepsField || showTimeField) && <div className="text-center text-xl font-black text-zinc-600">×</div>}
+                        {showWeightField && (showRepsField || showTimeField || showDistanceField) && <div className="text-center text-xl font-black text-zinc-600">×</div>}
 
                         {showRepsField && <button
                           type="button"
@@ -8440,6 +9097,18 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
                             className="w-full bg-transparent text-right text-lg font-black outline-none"
                           />
                           <span className="ml-1 text-xs text-zinc-500">сек</span>
+                        </label>}
+
+                        {showDistanceField && <label onClick={(e) => e.stopPropagation()} className="flex h-11 items-center rounded-2xl bg-white/[0.04] px-3">
+                          <input
+                            type="number"
+                            value={getSetDraftValue(set, "distanceValue", currentExercise)}
+                            onChange={(e) => updateSetDraft(set.id, "distanceValue", e.target.value)}
+                            onBlur={() => commitSetDraft(selectedWorkout.id, currentExercise.id, set.id, "distanceValue")}
+                            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                            className="w-full bg-transparent text-right text-lg font-black outline-none"
+                          />
+                          <span className="ml-1 text-xs text-zinc-500">{distanceUnitLabels[measurementSettings.distanceUnit] || "км"}</span>
                         </label>}
                       </div>
 
@@ -8573,7 +9242,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       </div>;
     };
 
-    return workoutViewMode === "exercise" ? ActiveExerciseScreen() : WorkoutOverviewScreen();
+    return isStrengthWorkout && workoutViewMode === "exercise" ? ActiveExerciseScreen() : WorkoutOverviewScreen();
   };
 
   return <>
@@ -8606,6 +9275,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           </div>
         </SecondaryContent>}
         {activeTab === "exercises" && <SecondaryContent title="Упражнения" description="Полная база упражнений: поиск по названию и сортировка по мышечным группам.">
+          <button
+            type="button"
+            onClick={() => openCustomExerciseEditor()}
+            className="mt-5 flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left font-black transition active:scale-[0.98] hover:bg-white/[0.07]"
+          >
+            <span>Создать своё упражнение</span>
+            <Plus size={18} className="text-red-400" />
+          </button>
           <div className="onlypump-search-shell mt-6 rounded-2xl p-3">
             <input
               value={exerciseSearch}
@@ -8627,8 +9304,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             {filteredExerciseGroups.length ? filteredExerciseGroups.map(section => <div key={section.group}>
               <h3 className="text-sm font-bold uppercase tracking-[0.16em] text-zinc-500">{section.group}</h3>
               <div className="mt-3 space-y-2">
-                {section.exercises.map(exercise => <button key={`${section.group}-${exercise}`} className="flex w-full items-center justify-between rounded-2xl bg-black/25 p-4 text-left font-semibold transition active:scale-[0.98] hover:bg-white/[0.06]">
-                  <span>{exercise}</span>
+                {section.exercises.map(exercise => <button key={`${section.group}-${exercise.name}-${exercise.id || exercise.sourceExerciseId || ""}`} onClick={() => exercise.isCustom && openCustomExerciseEditor(exercise)} className="flex w-full items-center justify-between rounded-2xl bg-black/25 p-4 text-left font-semibold transition active:scale-[0.98] hover:bg-white/[0.06]">
+                  <span>
+                    <span className="block">{exercise.name}</span>
+                    <span className="mt-1 block text-xs font-semibold text-zinc-500">{exercise.isCustom ? "своё · " : ""}{measurementModeById[exercise.measurementMode]?.label || "измерение"}</span>
+                  </span>
                   <Plus size={17} className="text-red-400" />
                 </button>)}
               </div>
@@ -8661,9 +9341,36 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <h2 className="text-xl font-black tracking-[-0.03em]">Добавить на {formatDayMonth(selectedDate)}</h2>
         <div className="mt-5 space-y-2">
-          <button onClick={() => addWorkoutForDate({ title: "Пустая тренировка", status: "active", durationMinutes: 0, totalVolumeKg: 0, calories: 0, estimatedCaloriesBurned: 0, exercises: [], startedAt: new Date().toISOString() })} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Начать пустую тренировку</button>
-          <button onClick={openPlanWorkoutScheduler} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить запланированную</button>
-          <button onClick={openCompletedWorkoutScheduler} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить выполненную</button>
+          <button onClick={() => openWorkoutTypePicker("active")} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Начать пустую тренировку</button>
+          <button onClick={() => openWorkoutTypePicker("planned")} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить запланированную</button>
+          <button onClick={() => openWorkoutTypePicker("completed")} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить выполненную</button>
+        </div>
+      </BottomSheetPanel>
+    </div>}
+
+    {workoutTypePicker && <div onClick={() => setWorkoutTypePicker(null)} className="onlypump-modal-layer fixed inset-0 z-[151] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+      <BottomSheetPanel onClose={() => setWorkoutTypePicker(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/92 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Тип тренировки</p>
+            <h2 className="mt-2 text-xl font-black tracking-[-0.03em]">Что добавляем?</h2>
+          </div>
+          <button onClick={() => setWorkoutTypePicker(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+        </div>
+        <div className="mt-5 grid grid-cols-1 gap-2">
+          {workoutTypeDefinitions.map(type => <button
+            key={type.id}
+            type="button"
+            onClick={() => createWorkoutFromTypePicker(type.id)}
+            className="flex items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left transition active:scale-[0.98] hover:bg-white/[0.07]"
+          >
+            <span>
+              <span className="block text-[17px] font-black">{type.label}</span>
+              <span className="mt-1 block text-xs font-semibold text-zinc-500">{type.id === "strength" ? "подходы, вес, повторы" : "время, дистанция и калории"}</span>
+            </span>
+            <span className="h-3 w-3 rounded-full" style={{ backgroundColor: type.color }} />
+          </button>)}
         </div>
       </BottomSheetPanel>
     </div>}
@@ -8901,6 +9608,109 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
     {isExerciseBaseOpen && ExerciseBaseSheet()}
 
+    {customExerciseSheet && <div onClick={() => setCustomExerciseSheet(null)} className="onlypump-modal-layer fixed inset-0 z-[207] flex items-end bg-black/55 p-3 backdrop-blur-sm">
+      <BottomSheetPanel onClose={() => setCustomExerciseSheet(null)} onClick={(e) => e.stopPropagation()} className="mx-auto flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-[430px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+        <div className="flex items-start justify-between gap-3">
+          <button onClick={() => setCustomExerciseSheet(null)} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отменить</button>
+          <div className="min-w-0 text-center">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Своя база</p>
+            <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">{customExerciseSheet.id ? "Упражнение" : "Новое упражнение"}</h2>
+          </div>
+          <button onClick={() => setCustomExerciseSheet(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+        </div>
+
+        <div className="onlypump-sheet-list mt-5 flex-1 space-y-4 overflow-y-auto pr-1 onlypump-scrollbar-none">
+          <label className="block">
+            <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название</span>
+            <input value={customExerciseSheet.name} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, name: e.target.value }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-base font-semibold outline-none ring-1 ring-white/10 focus:ring-red-500/60" placeholder="Например: подъём на платформу" />
+          </label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Тип</span>
+              <select value={customExerciseSheet.exerciseCategory} onChange={(e) => {
+                const category = normalizeExerciseCategory(e.target.value);
+                setCustomExerciseSheet(prev => ({
+                  ...prev,
+                  exerciseCategory: category,
+                  measurementMode: normalizeMeasurementMode(prev.measurementMode, category === "strength" ? "weight_reps" : "time"),
+                  countsInMuscleStats: category === "strength",
+                  primaryMuscles: category === "strength" ? (prev.primaryMuscles?.length ? prev.primaryMuscles : ["Грудь"]) : [],
+                }));
+              }} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">
+                {workoutTypeDefinitions.map(type => <option key={type.id} value={type.id}>{type.label}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Измерение</span>
+              <select value={customExerciseSheet.measurementMode} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, measurementMode: normalizeMeasurementMode(e.target.value) }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">
+                {workoutMeasurementModes.map(mode => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Основная группа</span>
+              <select disabled={customExerciseSheet.exerciseCategory !== "strength"} value={customExerciseSheet.primaryMuscles?.[0] || ""} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, primaryMuscles: e.target.value ? [e.target.value] : [] }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10 disabled:text-zinc-600">
+                <option value="">Без группы</option>
+                {standardMuscleGroups.map(group => <option key={group} value={group}>{group}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Дистанция</span>
+              <select value={customExerciseSheet.distanceUnit} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, distanceUnit: normalizeDistanceUnit(e.target.value) }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">
+                {Object.entries(distanceUnitLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <button type="button" onClick={() => setCustomExerciseSheet(prev => ({ ...prev, countsInMuscleStats: !prev.countsInMuscleStats }))} className={`flex w-full items-center justify-between rounded-2xl px-4 py-4 text-left font-semibold ${customExerciseSheet.countsInMuscleStats ? "bg-red-500/15 text-red-200 ring-1 ring-red-500/30" : "bg-black/30 text-zinc-500"}`}>
+            <span>Учитывать в силовой статистике</span>
+            <span>{customExerciseSheet.countsInMuscleStats ? "✓" : ""}</span>
+          </button>
+        </div>
+
+        <div className="mt-5 pb-[var(--onlypump-safe-bottom)]">
+          <button onClick={saveCustomExercise} className="h-12 w-full rounded-full bg-red-500 font-black text-black">Сохранить упражнение</button>
+        </div>
+      </BottomSheetPanel>
+    </div>}
+
+    {nonStrengthActivityEditor && <div onClick={() => setNonStrengthActivityEditor(null)} className="onlypump-modal-layer fixed inset-0 z-[207] flex items-end bg-black/55 p-3 backdrop-blur-sm">
+      <BottomSheetPanel onClose={() => setNonStrengthActivityEditor(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+        <div className="flex items-start justify-between gap-3">
+          <button onClick={() => setNonStrengthActivityEditor(null)} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отменить</button>
+          <div className="min-w-0 text-center">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Запись</p>
+            <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{nonStrengthActivityEditor.title}</h2>
+          </div>
+          <button onClick={() => setNonStrengthActivityEditor(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-4">
+          <label className="block">
+            <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Длительность, минут</span>
+            <input inputMode="numeric" value={nonStrengthActivityEditor.durationMinutes} onChange={(e) => setNonStrengthActivityEditor(prev => ({ ...prev, durationMinutes: e.target.value.replace(/[^\d]/g, "") }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-base font-semibold outline-none ring-1 ring-white/10 focus:ring-red-500/60" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Дистанция</span>
+            <input inputMode="decimal" value={nonStrengthActivityEditor.distanceValue} onChange={(e) => setNonStrengthActivityEditor(prev => ({ ...prev, distanceValue: e.target.value.replace(/[^\d.]/g, "") }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-base font-semibold outline-none ring-1 ring-white/10 focus:ring-red-500/60" placeholder="0" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Калории вручную</span>
+            <input inputMode="numeric" value={nonStrengthActivityEditor.manualCalories} onChange={(e) => setNonStrengthActivityEditor(prev => ({ ...prev, manualCalories: e.target.value.replace(/[^\d]/g, "") }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-base font-semibold outline-none ring-1 ring-white/10 focus:ring-red-500/60" placeholder="авто" />
+          </label>
+        </div>
+
+        <div className="mt-5 pb-[var(--onlypump-safe-bottom)]">
+          <button onClick={saveNonStrengthActivityEditor} className="h-12 w-full rounded-full bg-red-500 font-black text-black">Сохранить запись</button>
+        </div>
+      </BottomSheetPanel>
+    </div>}
+
     {supersetCancelPrompt && <div onClick={() => setSupersetCancelPrompt(null)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/45 p-4 backdrop-blur-sm">
       <BottomSheetPanel onClose={() => setSupersetCancelPrompt(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
@@ -8923,19 +9733,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     {exerciseMeasurementSheet && (() => {
       const exercise = (selectedWorkout?.exercises || []).find(item => item.id === exerciseMeasurementSheet.exerciseId);
       const settings = normalizeExerciseMeasurementSettings(exerciseMeasurementSheet.draft || exercise || {});
-      const currentMode = settings.measureWeightEnabled && settings.measureRepsEnabled
-        ? "weight_reps"
-        : settings.measureWeightEnabled && settings.measureTimeEnabled
-          ? "weight_time"
-          : settings.measureRepsEnabled
-            ? "reps"
-            : "weight";
-      const modeItems = [
-        ["weight_reps", "Вес + повторы"],
-        ["weight_time", "Вес + время"],
-        ["reps", "Только повторы"],
-        ["weight", "Только вес"],
-      ];
+      const currentMode = settings.measurementMode;
+      const modeItems = workoutMeasurementModes.map(mode => [mode.id, mode.label]);
       return <div onClick={() => setExerciseMeasurementSheet(null)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/45 p-4 backdrop-blur-sm">
         <BottomSheetPanel onClose={() => setExerciseMeasurementSheet(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
           <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
@@ -8971,6 +9770,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           <div className="mt-5 rounded-[24px] bg-white/[0.04] p-2">
             <div className="grid grid-cols-2 gap-2">
               {["kg", "lb"].map(unit => <button key={unit} onClick={() => setExerciseWeightUnit(unit)} className={`h-11 rounded-2xl text-sm font-black uppercase transition ${settings.weightUnit === unit ? 'bg-white text-black' : 'text-zinc-500 hover:bg-white/8'}`}>{unit}</button>)}
+            </div>
+          </div>
+          <div className="mt-3 rounded-[24px] bg-white/[0.04] p-2">
+            <div className="grid grid-cols-3 gap-2">
+              {Object.entries(distanceUnitLabels).map(([unit, label]) => <button key={unit} onClick={() => updateExerciseMeasurementDraft({ distanceUnit: unit })} className={`h-11 rounded-2xl text-sm font-black uppercase transition ${settings.distanceUnit === unit ? 'bg-white text-black' : 'text-zinc-500 hover:bg-white/8'}`}>{label}</button>)}
             </div>
           </div>
           <button onClick={saveExerciseMeasurementSettings} className="mt-5 h-12 w-full rounded-full bg-red-500 font-black text-black">Сохранить</button>
@@ -10746,7 +11550,7 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
       ...exercise,
       workoutTitle: workout.title,
       workoutDate: workout.date,
-    })));
+    }))).filter(isStrengthStatsExerciseGlobal);
     const grouped = exercises.reduce((acc, exercise) => {
       const sets = exercise.sets || [];
       const bestSet = sets.reduce((best, set) => {
@@ -11403,6 +12207,26 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     return { recent: completedRecent, sets, volume, loadLevel };
   }, [workouts, selectedDateKey]);
 
+  const nonStrengthAnalytics = useMemo(() => {
+    const today = parseDateKeyLocal(selectedDateKey);
+    const start = addLocalDaysToDate(today, -6).getTime();
+    const rows = workoutTypeDefinitions
+      .filter(type => type.id !== "strength")
+      .map(type => ({ ...type, count: 0, durationMinutes: 0, distance: 0, calories: 0 }));
+    const byType = Object.fromEntries(rows.map(row => [row.id, row]));
+    workouts.filter(workout => workout.status === "completed" && parseDateKeyLocal(workout.date).getTime() >= start).forEach(workout => {
+      const workoutType = normalizeWorkoutType(workout.workoutType);
+      if (workoutType === "strength") return;
+      const bucket = byType[workoutType];
+      if (!bucket) return;
+      bucket.count += 1;
+      bucket.durationMinutes += safeWorkoutNumber(workout.durationMinutes, 0);
+      bucket.distance += (workout.exercises || []).reduce((sum, exercise) => sum + safeWorkoutNumber((exercise.sets || [])[0]?.distanceValue ?? (exercise.sets || [])[0]?.distance_value, 0), 0);
+      bucket.calories += safeWorkoutNumber(workout.calories ?? workout.estimatedCaloriesBurned, 0);
+    });
+    return rows;
+  }, [workouts, selectedDateKey]);
+
   const latestMeasurement = analyticsData.measurements?.length ? analyticsData.measurements[analyticsData.measurements.length - 1] : {};
   const openEditorForDetail = (metricKey) => {
     if (!detail?.type) return;
@@ -11441,6 +12265,24 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
         <div className="mt-2 break-words text-4xl">{value}</div>
         <p className="mt-3 text-sm text-zinc-400">{sub}</p>
       </Card>)}
+      <Card className="p-5 xl:col-span-2">
+        <h2 className="text-xl font-semibold">Активности</h2>
+        <p className="mt-2 text-sm text-zinc-500">Кардио, йога, пилатес и растяжка за последние 7 дней.</p>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          {nonStrengthAnalytics.map(item => <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-semibold">{item.label}</span>
+              <span className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
+            </div>
+            <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
+              <div><b className="block text-base">{item.count}</b><span className="text-zinc-500">раз</span></div>
+              <div><b className="block text-base">{item.durationMinutes}</b><span className="text-zinc-500">мин</span></div>
+              <div><b className="block text-base">{Math.round(item.distance * 10) / 10}</b><span className="text-zinc-500">дист.</span></div>
+              <div><b className="block text-base">{Math.round(item.calories)}</b><span className="text-zinc-500">ккал</span></div>
+            </div>
+          </div>)}
+        </div>
+      </Card>
       <Card className="p-5 xl:col-span-2"><h2 className="text-xl font-semibold">Вывод недели</h2><p className="mt-4 leading-7 text-zinc-300">За последние 7 дней: {weekAnalytics.recent.length} выполненных тренировок, {weekAnalytics.sets} подходов и {formatVolumeForProfile(weekAnalytics.volume || 0, profile)} тоннажа. Сон за выбранный день: {formatSleepDuration(currentHealthLog.sleep_duration_minutes)}.</p></Card>
     </PageGrid>
     {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} nutritionDays={analyticsData.nutrition_days} workouts={workouts} selectedDateKey={selectedDateKey} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onClose={() => setDetail(null)} onOpenEditor={detail.type === "training_load" ? null : openEditorForDetail}/>}
