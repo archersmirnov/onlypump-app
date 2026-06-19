@@ -3456,7 +3456,8 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
       {actions.map(action => <button
         key={action.label}
         type="button"
-        onClick={(event) => { event.stopPropagation(); setRowOffset(0); setSwipedId?.(null); action.onClick?.(); }}
+        onPointerDown={(event) => { event.stopPropagation(); }}
+        onClick={(event) => { event.preventDefault(); event.stopPropagation(); setRowOffset(0); setSwipedId?.(null); action.onClick?.(event); }}
         className={`flex h-full items-center justify-center text-lg font-black text-white ${action.className || 'bg-red-500'}`}
         style={{ width: actionWidth }}
         aria-label={action.label}
@@ -5590,6 +5591,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
   };
 
+  const setProgramPlanMode = (planMode) => {
+    updateProgramSettingsDraft(prev => ({ ...prev, planMode }));
+  };
+
   const getProgramProgressionTarget = (setting, sequenceIndex = 0, seed = {}) => {
     const repMin = Number(setting.repMin || 8);
     const repMax = Math.max(repMin, Number(setting.repMax || 12));
@@ -6020,6 +6025,17 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return;
     }
     setDeleteScopeSheet({ workout, mode: "single", step: "confirm" });
+  };
+
+  const handleDeleteWorkoutClick = (event, workoutOrId) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    const workout = resolveWorkoutForDelete(workoutOrId);
+    if (!workout?.id) {
+      console.warn("Delete workout clicked without workout id", workoutOrId);
+      return;
+    }
+    deleteWorkout(workout);
   };
 
   const applyWorkoutDeleteScope = async (scope = "only", range = "all") => {
@@ -9708,7 +9724,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
     return <SwipeActionRow rowId={workout.id} swipedId={swipedWorkoutId} setSwipedId={setSwipedWorkoutId} className="mb-4" actionWidth={74} actions={[
       { label: "repeat", icon: <Repeat2 size={22}/>, className: "bg-zinc-700", onClick: () => openRepeatSheet(workout) },
-      { label: "delete", icon: "🗑", className: "bg-red-500", onClick: () => deleteWorkout(workout) },
+      { label: "delete", icon: "🗑", className: "bg-red-500", onClick: (event) => handleDeleteWorkoutClick(event, workout) },
     ]}>
       <button
         type="button"
@@ -10151,7 +10167,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             <button onClick={() => { setIsEditingWorkout(true); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Редактировать тренировку</button>
             <button onClick={() => setDetailMenuOpen(false)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Поделиться</button>
             {selectedWorkout.status === "active" && <button onClick={() => { finishActiveWorkout(); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Завершить</button>}
-            <button onClick={() => deleteWorkout(selectedWorkout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
+            <button type="button" onClick={(event) => handleDeleteWorkoutClick(event, selectedWorkout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           </div>
         </BottomSheetPanel>
       </div>}
@@ -10788,7 +10804,7 @@ const toggleExerciseMeasurementSetting = (field) => {
         </p>
         <div className="mt-5 space-y-2">
           <button onClick={() => completeWorkoutAsIs(workoutsRef.current.find(item => item.id === finishChoiceSheet.workoutId) || selectedWorkout)} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black transition active:scale-[0.98]">Завершить</button>
-          <button onClick={() => { const id = finishChoiceSheet.workoutId; setFinishChoiceSheet(null); deleteWorkout(id); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
+          <button type="button" onClick={(event) => { const id = finishChoiceSheet.workoutId; setFinishChoiceSheet(null); handleDeleteWorkoutClick(event, id); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           <button onClick={() => setFinishChoiceSheet(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
         </div>
       </BottomSheetPanel>
@@ -10970,11 +10986,23 @@ const toggleExerciseMeasurementSetting = (field) => {
 
 	            <div>
 	              <div className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Режим плана</div>
-	              <div className="mt-2 grid grid-cols-1 gap-2">
-	                {programPlanModeOptions.map(option => <button key={option.id} onClick={() => updateProgramSettingsDraft({ planMode: option.id })} className={`rounded-2xl px-4 py-3 text-left transition ${draft.planMode === option.id ? "bg-white text-black" : "bg-white/[0.05] text-zinc-300 hover:bg-white/10"}`}>
-	                  <span className="block font-black">{option.label}</span>
-	                  <span className={`mt-1 block text-xs ${draft.planMode === option.id ? "text-black/60" : "text-zinc-500"}`}>{option.subtitle}</span>
-	                </button>)}
+	              <div className="mt-2 grid grid-cols-1 gap-2" data-no-sheet-drag="true">
+	                {programPlanModeOptions.map(option => {
+	                  const active = draft.planMode === option.id;
+	                  return <button
+	                    key={option.id}
+	                    type="button"
+	                    onClick={(event) => { event.preventDefault(); event.stopPropagation(); setProgramPlanMode(option.id); }}
+	                    className={`rounded-2xl border px-4 py-3 text-left transition active:scale-[0.99] ${active ? "border-red-500 bg-red-500 text-black shadow-lg shadow-red-500/20" : "border-white/10 bg-white/[0.05] text-zinc-300 hover:border-red-500/40 hover:bg-white/10"}`}
+	                    aria-pressed={active}
+	                  >
+	                  <span className="flex items-center justify-between gap-3 font-black">
+	                    <span>{option.label}</span>
+	                    {active && <span className="rounded-full bg-black/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em]">выбрано</span>}
+	                  </span>
+	                  <span className={`mt-1 block text-xs ${active ? "text-black/70" : "text-zinc-500"}`}>{option.subtitle}</span>
+	                </button>;
+	                })}
 	              </div>
 	            </div>
 
@@ -11362,7 +11390,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             <button onClick={() => openRepeatSheet(weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Повторить тренировку</button>
             <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Перенести на другую дату</button>
             <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Превратить в программу</button>
-            <button onClick={() => deleteWorkout(weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
+            <button type="button" onClick={(event) => handleDeleteWorkoutClick(event, weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           </div>
         </>}
       </BottomSheetPanel>
