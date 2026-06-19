@@ -5330,6 +5330,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const workoutSwipeActionPressRef = useRef(null);
   const workoutSwipeActionTriggerRef = useRef({ key: "", time: 0 });
   const deleteScopeOpenedAtRef = useRef(0);
+  const repeatSheetOpenedAtRef = useRef(0);
   const pendingWorkoutPatchesRef = useRef({});
   const saveWorkoutTimersRef = useRef({});
   const [seenVersion, setSeenVersion] = useState(() => {
@@ -6088,7 +6089,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }
   };
 
-  const deleteWorkoutOnly = async (id) => {
+  const deleteWorkoutOnly = async (id, options = {}) => {
+    const restoreOnFailure = options.restoreOnFailure !== false;
     const workout = workoutsRef.current.find(item => item.id === id) || (selectedWorkout?.id === id ? selectedWorkout : null);
     console.log("Deleting workout:", workout);
     if (canUseWorkoutApi && workout?.supabaseId) {
@@ -6101,8 +6103,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       setDetailMenuOpen(false);
       const deleted = await deleteWorkoutViaApi(workout);
       if (!deleted) {
-        setWorkouts(previousWorkouts);
-        setSelectedWorkout(previousSelectedWorkout);
+        console.error("Workout delete was not confirmed by API:", { id: workout.id, supabaseId: workout.supabaseId, restoreOnFailure });
+        if (restoreOnFailure) {
+          setWorkouts(previousWorkouts);
+          setSelectedWorkout(previousSelectedWorkout);
+        }
       } else {
         await loadWorkoutsFromApi({ preserveSelected: false });
       }
@@ -6164,7 +6169,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     console.log("Swipe delete single workout triggered:", { id: workout.id, supabaseId: workout.supabaseId, title: workout.title });
     setSwipedWorkoutId(null);
     setDeleteScopeSheet(null);
-    deleteWorkoutOnly(workout.id);
+    deleteWorkoutOnly(workout.id, { restoreOnFailure: false });
   };
 
   const applyWorkoutDeleteScope = async (scope = "only", range = "all") => {
@@ -9134,6 +9139,7 @@ const toggleExerciseMeasurementSetting = (field) => {
   };
 
   const openRepeatSheet = (workout) => {
+    repeatSheetOpenedAtRef.current = Date.now();
     setRepeatSheetWorkout(workout);
     setDetailMenuOpen(false);
     setWeekMenuGroup(null);
@@ -9182,7 +9188,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       event?.preventDefault?.();
       event?.stopPropagation?.();
       if (hit.action === "delete") {
-        handleDeleteWorkoutClick(event, hit.workout);
+        handleDeleteSingleWorkoutNow(event, hit.workout);
       } else {
         setSwipedWorkoutId(null);
         openRepeatSheet(hit.workout);
@@ -10025,8 +10031,8 @@ const toggleExerciseMeasurementSetting = (field) => {
           aria-label="Повторить"
           className="flex h-full w-[74px] items-center justify-center bg-zinc-700 text-white"
           style={{ touchAction: "manipulation" }}
-          onPointerDown={(event) => triggerWorkoutSwipeButton(event, "repeat")}
-          onTouchStart={(event) => triggerWorkoutSwipeButton(event, "repeat")}
+          onPointerDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
           onPointerUp={(event) => triggerWorkoutSwipeButton(event, "repeat")}
           onTouchEnd={(event) => triggerWorkoutSwipeButton(event, "repeat")}
           onClick={(event) => triggerWorkoutSwipeButton(event, "repeat")}
@@ -11009,7 +11015,10 @@ const toggleExerciseMeasurementSetting = (field) => {
       </BottomSheetPanel>
     </div>}
 
-    {repeatSheetWorkout && <div onClick={() => setRepeatSheetWorkout(null)} className="onlypump-modal-layer fixed inset-0 z-[205] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+    {repeatSheetWorkout && <div onClick={() => {
+      if (Date.now() - repeatSheetOpenedAtRef.current < 650) return;
+      setRepeatSheetWorkout(null);
+    }} className="onlypump-modal-layer fixed inset-0 z-[205] flex items-end bg-black/45 p-4 backdrop-blur-sm">
       <BottomSheetPanel onClose={() => setRepeatSheetWorkout(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/92 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <div className="flex items-start justify-between gap-3">
