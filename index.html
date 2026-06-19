@@ -3085,6 +3085,12 @@ const writeCachedAnalyticsForProfile = (profile, type, metric, period, selectedD
   }
 };
 
+const normalizeAnalyticsRemotePayload = (data = {}) => ({
+  measurements: Array.isArray(data.measurements) ? data.measurements : [],
+  health_logs: Array.isArray(data.health_logs) ? data.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [],
+  nutrition_days: Array.isArray(data.nutrition_days) ? data.nutrition_days : [],
+});
+
 const nutritionDayHasFood = (day) => {
   const hasItems = (day?.meals || []).some(meal => (meal.items || []).length > 0);
   const hasManualEntry = Boolean(day?.manual_entry_enabled || day?.manualEntryEnabled);
@@ -13485,6 +13491,13 @@ const workoutCaloriesValue = (workout = {}) => safeWorkoutModelNumber(workout.ca
 const exerciseDistanceValue = (exercise = {}) => (exercise.sets || []).reduce((sum, set) => sum + safeWorkoutModelNumber(set.distanceValue ?? set.distance_value, 0), 0);
 const workoutDistanceValue = (workout = {}) => (workout.exercises || []).reduce((sum, exercise) => sum + exerciseDistanceValue(exercise), 0);
 const isCompletedWorkoutInRange = (workout, range) => normalizeWorkoutStatus(workout?.status) === "completed" && isDateKeyInRange(workoutDateKey(workout), range);
+const healthLogHasValue = (log = {}, key) => {
+  const value = Number(log?.[key] || 0);
+  return Number.isFinite(value) && value > 0;
+};
+const nutritionCaloriesValue = (day = {}) => safeWorkoutModelNumber(day?.totals?.calories ?? day?.calories_total ?? day?.caloriesTotal ?? day?.calories, 0);
+const nutritionDayHasAnalyticsData = (day = {}) => nutritionCaloriesValue(day) > 0 || nutritionDayHasFood(day);
+const measurementDateKey = (item = {}) => String(item.measurement_date || item.date || "").slice(0, 10);
 
 const averageDefined = (items = [], getter = item => item) => {
   const values = items.map(getter).map(Number).filter(value => Number.isFinite(value) && value > 0);
@@ -13492,21 +13505,38 @@ const averageDefined = (items = [], getter = item => item) => {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 };
 
-const buildAnalyticsStats = ({ workouts = [], healthLogs = [], healthLog = DEFAULT_HEALTH_LOG, nutritionDay = null, measurements = {}, profile = DEFAULT_PROFILE, selectedDateKey, period }) => {
+const buildAnalyticsStats = ({ workouts = [], healthLogs = [], healthLog = DEFAULT_HEALTH_LOG, nutritionDays = [], nutritionDay = null, measurements = {}, measurementRecords = [], profile = DEFAULT_PROFILE, selectedDateKey, period }) => {
   const range = analyticsPeriodRange(period, selectedDateKey);
   const completed = workouts.filter(workout => isCompletedWorkoutInRange(workout, range));
   const strengthWorkouts = completed.filter(workout => normalizeWorkoutType(workout.workoutType) === "strength");
   const activityWorkouts = completed.filter(workout => normalizeWorkoutType(workout.workoutType) !== "strength");
-  const healthRows = [...healthLogs, healthLog].filter(Boolean).map(log => normalizeHealthLog(log, log.log_date || log.date || selectedDateKey)).filter(log => isDateKeyInRange(log.log_date || log.date, range));
-  const nutritionRows = nutritionDay && isDateKeyInRange(nutritionDay.date || nutritionDay.nutrition_date, range) ? [nutritionDay] : [];
+  const healthByDate = new Map();
+  [...healthLogs, healthLog].filter(Boolean).forEach(log => {
+    const normalized = normalizeHealthLog(log, log.log_date || log.date || selectedDateKey);
+    const key = normalized.log_date || normalized.date;
+    if (key && isDateKeyInRange(key, range)) healthByDate.set(key, normalized);
+  });
+  const healthRows = Array.from(healthByDate.values()).sort((a, b) => String(a.log_date || a.date).localeCompare(String(b.log_date || b.date)));
+  const nutritionByDate = new Map();
+  [...nutritionDays, nutritionDay].filter(Boolean).forEach(day => {
+    const key = String(day.nutrition_date || day.date || "").slice(0, 10);
+    if (key && isDateKeyInRange(key, range) && nutritionDayHasAnalyticsData(day)) nutritionByDate.set(key, day);
+  });
+  const nutritionRows = Array.from(nutritionByDate.values()).sort((a, b) => String(a.nutrition_date || a.date).localeCompare(String(b.nutrition_date || b.date)));
+  const measurementRows = (measurementRecords || [])
+    .filter(item => measurementDateKey(item) && isDateKeyInRange(measurementDateKey(item), range))
+    .sort((a, b) => measurementDateKey(a).localeCompare(measurementDateKey(b)));
+  const latestMeasurement = measurementRows[measurementRows.length - 1] || {};
   const sets = strengthWorkouts.flatMap(getWorkoutSets).filter(set => getSetStatusGlobal(set) === "completed").length;
   const volume = strengthWorkouts.reduce((sum, workout) => sum + getWorkoutVolume(workout), 0);
-  const calories = nutritionRows.reduce((sum, day) => sum + safeWorkoutModelNumber(day?.totals?.calories ?? day?.calories_total, 0), 0);
-  const calorieAverage = period === "day" ? calories : calories / Math.max(1, nutritionRows.length || 0);
+  const calories = nutritionRows.reduce((sum, day) => sum + nutritionCaloriesValue(day), 0);
+  const calorieAverage = period === "day" ? calories : calories / Math.max(1, nutritionRows.length);
   const waterAverage = averageDefined(healthRows, log => log.water_ml);
   const stepsSum = healthRows.reduce((sum, log) => sum + safeWorkoutModelNumber(log.steps_count, 0), 0);
   const sleepAverage = averageDefined(healthRows, log => log.sleep_duration_minutes);
   const recoveryAverage = averageDefined(healthRows, log => log.recovery_score);
+  const weightValue = latestMeasurement.weight_kg || 0;
+  const waistValue = latestMeasurement.waist_cm || 0;
   return {
     range,
     completed,
@@ -13524,8 +13554,20 @@ const buildAnalyticsStats = ({ workouts = [], healthLogs = [], healthLog = DEFAU
     distance: activityWorkouts.reduce((sum, workout) => sum + workoutDistanceValue(workout), 0),
     activityCalories: activityWorkouts.reduce((sum, workout) => sum + workoutCaloriesValue(workout), 0),
     activityMinutes: activityWorkouts.reduce((sum, workout) => sum + workoutDurationMinutes(workout), 0),
-    weight: measurements?.weight || profile?.weight_kg || 0,
-    waist: measurements?.waist || profile?.waist_cm || 0,
+    weight: weightValue,
+    waist: waistValue,
+    dataCounts: {
+      measurements: measurementRows.length,
+      health: healthRows.length,
+      steps: healthRows.filter(log => healthLogHasValue(log, "steps_count")).length,
+      sleep: healthRows.filter(log => healthLogHasValue(log, "sleep_duration_minutes")).length,
+      water: healthRows.filter(log => healthLogHasValue(log, "water_ml")).length,
+      recovery: healthRows.filter(log => healthLogHasValue(log, "recovery_score")).length,
+      nutrition: nutritionRows.length,
+      workouts: completed.length,
+      strength: strengthWorkouts.length,
+      activities: activityWorkouts.length,
+    },
   };
 };
 
@@ -13542,35 +13584,35 @@ const strengthAchievementDefs = [
 
 const activityAchievementDefs = {
   cardio: [
-    { id: "first", title: "Первое кардио", metric: "count", threshold: 1 },
-    { id: "distance-1", title: "1 км суммарно", metric: "distance", threshold: 1 },
-    { id: "distance-5", title: "5 км суммарно", metric: "distance", threshold: 5 },
-    { id: "distance-10", title: "10 км суммарно", metric: "distance", threshold: 10 },
-    { id: "distance-21", title: "21 км суммарно", metric: "distance", threshold: 21 },
-    { id: "distance-42", title: "42 км суммарно", metric: "distance", threshold: 42 },
-    { id: "minutes-30", title: "30 минут кардио", metric: "minutes", threshold: 30 },
-    { id: "minutes-60", title: "60 минут кардио", metric: "minutes", threshold: 60 },
-    { id: "calories-500", title: "500 ккал кардио", metric: "calories", threshold: 500 },
-    { id: "calories-1000", title: "1000 ккал кардио", metric: "calories", threshold: 1000 },
+    { id: "first", title: "Первое кардио", metric: "count", threshold: 1, icon: "🏃", imagePath: "/assets/achievements/cardio-first.png" },
+    { id: "distance-1", title: "1 км суммарно", metric: "distance", threshold: 1, icon: "🏃", imagePath: "/assets/achievements/cardio-1km.png" },
+    { id: "distance-5", title: "5 км суммарно", metric: "distance", threshold: 5, icon: "🏃", imagePath: "/assets/achievements/cardio-5km.png" },
+    { id: "distance-10", title: "10 км суммарно", metric: "distance", threshold: 10, icon: "🏃", imagePath: "/assets/achievements/cardio-10km.png" },
+    { id: "distance-21", title: "21 км суммарно", metric: "distance", threshold: 21, icon: "🏅", imagePath: "/assets/achievements/cardio-21km.png" },
+    { id: "distance-42", title: "42 км суммарно", metric: "distance", threshold: 42, icon: "🏆", imagePath: "/assets/achievements/cardio-42km.png" },
+    { id: "minutes-30", title: "30 минут кардио", metric: "minutes", threshold: 30, icon: "⏱", imagePath: "/assets/achievements/cardio-30min.png" },
+    { id: "minutes-60", title: "60 минут кардио", metric: "minutes", threshold: 60, icon: "⏱", imagePath: "/assets/achievements/cardio-60min.png" },
+    { id: "calories-500", title: "500 ккал кардио", metric: "calories", threshold: 500, icon: "🔥", imagePath: "/assets/achievements/cardio-500kcal.png" },
+    { id: "calories-1000", title: "1000 ккал кардио", metric: "calories", threshold: 1000, icon: "🔥", imagePath: "/assets/achievements/cardio-1000kcal.png" },
   ],
   yoga: [
-    { id: "first", title: "Первая практика", metric: "count", threshold: 1 },
-    { id: "minutes-30", title: "30 минут йоги", metric: "minutes", threshold: 30 },
-    { id: "count-3", title: "3 практики", metric: "count", threshold: 3 },
-    { id: "count-7", title: "7 практик", metric: "count", threshold: 7 },
-    { id: "hours-5", title: "5 часов суммарно", metric: "minutes", threshold: 300 },
+    { id: "first", title: "Первая практика", metric: "count", threshold: 1, icon: "🧘", imagePath: "/assets/achievements/yoga-first.png" },
+    { id: "minutes-30", title: "30 минут йоги", metric: "minutes", threshold: 30, icon: "🧘", imagePath: "/assets/achievements/yoga-30min.png" },
+    { id: "count-3", title: "3 практики", metric: "count", threshold: 3, icon: "🧘", imagePath: "/assets/achievements/yoga-3-practices.png" },
+    { id: "count-7", title: "7 практик", metric: "count", threshold: 7, icon: "🧘", imagePath: "/assets/achievements/yoga-7-practices.png" },
+    { id: "hours-5", title: "5 часов суммарно", metric: "minutes", threshold: 300, icon: "🌿", imagePath: "/assets/achievements/yoga-5h.png" },
   ],
   pilates: [
-    { id: "first", title: "Первый пилатес", metric: "count", threshold: 1 },
-    { id: "minutes-30", title: "30 минут пилатеса", metric: "minutes", threshold: 30 },
-    { id: "count-3", title: "3 тренировки", metric: "count", threshold: 3 },
-    { id: "hours-5", title: "5 часов суммарно", metric: "minutes", threshold: 300 },
+    { id: "first", title: "Первый пилатес", metric: "count", threshold: 1, icon: "◐", imagePath: "/assets/achievements/pilates-first.png" },
+    { id: "minutes-30", title: "30 минут пилатеса", metric: "minutes", threshold: 30, icon: "◐", imagePath: "/assets/achievements/pilates-30min.png" },
+    { id: "count-3", title: "3 тренировки", metric: "count", threshold: 3, icon: "◐", imagePath: "/assets/achievements/pilates-3-workouts.png" },
+    { id: "hours-5", title: "5 часов суммарно", metric: "minutes", threshold: 300, icon: "◐", imagePath: "/assets/achievements/pilates-5h.png" },
   ],
   stretching: [
-    { id: "first", title: "Первая растяжка", metric: "count", threshold: 1 },
-    { id: "minutes-30", title: "30 минут стретчинга", metric: "minutes", threshold: 30 },
-    { id: "count-3", title: "3 сессии", metric: "count", threshold: 3 },
-    { id: "hours-5", title: "5 часов суммарно", metric: "minutes", threshold: 300 },
+    { id: "first", title: "Первая растяжка", metric: "count", threshold: 1, icon: "↔", imagePath: "/assets/achievements/stretching-first.png" },
+    { id: "minutes-30", title: "30 минут стретчинга", metric: "minutes", threshold: 30, icon: "↔", imagePath: "/assets/achievements/stretching-30min.png" },
+    { id: "count-3", title: "3 сессии", metric: "count", threshold: 3, icon: "↔", imagePath: "/assets/achievements/stretching-3-sessions.png" },
+    { id: "hours-5", title: "5 часов суммарно", metric: "minutes", threshold: 300, icon: "↔", imagePath: "/assets/achievements/stretching-5h.png" },
   ],
 };
 
@@ -13606,6 +13648,10 @@ const buildActivityAchievements = (workouts = []) => {
 };
 
 const filterAnalyticsPoints = (points = [], period = "month", selectedDateKey = formatDateKey(new Date())) => {
+  if (["day", "week", "month", "year"].includes(period)) {
+    const range = analyticsPeriodRange(period, selectedDateKey);
+    return points.filter(point => isDateKeyInRange(point.date, range));
+  }
   const days = analyticsPeriods.find(item => item.id === period)?.days || 30;
   const start = parseDateKeyLocal(dateKeyDaysAgo(selectedDateKey, days - 1)).getTime();
   const end = parseDateKeyLocal(selectedDateKey).getTime();
@@ -13617,20 +13663,21 @@ const filterAnalyticsPoints = (points = [], period = "month", selectedDateKey = 
 
 const buildMeasurementSeries = (measurements = [], metricKey = "weight_kg") => measurements
   .map(item => ({ date: String(item.measurement_date || item.date || "").slice(0, 10), value: Number(item[metricKey]) }))
-  .filter(item => item.date && Number.isFinite(item.value));
+  .filter(item => item.date && Number.isFinite(item.value) && item.value > 0);
 
 const buildHealthSeries = (logs = [], metricKey = "steps_count") => logs
   .map(item => ({ date: String(item.log_date || item.date || "").slice(0, 10), value: Number(item[metricKey]) }))
-  .filter(item => item.date && Number.isFinite(item.value) && item.value >= 0);
+  .filter(item => item.date && Number.isFinite(item.value) && item.value > 0);
 
 const buildNutritionSeries = (days = [], metricKey = "calories_total") => days
   .map(item => ({ date: String(item.nutrition_date || item.date || "").slice(0, 10), value: Number(item[metricKey] ?? item.totals?.calories ?? item.calories ?? 0) }))
-  .filter(item => item.date && Number.isFinite(item.value) && item.value >= 0);
+  .filter(item => item.date && Number.isFinite(item.value) && item.value > 0);
 
 const buildTrainingSeries = (workouts = [], metricKey = "sets") => {
   const map = new Map();
-  workouts.filter(workout => workout.status === "completed").forEach(workout => {
-    const date = workout.date || formatDateKey(new Date());
+  workouts.filter(workout => normalizeWorkoutStatus(workout.status) === "completed").forEach(workout => {
+    const date = workoutDateKey(workout);
+    if (!date) return;
     const sets = getWorkoutSets(workout).filter(set => getSetStatusGlobal(set) === "completed");
     const current = map.get(date) || { date, sets: 0, volume: 0, workouts: 0 };
     current.sets += sets.length;
@@ -13791,31 +13838,26 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
 
     const cached = readCachedAnalyticsForProfile(profile, type, metric, period, selectedDateKey);
     if (cached) {
-      setRemoteData({
-        measurements: Array.isArray(cached.measurements) ? cached.measurements : [],
-        health_logs: Array.isArray(cached.health_logs) ? cached.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [],
-        nutrition_days: Array.isArray(cached.nutrition_days) ? cached.nutrition_days : [],
-      });
+      setRemoteData(normalizeAnalyticsRemotePayload(cached));
     }
 
     const load = async () => {
       setLoading(true);
       setLoadError("");
       const days = analyticsPeriods.find(item => item.id === period)?.days || 30;
+      const range = ["day", "week", "month", "year"].includes(period)
+        ? analyticsPeriodRange(period, selectedDateKey)
+        : { startKey: dateKeyDaysAgo(selectedDateKey, days - 1), endKey: selectedDateKey };
       try {
         const result = await callOnlyPumpProfileApi(telegramInitData, "load_analytics", {
           date: selectedDateKey,
-          start_date: dateKeyDaysAgo(selectedDateKey, days - 1),
-          end_date: selectedDateKey,
+          start_date: range.startKey,
+          end_date: range.endKey,
           scope: type,
           metric,
         });
         if (cancelled) return;
-        const next = {
-          measurements: Array.isArray(result.measurements) ? result.measurements : [],
-          health_logs: Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [],
-          nutrition_days: Array.isArray(result.nutrition_days) ? result.nutrition_days : [],
-        };
+        const next = normalizeAnalyticsRemotePayload(result);
         setRemoteData(next);
         writeCachedAnalyticsForProfile(profile, type, metric, period, selectedDateKey, next);
       } catch (error) {
@@ -13875,14 +13917,28 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
   const [editorMetric, setEditorMetric] = useState(null);
   const [analyticsPeriod, setAnalyticsPeriod] = useState("day");
   const [activitiesCollapsed, setActivitiesCollapsed] = useState(() => {
-    try { return localStorage.getItem("onlypump-analytics-activities-collapsed") === "true"; } catch { return false; }
+    try {
+      const saved = localStorage.getItem("onlypump-analytics-activities-collapsed");
+      return saved == null ? true : saved === "true";
+    } catch { return true; }
   });
+  const [tonnageCollapsed, setTonnageCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem("onlypump-analytics-tonnage-collapsed");
+      return saved == null ? true : saved === "true";
+    } catch { return true; }
+  });
+  const [remotePeriodData, setRemotePeriodData] = useState({ measurements: [], health_logs: [], nutrition_days: [] });
+  const [remotePeriodLoading, setRemotePeriodLoading] = useState(false);
+  const [remotePeriodError, setRemotePeriodError] = useState("");
   const initialCardSettings = useMemo(() => getProfileAnalyticsCardSettings(profile || DEFAULT_PROFILE), [profile?.id, profile?.telegram_id, JSON.stringify(profile?.analytics_cards_order || []), JSON.stringify(profile?.analytics_cards_hidden || [])]);
   const [cardOrder, setCardOrder] = useState(initialCardSettings.order);
   const [hiddenCards, setHiddenCards] = useState(initialCardSettings.hidden);
   const [cardPickerOpen, setCardPickerOpen] = useState(false);
   const [cardSettingsOpen, setCardSettingsOpen] = useState(false);
   const [draggedCardId, setDraggedCardId] = useState(null);
+  const cardDragRef = useRef(null);
+  const [cardDragVisual, setCardDragVisual] = useState(null);
 
   useEffect(() => {
     setCardOrder(initialCardSettings.order);
@@ -13893,14 +13949,17 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     try { localStorage.setItem("onlypump-analytics-activities-collapsed", activitiesCollapsed ? "true" : "false"); } catch {}
   }, [activitiesCollapsed]);
 
+  useEffect(() => {
+    try { localStorage.setItem("onlypump-analytics-tonnage-collapsed", tonnageCollapsed ? "true" : "false"); } catch {}
+  }, [tonnageCollapsed]);
+
   const selectedHealthRecord = (healthLog?.log_date || healthLog?.date) === selectedDateKey
     ? healthLog
     : healthLogs.find(log => (log.log_date || log.date) === selectedDateKey);
   const currentHealthLog = normalizeHealthLog(selectedHealthRecord || {}, selectedDateKey);
   const selectedNutritionDayMatches = (nutritionDay?.date || nutritionDay?.nutrition_date) === selectedDateKey;
   const selectedNutritionCalories = selectedNutritionDayMatches ? Number(nutritionDay?.totals?.calories ?? nutritionDay?.calories_total ?? 0) : 0;
-  const analyticsData = useMemo(() => ({
-    measurements: [{
+  const localMeasurementRecord = useMemo(() => ({
       measurement_date: selectedDateKey,
       weight_kg: measurements?.weight || profile?.weight_kg,
       body_fat_percent: measurements?.bodyFat || profile?.body_fat_percent,
@@ -13913,15 +13972,95 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       glutes_cm: measurements?.glutes || profile?.glutes_cm,
       thigh_cm: measurements?.thigh || profile?.thigh_cm,
       calf_cm: measurements?.calf || profile?.calf_cm,
-    }],
-    health_logs: healthLogs.length ? healthLogs : [currentHealthLog],
-    nutrition_days: selectedNutritionDayMatches ? [{
+  }), [measurements, profile, selectedDateKey]);
+  const localMeasurementHasData = Object.entries(localMeasurementRecord).some(([key, value]) => key !== "measurement_date" && Number(value || 0) > 0);
+  const selectedNutritionRecord = selectedNutritionDayMatches && nutritionDayHasAnalyticsData(nutritionDay) ? {
+      ...nutritionDay,
       nutrition_date: selectedDateKey,
       calories_total: selectedNutritionCalories,
-    }] : [],
-  }), [currentHealthLog, healthLogs, measurements, profile, selectedDateKey, selectedNutritionCalories, selectedNutritionDayMatches]);
+      protein_total: Number(nutritionDay?.totals?.protein ?? nutritionDay?.protein_total ?? 0),
+      fat_total: Number(nutritionDay?.totals?.fat ?? nutritionDay?.fat_total ?? 0),
+      carbs_total: Number(nutritionDay?.totals?.carbs ?? nutritionDay?.carbs_total ?? 0),
+    } : null;
+  const canLoadAnalyticsOverview = profileStatus === "verified" && profileHasTestAccess(profile) && Boolean(telegramInitData && profile?.id);
 
-  const periodStats = useMemo(() => buildAnalyticsStats({ workouts, healthLogs, healthLog: currentHealthLog, nutritionDay, measurements, profile, selectedDateKey, period: analyticsPeriod }), [analyticsPeriod, currentHealthLog, healthLogs, measurements, nutritionDay, profile, selectedDateKey, workouts]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!canLoadAnalyticsOverview) {
+      setRemotePeriodData({ measurements: [], health_logs: [], nutrition_days: [] });
+      setRemotePeriodError("");
+      setRemotePeriodLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const cached = readCachedAnalyticsForProfile(profile, "overview", "all", analyticsPeriod, selectedDateKey);
+    if (cached) {
+      setRemotePeriodData(normalizeAnalyticsRemotePayload(cached));
+    } else {
+      setRemotePeriodData({ measurements: [], health_logs: [], nutrition_days: [] });
+    }
+
+    const load = async () => {
+      const range = analyticsPeriodRange(analyticsPeriod, selectedDateKey);
+      setRemotePeriodLoading(true);
+      setRemotePeriodError("");
+      try {
+        const result = await callOnlyPumpProfileApi(telegramInitData, "load_analytics", {
+          date: selectedDateKey,
+          start_date: range.startKey,
+          end_date: range.endKey,
+          scope: "overview",
+          metric: "all",
+        });
+        if (cancelled) return;
+        const next = normalizeAnalyticsRemotePayload(result);
+        setRemotePeriodData(next);
+        writeCachedAnalyticsForProfile(profile, "overview", "all", analyticsPeriod, selectedDateKey, next);
+      } catch (error) {
+        if (!cancelled) {
+          console.error("onlypump-profile-api analytics overview error:", error);
+          setRemotePeriodError("Не удалось обновить аналитику. Показываю сохранённый кэш.");
+        }
+      } finally {
+        if (!cancelled) setRemotePeriodLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [analyticsPeriod, canLoadAnalyticsOverview, profile?.id, selectedDateKey, telegramInitData]);
+
+  const analyticsData = useMemo(() => {
+    const localHealthRows = (healthLogs.length ? healthLogs : [currentHealthLog])
+      .filter(Boolean)
+      .map(log => normalizeHealthLog(log, log.log_date || log.date || selectedDateKey));
+    return {
+      measurements: remotePeriodData.measurements.length
+        ? remotePeriodData.measurements
+        : (localMeasurementHasData && (!canLoadAnalyticsOverview || remotePeriodError) ? [localMeasurementRecord] : []),
+      health_logs: remotePeriodData.health_logs.length ? remotePeriodData.health_logs : localHealthRows,
+      nutrition_days: remotePeriodData.nutrition_days.length
+        ? remotePeriodData.nutrition_days
+        : (selectedNutritionRecord ? [selectedNutritionRecord] : []),
+    };
+  }, [canLoadAnalyticsOverview, currentHealthLog, healthLogs, localMeasurementHasData, localMeasurementRecord, remotePeriodData, remotePeriodError, selectedDateKey, selectedNutritionRecord]);
+
+  const periodStats = useMemo(() => buildAnalyticsStats({
+    workouts,
+    healthLogs: analyticsData.health_logs,
+    healthLog: currentHealthLog,
+    nutritionDays: analyticsData.nutrition_days,
+    nutritionDay,
+    measurements,
+    measurementRecords: analyticsData.measurements,
+    profile,
+    selectedDateKey,
+    period: analyticsPeriod,
+  }), [analyticsData, analyticsPeriod, currentHealthLog, measurements, nutritionDay, profile, selectedDateKey, workouts]);
   const activityRows = useMemo(() => workoutTypeDefinitions.filter(type => type.id !== "strength").map(type => {
     const typeWorkouts = periodStats.activityWorkouts.filter(workout => normalizeWorkoutType(workout.workoutType) === type.id);
     return {
@@ -13980,16 +14119,84 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     persistCardSettings(cardOrder, [...hiddenCards, id]);
   };
 
-  const moveAnalyticsCard = (fromId, toId) => {
+  const moveAnalyticsCardByOffset = (id, offset) => {
+    const current = sanitizeAnalyticsCardOrder(cardOrder).filter(cardId => !hiddenCards.includes(cardId));
+    const fromIndex = current.indexOf(id);
+    if (fromIndex < 0) return;
+    const toIndex = Math.max(0, Math.min(current.length - 1, fromIndex + offset));
+    if (toIndex === fromIndex) return;
+    moveAnalyticsCardToTarget(id, current[toIndex], offset > 0);
+  };
+
+  const moveAnalyticsCardToTarget = (fromId, toId, insertAfter = false) => {
     if (!fromId || !toId || fromId === toId) return;
     const current = sanitizeAnalyticsCardOrder(cardOrder);
     const fromIndex = current.indexOf(fromId);
-    const toIndex = current.indexOf(toId);
-    if (fromIndex < 0 || toIndex < 0) return;
+    const targetIndex = current.indexOf(toId);
+    if (fromIndex < 0 || targetIndex < 0) return;
     const next = [...current];
     const [item] = next.splice(fromIndex, 1);
+    let toIndex = next.indexOf(toId);
+    if (toIndex < 0) return;
+    if (insertAfter) toIndex += 1;
     next.splice(toIndex, 0, item);
     persistCardSettings(next, hiddenCards);
+  };
+
+  const getAnalyticsCardDropTarget = (clientY, dragId) => {
+    const items = Array.from(document.querySelectorAll("[data-analytics-card-id]"))
+      .filter(item => item.getAttribute("data-analytics-card-id") !== dragId);
+    if (!items.length) return null;
+    return items.reduce((best, item) => {
+      const rect = item.getBoundingClientRect();
+      const centerY = rect.top + rect.height / 2;
+      const distance = Math.abs(clientY - centerY);
+      if (!best || distance < best.distance) {
+        return { id: item.getAttribute("data-analytics-card-id"), distance, insertAfter: clientY > centerY };
+      }
+      return best;
+    }, null);
+  };
+
+  const startAnalyticsCardDrag = (event, id) => {
+    if (event.target.closest?.("[data-no-card-drag='true']")) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    cardDragRef.current = {
+      id,
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startRect: rect,
+    };
+    setDraggedCardId(id);
+    setCardDragVisual({ id, dy: 0 });
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  };
+
+  const moveAnalyticsCardDrag = (event, id) => {
+    const drag = cardDragRef.current;
+    if (!drag || drag.id !== id || drag.pointerId !== event.pointerId) return;
+    setCardDragVisual({ id, dy: event.clientY - drag.startY });
+    event.preventDefault();
+  };
+
+  const endAnalyticsCardDrag = (event, id) => {
+    const drag = cardDragRef.current;
+    if (!drag || drag.id !== id || drag.pointerId !== event.pointerId) return;
+    const target = getAnalyticsCardDropTarget(event.clientY, drag.id);
+    if (target?.id) moveAnalyticsCardToTarget(drag.id, target.id, target.insertAfter);
+    cardDragRef.current = null;
+    setDraggedCardId(null);
+    setCardDragVisual(null);
+  };
+
+  const toggleAnalyticsSection = (setter) => {
+    const scrollNode = document.querySelector(".onlypump-main-scroll");
+    const scrollTop = scrollNode?.scrollTop;
+    setter(value => !value);
+    requestAnimationFrame(() => {
+      if (scrollNode && typeof scrollTop === "number") scrollNode.scrollTop = scrollTop;
+    });
   };
 
   const visibleCardIds = sanitizeAnalyticsCardOrder(cardOrder).filter(id => !hiddenCards.includes(id));
@@ -13997,30 +14204,64 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
   const periodName = analyticsMainPeriods.find(item => item.id === analyticsPeriod)?.label || "за день";
   const loadLevel = getVolumeLoadLevel(periodStats.sets, analyticsPeriod === "week" ? volumeStandards.weeklyTotal : volumeStandards.workoutTotal);
   const topStrengthAchievement = [...strengthAchievements].reverse().find(item => item.achieved) || strengthAchievements[0];
+  const emptyAnalyticsValue = "нет данных";
+  const emptyAnalyticsSub = "Нет данных за выбранный период";
+  const countAchievements = (items = []) => {
+    const total = items.length;
+    const opened = items.filter(item => item.achieved).length;
+    return { opened, total, label: `${opened}/${total}` };
+  };
+  const strengthAchievementCount = countAchievements(strengthAchievements);
+  const activityAchievementCount = activityAchievements.reduce((summary, group) => {
+    const groupCount = countAchievements(group.achievements);
+    return { opened: summary.opened + groupCount.opened, total: summary.total + groupCount.total };
+  }, { opened: 0, total: 0 });
+  const activityAchievementLabel = `${activityAchievementCount.opened}/${activityAchievementCount.total}`;
+  const dataCounts = periodStats.dataCounts || {};
   const cardData = {
-    measurements: { value: periodStats.waist ? `${periodStats.waist} см` : "нет данных", sub: "талия и окружности", detail: "measurements" },
-    weight: { value: periodStats.weight ? `${periodStats.weight} кг` : "нет данных", sub: analyticsPeriod === "day" ? "в выбранный день" : "средние замеры периода", detail: "weight" },
-    steps: { value: Math.round(periodStats.stepsSum).toLocaleString("ru-RU"), sub: periodName, detail: "steps" },
-    sleep: { value: formatSleepDuration(Math.round(periodStats.sleepAverage || 0)), sub: periodStats.sleepAverage ? "среднее за период" : "нет данных", detail: "sleep" },
-    water: { value: `${Math.round(periodStats.waterAverage || 0)} мл`, sub: "в среднем за день", detail: "water" },
-    calories: { value: Math.round(periodStats.calorieAverage || 0).toLocaleString("ru-RU"), sub: analyticsPeriod === "day" ? "питание за день" : "среднее за день", detail: "calories" },
-    training: { value: String(periodStats.sets), sub: `${loadLevel.label} · подходов ${periodName}`, detail: "training_load" },
-    recovery: { value: periodStats.recoveryAverage ? `${Math.round(periodStats.recoveryAverage)}%` : "—", sub: periodStats.recoveryAverage ? "среднее восстановление" : "сон не добавлен", detail: "recovery" },
-    tonnage: { value: formatVolumeForProfile(periodStats.volume || 0, profile), sub: `${periodStats.strengthWorkouts.length} силовых ${periodName}`, detail: "training_load" },
-    activities: { value: `${periodStats.activityWorkouts.length}`, sub: "кардио, йога, пилатес, стретчинг", detail: null },
-    weekSummary: { value: `${periodStats.workoutsCount}`, sub: `тренировок ${periodName}`, detail: null },
+    measurements: { value: dataCounts.measurements ? (periodStats.waist ? `${periodStats.waist} см` : "замеры есть") : emptyAnalyticsValue, sub: dataCounts.measurements ? "талия и окружности" : emptyAnalyticsSub, detail: "measurements" },
+    weight: { value: dataCounts.measurements && periodStats.weight ? `${periodStats.weight} кг` : emptyAnalyticsValue, sub: dataCounts.measurements ? (analyticsPeriod === "day" ? "в выбранный день" : "средние замеры периода") : emptyAnalyticsSub, detail: "weight" },
+    steps: { value: dataCounts.steps ? Math.round(periodStats.stepsSum).toLocaleString("ru-RU") : emptyAnalyticsValue, sub: dataCounts.steps ? periodName : emptyAnalyticsSub, detail: "steps" },
+    sleep: { value: dataCounts.sleep ? formatSleepDuration(Math.round(periodStats.sleepAverage || 0)) : emptyAnalyticsValue, sub: dataCounts.sleep ? "среднее за период" : emptyAnalyticsSub, detail: "sleep" },
+    water: { value: dataCounts.water ? `${Math.round(periodStats.waterAverage || 0)} мл` : emptyAnalyticsValue, sub: dataCounts.water ? "в среднем за день" : emptyAnalyticsSub, detail: "water" },
+    calories: { value: dataCounts.nutrition ? Math.round(periodStats.calorieAverage || 0).toLocaleString("ru-RU") : emptyAnalyticsValue, sub: dataCounts.nutrition ? (analyticsPeriod === "day" ? "питание за день" : "среднее за день") : emptyAnalyticsSub, detail: "calories" },
+    training: { value: dataCounts.workouts ? String(periodStats.sets) : emptyAnalyticsValue, sub: dataCounts.workouts ? `${loadLevel.label} · подходов ${periodName}` : emptyAnalyticsSub, detail: "training_load" },
+    recovery: { value: dataCounts.recovery ? `${Math.round(periodStats.recoveryAverage)}%` : emptyAnalyticsValue, sub: dataCounts.recovery ? "среднее восстановление" : emptyAnalyticsSub, detail: "recovery" },
+    tonnage: { value: dataCounts.strength ? formatVolumeForProfile(periodStats.volume || 0, profile) : emptyAnalyticsValue, sub: dataCounts.strength ? `${periodStats.strengthWorkouts.length} силовых ${periodName}` : emptyAnalyticsSub, detail: "training_load" },
+    activities: { value: dataCounts.activities ? `${periodStats.activityWorkouts.length}` : emptyAnalyticsValue, sub: dataCounts.activities ? "кардио, йога, пилатес, стретчинг" : emptyAnalyticsSub, detail: null },
+    weekSummary: { value: dataCounts.workouts ? `${periodStats.workoutsCount}` : emptyAnalyticsValue, sub: dataCounts.workouts ? `тренировок ${periodName}` : emptyAnalyticsSub, detail: null },
   };
 
-  const AchievementGrid = ({ items = [], compact = false }) => <div className={`grid gap-2 ${compact ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-4"}`}>
-    {items.map(item => <div key={item.id || item.title} className={`rounded-2xl border p-3 ${item.achieved ? "border-red-500/35 bg-red-500/10" : "border-white/10 bg-white/[0.03] opacity-60"}`}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-2xl">{item.icon || "•"}</span>
-        <span className="text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">{item.achieved ? "открыто" : "закрыто"}</span>
+  const AchievementVisual = ({ item }) => <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-white/[0.05] text-2xl">
+    {item.imagePath && <img
+      src={item.imagePath}
+      alt=""
+      className="h-full w-full object-cover"
+      onError={(event) => {
+        event.currentTarget.style.display = "none";
+        const fallback = event.currentTarget.nextElementSibling;
+        if (fallback) fallback.style.display = "inline";
+      }}
+    />}
+    <span style={{ display: item.imagePath ? "none" : "inline" }}>{item.icon || "•"}</span>
+  </span>;
+
+  const AchievementGrid = ({ items = [], compact = false, showCount = true }) => {
+    const count = countAchievements(items);
+    return <div>
+      {showCount && <div className="mb-2 text-xs font-bold text-zinc-500">Открыто {count.label}</div>}
+      <div className={`grid gap-2 ${compact ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-4"}`}>
+        {items.map(item => <div key={item.id || item.title} className={`rounded-2xl border p-3 ${item.achieved ? "border-red-500/35 bg-red-500/10" : "border-white/10 bg-white/[0.03] opacity-60"}`}>
+          <div className="flex items-center justify-between gap-2">
+            <AchievementVisual item={item}/>
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">{item.achieved ? "открыто" : "закрыто"}</span>
+          </div>
+          <p className="mt-2 text-sm font-black">{item.title}</p>
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-red-500" style={{ width: `${Math.round(item.progress || 0)}%` }}/></div>
+        </div>)}
       </div>
-      <p className="mt-2 text-sm font-black">{item.title}</p>
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-red-500" style={{ width: `${Math.round(item.progress || 0)}%` }}/></div>
-    </div>)}
-  </div>;
+    </div>;
+  };
 
   const renderAnalyticsCard = (cardId) => {
     const catalog = analyticsCardCatalog.find(card => card.id === cardId);
@@ -14029,63 +14270,96 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     const Icon = catalog.icon;
     if (cardId === "activities") {
       return <Card key={cardId} className="p-5 xl:col-span-2">
-        <button type="button" onClick={() => setActivitiesCollapsed(value => !value)} className="flex w-full items-start justify-between gap-4 text-left">
+        <button type="button" onClick={() => toggleAnalyticsSection(setActivitiesCollapsed)} className="flex w-full items-start justify-between gap-4 text-left">
           <div>
             <h2 className="text-xl font-semibold">Активности</h2>
-            <p className="mt-2 text-sm text-zinc-500">{data.sub} {periodName}.</p>
+            <p className="mt-2 text-sm text-zinc-500">{data.sub}{dataCounts.activities ? ` ${periodName}.` : ""}</p>
           </div>
-          <ChevronDown size={20} className={`mt-1 text-zinc-500 transition ${activitiesCollapsed ? "" : "rotate-180"}`}/>
+          <div className="flex items-start gap-3 text-right">
+            <div>
+              <div className="text-2xl font-black">{data.value}</div>
+              <div className="mt-1 text-xs font-bold text-zinc-500">Ачивки {activityAchievementLabel}</div>
+            </div>
+            <ChevronDown size={20} className={`mt-1 text-zinc-500 transition ${activitiesCollapsed ? "" : "rotate-180"}`}/>
+          </div>
         </button>
-        {!activitiesCollapsed && <div className="mt-5 space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            {activityRows.map(item => <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-semibold">{item.label}</span>
-                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
-              </div>
-              <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
-                <div><b className="block text-base">{item.count}</b><span className="text-zinc-500">раз</span></div>
-                <div><b className="block text-base">{Math.round(item.durationMinutes)}</b><span className="text-zinc-500">мин</span></div>
-                <div><b className="block text-base">{Math.round(item.distance * 10) / 10}</b><span className="text-zinc-500">дист.</span></div>
-                <div><b className="block text-base">{Math.round(item.calories)}</b><span className="text-zinc-500">ккал</span></div>
-              </div>
-            </div>)}
+        <div style={{ maxHeight: activitiesCollapsed ? 0 : 3600, opacity: activitiesCollapsed ? 0 : 1, overflow: "hidden", transition: "max-height 260ms ease, opacity 180ms ease" }}>
+          <div className="mt-5 space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {activityRows.map(item => <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-semibold">{item.label}</span>
+                  <span className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
+                </div>
+                <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
+                  <div><b className="block text-base">{item.count}</b><span className="text-zinc-500">раз</span></div>
+                  <div><b className="block text-base">{Math.round(item.durationMinutes)}</b><span className="text-zinc-500">мин</span></div>
+                  <div><b className="block text-base">{Math.round(item.distance * 10) / 10}</b><span className="text-zinc-500">дист.</span></div>
+                  <div><b className="block text-base">{Math.round(item.calories)}</b><span className="text-zinc-500">ккал</span></div>
+                </div>
+              </div>)}
+            </div>
+            <div className="space-y-3">
+              {activityAchievements.map(group => {
+                const groupCount = countAchievements(group.achievements);
+                return <div key={group.type} className="rounded-2xl bg-white/[0.025] p-3">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <b>{group.meta.label}</b>
+                      <p className="mt-1 text-xs text-zinc-500">{group.totals.count} раз · {Math.round(group.totals.minutes)} мин</p>
+                    </div>
+                    <span className="rounded-full bg-white/[0.06] px-3 py-1 text-xs font-black text-zinc-400">Открыто {groupCount.label}</span>
+                  </div>
+                  <AchievementGrid items={group.achievements} compact showCount={false} />
+                </div>;
+              })}
+            </div>
           </div>
-          <div className="space-y-3">
-            {activityAchievements.map(group => <div key={group.type} className="rounded-2xl bg-white/[0.025] p-3">
-              <div className="mb-3 flex items-center justify-between">
-                <b>{group.meta.label}</b>
-                <span className="text-xs text-zinc-500">{group.totals.count} раз · {Math.round(group.totals.minutes)} мин</span>
-              </div>
-              <AchievementGrid items={group.achievements.slice(0, 4).map(item => ({ ...item, icon: group.meta.id === "cardio" ? "🏃" : group.meta.id === "yoga" ? "🧘" : group.meta.id === "pilates" ? "◐" : "↔" }))} compact />
-            </div>)}
-          </div>
-        </div>}
+        </div>
       </Card>;
     }
     if (cardId === "tonnage") {
-      return <Card key={cardId} onClick={() => setDetail({ type: data.detail, title: "Тоннаж" })} className="cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5 xl:col-span-2">
-        <div className="flex items-start justify-between gap-4">
+      return <Card key={cardId} className="p-5 xl:col-span-2">
+        <button type="button" onClick={() => toggleAnalyticsSection(setTonnageCollapsed)} className="flex w-full items-start justify-between gap-4 text-left">
           <div>
             <Dumbbell className="text-red-500"/>
             <p className="mt-5 text-sm text-zinc-500">Тоннаж</p>
             <div className="mt-2 break-words text-4xl">{data.value}</div>
             <p className="mt-3 text-sm text-zinc-400">{data.sub}</p>
           </div>
-          {topStrengthAchievement && <div className="rounded-2xl bg-red-500/10 p-3 text-center">
-            <div className="text-3xl">{topStrengthAchievement.icon}</div>
-            <p className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-300">{topStrengthAchievement.title}</p>
-          </div>}
-        </div>
-        <div className="mt-5">
-          <AchievementGrid items={strengthAchievements} />
+          <div className="flex items-start gap-3 text-right">
+            <div>
+              <div className="rounded-full bg-white/[0.06] px-3 py-1 text-xs font-black text-zinc-400">Ачивки {strengthAchievementCount.label}</div>
+              {topStrengthAchievement && <p className="mt-3 max-w-[120px] text-xs font-bold text-red-300">{topStrengthAchievement.title}</p>}
+            </div>
+            <ChevronDown size={20} className={`mt-1 text-zinc-500 transition ${tonnageCollapsed ? "" : "rotate-180"}`}/>
+          </div>
+        </button>
+        <div style={{ maxHeight: tonnageCollapsed ? 0 : 1800, opacity: tonnageCollapsed ? 0 : 1, overflow: "hidden", transition: "max-height 260ms ease, opacity 180ms ease" }}>
+          <div className="mt-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/[0.035] p-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-zinc-500">Силовой тоннаж</p>
+                <div className="mt-1 text-3xl font-black">{data.value}</div>
+              </div>
+              {topStrengthAchievement && <div className="flex items-center gap-3 rounded-2xl bg-red-500/10 p-3">
+                <AchievementVisual item={topStrengthAchievement}/>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-red-300">Лучшая ачивка</p>
+                  <p className="mt-1 text-sm font-black">{topStrengthAchievement.title}</p>
+                </div>
+              </div>}
+              <button type="button" onClick={() => setDetail({ type: data.detail, title: "Тоннаж" })} className="rounded-full bg-white/[0.06] px-4 py-2 text-xs font-black text-zinc-200">График</button>
+            </div>
+            <AchievementGrid items={strengthAchievements} />
+          </div>
         </div>
       </Card>;
     }
     if (cardId === "weekSummary") {
       return <Card key={cardId} className="p-5 xl:col-span-2">
         <h2 className="text-xl font-semibold">Вывод периода</h2>
-        <p className="mt-4 leading-7 text-zinc-300">За период {periodStats.range.label}: {periodStats.workoutsCount} выполненных тренировок, {periodStats.sets} силовых подходов, {formatVolumeForProfile(periodStats.volume || 0, profile)} тоннажа, {Math.round(periodStats.activityMinutes)} минут активностей.</p>
+        <p className="mt-4 leading-7 text-zinc-300">{dataCounts.workouts ? `За период ${periodStats.range.label}: ${periodStats.workoutsCount} выполненных тренировок, ${periodStats.sets} силовых подходов, ${formatVolumeForProfile(periodStats.volume || 0, profile)} тоннажа, ${Math.round(periodStats.activityMinutes)} минут активностей.` : emptyAnalyticsSub}</p>
       </Card>;
     }
     return <Card key={cardId} onClick={() => data.detail && setDetail({ type: data.detail, title: catalog.title })} className="cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5">
@@ -14098,7 +14372,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
 
   return <>
     <div className="mb-6 flex items-start justify-between gap-4">
-      <Header title="Аналитика" subtitle="Календарь, карточки, тоннаж, активность и ачивки без фейковых данных."/>
+      <Header title="Аналитика" subtitle="Календарь, карточки, тоннаж, активность и ачивки."/>
       <div className="flex shrink-0 gap-2 pt-1">
         <button type="button" onClick={() => setCardPickerOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200"><Plus size={20}/></button>
         <button type="button" onClick={() => setCardSettingsOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200"><Settings size={20}/></button>
@@ -14109,6 +14383,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       <div className="flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
         {analyticsMainPeriods.map(item => <button key={item.id} type="button" onClick={() => setAnalyticsPeriod(item.id)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-black transition ${analyticsPeriod === item.id ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-300"}`}>{item.label}</button>)}
       </div>
+      {(remotePeriodLoading || remotePeriodError) && <p className={`rounded-2xl p-3 text-sm ${remotePeriodError ? "bg-red-500/10 text-red-300" : "bg-white/[0.04] text-zinc-500"}`}>{remotePeriodError || "Обновляю данные периода..."}</p>}
     </div>
     <PageGrid>
       {visibleCardIds.map(renderAnalyticsCard)}
@@ -14151,16 +14426,26 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
           {visibleCardIds.map(id => {
             const card = analyticsCardCatalog.find(item => item.id === id);
             if (!card) return null;
+            const isDragging = cardDragVisual?.id === id;
+            const rowStyle = isDragging
+              ? { transform: `translate3d(0, ${cardDragVisual.dy}px, 0) scale(1.02)`, transition: "none", zIndex: 40 }
+              : { transition: "transform 180ms ease, opacity 180ms ease" };
             return <div
               key={id}
-              draggable
-              onDragStart={() => setDraggedCardId(id)}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={() => { moveAnalyticsCard(draggedCardId, id); setDraggedCardId(null); }}
-              className="flex items-center justify-between gap-3 rounded-2xl bg-white/[0.04] px-4 py-3"
+              data-analytics-card-id={id}
+              onPointerDown={(event) => startAnalyticsCardDrag(event, id)}
+              onPointerMove={(event) => moveAnalyticsCardDrag(event, id)}
+              onPointerUp={(event) => endAnalyticsCardDrag(event, id)}
+              onPointerCancel={(event) => endAnalyticsCardDrag(event, id)}
+              style={rowStyle}
+              className={`relative flex touch-none select-none items-center justify-between gap-3 rounded-2xl bg-white/[0.04] px-4 py-3 ${draggedCardId === id ? "opacity-90" : ""}`}
             >
               <span className="font-semibold">☰ {card.title}</span>
-              <button type="button" onClick={() => hideAnalyticsCard(id)} className="rounded-full bg-white/[0.06] px-3 py-1 text-xs font-black text-zinc-400">Скрыть</button>
+              <div className="flex items-center gap-2" data-no-card-drag="true" onPointerDown={(event) => event.stopPropagation()}>
+                <button type="button" onClick={() => moveAnalyticsCardByOffset(id, -1)} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.06] text-xs font-black text-zinc-300">↑</button>
+                <button type="button" onClick={() => moveAnalyticsCardByOffset(id, 1)} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.06] text-xs font-black text-zinc-300">↓</button>
+                <button type="button" onClick={() => hideAnalyticsCard(id)} className="rounded-full bg-white/[0.06] px-3 py-1 text-xs font-black text-zinc-400">Скрыть</button>
+              </div>
             </div>;
           })}
         </div>
