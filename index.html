@@ -10017,6 +10017,34 @@ const toggleExerciseMeasurementSetting = (field) => {
           🗑
         </button>
       </div>
+      {isOpen && <div
+        className="absolute inset-y-0 right-0 z-40 flex overflow-hidden rounded-r-[22px]"
+        style={{ width: 148, touchAction: "manipulation" }}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          aria-label="Повторить"
+          className="h-full bg-transparent"
+          style={{ width: 74, minWidth: 74, touchAction: "manipulation" }}
+          onPointerDown={(event) => handleActionPointerDown(event, "repeat")}
+          onPointerUp={(event) => handleActionPointerUp(event, "repeat")}
+          onPointerCancel={(event) => { event.stopPropagation(); actionPressRef.current = { action: "", pointerId: null, startX: 0, startY: 0 }; }}
+          onClick={(event) => handleActionClick(event, "repeat")}
+        />
+        <button
+          type="button"
+          data-workout-delete-entry="true"
+          aria-label="Удалить"
+          className="h-full bg-transparent"
+          style={{ width: 74, minWidth: 74, touchAction: "manipulation" }}
+          onPointerDown={(event) => handleActionPointerDown(event, "delete")}
+          onPointerUp={(event) => handleActionPointerUp(event, "delete")}
+          onPointerCancel={(event) => { event.stopPropagation(); actionPressRef.current = { action: "", pointerId: null, startX: 0, startY: 0 }; }}
+          onClick={(event) => handleActionClick(event, "delete")}
+        />
+      </div>}
       <button
         type="button"
         onClick={handleCardClick}
