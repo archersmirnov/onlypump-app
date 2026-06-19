@@ -3470,9 +3470,9 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
       {actions.map(action => <button
         key={action.label}
         type="button"
-        onPointerDown={(event) => { event.stopPropagation(); }}
-        onPointerUp={(event) => triggerAction(event, action)}
-        onClick={(event) => triggerAction(event, action)}
+        onPointerDown={(event) => { event.stopPropagation(); if (action.triggerOnPointerDown) triggerAction(event, action); }}
+        onPointerUp={(event) => { if (!action.triggerOnPointerDown) triggerAction(event, action); }}
+        onClick={(event) => { if (!action.triggerOnPointerDown) triggerAction(event, action); else { event.preventDefault(); event.stopPropagation(); } }}
         className={`flex h-full items-center justify-center text-lg font-black text-white ${action.className || 'bg-red-500'}`}
         style={{ width: actionWidth }}
         aria-label={action.label}
@@ -9739,7 +9739,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
     return <SwipeActionRow rowId={workout.id} swipedId={swipedWorkoutId} setSwipedId={setSwipedWorkoutId} className="mb-4" actionWidth={74} actions={[
       { label: "repeat", icon: <Repeat2 size={22}/>, className: "bg-zinc-700", onClick: () => openRepeatSheet(workout) },
-      { label: "delete", icon: "🗑", className: "bg-red-500", onClick: (event) => handleDeleteWorkoutClick(event, workout) },
+      { label: "delete", icon: "🗑", className: "bg-red-500", triggerOnPointerDown: true, onClick: (event) => handleDeleteWorkoutClick(event, workout) },
     ]}>
       <button
         type="button"
