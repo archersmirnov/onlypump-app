@@ -3513,6 +3513,22 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
         {action.icon || action.label}
       </button>)}
     </div>
+    {actionsVisible && <div
+      className="absolute inset-y-0 right-0 z-40 flex"
+      style={{ width: totalActionWidth, touchAction: "manipulation" }}
+      onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+      onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
+    >
+      {actions.map(action => <button
+        key={`hit-${action.label}`}
+        type="button"
+        aria-label={action.label}
+        className="h-full bg-transparent"
+        style={{ width: actionWidth, minWidth: actionWidth, touchAction: "manipulation" }}
+        onPointerDown={(event) => triggerAction(event, action)}
+        onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
+      />)}
+    </div>}
     <div
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
