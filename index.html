@@ -5329,6 +5329,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const workoutsRef = useRef(workouts);
   const workoutSwipeActionPressRef = useRef(null);
   const workoutSwipeActionTriggerRef = useRef({ key: "", time: 0 });
+  const deleteScopeOpenedAtRef = useRef(0);
   const pendingWorkoutPatchesRef = useRef({});
   const saveWorkoutTimersRef = useRef({});
   const [seenVersion, setSeenVersion] = useState(() => {
@@ -6128,6 +6129,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setDetailMenuOpen(false);
     setFinishChoiceSheet(null);
     setOpenMenu(null);
+    deleteScopeOpenedAtRef.current = Date.now();
     if (isProgramLinkedWorkout(workout)) {
       setDeleteScopeSheet({ workout, mode: "program", step: "scope" });
       return;
@@ -9911,6 +9913,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
   const WorkoutCard = ({ workout }) => {
     const pointerTimerRef = useRef(null);
+    const swipeActionTapRef = useRef({ action: "", time: 0 });
     const statusColor = workoutStatusColors[workout.status] || workoutStatusColors.completed;
 
     const startLongPress = () => {
@@ -9950,7 +9953,23 @@ const toggleExerciseMeasurementSetting = (field) => {
       if (handleSwipedWorkoutActionTap(event)) return;
     };
 
-    return <SwipeActionRow rowId={workout.id} swipedId={swipedWorkoutId} setSwipedId={setSwipedWorkoutId} dataAttributes={{ "data-workout-swipe-id": workout.id }} className="mb-4" actionWidth={74} actions={[
+    const triggerWorkoutSwipeButton = (event, action) => {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      clearTimeout(pointerTimerRef.current);
+      const now = Date.now();
+      if (swipeActionTapRef.current.action === action && now - swipeActionTapRef.current.time < 450) return;
+      swipeActionTapRef.current = { action, time: now };
+      if (action === "delete") {
+        handleDeleteWorkoutClick(event, workout);
+        return;
+      }
+      setSwipedWorkoutId(null);
+      openRepeatSheet(workout);
+    };
+
+    return <div className="relative mb-4">
+      <SwipeActionRow rowId={workout.id} swipedId={swipedWorkoutId} setSwipedId={setSwipedWorkoutId} dataAttributes={{ "data-workout-swipe-id": workout.id }} actionWidth={74} actions={[
       { label: "repeat", icon: <Repeat2 size={22}/>, className: "bg-zinc-700", onClick: () => openRepeatSheet(workout) },
       { label: "delete", icon: "🗑", className: "bg-red-500", onClick: (event) => handleDeleteWorkoutClick(event, workout) },
     ]}>
@@ -9980,7 +9999,41 @@ const toggleExerciseMeasurementSetting = (field) => {
           </div>
         </div>
       </button>
-    </SwipeActionRow>;
+    </SwipeActionRow>
+      {swipedWorkoutId === workout.id && <div
+        className="absolute inset-y-0 right-0 z-[90] flex overflow-hidden rounded-r-[22px]"
+        style={{ width: 148, touchAction: "manipulation" }}
+        onPointerDown={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          aria-label="Повторить"
+          className="flex h-full w-[74px] items-center justify-center bg-zinc-700 text-white"
+          style={{ touchAction: "manipulation" }}
+          onPointerDown={(event) => triggerWorkoutSwipeButton(event, "repeat")}
+          onTouchStart={(event) => triggerWorkoutSwipeButton(event, "repeat")}
+          onPointerUp={(event) => triggerWorkoutSwipeButton(event, "repeat")}
+          onTouchEnd={(event) => triggerWorkoutSwipeButton(event, "repeat")}
+          onClick={(event) => triggerWorkoutSwipeButton(event, "repeat")}
+        >
+          <Repeat2 size={22}/>
+        </button>
+        <button
+          type="button"
+          aria-label="Удалить"
+          className="flex h-full w-[74px] items-center justify-center bg-red-500 text-xl font-black text-white"
+          style={{ touchAction: "manipulation" }}
+          onPointerDown={(event) => triggerWorkoutSwipeButton(event, "delete")}
+          onTouchStart={(event) => triggerWorkoutSwipeButton(event, "delete")}
+          onPointerUp={(event) => triggerWorkoutSwipeButton(event, "delete")}
+          onTouchEnd={(event) => triggerWorkoutSwipeButton(event, "delete")}
+          onClick={(event) => triggerWorkoutSwipeButton(event, "delete")}
+        >
+          🗑
+        </button>
+      </div>}
+    </div>;
   };
 
   const ActiveWorkoutBanner = () => {
@@ -10420,7 +10473,10 @@ const toggleExerciseMeasurementSetting = (field) => {
         </BottomSheetPanel>
       </div>}
 
-      {deleteScopeSheet && <div onClick={() => setDeleteScopeSheet(null)} className="onlypump-modal-layer fixed inset-0 z-[195] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+      {deleteScopeSheet && <div onClick={() => {
+        if (Date.now() - deleteScopeOpenedAtRef.current < 650) return;
+        setDeleteScopeSheet(null);
+      }} className="onlypump-modal-layer fixed inset-0 z-[195] flex items-end bg-black/45 p-4 backdrop-blur-sm">
         <BottomSheetPanel onClose={() => setDeleteScopeSheet(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
           <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
           <div className="flex items-start justify-between gap-3">
