@@ -5327,8 +5327,6 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const completionSaveRef = useRef(null);
   const loadedWorkoutProfileRef = useRef(null);
   const workoutsRef = useRef(workouts);
-  const workoutSwipeActionPressRef = useRef(null);
-  const workoutSwipeActionTriggerRef = useRef({ key: "", time: 0 });
   const deleteScopeOpenedAtRef = useRef(0);
   const repeatSheetOpenedAtRef = useRef(0);
   const pendingWorkoutPatchesRef = useRef({});
@@ -9145,93 +9143,6 @@ const toggleExerciseMeasurementSetting = (field) => {
     setWeekMenuGroup(null);
   };
 
-  useEffect(() => {
-    if (!swipedWorkoutId) {
-      workoutSwipeActionPressRef.current = null;
-      return undefined;
-    }
-
-    const readPoint = (event) => {
-      const touch = event.changedTouches?.[0] || event.touches?.[0];
-      return touch || event;
-    };
-
-    const getSwipedWorkoutActionHit = (event) => {
-      const point = readPoint(event);
-      const clientX = point?.clientX;
-      if (clientX == null) return null;
-      const rows = Array.from(document.querySelectorAll('[data-workout-swipe-id]'));
-      const row = rows.find(item => item.getAttribute("data-workout-swipe-id") === String(swipedWorkoutId));
-      const rect = row?.getBoundingClientRect?.();
-      if (!rect) return null;
-      const repeatLeft = rect.right - 148;
-      const deleteLeft = rect.right - 74;
-      if (clientX < repeatLeft || clientX > rect.right) return null;
-      const workout = resolveWorkoutForDelete(swipedWorkoutId);
-      if (!workout) return null;
-      return {
-        action: clientX >= deleteLeft ? "delete" : "repeat",
-        workout,
-      };
-    };
-
-    const triggerSwipedWorkoutAction = (event, hit) => {
-      if (!hit?.workout) return false;
-      const key = `${hit.workout.id}:${hit.action}`;
-      const now = Date.now();
-      if (workoutSwipeActionTriggerRef.current.key === key && now - workoutSwipeActionTriggerRef.current.time < 450) {
-        event?.preventDefault?.();
-        event?.stopPropagation?.();
-        return true;
-      }
-      workoutSwipeActionTriggerRef.current = { key, time: now };
-      event?.preventDefault?.();
-      event?.stopPropagation?.();
-      if (hit.action === "delete") {
-        handleDeleteSingleWorkoutNow(event, hit.workout);
-      } else {
-        setSwipedWorkoutId(null);
-        openRepeatSheet(hit.workout);
-      }
-      return true;
-    };
-
-    const handleActionStart = (event) => {
-      const hit = getSwipedWorkoutActionHit(event);
-      workoutSwipeActionPressRef.current = hit;
-      if (hit) {
-        event.stopPropagation?.();
-      }
-    };
-
-    const handleActionEnd = (event) => {
-      const startedHit = workoutSwipeActionPressRef.current;
-      const endedHit = getSwipedWorkoutActionHit(event);
-      workoutSwipeActionPressRef.current = null;
-      if (!startedHit || !endedHit) return;
-      if (startedHit.action !== endedHit.action || startedHit.workout.id !== endedHit.workout.id) return;
-      triggerSwipedWorkoutAction(event, endedHit);
-    };
-
-    const handleActionClick = (event) => {
-      const hit = getSwipedWorkoutActionHit(event);
-      if (hit) triggerSwipedWorkoutAction(event, hit);
-    };
-
-    document.addEventListener("pointerdown", handleActionStart, true);
-    document.addEventListener("pointerup", handleActionEnd, true);
-    document.addEventListener("touchstart", handleActionStart, { capture: true, passive: false });
-    document.addEventListener("touchend", handleActionEnd, { capture: true, passive: false });
-    document.addEventListener("click", handleActionClick, true);
-    return () => {
-      document.removeEventListener("pointerdown", handleActionStart, true);
-      document.removeEventListener("pointerup", handleActionEnd, true);
-      document.removeEventListener("touchstart", handleActionStart, { capture: true });
-      document.removeEventListener("touchend", handleActionEnd, { capture: true });
-      document.removeEventListener("click", handleActionClick, true);
-    };
-  }, [swipedWorkoutId]);
-
   const buildWorkoutDateTimeIso = (dateKey, hour = 0, minute = 0) => {
     const date = parseDateKey(dateKey || selectedDateKey);
     date.setHours(Number(hour || 0), Number(minute || 0), 0, 0);
@@ -9933,8 +9844,23 @@ const toggleExerciseMeasurementSetting = (field) => {
 
   const WorkoutCard = ({ workout }) => {
     const pointerTimerRef = useRef(null);
-    const swipeActionTapRef = useRef({ action: "", time: 0 });
+    const swipeRef = useRef({ startX: 0, startY: 0, startOffset: 0, dragging: false, swiping: false, didDrag: false });
+    const latestOffsetRef = useRef(0);
+    const actionTapRef = useRef({ action: "", time: 0 });
+    const [cardOffset, setCardOffset] = useState(swipedWorkoutId === workout.id ? -148 : 0);
     const statusColor = workoutStatusColors[workout.status] || workoutStatusColors.completed;
+    const isOpen = swipedWorkoutId === workout.id;
+
+    const setWorkoutCardOffset = (value) => {
+      const next = Math.max(-148, Math.min(0, value));
+      latestOffsetRef.current = next;
+      setCardOffset(next);
+    };
+
+    useEffect(() => {
+      if (swipeRef.current.dragging) return;
+      setWorkoutCardOffset(isOpen ? -148 : 0);
+    }, [isOpen]);
 
     const startLongPress = () => {
       clearTimeout(pointerTimerRef.current);
@@ -9945,64 +9871,132 @@ const toggleExerciseMeasurementSetting = (field) => {
       clearTimeout(pointerTimerRef.current);
     };
 
-    const handleSwipedWorkoutActionTap = (event) => {
-      if (swipedWorkoutId !== workout.id) return false;
-      const row = event.currentTarget.closest?.('[data-swipe-row="true"]');
-      const rect = row?.getBoundingClientRect?.();
-      const clientX = event.clientX ?? event.changedTouches?.[0]?.clientX ?? event.touches?.[0]?.clientX;
-      if (!rect || clientX == null) return false;
-      const deleteLeft = rect.right - 74;
-      const repeatLeft = rect.right - 148;
-      if (clientX >= deleteLeft && clientX <= rect.right) {
-        event.preventDefault();
-        event.stopPropagation();
-        handleDeleteSingleWorkoutNow(event, workout);
-        return true;
-      }
-      if (clientX >= repeatLeft && clientX < deleteLeft) {
-        event.preventDefault();
-        event.stopPropagation();
-        setSwipedWorkoutId(null);
-        openRepeatSheet(workout);
-        return true;
-      }
-      return false;
-    };
-
-    const handleWorkoutCardClickCapture = (event) => {
-      if (handleSwipedWorkoutActionTap(event)) return;
-    };
-
-    const triggerWorkoutSwipeButton = (event, action) => {
+    const triggerWorkoutAction = (event, action) => {
       event?.preventDefault?.();
       event?.stopPropagation?.();
       clearTimeout(pointerTimerRef.current);
       const now = Date.now();
-      if (swipeActionTapRef.current.action === action && now - swipeActionTapRef.current.time < 450) return;
-      swipeActionTapRef.current = { action, time: now };
+      if (actionTapRef.current.action === action && now - actionTapRef.current.time < 450) return;
+      actionTapRef.current = { action, time: now };
       if (action === "delete") {
         handleDeleteSingleWorkoutNow(event, workout);
         return;
       }
       setSwipedWorkoutId(null);
+      setWorkoutCardOffset(0);
       openRepeatSheet(workout);
     };
 
-    return <div className="relative mb-4">
-      <SwipeActionRow rowId={workout.id} swipedId={swipedWorkoutId} setSwipedId={setSwipedWorkoutId} dataAttributes={{ "data-workout-swipe-id": workout.id }} actionWidth={74} actions={[
-      { label: "repeat", icon: <Repeat2 size={22}/>, className: "bg-zinc-700", onClick: () => openRepeatSheet(workout) },
-      { label: "delete", icon: "🗑", className: "bg-red-500", onClick: (event) => handleDeleteSingleWorkoutNow(event, workout) },
-    ]}>
+    const handleCardPointerDown = (event) => {
+      if (event.target?.closest?.('[data-workout-swipe-action="true"]')) return;
+      if (swipedWorkoutId && swipedWorkoutId !== workout.id) setSwipedWorkoutId(null);
+      swipeRef.current.startX = event.clientX;
+      swipeRef.current.startY = event.clientY;
+      swipeRef.current.startOffset = latestOffsetRef.current;
+      swipeRef.current.dragging = true;
+      swipeRef.current.swiping = false;
+      swipeRef.current.didDrag = false;
+      startLongPress();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    };
+
+    const handleCardPointerMove = (event) => {
+      const state = swipeRef.current;
+      if (!state.dragging) return;
+      const dx = event.clientX - state.startX;
+      const dy = event.clientY - state.startY;
+      if (!state.swiping && Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+      if (state.swiping || Math.abs(dx) > Math.abs(dy) + 4) {
+        cancelLongPress();
+        state.swiping = true;
+        state.didDrag = true;
+        event.preventDefault();
+        const nextOffset = state.startOffset + dx;
+        setWorkoutCardOffset(nextOffset);
+        if (nextOffset < -8) setSwipedWorkoutId(workout.id);
+      }
+    };
+
+    const handleCardPointerUp = (event) => {
+      const state = swipeRef.current;
+      cancelLongPress();
+      if (!state.dragging) return;
+      state.dragging = false;
+      try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+      const shouldOpen = latestOffsetRef.current < -56;
+      setSwipedWorkoutId(shouldOpen ? workout.id : null);
+      setWorkoutCardOffset(shouldOpen ? -148 : 0);
+      setTimeout(() => { swipeRef.current.didDrag = false; }, 140);
+      state.swiping = false;
+    };
+
+    const handleCardClick = (event) => {
+      if (swipeRef.current.didDrag) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (isOpen) {
+        event.preventDefault();
+        event.stopPropagation();
+        setSwipedWorkoutId(null);
+        setWorkoutCardOffset(0);
+        return;
+      }
+      openWorkoutDetails(workout);
+    };
+
+    return <div
+      data-no-edge-back="true"
+      data-swipe-row="true"
+      data-workout-swipe-id={workout.id}
+      className="relative mb-4 overflow-hidden rounded-[22px]"
+      style={{ touchAction: "pan-y" }}
+    >
+      <div className="absolute inset-y-0 right-0 z-0 flex overflow-hidden rounded-r-[22px]">
+        <button
+          type="button"
+          data-workout-swipe-action="true"
+          aria-label="Повторить"
+          className="flex h-full w-[74px] items-center justify-center bg-zinc-700 text-white"
+          style={{ touchAction: "manipulation" }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+          onPointerUp={(event) => triggerWorkoutAction(event, "repeat")}
+          onTouchEnd={(event) => triggerWorkoutAction(event, "repeat")}
+          onClick={(event) => triggerWorkoutAction(event, "repeat")}
+        >
+          <Repeat2 size={22}/>
+        </button>
+        <button
+          type="button"
+          data-workout-swipe-action="true"
+          aria-label="Удалить"
+          className="flex h-full w-[74px] items-center justify-center bg-red-500 text-xl font-black text-white"
+          style={{ touchAction: "manipulation" }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+          onPointerUp={(event) => triggerWorkoutAction(event, "delete")}
+          onTouchEnd={(event) => triggerWorkoutAction(event, "delete")}
+          onClick={(event) => triggerWorkoutAction(event, "delete")}
+        >
+          🗑
+        </button>
+      </div>
       <button
         type="button"
-        onClick={() => openWorkoutDetails(workout)}
-        onClickCapture={handleWorkoutCardClickCapture}
-        onPointerDown={startLongPress}
-        onPointerUp={cancelLongPress}
-        onPointerCancel={cancelLongPress}
+        onClick={handleCardClick}
+        onPointerDown={handleCardPointerDown}
+        onPointerMove={handleCardPointerMove}
+        onPointerUp={handleCardPointerUp}
+        onPointerCancel={handleCardPointerUp}
         onPointerLeave={cancelLongPress}
         onContextMenu={(event) => { event.preventDefault(); setWeekMenuGroup({ type: "workout", workout }); }}
-        className="block w-full rounded-[22px] border border-white/10 bg-white/[0.04] p-4 text-left transition active:scale-[0.98] hover:border-red-500/40 hover:bg-red-500/5"
+        className="relative z-10 block w-full rounded-[22px] border border-white/10 bg-zinc-950 p-4 text-left transition active:scale-[0.98] hover:border-red-500/40 hover:bg-red-500/5"
+        style={{
+          transform: `translateX(${cardOffset}px)`,
+          transition: swipeRef.current.dragging ? "none" : "transform 180ms ease",
+        }}
       >
         <div className="text-[17px] font-semibold text-zinc-100">{workout.weekday}</div>
         <div className="mt-4 flex items-center gap-4">
@@ -10019,40 +10013,6 @@ const toggleExerciseMeasurementSetting = (field) => {
           </div>
         </div>
       </button>
-    </SwipeActionRow>
-      {swipedWorkoutId === workout.id && <div
-        className="absolute inset-y-0 right-0 z-[90] flex overflow-hidden rounded-r-[22px]"
-        style={{ width: 148, touchAction: "manipulation" }}
-        onPointerDown={(event) => event.stopPropagation()}
-        onTouchStart={(event) => event.stopPropagation()}
-      >
-        <button
-          type="button"
-          aria-label="Повторить"
-          className="flex h-full w-[74px] items-center justify-center bg-zinc-700 text-white"
-          style={{ touchAction: "manipulation" }}
-          onPointerDown={(event) => event.stopPropagation()}
-          onTouchStart={(event) => event.stopPropagation()}
-          onPointerUp={(event) => triggerWorkoutSwipeButton(event, "repeat")}
-          onTouchEnd={(event) => triggerWorkoutSwipeButton(event, "repeat")}
-          onClick={(event) => triggerWorkoutSwipeButton(event, "repeat")}
-        >
-          <Repeat2 size={22}/>
-        </button>
-        <button
-          type="button"
-          aria-label="Удалить"
-          className="flex h-full w-[74px] items-center justify-center bg-red-500 text-xl font-black text-white"
-          style={{ touchAction: "manipulation" }}
-          onPointerDown={(event) => triggerWorkoutSwipeButton(event, "delete")}
-          onTouchStart={(event) => triggerWorkoutSwipeButton(event, "delete")}
-          onPointerUp={(event) => triggerWorkoutSwipeButton(event, "delete")}
-          onTouchEnd={(event) => triggerWorkoutSwipeButton(event, "delete")}
-          onClick={(event) => triggerWorkoutSwipeButton(event, "delete")}
-        >
-          🗑
-        </button>
-      </div>}
     </div>;
   };
 
