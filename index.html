@@ -5753,7 +5753,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const setByClient = new Map(setRows.map(row => [String(row.client_id || ""), row]));
     const settingByClient = new Map(settingRows.map(row => [String(row.client_id || ""), row]));
     const createdIds = new Set(createdWorkouts.map(item => item.id));
-    setWorkouts(prev => prev.map(workout => {
+    const nextWorkouts = workoutsRef.current.map(workout => {
       if (!createdIds.has(workout.id)) return workout;
       const workoutRow = workoutByClient.get(String(workout.id)) || {};
       return normalizeWorkoutSupersetMetadata({
@@ -5761,6 +5761,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         supabaseId: workoutRow.id || workout.supabaseId,
         userProgramId: userProgram?.id || workout.userProgramId,
         userProgramClientId: userProgram?.client_id || workout.userProgramClientId,
+        programTemplateWorkoutId: workoutRow.program_template_workout_id || workout.programTemplateWorkoutId,
+        programTemplateWorkoutKey: workoutRow.program_template_workout_key || workout.programTemplateWorkoutKey,
+        programWeekNumber: workoutRow.program_week_number ?? workout.programWeekNumber,
+        programDayIndex: workoutRow.program_day_index ?? workout.programDayIndex,
+        programName: workoutRow.program_name || userProgram?.name || workout.programName,
+        programPlanMode: workoutRow.program_plan_mode || userProgram?.plan_mode || workout.programPlanMode,
+        programDifficulty: workoutRow.program_difficulty || userProgram?.difficulty || workout.programDifficulty,
+        isProgramGenerated: Boolean(workoutRow.is_program_generated ?? workout.isProgramGenerated),
         pending: false,
         isSaving: false,
         isSyncing: false,
@@ -5772,6 +5780,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             ...exercise,
             supabaseId: exerciseRow.id || exercise.supabaseId,
             userProgramExerciseSettingId: settingRow.id || exerciseRow.user_program_exercise_setting_id || exercise.userProgramExerciseSettingId,
+            userProgramExerciseSettingClientId: exerciseRow.user_program_exercise_setting_client_id || exercise.userProgramExerciseSettingClientId,
+            programTemplateExerciseId: exerciseRow.program_template_exercise_id || exercise.programTemplateExerciseId,
+            programTemplateExerciseKey: exerciseRow.program_template_exercise_key || exercise.programTemplateExerciseKey,
             pending: false,
             isSaving: false,
             isSyncing: false,
@@ -5790,7 +5801,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           };
         }),
       });
-    }));
+    });
+    workoutsRef.current = nextWorkouts;
+    setWorkouts(nextWorkouts);
+    return nextWorkouts;
   };
 
   const addProgramToWorkouts = async (program, draft) => {
@@ -5805,13 +5819,17 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setProgramSettingsSheet(null);
     setSelectedWorkout(null);
     setActiveTab("diary");
-    setWorkouts(prev => [...createdWorkouts, ...prev]);
+    const optimisticWorkouts = [...createdWorkouts, ...workoutsRef.current];
+    workoutsRef.current = optimisticWorkouts;
+    setWorkouts(optimisticWorkouts);
 
     if (!canUseWorkoutApi) return;
     setProgramSaving(true);
     try {
       const result = await callWorkoutsApi("create_user_program", buildProgramCreatePayload(program, draft, createdWorkouts));
-      applyProgramCreateResponse(createdWorkouts, result);
+      const savedWorkouts = applyProgramCreateResponse(createdWorkouts, result);
+      if (savedWorkouts?.length) workoutsRef.current = savedWorkouts;
+      await loadWorkoutsFromApi({ preserveSelected: false });
       console.log("Program workout fully saved");
     } catch (error) {
       console.error("Program workout save error", error);
@@ -5922,6 +5940,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         title,
         scope: apiScope,
         range: "all",
+        scope_type: apiScope === "program_workout" ? "same_program_workout" : "repeat_group",
+        time_scope: "all",
       });
       console.log("rename_workout_scope response:", result);
     } catch (error) {
@@ -5942,11 +5962,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       setSelectedWorkout(null);
       setWeekMenuGroup(null);
       setDetailMenuOpen(false);
-      const patchResult = await sendWorkoutPatch(id, { deleted_workout_ids: [workout.supabaseId] });
-      const deleted = patchResult || await deleteWorkoutViaApi(workout);
+      const deleted = await deleteWorkoutViaApi(workout);
       if (!deleted) {
         setWorkouts(previousWorkouts);
         setSelectedWorkout(previousSelectedWorkout);
+      } else {
+        await loadWorkoutsFromApi({ preserveSelected: false });
       }
       return;
     }
@@ -6001,8 +6022,16 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         workout_id: target.supabaseId,
         scope: apiScope,
         range,
+        scope_type: scope === "program" ? "program" : apiScope === "program_workout" ? "same_program_workout" : "repeat_group",
+        time_scope: range === "previous" ? "with_previous" : range === "future" ? "with_future" : "all",
       });
       console.log("delete_workout_scope response:", result);
+      const deletedSupabaseIds = new Set(readApiArray(result, "deleted_workout_ids", ["deletedWorkoutIds"]).map(item => String(item)));
+      if (deletedSupabaseIds.size) {
+        setWorkouts(prev => prev.filter(item => !deletedSupabaseIds.has(String(item.supabaseId || item.id))));
+        setSelectedWorkout(prev => prev && deletedSupabaseIds.has(String(prev.supabaseId || prev.id)) ? null : prev);
+      }
+      await loadWorkoutsFromApi({ preserveSelected: false });
     } catch (error) {
       console.error("delete_workout_scope error:", error);
       setWorkouts(previousWorkouts);
@@ -14422,7 +14451,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
           </div>
           <button onClick={() => setCardSettingsOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
         </div>
-        <div className="mt-5 space-y-2">
+        <div className="mt-5 space-y-2" data-no-sheet-drag="true">
           {visibleCardIds.map(id => {
             const card = analyticsCardCatalog.find(item => item.id === id);
             if (!card) return null;
@@ -14440,7 +14469,10 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
               style={rowStyle}
               className={`relative flex touch-none select-none items-center justify-between gap-3 rounded-2xl bg-white/[0.04] px-4 py-3 ${draggedCardId === id ? "opacity-90" : ""}`}
             >
-              <span className="font-semibold">☰ {card.title}</span>
+              <span className="flex min-w-0 items-center gap-3 font-semibold">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-zinc-400">☰</span>
+                <span className="min-w-0 break-words">{card.title}</span>
+              </span>
               <div className="flex items-center gap-2" data-no-card-drag="true" onPointerDown={(event) => event.stopPropagation()}>
                 <button type="button" onClick={() => moveAnalyticsCardByOffset(id, -1)} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.06] text-xs font-black text-zinc-300">↑</button>
                 <button type="button" onClick={() => moveAnalyticsCardByOffset(id, 1)} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.06] text-xs font-black text-zinc-300">↓</button>
