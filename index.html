@@ -6144,19 +6144,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setDeleteScopeSheet({ workout, mode: "single", step: "confirm" });
   };
 
-  const handleDeleteWorkoutClick = (event, workoutOrId) => {
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    const workout = resolveWorkoutForDelete(workoutOrId);
-    if (!workout?.id) {
-      console.warn("Delete workout clicked without workout id", workoutOrId);
-      return;
-    }
-    console.log("Swipe delete workout action triggered:", { id: workout.id, supabaseId: workout.supabaseId, title: workout.title });
-    deleteWorkout(workout);
-  };
-
-  const handleDeleteSingleWorkoutNow = (event, workoutOrId) => {
+  const requestWorkoutDeleteChoice = (event, workoutOrId) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
     const workout = resolveWorkoutForDelete(workoutOrId);
@@ -6168,6 +6156,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setSwipedWorkoutId(null);
     deleteWorkout(workout);
   };
+
+  const handleDeleteWorkoutClick = requestWorkoutDeleteChoice;
 
   const applyWorkoutDeleteScope = async (scope = "only", range = "all") => {
     const sheet = deleteScopeSheet;
@@ -9846,9 +9836,6 @@ const toggleExerciseMeasurementSetting = (field) => {
     const swipeRef = useRef({ startX: 0, startY: 0, startOffset: 0, dragging: false, swiping: false, didDrag: false, verticalScrolling: false });
     const latestOffsetRef = useRef(0);
     const actionTapRef = useRef({ action: "", time: 0 });
-    const actionUnlockAtRef = useRef(0);
-    const actionUnlockTimerRef = useRef(null);
-    const [actionsLocked, setActionsLocked] = useState(false);
     const [cardOffset, setCardOffset] = useState(swipedWorkoutId === workout.id ? -148 : 0);
     const statusColor = workoutStatusColors[workout.status] || workoutStatusColors.completed;
     const isOpen = swipedWorkoutId === workout.id;
@@ -9864,18 +9851,6 @@ const toggleExerciseMeasurementSetting = (field) => {
       setWorkoutCardOffset(isOpen ? -148 : 0);
     }, [isOpen]);
 
-    useEffect(() => () => clearTimeout(actionUnlockTimerRef.current), []);
-
-    const lockWorkoutActions = (duration = 420) => {
-      clearTimeout(actionUnlockTimerRef.current);
-      actionUnlockAtRef.current = Date.now() + duration;
-      setActionsLocked(true);
-      actionUnlockTimerRef.current = setTimeout(() => {
-        actionUnlockAtRef.current = 0;
-        setActionsLocked(false);
-      }, duration);
-    };
-
     const startLongPress = () => {
       clearTimeout(pointerTimerRef.current);
       pointerTimerRef.current = setTimeout(() => setWeekMenuGroup({ type: "workout", workout }), 550);
@@ -9890,12 +9865,10 @@ const toggleExerciseMeasurementSetting = (field) => {
       event?.stopPropagation?.();
       clearTimeout(pointerTimerRef.current);
       const now = Date.now();
-      if (actionsLocked) return;
-      if (now < actionUnlockAtRef.current) return;
       if (actionTapRef.current.action === action && now - actionTapRef.current.time < 450) return;
       actionTapRef.current = { action, time: now };
       if (action === "delete") {
-        handleDeleteSingleWorkoutNow(event, workout);
+        requestWorkoutDeleteChoice(event, workout);
         return;
       }
       setSwipedWorkoutId(null);
@@ -9913,7 +9886,6 @@ const toggleExerciseMeasurementSetting = (field) => {
       swipeRef.current.swiping = false;
       swipeRef.current.didDrag = false;
       swipeRef.current.verticalScrolling = false;
-      setActionsLocked(false);
       startLongPress();
       event.currentTarget.setPointerCapture?.(event.pointerId);
     };
@@ -9942,7 +9914,6 @@ const toggleExerciseMeasurementSetting = (field) => {
         cancelLongPress();
         state.swiping = true;
         state.didDrag = true;
-        setActionsLocked(true);
         event.preventDefault();
         const nextOffset = state.startOffset + dx;
         setWorkoutCardOffset(nextOffset);
@@ -9963,13 +9934,6 @@ const toggleExerciseMeasurementSetting = (field) => {
       const shouldOpen = latestOffsetRef.current < -96 || dx < -92;
       setSwipedWorkoutId(shouldOpen ? workout.id : null);
       setWorkoutCardOffset(shouldOpen ? -148 : 0);
-      if (shouldOpen) {
-        lockWorkoutActions(420);
-      } else {
-        clearTimeout(actionUnlockTimerRef.current);
-        actionUnlockAtRef.current = 0;
-        setActionsLocked(false);
-      }
       setTimeout(() => { swipeRef.current.didDrag = false; }, 180);
       state.swiping = false;
     };
@@ -10003,11 +9967,9 @@ const toggleExerciseMeasurementSetting = (field) => {
           data-workout-swipe-action="true"
           aria-label="Повторить"
           className="flex h-full w-[74px] items-center justify-center bg-zinc-700 text-white"
-          style={{ touchAction: "manipulation", pointerEvents: actionsLocked ? "none" : "auto" }}
+          style={{ touchAction: "manipulation" }}
           onPointerDown={(event) => event.stopPropagation()}
           onTouchStart={(event) => event.stopPropagation()}
-          onPointerUp={(event) => triggerWorkoutAction(event, "repeat")}
-          onTouchEnd={(event) => triggerWorkoutAction(event, "repeat")}
           onClick={(event) => triggerWorkoutAction(event, "repeat")}
         >
           <Repeat2 size={22}/>
@@ -10017,11 +9979,9 @@ const toggleExerciseMeasurementSetting = (field) => {
           data-workout-swipe-action="true"
           aria-label="Удалить"
           className="flex h-full w-[74px] items-center justify-center bg-red-500 text-xl font-black text-white"
-          style={{ touchAction: "manipulation", pointerEvents: actionsLocked ? "none" : "auto" }}
+          style={{ touchAction: "manipulation" }}
           onPointerDown={(event) => event.stopPropagation()}
           onTouchStart={(event) => event.stopPropagation()}
-          onPointerUp={(event) => triggerWorkoutAction(event, "delete")}
-          onTouchEnd={(event) => triggerWorkoutAction(event, "delete")}
           onClick={(event) => triggerWorkoutAction(event, "delete")}
         >
           🗑
@@ -11703,7 +11663,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             <button onClick={() => openRepeatSheet(weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Повторить тренировку</button>
             <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Перенести на другую дату</button>
             <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Превратить в программу</button>
-            <button type="button" onClick={(event) => handleDeleteSingleWorkoutNow(event, weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
+            <button type="button" onClick={(event) => requestWorkoutDeleteChoice(event, weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           </div>
         </>}
       </BottomSheetPanel>
