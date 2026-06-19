@@ -791,6 +791,8 @@ const DEFAULT_PROFILE = {
   light_theme_start_time: "06:00",
   light_theme_end_time: "20:00",
   theme_updated_at: null,
+  analytics_cards_order: [],
+  analytics_cards_hidden: [],
   source: "fallback",
 };
 
@@ -847,6 +849,20 @@ function parseProfileBoolean(value, fallback = false) {
   if (value === true || value === "true" || value === 1 || value === "1") return true;
   if (value === false || value === "false" || value === 0 || value === "0") return false;
   return fallback;
+}
+
+function normalizeProfileStringArray(value, fallback = []) {
+  if (Array.isArray(value)) return value.map(item => String(item || "").trim()).filter(Boolean);
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.map(item => String(item || "").trim()).filter(Boolean);
+    } catch (error) {}
+    return trimmed.split(",").map(item => item.trim()).filter(Boolean);
+  }
+  return Array.isArray(fallback) ? fallback.map(item => String(item || "").trim()).filter(Boolean) : [];
 }
 
 function normalizeThemeTime(value, fallback = "06:00") {
@@ -981,6 +997,8 @@ function buildFallbackProfile(overrides = {}) {
     light_theme_start_time: normalizeThemeTime(overrides.light_theme_start_time, DEFAULT_PROFILE.light_theme_start_time),
     light_theme_end_time: normalizeThemeTime(overrides.light_theme_end_time, DEFAULT_PROFILE.light_theme_end_time),
     theme_updated_at: overrides.theme_updated_at || DEFAULT_PROFILE.theme_updated_at,
+    analytics_cards_order: normalizeProfileStringArray(overrides.analytics_cards_order, DEFAULT_PROFILE.analytics_cards_order),
+    analytics_cards_hidden: normalizeProfileStringArray(overrides.analytics_cards_hidden, DEFAULT_PROFILE.analytics_cards_hidden),
     source: overrides.source || "fallback",
   };
 }
@@ -1049,6 +1067,8 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     light_theme_start_time: normalizeThemeTime(record.light_theme_start_time ?? fallback.light_theme_start_time, DEFAULT_PROFILE.light_theme_start_time),
     light_theme_end_time: normalizeThemeTime(record.light_theme_end_time ?? fallback.light_theme_end_time, DEFAULT_PROFILE.light_theme_end_time),
     theme_updated_at: record.theme_updated_at || fallback.theme_updated_at || null,
+    analytics_cards_order: normalizeProfileStringArray(record.analytics_cards_order, fallback.analytics_cards_order || DEFAULT_PROFILE.analytics_cards_order),
+    analytics_cards_hidden: normalizeProfileStringArray(record.analytics_cards_hidden, fallback.analytics_cards_hidden || DEFAULT_PROFILE.analytics_cards_hidden),
     source: record.source || fallback.source || "supabase",
   };
 }
@@ -2651,6 +2671,8 @@ const createWorkoutModel = (dateKey, patch = {}) => {
     exercises: patch.exercises ? cloneWorkoutExercises(patch.exercises) : defaultWorkoutExercisesForTitle(title),
     notes: patch.notes || "",
     templateId: patch.templateId,
+    repeatGroupId: patch.repeatGroupId ?? patch.repeat_group_id ?? null,
+    sourceWorkoutId: patch.sourceWorkoutId ?? patch.source_workout_id ?? null,
     userProgramId: patch.userProgramId ?? patch.user_program_id ?? null,
     userProgramClientId: patch.userProgramClientId ?? patch.user_program_client_id ?? null,
     programTemplateWorkoutId: patch.programTemplateWorkoutId ?? patch.program_template_workout_id ?? null,
@@ -2837,6 +2859,8 @@ const mapWorkoutFromApi = (row = {}, index = 0, fallbackDateKey = formatDateKey(
     exercises: mappedExercises,
 	    notes: row.notes || "",
 	    templateId: row.template_id || row.templateId || null,
+	    repeatGroupId: row.repeat_group_id || row.repeatGroupId || null,
+	    sourceWorkoutId: row.source_workout_id || row.sourceWorkoutId || null,
 	    userProgramId: row.user_program_id || row.userProgramId || null,
 	    userProgramClientId: row.user_program_client_id || row.userProgramClientId || null,
 	    programTemplateWorkoutId: row.program_template_workout_id || row.programTemplateWorkoutId || null,
@@ -5145,6 +5169,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [restDraft, setRestDraft] = useState({ minutes: "2", seconds: "0" });
   const [repeatSheetWorkout, setRepeatSheetWorkout] = useState(null);
   const [repeatScheduler, setRepeatScheduler] = useState(null);
+  const [renameScopeSheet, setRenameScopeSheet] = useState(null);
+  const [deleteScopeSheet, setDeleteScopeSheet] = useState(null);
   const [finishChoiceSheet, setFinishChoiceSheet] = useState(null);
   const [completionSummarySheet, setCompletionSummarySheet] = useState(null);
   const [completionSaving, setCompletionSaving] = useState(false);
@@ -5818,7 +5844,88 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setWorkouts(prev => [copy, ...prev]);
   };
 
-  const deleteWorkout = async (id) => {
+  const isProgramLinkedWorkout = (workout = {}) => Boolean(workout?.userProgramId || workout?.userProgramClientId || workout?.isProgramGenerated || workout?.programName);
+  const isRepeatLinkedWorkout = (workout = {}) => Boolean(workout?.repeatGroupId || workout?.repeat_group_id);
+  const workoutProgramKey = (workout = {}) => workout.userProgramId || workout.userProgramClientId || null;
+  const workoutProgramTemplateKey = (workout = {}) => workout.programTemplateWorkoutId || workout.programTemplateWorkoutKey || null;
+  const workoutRepeatKey = (workout = {}) => workout.repeatGroupId || workout.repeat_group_id || null;
+  const workoutScopeRangeMatches = (workout, target, range = "all") => {
+    const date = workoutDateKey(workout);
+    const targetDate = workoutDateKey(target);
+    if (!date || !targetDate) return true;
+    if (range === "previous" || range === "with_previous") return date <= targetDate;
+    if (range === "future" || range === "with_future") return date >= targetDate;
+    return true;
+  };
+  const getScopedWorkoutMatches = (target, scope = "only", range = "all") => {
+    if (!target) return [];
+    const programKey = workoutProgramKey(target);
+    const templateKey = workoutProgramTemplateKey(target);
+    const repeatKey = workoutRepeatKey(target);
+    const matches = workoutsRef.current.filter(workout => {
+      if (!workoutScopeRangeMatches(workout, target, range)) return false;
+      if (scope === "program") return Boolean(programKey) && workoutProgramKey(workout) === programKey;
+      if (scope === "program_workout" || scope === "program_same" || scope === "all_such") {
+        if (!programKey || workoutProgramKey(workout) !== programKey) return false;
+        return Boolean(templateKey) && workoutProgramTemplateKey(workout) === templateKey;
+      }
+      if (scope === "repeat" || scope === "series") return Boolean(repeatKey) && workoutRepeatKey(workout) === repeatKey;
+      return workout.id === target.id;
+    });
+    return matches.length ? matches : [target];
+  };
+
+  const renameWorkoutOnly = (workout, title) => {
+    if (!workout) return;
+    const id = workout.id;
+    const patch = (item) => ({ ...item, title, updatedAt: new Date().toISOString() });
+    setWorkouts(prev => prev.map(item => item.id === id ? patch(item) : item));
+    setSelectedWorkout(prev => prev?.id === id ? patch(prev) : prev);
+    if (workout?.supabaseId) {
+      const nextWorkout = patch(workout);
+      console.log("Updating workout title:", { workout_id: workout.supabaseId, title });
+      queueWorkoutPatch(id, {
+        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
+      }, { immediate: true });
+    }
+  };
+
+  const applyWorkoutRenameScope = async (scope = "only") => {
+    const sheet = renameScopeSheet;
+    if (!sheet?.workout) return;
+    const title = sheet.title || "Новая тренировка";
+    const target = sheet.workout;
+    setRenameScopeSheet(null);
+    if (scope === "only") {
+      renameWorkoutOnly(target, title);
+      return;
+    }
+    const apiScope = isProgramLinkedWorkout(target) ? "program_workout" : "repeat";
+    const matches = getScopedWorkoutMatches(target, apiScope, "all");
+    const ids = new Set(matches.map(item => item.id));
+    const previous = workoutsRef.current;
+    const patch = (item) => ({ ...item, title, updatedAt: new Date().toISOString() });
+    setWorkouts(prev => prev.map(item => ids.has(item.id) ? patch(item) : item));
+    setSelectedWorkout(prev => prev && ids.has(prev.id) ? patch(prev) : prev);
+    if (!canUseWorkoutApi || !target.supabaseId) return;
+    try {
+      const result = await callWorkoutsApi("rename_workout_scope", {
+        profile_id: profile.id,
+        id: target.supabaseId,
+        workout_id: target.supabaseId,
+        title,
+        scope: apiScope,
+        range: "all",
+      });
+      console.log("rename_workout_scope response:", result);
+    } catch (error) {
+      console.error("rename_workout_scope error:", error);
+      setWorkouts(previous);
+      setSelectedWorkout(prev => prev?.id ? previous.find(item => item.id === prev.id) || prev : prev);
+    }
+  };
+
+  const deleteWorkoutOnly = async (id) => {
     const workout = workoutsRef.current.find(item => item.id === id) || (selectedWorkout?.id === id ? selectedWorkout : null);
     console.log("Deleting workout:", workout);
     if (canUseWorkoutApi && workout?.supabaseId) {
@@ -5841,6 +5948,60 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setSelectedWorkout(null);
     setWeekMenuGroup(null);
     setDetailMenuOpen(false);
+  };
+
+  const deleteWorkout = async (id) => {
+    const workout = workoutsRef.current.find(item => item.id === id) || (selectedWorkout?.id === id ? selectedWorkout : null);
+    if (!workout) return;
+    if (isProgramLinkedWorkout(workout)) {
+      setDeleteScopeSheet({ workout, mode: "program", step: "scope" });
+      setWeekMenuGroup(null);
+      setDetailMenuOpen(false);
+      return;
+    }
+    if (isRepeatLinkedWorkout(workout)) {
+      setDeleteScopeSheet({ workout, mode: "repeat", step: "scope" });
+      setWeekMenuGroup(null);
+      setDetailMenuOpen(false);
+      return;
+    }
+    await deleteWorkoutOnly(id);
+  };
+
+  const applyWorkoutDeleteScope = async (scope = "only", range = "all") => {
+    const sheet = deleteScopeSheet;
+    const target = sheet?.workout;
+    if (!target) return;
+    setDeleteScopeSheet(null);
+    if (scope === "only") {
+      await deleteWorkoutOnly(target.id);
+      return;
+    }
+    const apiScope = scope === "program" ? "program" : scope === "program_workout" ? "program_workout" : "repeat";
+    const matches = getScopedWorkoutMatches(target, apiScope, range);
+    const localIds = new Set(matches.map(item => item.id));
+    const previousWorkouts = workoutsRef.current;
+    const previousSelectedWorkout = selectedWorkout;
+    matches.forEach(item => clearWorkoutSaveQueue(item.id));
+    setWorkouts(prev => prev.filter(item => !localIds.has(item.id)));
+    setSelectedWorkout(prev => prev && localIds.has(prev.id) ? null : prev);
+    setWeekMenuGroup(null);
+    setDetailMenuOpen(false);
+    if (!canUseWorkoutApi || !target.supabaseId) return;
+    try {
+      const result = await callWorkoutsApi(scope === "program" ? "delete_program_scope" : "delete_workout_scope", {
+        profile_id: profile.id,
+        id: target.supabaseId,
+        workout_id: target.supabaseId,
+        scope: apiScope,
+        range,
+      });
+      console.log("delete_workout_scope response:", result);
+    } catch (error) {
+      console.error("delete_workout_scope error:", error);
+      setWorkouts(previousWorkouts);
+      setSelectedWorkout(previousSelectedWorkout);
+    }
   };
 
   const toggleWeek = (groupId) => {
@@ -6206,6 +6367,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 	      estimated_calories_burned: safeWorkoutNumber(workout?.estimatedCaloriesBurned ?? workout?.estimated_calories_burned ?? workout?.calories, 0),
 	      started_at: workout?.startedAt || workout?.started_at || null,
 	      auto_stopped_at: workout?.autoStoppedAt || workout?.auto_stopped_at || null,
+	      repeat_group_id: workout?.repeatGroupId || workout?.repeat_group_id || undefined,
+	      source_workout_id: workout?.sourceWorkoutId || workout?.source_workout_id || undefined,
 	      ...(isProgramWorkout ? {
 	        user_program_id: workout?.userProgramId || workout?.user_program_id || undefined,
 	        user_program_client_id: workout?.userProgramClientId || workout?.user_program_client_id || undefined,
@@ -6342,6 +6505,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 	      estimated_calories_burned: safeWorkoutNumber(workout.estimatedCaloriesBurned ?? workout.estimated_calories_burned ?? workout.calories, 0),
 	      started_at: workout.startedAt || workout.started_at || null,
 	      auto_stopped_at: workout.autoStoppedAt || workout.auto_stopped_at || null,
+	      repeat_group_id: workout.repeatGroupId || workout.repeat_group_id || undefined,
+	      source_workout_id: workout.sourceWorkoutId || workout.source_workout_id || undefined,
 	      ...(isProgramWorkout ? {
 	        user_program_id: workout.userProgramId || workout.user_program_id || undefined,
 	        user_program_client_id: workout.userProgramClientId || workout.user_program_client_id || undefined,
@@ -7328,21 +7493,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const saveWorkoutTitleDraft = () => {
     if (!selectedWorkout) return;
     const title = workoutTitleDraft.trim() || "Новая тренировка";
-    const titlePayload = { id: selectedWorkout.supabaseId, title };
-    console.log("Saving workout title:", { workout_id: selectedWorkout.supabaseId, title });
-    console.log("Saving workout title payload:", titlePayload);
-    const id = selectedWorkout.id;
-    const patch = (workout) => ({ ...workout, title, updatedAt: new Date().toISOString() });
-    setWorkouts(prev => prev.map(workout => workout.id === id ? patch(workout) : workout));
-    setSelectedWorkout(prev => prev?.id === id ? patch(prev) : prev);
-    const workout = workouts.find(item => item.id === id) || selectedWorkout;
-    if (workout?.supabaseId) {
-      const nextWorkout = patch(workout);
-      console.log("Updating workout title:", { workout_id: workout.supabaseId, title });
-      queueWorkoutPatch(id, {
-        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
-      }, { immediate: true });
+    const workout = workouts.find(item => item.id === selectedWorkout.id) || selectedWorkout;
+    if ((workout.title || "") === title) return;
+    console.log("Saving workout title:", { workout_id: workout.supabaseId, title });
+    if (isProgramLinkedWorkout(workout) || isRepeatLinkedWorkout(workout)) {
+      setRenameScopeSheet({ workout, title });
+      return;
     }
+    renameWorkoutOnly(workout, title);
   };
 
   const updateWorkoutTitleDraft = (title) => {
@@ -9044,6 +9202,16 @@ const toggleExerciseMeasurementSetting = (field) => {
     const targetDateKey = mode === "now" ? formatDateKey(new Date()) : (options.dateKey || selectedDateKey);
     const status = mode === "planned" ? "planned" : mode === "completed" ? "completed" : "active";
     const workoutType = normalizeWorkoutType(workout?.workoutType);
+    const repeatGroupId = workout?.repeatGroupId || workout?.repeat_group_id || createOnlyPumpUuid();
+    if (workout?.id && !workout.repeatGroupId && !workout.repeat_group_id) {
+      const sourcePatch = { repeatGroupId, repeat_group_id: repeatGroupId };
+      patchWorkoutInState(workout.id, item => ({ ...item, ...sourcePatch }));
+      if (workout.supabaseId) {
+        queueWorkoutPatch(workout.id, {
+          workout_updates: [{ id: workout.supabaseId, repeat_group_id: repeatGroupId }],
+        }, { immediate: true });
+      }
+    }
     const startedAt = mode === "now"
       ? new Date().toISOString()
       : buildWorkoutDateTimeIso(targetDateKey, options.hour, options.minute);
@@ -9066,6 +9234,8 @@ const toggleExerciseMeasurementSetting = (field) => {
       exercises: repeatedExercises,
       notes: workout.notes,
       templateId: workout.templateId,
+      repeatGroupId,
+      sourceWorkoutId: workout.supabaseId || workout.sourceWorkoutId || null,
     });
     if (mode === "completed") copy.finishedAt = startedAt;
 
@@ -9394,6 +9564,8 @@ const toggleExerciseMeasurementSetting = (field) => {
   useAppBackLayer("workouts-open-menu", Boolean(openMenu), () => setOpenMenu(null), 175);
   useAppBackLayer("workouts-finish-choice", Boolean(finishChoiceSheet), () => setFinishChoiceSheet(null), 178);
   useAppBackLayer("workouts-completion-summary", Boolean(completionSummarySheet), () => setCompletionSummarySheet(null), 177);
+  useAppBackLayer("workouts-delete-scope", Boolean(deleteScopeSheet), () => setDeleteScopeSheet(null), 176);
+  useAppBackLayer("workouts-rename-scope", Boolean(renameScopeSheet), () => setRenameScopeSheet(null), 176);
   useAppBackLayer("workouts-repeat-scheduler", Boolean(repeatScheduler), () => setRepeatScheduler(null), 174);
   useAppBackLayer("workouts-repeat-sheet", Boolean(repeatSheetWorkout), () => setRepeatSheetWorkout(null), 173);
   useAppBackLayer("workouts-detail-menu", detailMenuOpen, () => setDetailMenuOpen(false), 170);
@@ -9919,6 +10091,55 @@ const toggleExerciseMeasurementSetting = (field) => {
             {selectedWorkout.status === "active" && <button onClick={() => { finishActiveWorkout(); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Завершить</button>}
             <button onClick={() => deleteWorkout(selectedWorkout.id)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           </div>
+        </BottomSheetPanel>
+      </div>}
+
+      {renameScopeSheet && <div onClick={() => { setWorkoutTitleDraft(selectedWorkout?.title || ""); setRenameScopeSheet(null); }} className="onlypump-modal-layer fixed inset-0 z-[195] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+        <BottomSheetPanel onClose={() => { setWorkoutTitleDraft(selectedWorkout?.title || ""); setRenameScopeSheet(null); }} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+          <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Переименование</p>
+              <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">К чему применить?</h2>
+              <p className="mt-2 text-sm leading-6 text-zinc-500">Новое название: {renameScopeSheet.title}</p>
+            </div>
+            <button onClick={() => { setWorkoutTitleDraft(selectedWorkout?.title || ""); setRenameScopeSheet(null); }} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+          </div>
+          <div className="mt-5 space-y-2">
+            <button onClick={() => applyWorkoutRenameScope("only")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black">Переименовать только эту</button>
+            <button onClick={() => applyWorkoutRenameScope("all_such")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">{isProgramLinkedWorkout(renameScopeSheet.workout) ? "Переименовать все такие в программе" : "Переименовать всю серию повторов"}</button>
+            <button onClick={() => { setWorkoutTitleDraft(selectedWorkout?.title || ""); setRenameScopeSheet(null); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
+          </div>
+        </BottomSheetPanel>
+      </div>}
+
+      {deleteScopeSheet && <div onClick={() => setDeleteScopeSheet(null)} className="onlypump-modal-layer fixed inset-0 z-[195] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+        <BottomSheetPanel onClose={() => setDeleteScopeSheet(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+          <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Удаление</p>
+              <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{deleteScopeSheet.workout?.title}</h2>
+              <p className="mt-2 text-sm leading-6 text-zinc-500">{deleteScopeSheet.step === "range" ? "Выбери диапазон связанных тренировок." : "Выбери, что именно удалить."}</p>
+            </div>
+            <button onClick={() => setDeleteScopeSheet(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+          </div>
+          {deleteScopeSheet.mode === "program" && deleteScopeSheet.step !== "range" ? <div className="mt-5 space-y-2">
+            <button onClick={() => applyWorkoutDeleteScope("only")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black">Удалить только эту тренировку</button>
+            <button onClick={() => setDeleteScopeSheet(sheet => ({ ...sheet, step: "range", scope: "program_workout" }))} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить все такие тренировки</button>
+            <button onClick={() => setDeleteScopeSheet(sheet => ({ ...sheet, step: "range", scope: "program" }))} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-300 hover:bg-red-500/10">Удалить эту программу тренировок</button>
+            <button onClick={() => setDeleteScopeSheet(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
+          </div> : deleteScopeSheet.mode === "program" ? <div className="mt-5 space-y-2">
+            <button onClick={() => applyWorkoutDeleteScope(deleteScopeSheet.scope, "all")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black">Удалить полностью</button>
+            <button onClick={() => applyWorkoutDeleteScope(deleteScopeSheet.scope, "previous")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить с предыдущими</button>
+            <button onClick={() => applyWorkoutDeleteScope(deleteScopeSheet.scope, "future")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить вместе с будущими</button>
+            <button onClick={() => setDeleteScopeSheet(sheet => ({ ...sheet, step: "scope" }))} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Назад</button>
+          </div> : <div className="mt-5 space-y-2">
+            <button onClick={() => applyWorkoutDeleteScope("only")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black">Удалить только эту</button>
+            <button onClick={() => applyWorkoutDeleteScope("repeat", "previous")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить с предыдущими</button>
+            <button onClick={() => applyWorkoutDeleteScope("repeat", "future")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить вместе с будущими</button>
+            <button onClick={() => setDeleteScopeSheet(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
+          </div>}
         </BottomSheetPanel>
       </div>}
 
@@ -13078,6 +13299,312 @@ const analyticsTypeConfigs = {
   training_load: { title: "Тренировочная нагрузка", source: "training", metrics: trainingAnalyticsMetrics, defaultMetric: "sets" },
 };
 
+const analyticsMainPeriods = [
+  { id: "day", label: "за день" },
+  { id: "week", label: "за неделю" },
+  { id: "month", label: "за месяц" },
+  { id: "year", label: "за год" },
+];
+
+const analyticsCardCatalog = [
+  { id: "measurements", icon: Ruler, title: "Замеры", detail: "measurements", defaultVisible: true },
+  { id: "weight", icon: Scale, title: "Вес", detail: "weight", defaultVisible: true },
+  { id: "steps", icon: Activity, title: "Шаги", detail: "steps", defaultVisible: true },
+  { id: "sleep", icon: Moon, title: "Сон", detail: "sleep", defaultVisible: true },
+  { id: "water", icon: Droplets, title: "Вода", detail: "water", defaultVisible: true },
+  { id: "calories", icon: Apple, title: "Калории", detail: "calories", defaultVisible: true },
+  { id: "training", icon: Zap, title: "Нагрузка", detail: "training_load", defaultVisible: true },
+  { id: "recovery", icon: HeartPulse, title: "Восстановление", detail: "recovery", defaultVisible: true },
+  { id: "tonnage", icon: Dumbbell, title: "Тоннаж", detail: "training_load", defaultVisible: true },
+  { id: "activities", icon: Activity, title: "Активности", detail: null, defaultVisible: true },
+  { id: "weekSummary", icon: Trophy, title: "Вывод периода", detail: null, defaultVisible: true },
+];
+
+const defaultAnalyticsCardOrder = analyticsCardCatalog.map(card => card.id);
+const defaultHiddenAnalyticsCards = analyticsCardCatalog.filter(card => !card.defaultVisible).map(card => card.id);
+
+const getAnalyticsSettingsCacheKey = (profile = DEFAULT_PROFILE) => `onlypump_analytics_cards_${profile?.telegram_id || profile?.id || "local"}`;
+
+const sanitizeAnalyticsCardOrder = (order = []) => {
+  const validIds = new Set(analyticsCardCatalog.map(card => card.id));
+  const next = [];
+  normalizeProfileStringArray(order).forEach(id => {
+    if (validIds.has(id) && !next.includes(id)) next.push(id);
+  });
+  defaultAnalyticsCardOrder.forEach(id => {
+    if (!next.includes(id)) next.push(id);
+  });
+  return next;
+};
+
+const sanitizeAnalyticsHiddenCards = (hidden = []) => {
+  const validIds = new Set(analyticsCardCatalog.map(card => card.id));
+  return normalizeProfileStringArray(hidden).filter((id, index, array) => validIds.has(id) && array.indexOf(id) === index);
+};
+
+const readCachedAnalyticsCardSettings = (profile = DEFAULT_PROFILE) => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(getAnalyticsSettingsCacheKey(profile)) || "{}");
+    return {
+      order: sanitizeAnalyticsCardOrder(parsed.order || parsed.analytics_cards_order || []),
+      hidden: sanitizeAnalyticsHiddenCards(parsed.hidden || parsed.analytics_cards_hidden || defaultHiddenAnalyticsCards),
+    };
+  } catch (error) {
+    return { order: defaultAnalyticsCardOrder, hidden: defaultHiddenAnalyticsCards };
+  }
+};
+
+const writeCachedAnalyticsCardSettings = (profile = DEFAULT_PROFILE, order = defaultAnalyticsCardOrder, hidden = defaultHiddenAnalyticsCards) => {
+  try {
+    localStorage.setItem(getAnalyticsSettingsCacheKey(profile), JSON.stringify({
+      order: sanitizeAnalyticsCardOrder(order),
+      hidden: sanitizeAnalyticsHiddenCards(hidden),
+    }));
+  } catch (error) {
+    console.log("Analytics card settings cache error", error);
+  }
+};
+
+const getProfileAnalyticsCardSettings = (profile = DEFAULT_PROFILE) => {
+  const cached = readCachedAnalyticsCardSettings(profile);
+  const profileOrder = sanitizeAnalyticsCardOrder(profile?.analytics_cards_order || []);
+  const hasProfileOrder = normalizeProfileStringArray(profile?.analytics_cards_order).length > 0;
+  const hasProfileHidden = Array.isArray(profile?.analytics_cards_hidden) || typeof profile?.analytics_cards_hidden === "string";
+  return {
+    order: hasProfileOrder ? profileOrder : cached.order,
+    hidden: hasProfileHidden ? sanitizeAnalyticsHiddenCards(profile?.analytics_cards_hidden) : cached.hidden,
+  };
+};
+
+const analyticsPeriodRange = (period = "day", selectedDateKey = formatDateKey(new Date())) => {
+  const selected = parseDateKeyLocal(selectedDateKey);
+  if (period === "year") {
+    return {
+      startKey: formatDateKey(new Date(selected.getFullYear(), 0, 1)),
+      endKey: formatDateKey(new Date(selected.getFullYear(), 11, 31)),
+      label: String(selected.getFullYear()),
+    };
+  }
+  if (period === "month") {
+    return {
+      startKey: formatDateKey(new Date(selected.getFullYear(), selected.getMonth(), 1)),
+      endKey: formatDateKey(new Date(selected.getFullYear(), selected.getMonth() + 1, 0)),
+      label: selected.toLocaleDateString("ru-RU", { month: "long", year: "numeric" }),
+    };
+  }
+  if (period === "week") {
+    const yearStart = new Date(selected.getFullYear(), 0, 1);
+    const weekIndex = Math.max(1, Math.floor((selected - yearStart) / (7 * 24 * 60 * 60 * 1000)) + 1);
+    const start = addLocalDaysToDate(yearStart, (weekIndex - 1) * 7);
+    const end = addLocalDaysToDate(start, 6);
+    return {
+      startKey: formatDateKey(start),
+      endKey: formatDateKey(end),
+      label: `Неделя ${weekIndex}, ${selected.getFullYear()}`,
+      weekIndex,
+    };
+  }
+  return { startKey: formatDateKey(selected), endKey: formatDateKey(selected), label: formatShortDateRu(selectedDateKey) };
+};
+
+const isDateKeyInRange = (dateKey, range) => {
+  const value = String(dateKey || "").slice(0, 10);
+  return value && value >= range.startKey && value <= range.endKey;
+};
+
+const shiftAnalyticsPeriodDate = (selectedDateKey, period, amount) => {
+  const date = parseDateKeyLocal(selectedDateKey);
+  if (period === "year") return formatDateKey(new Date(date.getFullYear() + amount, 0, 1));
+  if (period === "month") return formatDateKey(new Date(date.getFullYear(), date.getMonth() + amount, 1));
+  if (period === "week") return formatDateKey(addLocalDaysToDate(date, amount * 7));
+  return formatDateKey(addLocalDaysToDate(date, amount));
+};
+
+const analyticsPeriodItems = (period, selectedDateKey) => {
+  const selected = parseDateKeyLocal(selectedDateKey);
+  return Array.from({ length: 7 }, (_, index) => {
+    const offset = index - 3;
+    if (period === "year") {
+      const date = new Date(selected.getFullYear() + offset, 0, 1);
+      return { key: formatDateKey(date), label: String(date.getFullYear()), sub: "", active: offset === 0 };
+    }
+    if (period === "month") {
+      const date = new Date(selected.getFullYear(), selected.getMonth() + offset, 1);
+      return { key: formatDateKey(date), label: date.toLocaleDateString("ru-RU", { month: "short" }).replace(".", ""), sub: String(date.getFullYear()), active: offset === 0 };
+    }
+    if (period === "week") {
+      const date = addLocalDaysToDate(selected, offset * 7);
+      const range = analyticsPeriodRange("week", formatDateKey(date));
+      return { key: range.startKey, label: `Нед ${range.weekIndex}`, sub: String(parseDateKeyLocal(range.startKey).getFullYear()), active: offset === 0 };
+    }
+    const date = addLocalDaysToDate(selected, offset);
+    return { key: formatDateKey(date), label: String(date.getDate()), sub: date.toLocaleDateString("ru-RU", { weekday: "short" }).replace(".", ""), active: offset === 0 };
+  });
+};
+
+function AnalyticsPeriodCalendar({ period, selectedDateKey, onSelect }) {
+  const dragRef = useRef(null);
+  const items = analyticsPeriodItems(period, selectedDateKey);
+  const startDrag = (event) => {
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const endDrag = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    const dx = event.clientX - drag.startX;
+    const dy = Math.abs(event.clientY - drag.startY);
+    if (Math.abs(dx) > 64 && dy < 42) onSelect(shiftAnalyticsPeriodDate(selectedDateKey, period, dx < 0 ? 1 : -1));
+  };
+  return <div data-calendar-swipe="true" className="rounded-[28px] border border-white/10 bg-white/[0.035] p-4">
+    <div className="mb-4 flex items-center justify-between">
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">Период</p>
+        <h2 className="mt-1 text-lg font-black tracking-[-0.03em]">{analyticsPeriodRange(period, selectedDateKey).label}</h2>
+      </div>
+      <CalendarDays className="text-red-400" size={22}/>
+    </div>
+    <div className="grid grid-cols-7 gap-2" onPointerDown={startDrag} onPointerUp={endDrag} onPointerCancel={() => { dragRef.current = null; }}>
+      {items.map(item => <button
+        key={`${period}-${item.key}`}
+        type="button"
+        onClick={() => onSelect(item.key)}
+        className={`aspect-square rounded-full text-center transition active:scale-95 ${item.active ? "bg-red-500 text-black shadow-lg shadow-red-500/25" : "bg-white/[0.06] text-zinc-300"}`}
+      >
+        <span className="block text-[13px] font-black leading-none">{item.label}</span>
+        {item.sub && <span className={`mt-1 block text-[9px] font-bold leading-none ${item.active ? "text-black/55" : "text-zinc-500"}`}>{item.sub}</span>}
+      </button>)}
+    </div>
+  </div>;
+}
+
+const workoutDateKey = (workout = {}) => String(workout.date || workout.workout_date || "").slice(0, 10);
+const workoutDurationMinutes = (workout = {}) => safeWorkoutModelNumber(workout.durationMinutes ?? workout.duration_minutes ?? (workout.duration_seconds ? Number(workout.duration_seconds) / 60 : 0), 0);
+const workoutCaloriesValue = (workout = {}) => safeWorkoutModelNumber(workout.calories ?? workout.estimatedCaloriesBurned ?? workout.estimated_calories_burned, 0);
+const exerciseDistanceValue = (exercise = {}) => (exercise.sets || []).reduce((sum, set) => sum + safeWorkoutModelNumber(set.distanceValue ?? set.distance_value, 0), 0);
+const workoutDistanceValue = (workout = {}) => (workout.exercises || []).reduce((sum, exercise) => sum + exerciseDistanceValue(exercise), 0);
+const isCompletedWorkoutInRange = (workout, range) => normalizeWorkoutStatus(workout?.status) === "completed" && isDateKeyInRange(workoutDateKey(workout), range);
+
+const averageDefined = (items = [], getter = item => item) => {
+  const values = items.map(getter).map(Number).filter(value => Number.isFinite(value) && value > 0);
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+};
+
+const buildAnalyticsStats = ({ workouts = [], healthLogs = [], healthLog = DEFAULT_HEALTH_LOG, nutritionDay = null, measurements = {}, profile = DEFAULT_PROFILE, selectedDateKey, period }) => {
+  const range = analyticsPeriodRange(period, selectedDateKey);
+  const completed = workouts.filter(workout => isCompletedWorkoutInRange(workout, range));
+  const strengthWorkouts = completed.filter(workout => normalizeWorkoutType(workout.workoutType) === "strength");
+  const activityWorkouts = completed.filter(workout => normalizeWorkoutType(workout.workoutType) !== "strength");
+  const healthRows = [...healthLogs, healthLog].filter(Boolean).map(log => normalizeHealthLog(log, log.log_date || log.date || selectedDateKey)).filter(log => isDateKeyInRange(log.log_date || log.date, range));
+  const nutritionRows = nutritionDay && isDateKeyInRange(nutritionDay.date || nutritionDay.nutrition_date, range) ? [nutritionDay] : [];
+  const sets = strengthWorkouts.flatMap(getWorkoutSets).filter(set => getSetStatusGlobal(set) === "completed").length;
+  const volume = strengthWorkouts.reduce((sum, workout) => sum + getWorkoutVolume(workout), 0);
+  const calories = nutritionRows.reduce((sum, day) => sum + safeWorkoutModelNumber(day?.totals?.calories ?? day?.calories_total, 0), 0);
+  const calorieAverage = period === "day" ? calories : calories / Math.max(1, nutritionRows.length || 0);
+  const waterAverage = averageDefined(healthRows, log => log.water_ml);
+  const stepsSum = healthRows.reduce((sum, log) => sum + safeWorkoutModelNumber(log.steps_count, 0), 0);
+  const sleepAverage = averageDefined(healthRows, log => log.sleep_duration_minutes);
+  const recoveryAverage = averageDefined(healthRows, log => log.recovery_score);
+  return {
+    range,
+    completed,
+    strengthWorkouts,
+    activityWorkouts,
+    workoutsCount: completed.length,
+    sets,
+    volume,
+    calories,
+    calorieAverage,
+    waterAverage,
+    stepsSum,
+    sleepAverage,
+    recoveryAverage,
+    distance: activityWorkouts.reduce((sum, workout) => sum + workoutDistanceValue(workout), 0),
+    activityCalories: activityWorkouts.reduce((sum, workout) => sum + workoutCaloriesValue(workout), 0),
+    activityMinutes: activityWorkouts.reduce((sum, workout) => sum + workoutDurationMinutes(workout), 0),
+    weight: measurements?.weight || profile?.weight_kg || 0,
+    waist: measurements?.waist || profile?.waist_cm || 0,
+  };
+};
+
+const strengthAchievementDefs = [
+  { id: "cat", title: "Кошка", threshold: 50, icon: "🐈", imagePath: "/assets/achievements/cat.png" },
+  { id: "person", title: "Человек", threshold: 500, icon: "🧍", imagePath: "/assets/achievements/person.png" },
+  { id: "motorcycle", title: "Мотоцикл", threshold: 1500, icon: "🏍", imagePath: "/assets/achievements/motorcycle.png" },
+  { id: "car", title: "Автомобиль", threshold: 5000, icon: "🚗", imagePath: "/assets/achievements/car.png" },
+  { id: "elephant", title: "Слон", threshold: 10000, icon: "🐘", imagePath: "/assets/achievements/elephant.png" },
+  { id: "metro", title: "Вагон метро", threshold: 30000, icon: "🚇", imagePath: "/assets/achievements/metro.png" },
+  { id: "crane", title: "Кран", threshold: 60000, icon: "🏗", imagePath: "/assets/achievements/crane.png" },
+  { id: "plane", title: "Самолёт", threshold: 100000, icon: "✈", imagePath: "/assets/achievements/plane.png" },
+];
+
+const activityAchievementDefs = {
+  cardio: [
+    { id: "first", title: "Первое кардио", metric: "count", threshold: 1 },
+    { id: "distance-1", title: "1 км суммарно", metric: "distance", threshold: 1 },
+    { id: "distance-5", title: "5 км суммарно", metric: "distance", threshold: 5 },
+    { id: "distance-10", title: "10 км суммарно", metric: "distance", threshold: 10 },
+    { id: "distance-21", title: "21 км суммарно", metric: "distance", threshold: 21 },
+    { id: "distance-42", title: "42 км суммарно", metric: "distance", threshold: 42 },
+    { id: "minutes-30", title: "30 минут кардио", metric: "minutes", threshold: 30 },
+    { id: "minutes-60", title: "60 минут кардио", metric: "minutes", threshold: 60 },
+    { id: "calories-500", title: "500 ккал кардио", metric: "calories", threshold: 500 },
+    { id: "calories-1000", title: "1000 ккал кардио", metric: "calories", threshold: 1000 },
+  ],
+  yoga: [
+    { id: "first", title: "Первая практика", metric: "count", threshold: 1 },
+    { id: "minutes-30", title: "30 минут йоги", metric: "minutes", threshold: 30 },
+    { id: "count-3", title: "3 практики", metric: "count", threshold: 3 },
+    { id: "count-7", title: "7 практик", metric: "count", threshold: 7 },
+    { id: "hours-5", title: "5 часов суммарно", metric: "minutes", threshold: 300 },
+  ],
+  pilates: [
+    { id: "first", title: "Первый пилатес", metric: "count", threshold: 1 },
+    { id: "minutes-30", title: "30 минут пилатеса", metric: "minutes", threshold: 30 },
+    { id: "count-3", title: "3 тренировки", metric: "count", threshold: 3 },
+    { id: "hours-5", title: "5 часов суммарно", metric: "minutes", threshold: 300 },
+  ],
+  stretching: [
+    { id: "first", title: "Первая растяжка", metric: "count", threshold: 1 },
+    { id: "minutes-30", title: "30 минут стретчинга", metric: "minutes", threshold: 30 },
+    { id: "count-3", title: "3 сессии", metric: "count", threshold: 3 },
+    { id: "hours-5", title: "5 часов суммарно", metric: "minutes", threshold: 300 },
+  ],
+};
+
+const buildStrengthAchievements = (workouts = []) => {
+  const totalVolume = workouts
+    .filter(workout => normalizeWorkoutStatus(workout.status) === "completed" && normalizeWorkoutType(workout.workoutType) === "strength")
+    .reduce((sum, workout) => sum + getWorkoutVolume(workout), 0);
+  return strengthAchievementDefs.map(item => ({ ...item, achieved: totalVolume >= item.threshold, progress: Math.min(100, (totalVolume / item.threshold) * 100), value: totalVolume }));
+};
+
+const buildActivityAchievements = (workouts = []) => {
+  const totalsByType = {};
+  workoutTypeDefinitions.filter(type => type.id !== "strength").forEach(type => {
+    totalsByType[type.id] = { count: 0, minutes: 0, distance: 0, calories: 0 };
+  });
+  workouts.filter(workout => normalizeWorkoutStatus(workout.status) === "completed").forEach(workout => {
+    const type = normalizeWorkoutType(workout.workoutType);
+    if (!totalsByType[type]) return;
+    totalsByType[type].count += 1;
+    totalsByType[type].minutes += workoutDurationMinutes(workout);
+    totalsByType[type].distance += workoutDistanceValue(workout);
+    totalsByType[type].calories += workoutCaloriesValue(workout);
+  });
+  return Object.entries(activityAchievementDefs).map(([type, defs]) => ({
+    type,
+    meta: getWorkoutTypeMeta(type),
+    totals: totalsByType[type] || { count: 0, minutes: 0, distance: 0, calories: 0 },
+    achievements: defs.map(item => {
+      const value = safeWorkoutModelNumber((totalsByType[type] || {})[item.metric], 0);
+      return { ...item, achieved: value >= item.threshold, progress: Math.min(100, (value / item.threshold) * 100), value };
+    }),
+  }));
+};
+
 const filterAnalyticsPoints = (points = [], period = "month", selectedDateKey = formatDateKey(new Date())) => {
   const days = analyticsPeriods.find(item => item.id === period)?.days || 30;
   const start = parseDateKeyLocal(dateKeyDaysAgo(selectedDateKey, days - 1)).getTime();
@@ -13342,10 +13869,30 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
   </div>;
 }
 
-function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements, nutritionDay, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], healthSaving = false, healthRefreshing = false, profileSaving = false, selectedDateKey = formatDateKey(new Date()), telegramInitData = "", profileStatus = "local", analyticsIntent = null, onSaveHealthLog, onSaveWeightMeasurement, onOpenNutrition, onOpenProgress }) {
+function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements, nutritionDay, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], healthSaving = false, healthRefreshing = false, profileSaving = false, selectedDateKey = formatDateKey(new Date()), setSelectedDateKey = () => {}, telegramInitData = "", profileStatus = "local", analyticsIntent = null, onSaveHealthLog, onSaveWeightMeasurement, onSaveAnalyticsCardSettings, onOpenNutrition, onOpenProgress }) {
   const [detail, setDetail] = useState(null);
   const [editorType, setEditorType] = useState(null);
   const [editorMetric, setEditorMetric] = useState(null);
+  const [analyticsPeriod, setAnalyticsPeriod] = useState("day");
+  const [activitiesCollapsed, setActivitiesCollapsed] = useState(() => {
+    try { return localStorage.getItem("onlypump-analytics-activities-collapsed") === "true"; } catch { return false; }
+  });
+  const initialCardSettings = useMemo(() => getProfileAnalyticsCardSettings(profile || DEFAULT_PROFILE), [profile?.id, profile?.telegram_id, JSON.stringify(profile?.analytics_cards_order || []), JSON.stringify(profile?.analytics_cards_hidden || [])]);
+  const [cardOrder, setCardOrder] = useState(initialCardSettings.order);
+  const [hiddenCards, setHiddenCards] = useState(initialCardSettings.hidden);
+  const [cardPickerOpen, setCardPickerOpen] = useState(false);
+  const [cardSettingsOpen, setCardSettingsOpen] = useState(false);
+  const [draggedCardId, setDraggedCardId] = useState(null);
+
+  useEffect(() => {
+    setCardOrder(initialCardSettings.order);
+    setHiddenCards(initialCardSettings.hidden);
+  }, [initialCardSettings.order.join("|"), initialCardSettings.hidden.join("|")]);
+
+  useEffect(() => {
+    try { localStorage.setItem("onlypump-analytics-activities-collapsed", activitiesCollapsed ? "true" : "false"); } catch {}
+  }, [activitiesCollapsed]);
+
   const selectedHealthRecord = (healthLog?.log_date || healthLog?.date) === selectedDateKey
     ? healthLog
     : healthLogs.find(log => (log.log_date || log.date) === selectedDateKey);
@@ -13374,6 +13921,20 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     }] : [],
   }), [currentHealthLog, healthLogs, measurements, profile, selectedDateKey, selectedNutritionCalories, selectedNutritionDayMatches]);
 
+  const periodStats = useMemo(() => buildAnalyticsStats({ workouts, healthLogs, healthLog: currentHealthLog, nutritionDay, measurements, profile, selectedDateKey, period: analyticsPeriod }), [analyticsPeriod, currentHealthLog, healthLogs, measurements, nutritionDay, profile, selectedDateKey, workouts]);
+  const activityRows = useMemo(() => workoutTypeDefinitions.filter(type => type.id !== "strength").map(type => {
+    const typeWorkouts = periodStats.activityWorkouts.filter(workout => normalizeWorkoutType(workout.workoutType) === type.id);
+    return {
+      ...type,
+      count: typeWorkouts.length,
+      durationMinutes: typeWorkouts.reduce((sum, workout) => sum + workoutDurationMinutes(workout), 0),
+      distance: typeWorkouts.reduce((sum, workout) => sum + workoutDistanceValue(workout), 0),
+      calories: typeWorkouts.reduce((sum, workout) => sum + workoutCaloriesValue(workout), 0),
+    };
+  }), [periodStats.activityWorkouts]);
+  const strengthAchievements = useMemo(() => buildStrengthAchievements(workouts), [workouts]);
+  const activityAchievements = useMemo(() => buildActivityAchievements(workouts), [workouts]);
+
   useEffect(() => {
     if (!analyticsIntent?.type) return;
     const config = analyticsTypeConfigs[analyticsIntent.type];
@@ -13381,41 +13942,11 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     setDetail({ type: analyticsIntent.type, title: config.title });
   }, [analyticsIntent?.nonce, analyticsIntent?.type]);
 
-  const weekAnalytics = useMemo(() => {
-    const today = parseDateKeyLocal(selectedDateKey);
-    const start = addLocalDaysToDate(today, -6).getTime();
-    const recent = workouts.filter(workout => parseDateKeyLocal(workout.date).getTime() >= start);
-    const completedRecent = recent.filter(workout => workout.status === "completed");
-    const sets = completedRecent.flatMap(getWorkoutSets).filter(set => getSetStatusGlobal(set) === "completed").length;
-    const volume = completedRecent.reduce((sum, workout) => sum + getWorkoutVolume(workout), 0);
-    const loadLevel = getVolumeLoadLevel(sets, volumeStandards.weeklyTotal);
-    return { recent: completedRecent, sets, volume, loadLevel };
-  }, [workouts, selectedDateKey]);
-
-  const nonStrengthAnalytics = useMemo(() => {
-    const today = parseDateKeyLocal(selectedDateKey);
-    const start = addLocalDaysToDate(today, -6).getTime();
-    const rows = workoutTypeDefinitions
-      .filter(type => type.id !== "strength")
-      .map(type => ({ ...type, count: 0, durationMinutes: 0, distance: 0, calories: 0 }));
-    const byType = Object.fromEntries(rows.map(row => [row.id, row]));
-    workouts.filter(workout => workout.status === "completed" && parseDateKeyLocal(workout.date).getTime() >= start).forEach(workout => {
-      const workoutType = normalizeWorkoutType(workout.workoutType);
-      if (workoutType === "strength") return;
-      const bucket = byType[workoutType];
-      if (!bucket) return;
-      bucket.count += 1;
-      bucket.durationMinutes += safeWorkoutNumber(workout.durationMinutes, 0);
-      bucket.distance += (workout.exercises || []).reduce((sum, exercise) => sum + safeWorkoutNumber((exercise.sets || [])[0]?.distanceValue ?? (exercise.sets || [])[0]?.distance_value, 0), 0);
-      bucket.calories += safeWorkoutNumber(workout.calories ?? workout.estimatedCaloriesBurned, 0);
-    });
-    return rows;
-  }, [workouts, selectedDateKey]);
-
   const latestMeasurement = analyticsData.measurements?.length ? analyticsData.measurements[analyticsData.measurements.length - 1] : {};
   const openEditorForDetail = (metricKey) => {
     if (!detail?.type) return;
     if (["steps", "sleep", "water", "weight"].includes(detail.type)) {
+      if (analyticsPeriod !== "day") return;
       setEditorType(detail.type);
       return;
     }
@@ -13425,57 +13956,216 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       return;
     }
     if (detail.type === "measurements") {
+      if (analyticsPeriod !== "day") return;
       setEditorMetric(metricKey || "waist_cm");
       setEditorType("measurement");
     }
   };
 
-  const cards = [
-    { id: "measurements", icon: Ruler, title: "Замеры", value: latestMeasurement?.waist_cm ? `${latestMeasurement.waist_cm} см` : "нет данных", sub: "вес, талия и окружности", detail: "measurements" },
-    { id: "weight", icon: Scale, title: "Вес", value: `${latestMeasurement?.weight_kg || profile?.weight_kg || measurements?.weight || 0} кг`, sub: "текущий вес и тренд", detail: "weight" },
-    { id: "steps", icon: Activity, title: "Шаги", value: `${currentHealthLog.steps_count || 0}`, sub: "за выбранный день", detail: "steps" },
-    { id: "sleep", icon: Moon, title: "Сон", value: formatSleepDuration(currentHealthLog.sleep_duration_minutes), sub: sleepQualityLabel(currentHealthLog), detail: "sleep" },
-    { id: "water", icon: Droplets, title: "Вода", value: `${currentHealthLog.water_ml || 0} мл`, sub: `/ ${currentHealthLog.water_target_ml || 2500} мл`, detail: "water" },
-    { id: "calories", icon: Apple, title: "Калории", value: `${selectedNutritionCalories}`, sub: "питание за выбранный день", detail: "calories" },
-    { id: "training", icon: Zap, title: "Тренировочная нагрузка", value: `${weekAnalytics.sets}`, sub: `${weekAnalytics.loadLevel.label} · подходов за 7 дней`, detail: "training_load" },
-    { id: "recovery", icon: HeartPulse, title: "Восстановление", value: currentHealthLog.recovery_score == null ? "—" : `${currentHealthLog.recovery_score}%`, sub: currentHealthLog.sleep_duration_minutes ? "расчет по сну" : "сон не добавлен", detail: "recovery" },
-  ];
+  const persistCardSettings = (nextOrder, nextHidden) => {
+    const order = sanitizeAnalyticsCardOrder(nextOrder);
+    const hidden = sanitizeAnalyticsHiddenCards(nextHidden);
+    setCardOrder(order);
+    setHiddenCards(hidden);
+    writeCachedAnalyticsCardSettings(profile || DEFAULT_PROFILE, order, hidden);
+    onSaveAnalyticsCardSettings?.({ order, hidden });
+  };
+
+  const addAnalyticsCard = (id) => {
+    persistCardSettings(cardOrder, hiddenCards.filter(item => item !== id));
+    setCardPickerOpen(false);
+  };
+
+  const hideAnalyticsCard = (id) => {
+    persistCardSettings(cardOrder, [...hiddenCards, id]);
+  };
+
+  const moveAnalyticsCard = (fromId, toId) => {
+    if (!fromId || !toId || fromId === toId) return;
+    const current = sanitizeAnalyticsCardOrder(cardOrder);
+    const fromIndex = current.indexOf(fromId);
+    const toIndex = current.indexOf(toId);
+    if (fromIndex < 0 || toIndex < 0) return;
+    const next = [...current];
+    const [item] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, item);
+    persistCardSettings(next, hiddenCards);
+  };
+
+  const visibleCardIds = sanitizeAnalyticsCardOrder(cardOrder).filter(id => !hiddenCards.includes(id));
+  const hiddenCatalogCards = analyticsCardCatalog.filter(card => hiddenCards.includes(card.id));
+  const periodName = analyticsMainPeriods.find(item => item.id === analyticsPeriod)?.label || "за день";
+  const loadLevel = getVolumeLoadLevel(periodStats.sets, analyticsPeriod === "week" ? volumeStandards.weeklyTotal : volumeStandards.workoutTotal);
+  const topStrengthAchievement = [...strengthAchievements].reverse().find(item => item.achieved) || strengthAchievements[0];
+  const cardData = {
+    measurements: { value: periodStats.waist ? `${periodStats.waist} см` : "нет данных", sub: "талия и окружности", detail: "measurements" },
+    weight: { value: periodStats.weight ? `${periodStats.weight} кг` : "нет данных", sub: analyticsPeriod === "day" ? "в выбранный день" : "средние замеры периода", detail: "weight" },
+    steps: { value: Math.round(periodStats.stepsSum).toLocaleString("ru-RU"), sub: periodName, detail: "steps" },
+    sleep: { value: formatSleepDuration(Math.round(periodStats.sleepAverage || 0)), sub: periodStats.sleepAverage ? "среднее за период" : "нет данных", detail: "sleep" },
+    water: { value: `${Math.round(periodStats.waterAverage || 0)} мл`, sub: "в среднем за день", detail: "water" },
+    calories: { value: Math.round(periodStats.calorieAverage || 0).toLocaleString("ru-RU"), sub: analyticsPeriod === "day" ? "питание за день" : "среднее за день", detail: "calories" },
+    training: { value: String(periodStats.sets), sub: `${loadLevel.label} · подходов ${periodName}`, detail: "training_load" },
+    recovery: { value: periodStats.recoveryAverage ? `${Math.round(periodStats.recoveryAverage)}%` : "—", sub: periodStats.recoveryAverage ? "среднее восстановление" : "сон не добавлен", detail: "recovery" },
+    tonnage: { value: formatVolumeForProfile(periodStats.volume || 0, profile), sub: `${periodStats.strengthWorkouts.length} силовых ${periodName}`, detail: "training_load" },
+    activities: { value: `${periodStats.activityWorkouts.length}`, sub: "кардио, йога, пилатес, стретчинг", detail: null },
+    weekSummary: { value: `${periodStats.workoutsCount}`, sub: `тренировок ${periodName}`, detail: null },
+  };
+
+  const AchievementGrid = ({ items = [], compact = false }) => <div className={`grid gap-2 ${compact ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-4"}`}>
+    {items.map(item => <div key={item.id || item.title} className={`rounded-2xl border p-3 ${item.achieved ? "border-red-500/35 bg-red-500/10" : "border-white/10 bg-white/[0.03] opacity-60"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-2xl">{item.icon || "•"}</span>
+        <span className="text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">{item.achieved ? "открыто" : "закрыто"}</span>
+      </div>
+      <p className="mt-2 text-sm font-black">{item.title}</p>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-red-500" style={{ width: `${Math.round(item.progress || 0)}%` }}/></div>
+    </div>)}
+  </div>;
+
+  const renderAnalyticsCard = (cardId) => {
+    const catalog = analyticsCardCatalog.find(card => card.id === cardId);
+    const data = cardData[cardId];
+    if (!catalog || !data) return null;
+    const Icon = catalog.icon;
+    if (cardId === "activities") {
+      return <Card key={cardId} className="p-5 xl:col-span-2">
+        <button type="button" onClick={() => setActivitiesCollapsed(value => !value)} className="flex w-full items-start justify-between gap-4 text-left">
+          <div>
+            <h2 className="text-xl font-semibold">Активности</h2>
+            <p className="mt-2 text-sm text-zinc-500">{data.sub} {periodName}.</p>
+          </div>
+          <ChevronDown size={20} className={`mt-1 text-zinc-500 transition ${activitiesCollapsed ? "" : "rotate-180"}`}/>
+        </button>
+        {!activitiesCollapsed && <div className="mt-5 space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {activityRows.map(item => <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-semibold">{item.label}</span>
+                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
+              </div>
+              <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
+                <div><b className="block text-base">{item.count}</b><span className="text-zinc-500">раз</span></div>
+                <div><b className="block text-base">{Math.round(item.durationMinutes)}</b><span className="text-zinc-500">мин</span></div>
+                <div><b className="block text-base">{Math.round(item.distance * 10) / 10}</b><span className="text-zinc-500">дист.</span></div>
+                <div><b className="block text-base">{Math.round(item.calories)}</b><span className="text-zinc-500">ккал</span></div>
+              </div>
+            </div>)}
+          </div>
+          <div className="space-y-3">
+            {activityAchievements.map(group => <div key={group.type} className="rounded-2xl bg-white/[0.025] p-3">
+              <div className="mb-3 flex items-center justify-between">
+                <b>{group.meta.label}</b>
+                <span className="text-xs text-zinc-500">{group.totals.count} раз · {Math.round(group.totals.minutes)} мин</span>
+              </div>
+              <AchievementGrid items={group.achievements.slice(0, 4).map(item => ({ ...item, icon: group.meta.id === "cardio" ? "🏃" : group.meta.id === "yoga" ? "🧘" : group.meta.id === "pilates" ? "◐" : "↔" }))} compact />
+            </div>)}
+          </div>
+        </div>}
+      </Card>;
+    }
+    if (cardId === "tonnage") {
+      return <Card key={cardId} onClick={() => setDetail({ type: data.detail, title: "Тоннаж" })} className="cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5 xl:col-span-2">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <Dumbbell className="text-red-500"/>
+            <p className="mt-5 text-sm text-zinc-500">Тоннаж</p>
+            <div className="mt-2 break-words text-4xl">{data.value}</div>
+            <p className="mt-3 text-sm text-zinc-400">{data.sub}</p>
+          </div>
+          {topStrengthAchievement && <div className="rounded-2xl bg-red-500/10 p-3 text-center">
+            <div className="text-3xl">{topStrengthAchievement.icon}</div>
+            <p className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-300">{topStrengthAchievement.title}</p>
+          </div>}
+        </div>
+        <div className="mt-5">
+          <AchievementGrid items={strengthAchievements} />
+        </div>
+      </Card>;
+    }
+    if (cardId === "weekSummary") {
+      return <Card key={cardId} className="p-5 xl:col-span-2">
+        <h2 className="text-xl font-semibold">Вывод периода</h2>
+        <p className="mt-4 leading-7 text-zinc-300">За период {periodStats.range.label}: {periodStats.workoutsCount} выполненных тренировок, {periodStats.sets} силовых подходов, {formatVolumeForProfile(periodStats.volume || 0, profile)} тоннажа, {Math.round(periodStats.activityMinutes)} минут активностей.</p>
+      </Card>;
+    }
+    return <Card key={cardId} onClick={() => data.detail && setDetail({ type: data.detail, title: catalog.title })} className="cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5">
+      <Icon className="text-red-500"/>
+      <p className="mt-5 text-sm text-zinc-500">{catalog.title}</p>
+      <div className="mt-2 break-words text-4xl">{data.value}</div>
+      <p className="mt-3 text-sm text-zinc-400">{data.sub}</p>
+    </Card>;
+  };
 
   return <>
-    <Header title="Аналитика" subtitle="Замеры, вес, калории, вода, шаги, сон, тренировочная нагрузка и восстановление."/>
+    <div className="mb-6 flex items-start justify-between gap-4">
+      <Header title="Аналитика" subtitle="Календарь, карточки, тоннаж, активность и ачивки без фейковых данных."/>
+      <div className="flex shrink-0 gap-2 pt-1">
+        <button type="button" onClick={() => setCardPickerOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200"><Plus size={20}/></button>
+        <button type="button" onClick={() => setCardSettingsOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200"><Settings size={20}/></button>
+      </div>
+    </div>
+    <div className="mb-6 space-y-3">
+      <AnalyticsPeriodCalendar period={analyticsPeriod} selectedDateKey={selectedDateKey} onSelect={setSelectedDateKey}/>
+      <div className="flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
+        {analyticsMainPeriods.map(item => <button key={item.id} type="button" onClick={() => setAnalyticsPeriod(item.id)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-black transition ${analyticsPeriod === item.id ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-300"}`}>{item.label}</button>)}
+      </div>
+    </div>
     <PageGrid>
-      {cards.map(({ id, icon: Icon, title, value, sub, detail: detailType }) => <Card key={id} onClick={() => setDetail({ type: detailType, title })} className="cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5">
-        <Icon className="text-red-500"/>
-        <p className="mt-5 text-sm text-zinc-500">{title}</p>
-        <div className="mt-2 break-words text-4xl">{value}</div>
-        <p className="mt-3 text-sm text-zinc-400">{sub}</p>
-      </Card>)}
-      <Card className="p-5 xl:col-span-2">
-        <h2 className="text-xl font-semibold">Активности</h2>
-        <p className="mt-2 text-sm text-zinc-500">Кардио, йога, пилатес и растяжка за последние 7 дней.</p>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          {nonStrengthAnalytics.map(item => <div key={item.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-semibold">{item.label}</span>
-              <span className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
-            </div>
-            <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
-              <div><b className="block text-base">{item.count}</b><span className="text-zinc-500">раз</span></div>
-              <div><b className="block text-base">{item.durationMinutes}</b><span className="text-zinc-500">мин</span></div>
-              <div><b className="block text-base">{Math.round(item.distance * 10) / 10}</b><span className="text-zinc-500">дист.</span></div>
-              <div><b className="block text-base">{Math.round(item.calories)}</b><span className="text-zinc-500">ккал</span></div>
-            </div>
-          </div>)}
-        </div>
-      </Card>
-      <Card className="p-5 xl:col-span-2"><h2 className="text-xl font-semibold">Вывод недели</h2><p className="mt-4 leading-7 text-zinc-300">За последние 7 дней: {weekAnalytics.recent.length} выполненных тренировок, {weekAnalytics.sets} подходов и {formatVolumeForProfile(weekAnalytics.volume || 0, profile)} тоннажа. Сон за выбранный день: {formatSleepDuration(currentHealthLog.sleep_duration_minutes)}.</p></Card>
+      {visibleCardIds.map(renderAnalyticsCard)}
     </PageGrid>
-    {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} nutritionDays={analyticsData.nutrition_days} workouts={workouts} selectedDateKey={selectedDateKey} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onClose={() => setDetail(null)} onOpenEditor={detail.type === "training_load" ? null : openEditorForDetail}/>}
+    {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} nutritionDays={analyticsData.nutrition_days} workouts={workouts} selectedDateKey={selectedDateKey} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onClose={() => setDetail(null)} onOpenEditor={detail.type === "training_load" || analyticsPeriod !== "day" ? null : openEditorForDetail}/>}
     {editorType === "weight" && <WeightEditorSheet dateKey={selectedDateKey} measurements={latestMeasurement} profile={profile} saving={profileSaving} onClose={() => setEditorType(null)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => setEditorType(null)}/>}
     {editorType === "measurement" && <MeasurementEditorSheet dateKey={selectedDateKey} metricKey={editorMetric || "waist_cm"} measurements={latestMeasurement} profile={profile} saving={profileSaving} onClose={() => setEditorType(null)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => setEditorType(null)}/>}
     {editorType === "water" && <WaterEditorSheet dateKey={selectedDateKey} healthLog={currentHealthLog} saving={healthSaving} onClose={() => setEditorType(null)} onSave={onSaveHealthLog} onOpenAnalytics={() => setEditorType(null)}/>}
     {editorType === "sleep" && <SleepReportSheet dateKey={selectedDateKey} healthLog={currentHealthLog} saving={healthSaving} onClose={() => setEditorType(null)} onSave={onSaveHealthLog} onOpenAnalytics={() => setEditorType(null)}/>}
     {editorType === "steps" && <StepsEditorSheet dateKey={selectedDateKey} healthLog={currentHealthLog} saving={healthSaving} onClose={() => setEditorType(null)} onSave={onSaveHealthLog} onOpenAnalytics={() => setEditorType(null)}/>}
+    {cardPickerOpen && <div onClick={() => setCardPickerOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+      <BottomSheetPanel onClose={() => setCardPickerOpen(false)} onClick={(event) => event.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Карточки</p>
+            <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Добавить карточку</h2>
+          </div>
+          <button onClick={() => setCardPickerOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+        </div>
+        <div className="mt-5 space-y-2">
+          {hiddenCatalogCards.length ? hiddenCatalogCards.map(card => <button key={card.id} type="button" onClick={() => addAnalyticsCard(card.id)} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold">
+            <span>{card.title}</span>
+            <Plus size={18} className="text-red-400"/>
+          </button>) : <div className="rounded-2xl bg-white/[0.04] p-5 text-sm text-zinc-500">Все карточки уже добавлены.</div>}
+        </div>
+      </BottomSheetPanel>
+    </div>}
+    {cardSettingsOpen && <div onClick={() => setCardSettingsOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+      <BottomSheetPanel onClose={() => setCardSettingsOpen(false)} onClick={(event) => event.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Порядок</p>
+            <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Карточки аналитики</h2>
+          </div>
+          <button onClick={() => setCardSettingsOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+        </div>
+        <div className="mt-5 space-y-2">
+          {visibleCardIds.map(id => {
+            const card = analyticsCardCatalog.find(item => item.id === id);
+            if (!card) return null;
+            return <div
+              key={id}
+              draggable
+              onDragStart={() => setDraggedCardId(id)}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={() => { moveAnalyticsCard(draggedCardId, id); setDraggedCardId(null); }}
+              className="flex items-center justify-between gap-3 rounded-2xl bg-white/[0.04] px-4 py-3"
+            >
+              <span className="font-semibold">☰ {card.title}</span>
+              <button type="button" onClick={() => hideAnalyticsCard(id)} className="rounded-full bg-white/[0.06] px-3 py-1 text-xs font-black text-zinc-400">Скрыть</button>
+            </div>;
+          })}
+        </div>
+      </BottomSheetPanel>
+    </div>}
   </>;
 }
 
@@ -14530,6 +15220,34 @@ function OnlyPumpPlatform() {
     }
   }, [applyProfileState, profile, profileStatus, telegramInitData]);
 
+  const handleSaveAnalyticsCardSettings = useCallback(async ({ order = [], hidden = [] } = {}) => {
+    const payload = {
+      analytics_cards_order: sanitizeAnalyticsCardOrder(order),
+      analytics_cards_hidden: sanitizeAnalyticsHiddenCards(hidden),
+    };
+    const optimisticProfile = normalizeProfileRecord({
+      ...(profile || DEFAULT_PROFILE),
+      ...payload,
+      profile_updated_at: new Date().toISOString(),
+      source: profile?.source || "fallback",
+    }, profile || DEFAULT_PROFILE);
+    applyProfileState(optimisticProfile);
+    writeCachedAnalyticsCardSettings(optimisticProfile, payload.analytics_cards_order, payload.analytics_cards_hidden);
+
+    if (!(profileStatus === "verified" && profileHasTestAccess(profile) && telegramInitData && profile?.id)) return true;
+
+    try {
+      const result = await callOnlyPumpProfileApi(telegramInitData, "update_analytics_card_settings", payload);
+      const savedProfile = applyProfileState(result.profile || optimisticProfile);
+      writeCachedAnalyticsCardSettings(savedProfile, payload.analytics_cards_order, payload.analytics_cards_hidden);
+      setProfileStatus("verified");
+      return Boolean(savedProfile);
+    } catch (error) {
+      console.error("onlypump-profile-api analytics card settings error:", error);
+      return false;
+    }
+  }, [applyProfileState, profile, profileStatus, telegramInitData]);
+
   const handleResetProfileSettings = useCallback(async () => {
     const resetLocalProfile = normalizeProfileRecord({
       ...(profile || DEFAULT_PROFILE),
@@ -14973,10 +15691,10 @@ function OnlyPumpPlatform() {
     education: <EducationPage/>,
     lectures: <LecturesPage lectureItems={lectureItems} setLectureItems={setLectureItems}/>,
     progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} onProgressProfileSaved={handleProgressProfileSaved}/>,
-    analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} nutritionDay={nutritionDay} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} healthRefreshing={healthRefreshing} profileSaving={profileSaving} selectedDateKey={globalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} analyticsIntent={analyticsIntent} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onOpenNutrition={() => setActive("nutrition")} onOpenProgress={() => setActive("progress")}/>,
+    analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} nutritionDay={nutritionDay} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} healthRefreshing={healthRefreshing} profileSaving={profileSaving} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} analyticsIntent={analyticsIntent} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onSaveAnalyticsCardSettings={handleSaveAnalyticsCardSettings} onOpenNutrition={() => setActive("nutrition")} onOpenProgress={() => setActive("progress")}/>,
     community: <CommunityPage/>,
     profile: <ProfilePage profile={profile} profileStatus={profileStatus} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings}/>,
-  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, handleNutritionAction, handleSaveProfile, handleSaveThemeSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog]);
+  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, handleNutritionAction, handleSaveProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog]);
 
   if (appLoading || profileLoading) {
     return <LoadingScreen theme={activeTheme}/>;
