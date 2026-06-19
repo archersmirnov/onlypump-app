@@ -3392,6 +3392,7 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
   const dragging = useRef(false);
   const didDrag = useRef(false);
   const swiping = useRef(false);
+  const actionTriggerRef = useRef({ label: null, time: 0 });
   const maxOffset = -Math.max(1, actions.length) * actionWidth;
   const isExternallyOpen = rowId != null && swipedId === rowId;
   const actionsVisible = offset < -4 || isExternallyOpen;
@@ -3443,6 +3444,19 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
     swiping.current = false;
   };
 
+  const triggerAction = (event, action) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    const now = Date.now();
+    if (actionTriggerRef.current.label === action.label && now - actionTriggerRef.current.time < 350) return;
+    actionTriggerRef.current = { label: action.label, time: now };
+    action.onClick?.(event);
+    window.setTimeout(() => {
+      setRowOffset(0);
+      setSwipedId?.(null);
+    }, 0);
+  };
+
   return <div data-no-edge-back="true" data-swipe-row="true" className={`relative overflow-hidden rounded-[22px] ${className}`} style={{ touchAction: 'pan-y' }}>
     <div
       className="absolute inset-y-0 right-0 z-0 flex transition-all duration-200"
@@ -3457,7 +3471,8 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
         key={action.label}
         type="button"
         onPointerDown={(event) => { event.stopPropagation(); }}
-        onClick={(event) => { event.preventDefault(); event.stopPropagation(); setRowOffset(0); setSwipedId?.(null); action.onClick?.(event); }}
+        onPointerUp={(event) => triggerAction(event, action)}
+        onClick={(event) => triggerAction(event, action)}
         className={`flex h-full items-center justify-center text-lg font-black text-white ${action.className || 'bg-red-500'}`}
         style={{ width: actionWidth }}
         aria-label={action.label}
