@@ -3394,6 +3394,7 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
   const swiping = useRef(false);
   const actionTriggerRef = useRef({ label: null, time: 0 });
   const maxOffset = -Math.max(1, actions.length) * actionWidth;
+  const totalActionWidth = Math.max(1, actions.length) * actionWidth;
   const isExternallyOpen = rowId != null && swipedId === rowId;
   const actionsVisible = offset < -4 || isExternallyOpen;
 
@@ -3457,7 +3458,39 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
     }, 0);
   };
 
-  return <div data-no-edge-back="true" data-swipe-row="true" className={`relative overflow-hidden rounded-[22px] ${className}`} style={{ touchAction: 'pan-y' }}>
+  const triggerActionFromPoint = (event, clientX) => {
+    if (!actionsVisible || !actions.length || clientX == null) return false;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const actionsLeft = rect.right - totalActionWidth;
+    if (clientX < actionsLeft || clientX > rect.right) return false;
+    const index = Math.max(0, Math.min(actions.length - 1, Math.floor((clientX - actionsLeft) / actionWidth)));
+    const action = actions[index];
+    if (!action) return false;
+    triggerAction(event, action);
+    return true;
+  };
+
+  const handleRootPointerDownCapture = (event) => {
+    if (triggerActionFromPoint(event, event.clientX)) {
+      event.stopPropagation();
+    }
+  };
+
+  const handleRootTouchStartCapture = (event) => {
+    const touch = event.touches?.[0];
+    if (touch && triggerActionFromPoint(event, touch.clientX)) {
+      event.stopPropagation();
+    }
+  };
+
+  return <div
+    data-no-edge-back="true"
+    data-swipe-row="true"
+    onPointerDownCapture={handleRootPointerDownCapture}
+    onTouchStartCapture={handleRootTouchStartCapture}
+    className={`relative overflow-hidden rounded-[22px] ${className}`}
+    style={{ touchAction: 'pan-y' }}
+  >
     <div
       className="absolute inset-y-0 right-0 z-20 flex transition-all duration-200"
       style={{
@@ -6050,6 +6083,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       console.warn("Delete workout clicked without workout id", workoutOrId);
       return;
     }
+    console.log("Swipe delete workout action triggered:", { id: workout.id, supabaseId: workout.supabaseId, title: workout.title });
     deleteWorkout(workout);
   };
 
