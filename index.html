@@ -9848,6 +9848,8 @@ const toggleExerciseMeasurementSetting = (field) => {
     const latestOffsetRef = useRef(0);
     const actionTapRef = useRef({ action: "", time: 0 });
     const actionUnlockAtRef = useRef(0);
+    const actionUnlockTimerRef = useRef(null);
+    const [actionsLocked, setActionsLocked] = useState(false);
     const [cardOffset, setCardOffset] = useState(swipedWorkoutId === workout.id ? -148 : 0);
     const statusColor = workoutStatusColors[workout.status] || workoutStatusColors.completed;
     const isOpen = swipedWorkoutId === workout.id;
@@ -9863,6 +9865,18 @@ const toggleExerciseMeasurementSetting = (field) => {
       setWorkoutCardOffset(isOpen ? -148 : 0);
     }, [isOpen]);
 
+    useEffect(() => () => clearTimeout(actionUnlockTimerRef.current), []);
+
+    const lockWorkoutActions = (duration = 420) => {
+      clearTimeout(actionUnlockTimerRef.current);
+      actionUnlockAtRef.current = Date.now() + duration;
+      setActionsLocked(true);
+      actionUnlockTimerRef.current = setTimeout(() => {
+        actionUnlockAtRef.current = 0;
+        setActionsLocked(false);
+      }, duration);
+    };
+
     const startLongPress = () => {
       clearTimeout(pointerTimerRef.current);
       pointerTimerRef.current = setTimeout(() => setWeekMenuGroup({ type: "workout", workout }), 550);
@@ -9877,6 +9891,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       event?.stopPropagation?.();
       clearTimeout(pointerTimerRef.current);
       const now = Date.now();
+      if (actionsLocked) return;
       if (now < actionUnlockAtRef.current) return;
       if (actionTapRef.current.action === action && now - actionTapRef.current.time < 450) return;
       actionTapRef.current = { action, time: now };
@@ -9898,6 +9913,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       swipeRef.current.dragging = true;
       swipeRef.current.swiping = false;
       swipeRef.current.didDrag = false;
+      setActionsLocked(false);
       startLongPress();
       event.currentTarget.setPointerCapture?.(event.pointerId);
     };
@@ -9907,15 +9923,15 @@ const toggleExerciseMeasurementSetting = (field) => {
       if (!state.dragging) return;
       const dx = event.clientX - state.startX;
       const dy = event.clientY - state.startY;
-      if (!state.swiping && Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
-      if (state.swiping || Math.abs(dx) > Math.abs(dy) + 4) {
+      if (!state.swiping && Math.abs(dx) < 7 && Math.abs(dy) < 7) return;
+      if (state.swiping || Math.abs(dx) > Math.abs(dy) + 3) {
         cancelLongPress();
         state.swiping = true;
         state.didDrag = true;
+        setActionsLocked(true);
         event.preventDefault();
         const nextOffset = state.startOffset + dx;
         setWorkoutCardOffset(nextOffset);
-        if (nextOffset < -8) setSwipedWorkoutId(workout.id);
       }
     };
 
@@ -9925,10 +9941,17 @@ const toggleExerciseMeasurementSetting = (field) => {
       if (!state.dragging) return;
       state.dragging = false;
       try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
-      const shouldOpen = latestOffsetRef.current < -82;
+      const dx = event.clientX - state.startX;
+      const shouldOpen = latestOffsetRef.current < -96 || dx < -92;
       setSwipedWorkoutId(shouldOpen ? workout.id : null);
       setWorkoutCardOffset(shouldOpen ? -148 : 0);
-      actionUnlockAtRef.current = shouldOpen ? Date.now() + 260 : 0;
+      if (shouldOpen) {
+        lockWorkoutActions(420);
+      } else {
+        clearTimeout(actionUnlockTimerRef.current);
+        actionUnlockAtRef.current = 0;
+        setActionsLocked(false);
+      }
       setTimeout(() => { swipeRef.current.didDrag = false; }, 180);
       state.swiping = false;
     };
@@ -9962,7 +9985,7 @@ const toggleExerciseMeasurementSetting = (field) => {
           data-workout-swipe-action="true"
           aria-label="Повторить"
           className="flex h-full w-[74px] items-center justify-center bg-zinc-700 text-white"
-          style={{ touchAction: "manipulation" }}
+          style={{ touchAction: "manipulation", pointerEvents: actionsLocked ? "none" : "auto" }}
           onPointerDown={(event) => event.stopPropagation()}
           onTouchStart={(event) => event.stopPropagation()}
           onPointerUp={(event) => triggerWorkoutAction(event, "repeat")}
@@ -9976,7 +9999,7 @@ const toggleExerciseMeasurementSetting = (field) => {
           data-workout-swipe-action="true"
           aria-label="Удалить"
           className="flex h-full w-[74px] items-center justify-center bg-red-500 text-xl font-black text-white"
-          style={{ touchAction: "manipulation" }}
+          style={{ touchAction: "manipulation", pointerEvents: actionsLocked ? "none" : "auto" }}
           onPointerDown={(event) => event.stopPropagation()}
           onTouchStart={(event) => event.stopPropagation()}
           onPointerUp={(event) => triggerWorkoutAction(event, "delete")}
