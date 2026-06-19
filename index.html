@@ -6161,13 +6161,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     event?.stopPropagation?.();
     const workout = resolveWorkoutForDelete(workoutOrId);
     if (!workout?.id) {
-      console.warn("Delete single workout clicked without workout id", workoutOrId);
+      console.warn("Delete workout choice requested without workout id", workoutOrId);
       return;
     }
-    console.log("Swipe delete single workout triggered:", { id: workout.id, supabaseId: workout.supabaseId, title: workout.title });
+    console.log("Workout delete choice requested:", { id: workout.id, supabaseId: workout.supabaseId, title: workout.title });
     setSwipedWorkoutId(null);
-    setDeleteScopeSheet(null);
-    deleteWorkoutOnly(workout.id, { restoreOnFailure: false });
+    deleteWorkout(workout);
   };
 
   const applyWorkoutDeleteScope = async (scope = "only", range = "all") => {
