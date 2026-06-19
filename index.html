@@ -6124,7 +6124,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       || (typeof workoutOrId === "object" ? workoutOrId : null);
   };
 
-  const openWorkoutDeleteConfirm = (workoutOrId) => {
+  const openDeleteSheet = (workoutOrId) => {
     const workout = resolveWorkoutForDelete(workoutOrId);
     if (!workout?.id) {
       console.warn("Delete workout confirm requested without workout id", workoutOrId);
@@ -6147,14 +6147,6 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }
     setDeleteScopeSheet({ workout, mode: "single", step: "confirm" });
   };
-
-  const requestWorkoutDeleteChoice = (event, workoutOrId) => {
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    openWorkoutDeleteConfirm(workoutOrId);
-  };
-
-  const handleDeleteWorkoutClick = requestWorkoutDeleteChoice;
 
   const applyWorkoutDeleteScope = async (scope = "only", range = "all") => {
     const sheet = deleteScopeSheet;
@@ -9866,7 +9858,9 @@ const toggleExerciseMeasurementSetting = (field) => {
       if (actionTapRef.current.action === action && now - actionTapRef.current.time < 450) return;
       actionTapRef.current = { action, time: now };
       if (action === "delete") {
-        requestWorkoutDeleteChoice(event, workout);
+        setSwipedWorkoutId(null);
+        setWorkoutCardOffset(0);
+        openDeleteSheet(workout);
         return;
       }
       setSwipedWorkoutId(null);
@@ -9901,19 +9895,6 @@ const toggleExerciseMeasurementSetting = (field) => {
 
     const handleActionClick = (event, action) => {
       runWorkoutAction(event, action);
-    };
-
-    const handleOpenSwipeActionFromPoint = (event) => {
-      if (!isOpen || swipeRef.current.dragging) return false;
-      const bounds = event.currentTarget.getBoundingClientRect?.();
-      if (!bounds) return false;
-      const actionLeft = bounds.right - 148;
-      if (event.clientX < actionLeft || event.clientX > bounds.right) return false;
-      event.preventDefault();
-      event.stopPropagation();
-      const action = event.clientX < bounds.right - 74 ? "repeat" : "delete";
-      runWorkoutAction(event, action);
-      return true;
     };
 
     const handleCardPointerDown = (event) => {
@@ -10000,8 +9981,6 @@ const toggleExerciseMeasurementSetting = (field) => {
       data-workout-swipe-id={workout.id}
       className="relative mb-4 overflow-hidden rounded-[22px]"
       style={{ touchAction: "pan-y" }}
-      onPointerUpCapture={handleOpenSwipeActionFromPoint}
-      onClickCapture={handleOpenSwipeActionFromPoint}
     >
       <div className="absolute inset-y-0 right-0 z-0 flex overflow-hidden rounded-r-[22px]">
         <button
@@ -10032,34 +10011,6 @@ const toggleExerciseMeasurementSetting = (field) => {
           🗑
         </button>
       </div>
-      {isOpen && <div
-        className="absolute inset-y-0 right-0 z-40 flex overflow-hidden rounded-r-[22px]"
-        style={{ width: 148, touchAction: "manipulation" }}
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <button
-          type="button"
-          aria-label="Повторить"
-          className="h-full bg-transparent"
-          style={{ width: 74, minWidth: 74, touchAction: "manipulation" }}
-          onPointerDown={(event) => handleActionPointerDown(event, "repeat")}
-          onPointerUp={(event) => handleActionPointerUp(event, "repeat")}
-          onPointerCancel={(event) => { event.stopPropagation(); actionPressRef.current = { action: "", pointerId: null, startX: 0, startY: 0 }; }}
-          onClick={(event) => handleActionClick(event, "repeat")}
-        />
-        <button
-          type="button"
-          data-workout-delete-entry="true"
-          aria-label="Удалить"
-          className="h-full bg-transparent"
-          style={{ width: 74, minWidth: 74, touchAction: "manipulation" }}
-          onPointerDown={(event) => handleActionPointerDown(event, "delete")}
-          onPointerUp={(event) => handleActionPointerUp(event, "delete")}
-          onPointerCancel={(event) => { event.stopPropagation(); actionPressRef.current = { action: "", pointerId: null, startX: 0, startY: 0 }; }}
-          onClick={(event) => handleActionClick(event, "delete")}
-        />
-      </div>}
       <button
         type="button"
         onClick={handleCardClick}
@@ -10263,6 +10214,45 @@ const toggleExerciseMeasurementSetting = (field) => {
       </div>
     </BottomSheetPanel>
   </div>;
+
+  const DeleteScopeSheet = () => {
+    if (!deleteScopeSheet) return null;
+    return <div onClick={() => {
+      if (Date.now() - deleteScopeOpenedAtRef.current < 650) return;
+      setDeleteScopeSheet(null);
+    }} className="onlypump-modal-layer fixed inset-0 z-[205] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+      <BottomSheetPanel onClose={() => setDeleteScopeSheet(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Удаление</p>
+            <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{deleteScopeSheet.workout?.title}</h2>
+            <p className="mt-2 text-sm leading-6 text-zinc-500">{deleteScopeSheet.mode === "single" ? "Удалить эту тренировку? Действие нельзя отменить." : deleteScopeSheet.step === "range" ? "Выбери диапазон связанных тренировок." : "Выбери, что именно удалить."}</p>
+          </div>
+          <button onClick={() => setDeleteScopeSheet(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+        </div>
+        {deleteScopeSheet.mode === "single" ? <div className="mt-5 space-y-2">
+          <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope("only")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black">Удалить тренировку</button>
+          <button onClick={() => setDeleteScopeSheet(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
+        </div> : deleteScopeSheet.mode === "program" && deleteScopeSheet.step !== "range" ? <div className="mt-5 space-y-2">
+          <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope("only")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black">Удалить только эту тренировку</button>
+          <button onClick={() => setDeleteScopeSheet(sheet => ({ ...sheet, step: "range", scope: "program_workout" }))} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить все такие тренировки</button>
+          <button onClick={() => setDeleteScopeSheet(sheet => ({ ...sheet, step: "range", scope: "program" }))} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-300 hover:bg-red-500/10">Удалить эту программу тренировок</button>
+          <button onClick={() => setDeleteScopeSheet(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
+        </div> : deleteScopeSheet.mode === "program" ? <div className="mt-5 space-y-2">
+          <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope(deleteScopeSheet.scope, "all")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black">Удалить полностью</button>
+          <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope(deleteScopeSheet.scope, "previous")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить с предыдущими</button>
+          <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope(deleteScopeSheet.scope, "future")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить вместе с будущими</button>
+          <button onClick={() => setDeleteScopeSheet(sheet => ({ ...sheet, step: "scope" }))} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Назад</button>
+        </div> : <div className="mt-5 space-y-2">
+          <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope("only")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black">Удалить только эту</button>
+          <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope("repeat", "previous")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить с предыдущими</button>
+          <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope("repeat", "future")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить вместе с будущими</button>
+          <button onClick={() => setDeleteScopeSheet(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
+        </div>}
+      </BottomSheetPanel>
+    </div>;
+  };
 
   const WorkoutDetailScreen = () => {
     if (!selectedWorkout) return null;
@@ -10507,7 +10497,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             <button onClick={() => { setIsEditingWorkout(true); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Редактировать тренировку</button>
             <button onClick={() => setDetailMenuOpen(false)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Поделиться</button>
             {selectedWorkout.status === "active" && <button onClick={() => { finishActiveWorkout(); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Завершить</button>}
-            <button type="button" data-workout-delete-entry="true" onClick={(event) => handleDeleteWorkoutClick(event, selectedWorkout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
+            <button type="button" onClick={() => openDeleteSheet(selectedWorkout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           </div>
         </BottomSheetPanel>
       </div>}
@@ -10528,42 +10518,6 @@ const toggleExerciseMeasurementSetting = (field) => {
             <button onClick={() => applyWorkoutRenameScope("all_such")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">{isProgramLinkedWorkout(renameScopeSheet.workout) ? "Переименовать все такие в программе" : "Переименовать всю серию повторов"}</button>
             <button onClick={() => { setWorkoutTitleDraft(selectedWorkout?.title || ""); setRenameScopeSheet(null); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
           </div>
-        </BottomSheetPanel>
-      </div>}
-
-      {deleteScopeSheet && <div onClick={() => {
-        if (Date.now() - deleteScopeOpenedAtRef.current < 650) return;
-        setDeleteScopeSheet(null);
-      }} className="onlypump-modal-layer fixed inset-0 z-[195] flex items-end bg-black/45 p-4 backdrop-blur-sm">
-        <BottomSheetPanel onClose={() => setDeleteScopeSheet(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
-          <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Удаление</p>
-              <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{deleteScopeSheet.workout?.title}</h2>
-              <p className="mt-2 text-sm leading-6 text-zinc-500">{deleteScopeSheet.mode === "single" ? "Удалить эту тренировку? Действие нельзя отменить." : deleteScopeSheet.step === "range" ? "Выбери диапазон связанных тренировок." : "Выбери, что именно удалить."}</p>
-            </div>
-            <button onClick={() => setDeleteScopeSheet(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
-          </div>
-          {deleteScopeSheet.mode === "single" ? <div className="mt-5 space-y-2">
-            <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope("only")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black">Удалить тренировку</button>
-            <button onClick={() => setDeleteScopeSheet(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
-          </div> : deleteScopeSheet.mode === "program" && deleteScopeSheet.step !== "range" ? <div className="mt-5 space-y-2">
-            <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope("only")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black">Удалить только эту тренировку</button>
-            <button onClick={() => setDeleteScopeSheet(sheet => ({ ...sheet, step: "range", scope: "program_workout" }))} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить все такие тренировки</button>
-            <button onClick={() => setDeleteScopeSheet(sheet => ({ ...sheet, step: "range", scope: "program" }))} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-300 hover:bg-red-500/10">Удалить эту программу тренировок</button>
-            <button onClick={() => setDeleteScopeSheet(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
-          </div> : deleteScopeSheet.mode === "program" ? <div className="mt-5 space-y-2">
-            <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope(deleteScopeSheet.scope, "all")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black">Удалить полностью</button>
-            <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope(deleteScopeSheet.scope, "previous")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить с предыдущими</button>
-            <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope(deleteScopeSheet.scope, "future")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить вместе с будущими</button>
-            <button onClick={() => setDeleteScopeSheet(sheet => ({ ...sheet, step: "scope" }))} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Назад</button>
-          </div> : <div className="mt-5 space-y-2">
-            <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope("only")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black">Удалить только эту</button>
-            <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope("repeat", "previous")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить с предыдущими</button>
-            <button data-workout-delete-confirm="true" onClick={() => applyWorkoutDeleteScope("repeat", "future")} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить вместе с будущими</button>
-            <button onClick={() => setDeleteScopeSheet(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
-          </div>}
         </BottomSheetPanel>
       </div>}
 
@@ -11150,7 +11104,7 @@ const toggleExerciseMeasurementSetting = (field) => {
         </p>
         <div className="mt-5 space-y-2">
           <button onClick={() => completeWorkoutAsIs(workoutsRef.current.find(item => item.id === finishChoiceSheet.workoutId) || selectedWorkout)} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black transition active:scale-[0.98]">Завершить</button>
-          <button type="button" data-workout-delete-entry="true" onClick={(event) => { const id = finishChoiceSheet.workoutId; setFinishChoiceSheet(null); handleDeleteWorkoutClick(event, id); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
+          <button type="button" onClick={() => { const id = finishChoiceSheet.workoutId; setFinishChoiceSheet(null); openDeleteSheet(id); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           <button onClick={() => setFinishChoiceSheet(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
         </div>
       </BottomSheetPanel>
@@ -11414,6 +11368,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	    })()}
 
 	    {selectedWorkout && WorkoutDetailScreen()}
+    <DeleteScopeSheet />
 
     {isExerciseBaseOpen && ExerciseBaseSheet()}
 
@@ -11736,7 +11691,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             <button onClick={() => openRepeatSheet(weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Повторить тренировку</button>
             <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Перенести на другую дату</button>
             <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Превратить в программу</button>
-            <button type="button" data-workout-delete-entry="true" onClick={(event) => requestWorkoutDeleteChoice(event, weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
+            <button type="button" onClick={() => openDeleteSheet(weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           </div>
         </>}
       </BottomSheetPanel>
