@@ -3385,6 +3385,7 @@ function getCalendarDateLabel(dateKey) {
 
 function SwipeActionRow({ children, actions = [], actionWidth = 68, className = "", rowId, swipedId, setSwipedId }) {
   const [offset, setOffset] = useState(0);
+  const rootRef = useRef(null);
   const startX = useRef(0);
   const startY = useRef(0);
   const startOffset = useRef(0);
@@ -3410,6 +3411,7 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
   }, [isExternallyOpen, maxOffset]);
 
   const handlePointerDown = (event) => {
+    if (latestOffset.current < -4 && triggerActionFromPoint(event, event.clientX)) return;
     if (rowId != null && swipedId && swipedId !== rowId) setSwipedId?.(null);
     startX.current = event.clientX;
     startY.current = event.clientY;
@@ -3460,7 +3462,7 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
 
   const triggerActionFromPoint = (event, clientX) => {
     if (!actionsVisible || !actions.length || clientX == null) return false;
-    const rect = event.currentTarget.getBoundingClientRect();
+    const rect = rootRef.current?.getBoundingClientRect?.() || event.currentTarget.getBoundingClientRect();
     const actionsLeft = rect.right - totalActionWidth;
     if (clientX < actionsLeft || clientX > rect.right) return false;
     const index = Math.max(0, Math.min(actions.length - 1, Math.floor((clientX - actionsLeft) / actionWidth)));
@@ -3483,7 +3485,30 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
     }
   };
 
+  useEffect(() => {
+    const node = rootRef.current;
+    if (!node) return undefined;
+    const onPointerDown = (event) => {
+      if (triggerActionFromPoint(event, event.clientX)) {
+        event.stopPropagation();
+      }
+    };
+    const onTouchStart = (event) => {
+      const touch = event.touches?.[0];
+      if (touch && triggerActionFromPoint(event, touch.clientX)) {
+        event.stopPropagation();
+      }
+    };
+    node.addEventListener("pointerdown", onPointerDown, true);
+    node.addEventListener("touchstart", onTouchStart, { capture: true, passive: false });
+    return () => {
+      node.removeEventListener("pointerdown", onPointerDown, true);
+      node.removeEventListener("touchstart", onTouchStart, { capture: true });
+    };
+  }, [actionsVisible, totalActionWidth, actionWidth, actions]);
+
   return <div
+    ref={rootRef}
     data-no-edge-back="true"
     data-swipe-row="true"
     onPointerDownCapture={handleRootPointerDownCapture}
@@ -3541,6 +3566,7 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
           return;
         }
         if (latestOffset.current < 0) {
+          if (triggerActionFromPoint(event, event.clientX)) return;
           event.preventDefault();
           event.stopPropagation();
           setRowOffset(0);
