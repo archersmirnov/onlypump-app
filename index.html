@@ -9903,6 +9903,19 @@ const toggleExerciseMeasurementSetting = (field) => {
       runWorkoutAction(event, action);
     };
 
+    const handleOpenSwipeActionFromPoint = (event) => {
+      if (!isOpen || swipeRef.current.dragging) return false;
+      const bounds = event.currentTarget.getBoundingClientRect?.();
+      if (!bounds) return false;
+      const actionLeft = bounds.right - 148;
+      if (event.clientX < actionLeft || event.clientX > bounds.right) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      const action = event.clientX < bounds.right - 74 ? "repeat" : "delete";
+      runWorkoutAction(event, action);
+      return true;
+    };
+
     const handleCardPointerDown = (event) => {
       if (event.target?.closest?.('[data-workout-swipe-action="true"]')) return;
       if (swipedWorkoutId && swipedWorkoutId !== workout.id) setSwipedWorkoutId(null);
@@ -9987,6 +10000,8 @@ const toggleExerciseMeasurementSetting = (field) => {
       data-workout-swipe-id={workout.id}
       className="relative mb-4 overflow-hidden rounded-[22px]"
       style={{ touchAction: "pan-y" }}
+      onPointerUpCapture={handleOpenSwipeActionFromPoint}
+      onClickCapture={handleOpenSwipeActionFromPoint}
     >
       <div className="absolute inset-y-0 right-0 z-0 flex overflow-hidden rounded-r-[22px]">
         <button
