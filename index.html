@@ -502,6 +502,16 @@
     .theme-light .onlypump-workout-session .onlypump-workout-bottom-bar {
       background-color: rgba(255, 255, 255, 0.92) !important;
     }
+    .onlypump-program-hint {
+      background-color: rgba(239, 68, 68, 0.10);
+      border-color: rgba(239, 68, 68, 0.25);
+      color: #fee2e2;
+    }
+    .theme-light .onlypump-program-hint {
+      background-color: rgba(239, 68, 68, 0.08) !important;
+      border-color: rgba(239, 68, 68, 0.25) !important;
+      color: #7f1d1d !important;
+    }
     .theme-light .onlypump-chart-segment-active {
       background-color: #111827 !important;
       color: #ffffff !important;
@@ -5868,10 +5878,19 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setWorkouts(prev => [copy, ...prev]);
   };
 
-  const isProgramLinkedWorkout = (workout = {}) => Boolean(workout?.userProgramId || workout?.userProgramClientId || workout?.isProgramGenerated || workout?.programName);
+  const isProgramLinkedWorkout = (workout = {}) => Boolean(
+    workout?.userProgramId ||
+    workout?.user_program_id ||
+    workout?.userProgramClientId ||
+    workout?.user_program_client_id ||
+    workout?.isProgramGenerated ||
+    workout?.is_program_generated ||
+    workout?.programName ||
+    workout?.program_name
+  );
   const isRepeatLinkedWorkout = (workout = {}) => Boolean(workout?.repeatGroupId || workout?.repeat_group_id);
-  const workoutProgramKey = (workout = {}) => workout.userProgramId || workout.userProgramClientId || null;
-  const workoutProgramTemplateKey = (workout = {}) => workout.programTemplateWorkoutId || workout.programTemplateWorkoutKey || null;
+  const workoutProgramKey = (workout = {}) => workout.userProgramId || workout.user_program_id || workout.userProgramClientId || workout.user_program_client_id || null;
+  const workoutProgramTemplateKey = (workout = {}) => workout.programTemplateWorkoutId || workout.program_template_workout_id || workout.programTemplateWorkoutKey || workout.program_template_workout_key || null;
   const workoutRepeatKey = (workout = {}) => workout.repeatGroupId || workout.repeat_group_id || null;
   const workoutScopeRangeMatches = (workout, target, range = "all") => {
     const date = workoutDateKey(workout);
@@ -5977,22 +5996,30 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setDetailMenuOpen(false);
   };
 
-  const deleteWorkout = async (id) => {
-    const workout = workoutsRef.current.find(item => item.id === id) || (selectedWorkout?.id === id ? selectedWorkout : null);
+  const resolveWorkoutForDelete = (workoutOrId) => {
+    const id = typeof workoutOrId === "object" ? workoutOrId?.id : workoutOrId;
+    return workoutsRef.current.find(item => item.id === id)
+      || (selectedWorkout?.id === id ? selectedWorkout : null)
+      || (typeof workoutOrId === "object" ? workoutOrId : null);
+  };
+
+  const deleteWorkout = async (workoutOrId) => {
+    const workout = resolveWorkoutForDelete(workoutOrId);
     if (!workout) return;
+    setSwipedWorkoutId(null);
+    setWeekMenuGroup(null);
+    setDetailMenuOpen(false);
+    setFinishChoiceSheet(null);
+    setOpenMenu(null);
     if (isProgramLinkedWorkout(workout)) {
       setDeleteScopeSheet({ workout, mode: "program", step: "scope" });
-      setWeekMenuGroup(null);
-      setDetailMenuOpen(false);
       return;
     }
     if (isRepeatLinkedWorkout(workout)) {
       setDeleteScopeSheet({ workout, mode: "repeat", step: "scope" });
-      setWeekMenuGroup(null);
-      setDetailMenuOpen(false);
       return;
     }
-    await deleteWorkoutOnly(id);
+    setDeleteScopeSheet({ workout, mode: "single", step: "confirm" });
   };
 
   const applyWorkoutDeleteScope = async (scope = "only", range = "all") => {
@@ -9681,7 +9708,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
     return <SwipeActionRow rowId={workout.id} swipedId={swipedWorkoutId} setSwipedId={setSwipedWorkoutId} className="mb-4" actionWidth={74} actions={[
       { label: "repeat", icon: <Repeat2 size={22}/>, className: "bg-zinc-700", onClick: () => openRepeatSheet(workout) },
-      { label: "delete", icon: "🗑", className: "bg-red-500", onClick: () => deleteWorkout(workout.id) },
+      { label: "delete", icon: "🗑", className: "bg-red-500", onClick: () => deleteWorkout(workout) },
     ]}>
       <button
         type="button"
@@ -9962,7 +9989,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	          {workoutReachedTimeLimit && <div className="mt-3 rounded-2xl border border-red-500/30 bg-red-500/12 px-4 py-3 text-xs font-bold leading-5 text-red-200">
 	            Таймер остановлен на 24:00:00. Заверши тренировку вручную, когда будешь готов.
 	          </div>}
-	          {selectedWorkout.isProgramGenerated && <div className="mt-3 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-xs font-semibold leading-5 text-red-100">
+	          {selectedWorkout.isProgramGenerated && <div className="onlypump-program-hint mt-3 rounded-2xl border px-4 py-3 text-xs font-semibold leading-5">
 	            Запиши фактический вес и повторы. Следующие planned-тренировки этой программы подстроятся автоматически.
 	          </div>}
 
@@ -10124,7 +10151,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             <button onClick={() => { setIsEditingWorkout(true); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Редактировать тренировку</button>
             <button onClick={() => setDetailMenuOpen(false)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Поделиться</button>
             {selectedWorkout.status === "active" && <button onClick={() => { finishActiveWorkout(); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Завершить</button>}
-            <button onClick={() => deleteWorkout(selectedWorkout.id)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
+            <button onClick={() => deleteWorkout(selectedWorkout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           </div>
         </BottomSheetPanel>
       </div>}
@@ -10155,11 +10182,14 @@ const toggleExerciseMeasurementSetting = (field) => {
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Удаление</p>
               <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{deleteScopeSheet.workout?.title}</h2>
-              <p className="mt-2 text-sm leading-6 text-zinc-500">{deleteScopeSheet.step === "range" ? "Выбери диапазон связанных тренировок." : "Выбери, что именно удалить."}</p>
+              <p className="mt-2 text-sm leading-6 text-zinc-500">{deleteScopeSheet.mode === "single" ? "Удалить эту тренировку? Действие нельзя отменить." : deleteScopeSheet.step === "range" ? "Выбери диапазон связанных тренировок." : "Выбери, что именно удалить."}</p>
             </div>
             <button onClick={() => setDeleteScopeSheet(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
           </div>
-          {deleteScopeSheet.mode === "program" && deleteScopeSheet.step !== "range" ? <div className="mt-5 space-y-2">
+          {deleteScopeSheet.mode === "single" ? <div className="mt-5 space-y-2">
+            <button onClick={() => applyWorkoutDeleteScope("only")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black">Удалить тренировку</button>
+            <button onClick={() => setDeleteScopeSheet(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
+          </div> : deleteScopeSheet.mode === "program" && deleteScopeSheet.step !== "range" ? <div className="mt-5 space-y-2">
             <button onClick={() => applyWorkoutDeleteScope("only")} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black">Удалить только эту тренировку</button>
             <button onClick={() => setDeleteScopeSheet(sheet => ({ ...sheet, step: "range", scope: "program_workout" }))} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Удалить все такие тренировки</button>
             <button onClick={() => setDeleteScopeSheet(sheet => ({ ...sheet, step: "range", scope: "program" }))} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-300 hover:bg-red-500/10">Удалить эту программу тренировок</button>
@@ -11332,7 +11362,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             <button onClick={() => openRepeatSheet(weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Повторить тренировку</button>
             <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Перенести на другую дату</button>
             <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Превратить в программу</button>
-            <button onClick={() => deleteWorkout(weekMenuGroup.workout.id)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
+            <button onClick={() => deleteWorkout(weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           </div>
         </>}
       </BottomSheetPanel>
