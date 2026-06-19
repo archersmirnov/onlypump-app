@@ -3459,7 +3459,7 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
 
   return <div data-no-edge-back="true" data-swipe-row="true" className={`relative overflow-hidden rounded-[22px] ${className}`} style={{ touchAction: 'pan-y' }}>
     <div
-      className="absolute inset-y-0 right-0 z-0 flex transition-all duration-200"
+      className="absolute inset-y-0 right-0 z-20 flex transition-all duration-200"
       style={{
         pointerEvents: actionsVisible ? "auto" : "none",
         opacity: actionsVisible ? 1 : 0,
@@ -3474,7 +3474,7 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
         onPointerUp={(event) => { if (!action.triggerOnPointerDown) triggerAction(event, action); }}
         onClick={(event) => { if (!action.triggerOnPointerDown) triggerAction(event, action); else { event.preventDefault(); event.stopPropagation(); } }}
         className={`flex h-full items-center justify-center text-lg font-black text-white ${action.className || 'bg-red-500'}`}
-        style={{ width: actionWidth }}
+        style={{ width: actionWidth, minWidth: actionWidth, touchAction: "manipulation" }}
         aria-label={action.label}
       >
         {action.icon || action.label}
