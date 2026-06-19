@@ -3383,7 +3383,7 @@ function getCalendarDateLabel(dateKey) {
   return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', weekday: 'long' });
 }
 
-function SwipeActionRow({ children, actions = [], actionWidth = 68, className = "", rowId, swipedId, setSwipedId }) {
+function SwipeActionRow({ children, actions = [], actionWidth = 68, className = "", rowId, swipedId, setSwipedId, dataAttributes = {} }) {
   const [offset, setOffset] = useState(0);
   const rootRef = useRef(null);
   const startX = useRef(0);
@@ -3522,6 +3522,8 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
     ref={rootRef}
     data-no-edge-back="true"
     data-swipe-row="true"
+    data-swipe-row-id={rowId == null ? "" : String(rowId)}
+    {...dataAttributes}
     onPointerDownCapture={handleRootPointerDownCapture}
     onTouchStartCapture={handleRootTouchStartCapture}
     onClickCapture={handleRootClickCapture}
@@ -3542,6 +3544,8 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
         type="button"
         onPointerDown={(event) => event.stopPropagation()}
         onTouchStart={(event) => event.stopPropagation()}
+        onPointerUp={(event) => triggerAction(event, action)}
+        onTouchEnd={(event) => triggerAction(event, action)}
         onClick={(event) => triggerAction(event, action)}
         className={`flex h-full items-center justify-center text-lg font-black text-white ${action.className || 'bg-red-500'}`}
         style={{ width: actionWidth, minWidth: actionWidth, touchAction: "manipulation" }}
@@ -3565,6 +3569,8 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
         style={{ width: actionWidth, minWidth: actionWidth, touchAction: "manipulation" }}
         onPointerDown={(event) => event.stopPropagation()}
         onTouchStart={(event) => event.stopPropagation()}
+        onPointerUp={(event) => triggerAction(event, action)}
+        onTouchEnd={(event) => triggerAction(event, action)}
         onClick={(event) => triggerAction(event, action)}
       />)}
     </div>}
@@ -5321,6 +5327,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const completionSaveRef = useRef(null);
   const loadedWorkoutProfileRef = useRef(null);
   const workoutsRef = useRef(workouts);
+  const workoutSwipeActionPressRef = useRef(null);
+  const workoutSwipeActionTriggerRef = useRef({ key: "", time: 0 });
   const pendingWorkoutPatchesRef = useRef({});
   const saveWorkoutTimersRef = useRef({});
   const [seenVersion, setSeenVersion] = useState(() => {
@@ -9115,6 +9123,93 @@ const toggleExerciseMeasurementSetting = (field) => {
     setWeekMenuGroup(null);
   };
 
+  useEffect(() => {
+    if (!swipedWorkoutId) {
+      workoutSwipeActionPressRef.current = null;
+      return undefined;
+    }
+
+    const readPoint = (event) => {
+      const touch = event.changedTouches?.[0] || event.touches?.[0];
+      return touch || event;
+    };
+
+    const getSwipedWorkoutActionHit = (event) => {
+      const point = readPoint(event);
+      const clientX = point?.clientX;
+      if (clientX == null) return null;
+      const rows = Array.from(document.querySelectorAll('[data-workout-swipe-id]'));
+      const row = rows.find(item => item.getAttribute("data-workout-swipe-id") === String(swipedWorkoutId));
+      const rect = row?.getBoundingClientRect?.();
+      if (!rect) return null;
+      const repeatLeft = rect.right - 148;
+      const deleteLeft = rect.right - 74;
+      if (clientX < repeatLeft || clientX > rect.right) return null;
+      const workout = resolveWorkoutForDelete(swipedWorkoutId);
+      if (!workout) return null;
+      return {
+        action: clientX >= deleteLeft ? "delete" : "repeat",
+        workout,
+      };
+    };
+
+    const triggerSwipedWorkoutAction = (event, hit) => {
+      if (!hit?.workout) return false;
+      const key = `${hit.workout.id}:${hit.action}`;
+      const now = Date.now();
+      if (workoutSwipeActionTriggerRef.current.key === key && now - workoutSwipeActionTriggerRef.current.time < 450) {
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        return true;
+      }
+      workoutSwipeActionTriggerRef.current = { key, time: now };
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      if (hit.action === "delete") {
+        handleDeleteWorkoutClick(event, hit.workout);
+      } else {
+        setSwipedWorkoutId(null);
+        openRepeatSheet(hit.workout);
+      }
+      return true;
+    };
+
+    const handleActionStart = (event) => {
+      const hit = getSwipedWorkoutActionHit(event);
+      workoutSwipeActionPressRef.current = hit;
+      if (hit) {
+        event.stopPropagation?.();
+      }
+    };
+
+    const handleActionEnd = (event) => {
+      const startedHit = workoutSwipeActionPressRef.current;
+      const endedHit = getSwipedWorkoutActionHit(event);
+      workoutSwipeActionPressRef.current = null;
+      if (!startedHit || !endedHit) return;
+      if (startedHit.action !== endedHit.action || startedHit.workout.id !== endedHit.workout.id) return;
+      triggerSwipedWorkoutAction(event, endedHit);
+    };
+
+    const handleActionClick = (event) => {
+      const hit = getSwipedWorkoutActionHit(event);
+      if (hit) triggerSwipedWorkoutAction(event, hit);
+    };
+
+    document.addEventListener("pointerdown", handleActionStart, true);
+    document.addEventListener("pointerup", handleActionEnd, true);
+    document.addEventListener("touchstart", handleActionStart, { capture: true, passive: false });
+    document.addEventListener("touchend", handleActionEnd, { capture: true, passive: false });
+    document.addEventListener("click", handleActionClick, true);
+    return () => {
+      document.removeEventListener("pointerdown", handleActionStart, true);
+      document.removeEventListener("pointerup", handleActionEnd, true);
+      document.removeEventListener("touchstart", handleActionStart, { capture: true });
+      document.removeEventListener("touchend", handleActionEnd, { capture: true });
+      document.removeEventListener("click", handleActionClick, true);
+    };
+  }, [swipedWorkoutId]);
+
   const buildWorkoutDateTimeIso = (dateKey, hour = 0, minute = 0) => {
     const date = parseDateKey(dateKey || selectedDateKey);
     date.setHours(Number(hour || 0), Number(minute || 0), 0, 0);
@@ -9855,7 +9950,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       if (handleSwipedWorkoutActionTap(event)) return;
     };
 
-    return <SwipeActionRow rowId={workout.id} swipedId={swipedWorkoutId} setSwipedId={setSwipedWorkoutId} className="mb-4" actionWidth={74} actions={[
+    return <SwipeActionRow rowId={workout.id} swipedId={swipedWorkoutId} setSwipedId={setSwipedWorkoutId} dataAttributes={{ "data-workout-swipe-id": workout.id }} className="mb-4" actionWidth={74} actions={[
       { label: "repeat", icon: <Repeat2 size={22}/>, className: "bg-zinc-700", onClick: () => openRepeatSheet(workout) },
       { label: "delete", icon: "🗑", className: "bg-red-500", onClick: (event) => handleDeleteWorkoutClick(event, workout) },
     ]}>
