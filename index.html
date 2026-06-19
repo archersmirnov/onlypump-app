@@ -3460,50 +3460,61 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
     }, 0);
   };
 
-  const triggerActionFromPoint = (event, clientX) => {
+  const getActionFromPoint = (event, clientX) => {
     if (!actionsVisible || !actions.length || clientX == null) return false;
     const rect = rootRef.current?.getBoundingClientRect?.() || event.currentTarget.getBoundingClientRect();
     const actionsLeft = rect.right - totalActionWidth;
     if (clientX < actionsLeft || clientX > rect.right) return false;
     const index = Math.max(0, Math.min(actions.length - 1, Math.floor((clientX - actionsLeft) / actionWidth)));
-    const action = actions[index];
+    return actions[index] || false;
+  };
+
+  const stopActionGestureFromPoint = (event, clientX) => {
+    if (!getActionFromPoint(event, clientX)) return false;
+    event?.stopPropagation?.();
+    return true;
+  };
+
+  const triggerActionFromPoint = (event, clientX) => {
+    const action = getActionFromPoint(event, clientX);
     if (!action) return false;
     triggerAction(event, action);
     return true;
   };
 
   const handleRootPointerDownCapture = (event) => {
-    if (triggerActionFromPoint(event, event.clientX)) {
-      event.stopPropagation();
-    }
+    stopActionGestureFromPoint(event, event.clientX);
   };
 
   const handleRootTouchStartCapture = (event) => {
     const touch = event.touches?.[0];
-    if (touch && triggerActionFromPoint(event, touch.clientX)) {
-      event.stopPropagation();
-    }
+    if (touch) stopActionGestureFromPoint(event, touch.clientX);
+  };
+
+  const handleRootClickCapture = (event) => {
+    triggerActionFromPoint(event, event.clientX);
   };
 
   useEffect(() => {
     const node = rootRef.current;
     if (!node) return undefined;
     const onPointerDown = (event) => {
-      if (triggerActionFromPoint(event, event.clientX)) {
-        event.stopPropagation();
-      }
+      stopActionGestureFromPoint(event, event.clientX);
     };
     const onTouchStart = (event) => {
       const touch = event.touches?.[0];
-      if (touch && triggerActionFromPoint(event, touch.clientX)) {
-        event.stopPropagation();
-      }
+      if (touch) stopActionGestureFromPoint(event, touch.clientX);
+    };
+    const onClick = (event) => {
+      triggerActionFromPoint(event, event.clientX);
     };
     node.addEventListener("pointerdown", onPointerDown, true);
     node.addEventListener("touchstart", onTouchStart, { capture: true, passive: false });
+    node.addEventListener("click", onClick, true);
     return () => {
       node.removeEventListener("pointerdown", onPointerDown, true);
       node.removeEventListener("touchstart", onTouchStart, { capture: true });
+      node.removeEventListener("click", onClick, true);
     };
   }, [actionsVisible, totalActionWidth, actionWidth, actions]);
 
@@ -3513,6 +3524,7 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
     data-swipe-row="true"
     onPointerDownCapture={handleRootPointerDownCapture}
     onTouchStartCapture={handleRootTouchStartCapture}
+    onClickCapture={handleRootClickCapture}
     className={`relative overflow-hidden rounded-[22px] ${className}`}
     style={{ touchAction: 'pan-y' }}
   >
@@ -3528,9 +3540,9 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
       {actions.map(action => <button
         key={action.label}
         type="button"
-        onPointerDown={(event) => { event.stopPropagation(); if (action.triggerOnPointerDown) triggerAction(event, action); }}
-        onPointerUp={(event) => { if (!action.triggerOnPointerDown) triggerAction(event, action); }}
-        onClick={(event) => { if (!action.triggerOnPointerDown) triggerAction(event, action); else { event.preventDefault(); event.stopPropagation(); } }}
+        onPointerDown={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+        onClick={(event) => triggerAction(event, action)}
         className={`flex h-full items-center justify-center text-lg font-black text-white ${action.className || 'bg-red-500'}`}
         style={{ width: actionWidth, minWidth: actionWidth, touchAction: "manipulation" }}
         aria-label={action.label}
@@ -3541,7 +3553,8 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
     {actionsVisible && <div
       className="absolute inset-y-0 right-0 z-40 flex"
       style={{ width: totalActionWidth, touchAction: "manipulation" }}
-      onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onTouchStart={(event) => event.stopPropagation()}
       onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
     >
       {actions.map(action => <button
@@ -3550,8 +3563,9 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
         aria-label={action.label}
         className="h-full bg-transparent"
         style={{ width: actionWidth, minWidth: actionWidth, touchAction: "manipulation" }}
-        onPointerDown={(event) => triggerAction(event, action)}
-        onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
+        onPointerDown={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+        onClick={(event) => triggerAction(event, action)}
       />)}
     </div>}
     <div
@@ -9813,13 +9827,42 @@ const toggleExerciseMeasurementSetting = (field) => {
       clearTimeout(pointerTimerRef.current);
     };
 
+    const handleSwipedWorkoutActionTap = (event) => {
+      if (swipedWorkoutId !== workout.id) return false;
+      const row = event.currentTarget.closest?.('[data-swipe-row="true"]');
+      const rect = row?.getBoundingClientRect?.();
+      const clientX = event.clientX ?? event.changedTouches?.[0]?.clientX ?? event.touches?.[0]?.clientX;
+      if (!rect || clientX == null) return false;
+      const deleteLeft = rect.right - 74;
+      const repeatLeft = rect.right - 148;
+      if (clientX >= deleteLeft && clientX <= rect.right) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleDeleteWorkoutClick(event, workout);
+        return true;
+      }
+      if (clientX >= repeatLeft && clientX < deleteLeft) {
+        event.preventDefault();
+        event.stopPropagation();
+        setSwipedWorkoutId(null);
+        openRepeatSheet(workout);
+        return true;
+      }
+      return false;
+    };
+
+    const handleWorkoutCardClickCapture = (event) => {
+      if (handleSwipedWorkoutActionTap(event)) return;
+    };
+
     return <SwipeActionRow rowId={workout.id} swipedId={swipedWorkoutId} setSwipedId={setSwipedWorkoutId} className="mb-4" actionWidth={74} actions={[
       { label: "repeat", icon: <Repeat2 size={22}/>, className: "bg-zinc-700", onClick: () => openRepeatSheet(workout) },
-      { label: "delete", icon: "🗑", className: "bg-red-500", triggerOnPointerDown: true, onClick: (event) => handleDeleteWorkoutClick(event, workout) },
+      { label: "delete", icon: "🗑", className: "bg-red-500", onClick: (event) => handleDeleteWorkoutClick(event, workout) },
     ]}>
       <button
         type="button"
         onClick={() => openWorkoutDetails(workout)}
+        onClickCapture={handleWorkoutCardClickCapture}
         onPointerDown={startLongPress}
         onPointerUp={cancelLongPress}
         onPointerCancel={cancelLongPress}
