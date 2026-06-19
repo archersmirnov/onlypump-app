@@ -9843,7 +9843,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
   const WorkoutCard = ({ workout }) => {
     const pointerTimerRef = useRef(null);
-    const swipeRef = useRef({ startX: 0, startY: 0, startOffset: 0, dragging: false, swiping: false, didDrag: false });
+    const swipeRef = useRef({ startX: 0, startY: 0, startOffset: 0, dragging: false, swiping: false, didDrag: false, verticalScrolling: false });
     const latestOffsetRef = useRef(0);
     const actionTapRef = useRef({ action: "", time: 0 });
     const actionUnlockAtRef = useRef(0);
@@ -9912,6 +9912,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       swipeRef.current.dragging = true;
       swipeRef.current.swiping = false;
       swipeRef.current.didDrag = false;
+      swipeRef.current.verticalScrolling = false;
       setActionsLocked(false);
       startLongPress();
       event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -9922,8 +9923,22 @@ const toggleExerciseMeasurementSetting = (field) => {
       if (!state.dragging) return;
       const dx = event.clientX - state.startX;
       const dy = event.clientY - state.startY;
-      if (!state.swiping && Math.abs(dx) < 7 && Math.abs(dy) < 7) return;
-      if (state.swiping || Math.abs(dx) > Math.abs(dy) + 3) {
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+      if (!state.swiping) {
+        if (absX < 14 && absY < 14) return;
+        if (absY > 10 && absY > absX + 4) {
+          cancelLongPress();
+          state.dragging = false;
+          state.verticalScrolling = true;
+          try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+          return;
+        }
+        const horizontalIntent = absX > 18 && absX > absY * 1.45;
+        const allowedDirection = dx < -18 || (state.startOffset < 0 && dx > 18);
+        if (!horizontalIntent || !allowedDirection) return;
+      }
+      if (state.swiping || absX > absY * 1.35) {
         cancelLongPress();
         state.swiping = true;
         state.didDrag = true;
@@ -9937,6 +9952,10 @@ const toggleExerciseMeasurementSetting = (field) => {
     const handleCardPointerUp = (event) => {
       const state = swipeRef.current;
       cancelLongPress();
+      if (state.verticalScrolling) {
+        state.verticalScrolling = false;
+        return;
+      }
       if (!state.dragging) return;
       state.dragging = false;
       try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
