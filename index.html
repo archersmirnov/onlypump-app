@@ -15708,7 +15708,7 @@ function MobilePreview({ active }) {
   return null;
 }
 
-const LOADING_PHRASES = [
+const LOADING_RUNNER_PHRASES = [
   "Спешу настроить базу данных",
   "Бегу настроить всю аналитику",
   "Спешу проверить работу всех кнопок",
@@ -15765,29 +15765,83 @@ const LOADING_PHRASES = [
   "Спешу, потому что прогресс сам себя не построит"
 ];
 
-function getRandomLoadingPhrase(previousPhrase = "") {
-  if (!LOADING_PHRASES.length) return "";
-  if (LOADING_PHRASES.length === 1) return LOADING_PHRASES[0];
-  let nextPhrase = previousPhrase;
-  while (nextPhrase === previousPhrase) {
-    nextPhrase = LOADING_PHRASES[Math.floor(Math.random() * LOADING_PHRASES.length)];
-  }
-  return nextPhrase;
+const LOADING_THINKER_PHRASES = [
+  "Думаю, с чего начать тренировку сегодня",
+  "Ищу, где спрятался прогресс",
+  "Думаю, как сделать аналитику понятнее",
+  "Проверяю, всё ли готово к старту",
+  "Ищу закономерности в твоих тренировках",
+  "Считаю, где можно стать сильнее",
+  "Анализирую твои последние шаги",
+  "Думаю, хватит ли белка твоим мышцам",
+  "Анализируй, хватит ли тебе калорий",
+  "Ищу потерянные калории",
+  "Считаю, куда делся дефицит",
+  "Размышляю над твоей статистикой",
+  "Проверяю, не филонишь ли ты",
+  "Ищу твой следующий рекорд",
+  "Считаю тоннаж без калькулятора",
+  "Проверяю, как растёт твоя форма",
+  "Пытаюсь вспомнить где кнопка «не сегодня»",
+  "Проверяю, готов ли ты к нагрузке",
+  "Считаю, хватило ли восстановления",
+  "Анализирую сон, шаги и тренировки",
+  "Ищу точки роста",
+  "Размышляю, как улучшить твой прогресс",
+  "Думаю, что улучшить первым",
+  "Считаю тоннаж",
+  "Думаю, куда спрятался белок",
+  "Пытаюсь собрать графики в порядок",
+  "Проверяю, всё ли сходится в цифрах",
+  "Ищу слабое место в плане",
+  "Думаю, как сделать тебя сильнее",
+  "Анализирую, где можно прибавить",
+  "Пытаюсь угадать, какой график откроешь первым",
+  "Считаю твои маленькие победы",
+  "Проверяю, не пора ли обновить цель"
+];
+
+const LOADING_MASCOTS = [
+  {
+    id: "runner",
+    src: "./assets/mascot/loader-run.gif",
+    alt: "ONLYPUMP running loading mascot",
+    phrases: LOADING_RUNNER_PHRASES,
+  },
+  {
+    id: "thinker",
+    src: "./assets/mascot/loader-think.gif",
+    alt: "ONLYPUMP thinking loading mascot",
+    phrases: LOADING_THINKER_PHRASES,
+  },
+];
+
+function getRandomListItem(items, fallback = null) {
+  if (!items?.length) return fallback;
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function getRandomLoadingMascot() {
+  const mascot = getRandomListItem(LOADING_MASCOTS, LOADING_MASCOTS[0]);
+  return {
+    ...mascot,
+    phrase: getRandomListItem(mascot?.phrases || [], ""),
+  };
 }
 
 function LoadingScreen({ theme = "dark" }) {
   const normalizedTheme = theme === "light" ? "light" : "dark";
-  const [phrase] = useState(() => getRandomLoadingPhrase());
+  const [loadingMascot] = useState(() => getRandomLoadingMascot());
   const [mascotFailed, setMascotFailed] = useState(false);
   return <div className={`onlypump-loading-screen theme-${normalizedTheme} fixed inset-0 z-[9999] flex items-center justify-center px-6`}>
     <div className="text-center">
       {!mascotFailed ? <img
-        src="./assets/mascot/loader-run.gif"
-        alt="ONLYPUMP loading mascot"
+        src={loadingMascot.src}
+        alt={loadingMascot.alt}
         className="mx-auto h-auto w-[180px]"
         onError={() => setMascotFailed(true)}
       /> : <div className="mx-auto flex h-[180px] w-[180px] items-center justify-center rounded-full bg-red-500/15 text-3xl font-black text-red-500 ring-1 ring-red-500/30">OP</div>}
-      {phrase && <p className="onlypump-loading-subtitle mt-5 text-lg font-bold">{phrase}</p>}
+      {loadingMascot.phrase && <p className="onlypump-loading-subtitle mt-5 text-lg font-bold">{loadingMascot.phrase}</p>}
     </div>
   </div>;
 }
