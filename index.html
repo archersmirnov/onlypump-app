@@ -1913,6 +1913,34 @@ const workoutMeasurementModes = [
 ];
 const workoutMeasurementModeIds = workoutMeasurementModes.map(item => item.id);
 const measurementModeById = Object.fromEntries(workoutMeasurementModes.map(item => [item.id, item]));
+const onlypumpRestTimerStorageKey = "onlypump-rest-timer-state-v1";
+const readStoredRestTimerState = () => {
+  try {
+    const raw = localStorage.getItem(onlypumpRestTimerStorageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.startedAt || !Number.isFinite(Number(parsed.durationSeconds))) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+const writeStoredRestTimerState = (state) => {
+  try {
+    if (!state) {
+      localStorage.removeItem(onlypumpRestTimerStorageKey);
+      return;
+    }
+    localStorage.setItem(onlypumpRestTimerStorageKey, JSON.stringify(state));
+  } catch {}
+};
+const getRestTimerRemainingSeconds = (state) => {
+  if (!state?.startedAt) return null;
+  const startedAtMs = new Date(state.startedAt).getTime();
+  if (!Number.isFinite(startedAtMs)) return null;
+  const elapsed = Math.floor((Date.now() - startedAtMs) / 1000);
+  return Math.max(0, Math.ceil(Number(state.durationSeconds || 0) - elapsed));
+};
 const exerciseCategoryLabels = {
   strength: "Силовые",
   cardio: "Кардио",
@@ -3103,9 +3131,23 @@ const normalizeAnalyticsRemotePayload = (data = {}) => ({
 
 const nutritionDayHasFood = (day) => {
   const hasItems = (day?.meals || []).some(meal => (meal.items || []).length > 0);
-  const hasManualEntry = Boolean(day?.manual_entry_enabled || day?.manualEntryEnabled);
+  const hasManualEntry = nutritionDayHasManualEntry(day);
   const hasCalories = Number(day?.totals?.calories || day?.calories_total || 0) > 0;
   return hasItems || (hasManualEntry && hasCalories);
+};
+
+const getNutritionManualTotals = (day = {}) => ({
+  calories: Number(day.manual_calories_total ?? day.manualCaloriesTotal ?? 0),
+  protein: Number(day.manual_protein_total ?? day.manualProteinTotal ?? 0),
+  fat: Number(day.manual_fat_total ?? day.manualFatTotal ?? 0),
+  carbs: Number(day.manual_carbs_total ?? day.manualCarbsTotal ?? 0),
+});
+
+const nutritionDayHasManualEntry = (day = {}) => {
+  if (!day) return false;
+  if (Boolean(day.manual_entry_enabled ?? day.manualEntryEnabled)) return true;
+  const totals = getNutritionManualTotals(day);
+  return Object.values(totals).some(value => Number(value || 0) > 0);
 };
 
 const mergeNutritionMarkerKeys = (dateKeys = [], dateKey, hasFood) => {
@@ -4994,6 +5036,23 @@ function ExercisePickerSheet({ groups, activeGroup, setActiveGroup, search, setS
   </div>;
 }
 
+function AchievementImage({ achievement }) {
+  const [failed, setFailed] = useState(false);
+  const imagePath = achievement?.imagePath || achievement?.image_path;
+  const icon = achievement?.icon || "★";
+  if (!imagePath || failed) {
+    return <div className="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-[28px] border border-white/10 bg-black/30 text-5xl">
+      {icon}
+    </div>;
+  }
+  return <img
+    src={imagePath}
+    alt={achievement?.title || "Ачивка"}
+    onError={() => setFailed(true)}
+    className="mx-auto mb-4 h-24 w-24 rounded-[28px] object-contain"
+  />;
+}
+
 
 function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSetWorkouts, selectedDateKey: controlledSelectedDateKey, setSelectedDateKey: controlledSetSelectedDateKey, profile, telegramInitData }) {
   const localDateState = useState(formatDateKey(new Date()));
@@ -5287,6 +5346,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [openMenu, setOpenMenu] = useState(null);
   const [elapsedWorkoutTime, setElapsedWorkoutTime] = useState(0);
   const [restTimer, setRestTimer] = useState(null);
+  const [restTimerState, setRestTimerState] = useState(() => readStoredRestTimerState());
   const [weekMenuGroup, setWeekMenuGroup] = useState(null);
   const [collapsedWeeks, setCollapsedWeeks] = useState({});
   const [selectedExerciseIds, setSelectedExerciseIds] = useState([]);
@@ -5307,9 +5367,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [exerciseMeasurementSheet, setExerciseMeasurementSheet] = useState(null);
   const [exerciseNotesSheet, setExerciseNotesSheet] = useState(null);
   const [exerciseStatsSheet, setExerciseStatsSheet] = useState(null);
+  const [workoutTitlePrompt, setWorkoutTitlePrompt] = useState(null);
   const [workoutTypePicker, setWorkoutTypePicker] = useState(null);
   const [customExercises, setCustomExercises] = useState([]);
   const [customExerciseSheet, setCustomExerciseSheet] = useState(null);
+  const [customExerciseFocusKey, setCustomExerciseFocusKey] = useState(null);
   const [nonStrengthActivityEditor, setNonStrengthActivityEditor] = useState(null);
   const [pendingExerciseAdds, setPendingExerciseAdds] = useState([]);
   const [workoutTitleDraft, setWorkoutTitleDraft] = useState("");
@@ -5324,6 +5386,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const reorderTargetRef = useRef(null);
   const workoutScrollRef = useRef(null);
   const restAdvanceRef = useRef(null);
+  const restTimerStateRef = useRef(null);
   const completionSaveRef = useRef(null);
   const loadedWorkoutProfileRef = useRef(null);
   const workoutsRef = useRef(workouts);
@@ -5350,6 +5413,59 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   }, [workouts]);
 
   useEffect(() => {
+    restTimerStateRef.current = restTimerState;
+  }, [restTimerState]);
+
+  const setPersistentRestTimerState = (nextStateOrUpdater) => {
+    setRestTimerState(prev => {
+      const nextState = typeof nextStateOrUpdater === "function" ? nextStateOrUpdater(prev) : nextStateOrUpdater;
+      restTimerStateRef.current = nextState;
+      writeStoredRestTimerState(nextState);
+      return nextState;
+    });
+  };
+
+  const startRestTimer = (durationSeconds, target = null) => {
+    const seconds = Math.max(0, Math.round(Number(durationSeconds || 0)));
+    if (!seconds) {
+      restAdvanceRef.current = null;
+      setPersistentRestTimerState(null);
+      setRestTimer(null);
+      return;
+    }
+    const nextState = {
+      startedAt: new Date().toISOString(),
+      durationSeconds: seconds,
+      workoutId: target?.workoutId || selectedWorkout?.id || null,
+      target: target || null,
+    };
+    restAdvanceRef.current = target || null;
+    setPersistentRestTimerState(nextState);
+    setRestTimer(getRestTimerRemainingSeconds(nextState));
+  };
+
+  const stopRestTimer = ({ keepAdvance = false } = {}) => {
+    if (!keepAdvance) restAdvanceRef.current = null;
+    setPersistentRestTimerState(null);
+    setRestTimer(null);
+  };
+
+  const updateActiveRestTimerDuration = (durationSeconds) => {
+    const seconds = Math.max(0, Math.round(Number(durationSeconds || 0)));
+    setPersistentRestTimerState(prev => {
+      if (!prev) return prev;
+      const nextState = { ...prev, durationSeconds: seconds };
+      const remaining = getRestTimerRemainingSeconds(nextState);
+      if (!seconds && !prev.target) {
+        setRestTimer(null);
+        return null;
+      }
+      setRestTimer(remaining);
+      return nextState;
+    });
+  };
+
+  useEffect(() => {
     if (!selectedWorkout) {
       setElapsedWorkoutTime(0);
       return;
@@ -5367,17 +5483,37 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   }, [selectedWorkout?.id, selectedWorkout?.status, selectedWorkout?.startedAt, selectedWorkout?.createdAt, selectedWorkout?.durationMinutes]);
 
   useEffect(() => {
-    if (!restTimer || restTimer <= 0) return;
-    const id = setInterval(() => {
-      setRestTimer(prev => Math.max(0, Number(prev || 0) - 1));
-    }, 1000);
+    if (!restTimerState) {
+      setRestTimer(null);
+      return undefined;
+    }
+    if (restTimerState.workoutId && selectedWorkout?.id && restTimerState.workoutId !== selectedWorkout.id) {
+      setRestTimer(null);
+      return undefined;
+    }
+    restAdvanceRef.current = restTimerState.target || null;
+    const tick = () => {
+      const remaining = getRestTimerRemainingSeconds(restTimerState);
+      if (remaining === null) {
+        stopRestTimer();
+        return;
+      }
+      setRestTimer(remaining);
+      if (remaining <= 0 && !restTimerState.target) {
+        setPersistentRestTimerState(null);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [restTimer]);
+  }, [restTimerState?.startedAt, restTimerState?.durationSeconds, restTimerState?.workoutId, restTimerState?.target?.exerciseIndex, restTimerState?.target?.setId, selectedWorkout?.id]);
 
   useEffect(() => {
-    if (restTimer !== 0 || !restAdvanceRef.current) return;
-    const target = restAdvanceRef.current;
+    if (restTimer !== 0) return;
+    const target = restAdvanceRef.current || restTimerStateRef.current?.target;
     restAdvanceRef.current = null;
+    setPersistentRestTimerState(null);
+    if (!target) return;
     if (target.workoutId && selectedWorkout?.id && target.workoutId !== selectedWorkout.id) return;
     setActiveExerciseIndex(target.exerciseIndex);
     setActiveSetId(target.setId || null);
@@ -6342,7 +6478,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       id: exercise?.sourceExerciseId || exercise?.id || null,
       name: exercise?.name || "",
       exerciseCategory: category,
-      primaryMuscles: primary.length ? primary : (category === "strength" ? ["Грудь"] : []),
+      primaryMuscles: primary.length ? primary : [],
       secondaryMuscles: exercise?.secondaryMuscles || [],
       measurementMode,
       weightUnit: normalizeWeightUnit(exercise?.weightUnit || settings.weightUnit || profile?.default_weight_unit || "kg"),
@@ -6362,11 +6498,17 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }
     const category = normalizeExerciseCategory(customExerciseSheet.exerciseCategory);
     const measurementMode = normalizeMeasurementMode(customExerciseSheet.measurementMode, category === "strength" ? "weight_reps" : "time");
+    const primaryMuscles = (customExerciseSheet.primaryMuscles || []).filter(Boolean);
+    if (category === "strength" && !primaryMuscles.length) {
+      setEditError({ title: "Выберите основную мышечную группу", description: "Для силового упражнения нужна основная мышечная группа, чтобы оно корректно попало в тренировку и аналитику." });
+      return;
+    }
+    const isEditingCustomExercise = Boolean(customExerciseSheet.id);
     const payload = {
       id: customExerciseSheet.id,
       exercise_name: name,
       exercise_category: category,
-      primary_muscles: customExerciseSheet.primaryMuscles || [],
+      primary_muscles: primaryMuscles,
       secondary_muscles: customExerciseSheet.secondaryMuscles || [],
       measurement_mode: measurementMode,
       weight_unit: normalizeWeightUnit(customExerciseSheet.weightUnit),
@@ -6380,6 +6522,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       id: customExerciseSheet.id || `local-custom-${Date.now()}`,
       is_custom: true,
     });
+    const optimisticKey = exercisePickerKey(optimistic);
     setCustomExercises(prev => {
       const next = customExerciseSheet.id
         ? prev.map(item => item.sourceExerciseId === customExerciseSheet.id || item.id === customExerciseSheet.id ? optimistic : item)
@@ -6388,6 +6531,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return next;
     });
     setCustomExerciseSheet(null);
+    focusCustomExerciseInPicker(optimistic);
     if (!canUseWorkoutApi) return;
     try {
       const result = await callWorkoutsApi(customExerciseSheet.id ? "update_custom_exercise" : "create_custom_exercise", {
@@ -6404,10 +6548,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           writeCachedCustomExercises(next);
           return next;
         });
+        focusCustomExerciseInPicker(saved, optimisticKey);
       }
     } catch (error) {
       console.error("Supabase workout error", { action: "save_custom_exercise", error });
-      setEditError({ title: "Не удалось сохранить упражнение", description: "Упражнение осталось локально. Проверь соединение и попробуй ещё раз." });
+      if (isEditingCustomExercise) {
+        setEditError({ title: "Не удалось сохранить упражнение", description: "Упражнение осталось локально. Проверь соединение и попробуй ещё раз." });
+      }
     }
   };
 
@@ -7652,7 +7799,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setActiveExerciseIndex(0);
     setActiveSetId(getFirstActiveSetId(firstExercise));
     setOpenMenu(null);
-    setRestTimer(null);
+    stopRestTimer();
     setDetailMenuOpen(false);
     setMuscleStatsOpen(false);
     setIsEditingWorkout(false);
@@ -7668,7 +7815,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setActiveExerciseIndex(0);
     setActiveSetId(null);
     setOpenMenu(null);
-    setRestTimer(null);
+    stopRestTimer();
     setDetailMenuOpen(false);
     setMuscleStatsOpen(false);
     setIsEditingWorkout(false);
@@ -8048,6 +8195,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         updatedAt: new Date().toISOString(),
       };
     });
+    if (restTimerState) updateActiveRestTimerDuration(seconds);
     setRestEditor(null);
   };
 
@@ -8647,12 +8795,10 @@ const toggleExerciseMeasurementSetting = (field) => {
         : 0;
       updateActiveSet(currentSet.id, { status: "completed", completedAt: new Date().toISOString() });
       if (nextTarget && restSeconds > 0) {
-        restAdvanceRef.current = nextTarget;
-        setRestTimer(restSeconds);
+        startRestTimer(restSeconds, nextTarget);
         return;
       }
-      restAdvanceRef.current = null;
-      setRestTimer(null);
+      stopRestTimer();
       if (nextTarget) {
         setActiveExerciseIndex(nextTarget.exerciseIndex);
         setActiveSetId(nextTarget.setId);
@@ -8744,17 +8890,17 @@ const toggleExerciseMeasurementSetting = (field) => {
   const pickTonnageAchievement = (volumeKg) => {
     const volume = Math.max(0, safeWorkoutNumber(volumeKg, 0));
     const options = [
-      { max: 80, weight: 4, label: "кошки", single: "кошка" },
-      { max: 200, weight: 10, label: "маленьких собак", single: "маленькая собака" },
-      { max: 400, weight: 25, label: "больших собак", single: "большая собака" },
-      { max: 700, weight: 80, label: "мужчин", single: "мужчина" },
-      { max: 1500, weight: 200, label: "мотоциклов", single: "мотоцикл" },
-      { max: 3000, weight: 1200, label: "маленьких автомобилей", single: "маленький автомобиль" },
-      { max: 7000, weight: 5000, label: "слонов", single: "слон" },
-      { max: 15000, weight: 12000, label: "автобусов", single: "автобус" },
-      { max: 30000, weight: 25000, label: "вагонов метро", single: "вагон метро" },
-      { max: 70000, weight: 60000, label: "локомотивов", single: "локомотив" },
-      { max: Infinity, weight: 120000, label: "башенных кранов", single: "башенный кран" },
+      { max: 80, weight: 4, label: "кошки", single: "кошка", icon: "🐈", imagePath: "/assets/achievements/cat.png" },
+      { max: 200, weight: 10, label: "маленьких собак", single: "маленькая собака", icon: "🐾" },
+      { max: 400, weight: 25, label: "больших собак", single: "большая собака", icon: "🐾" },
+      { max: 700, weight: 80, label: "мужчин", single: "мужчина", icon: "🧍", imagePath: "/assets/achievements/person.png" },
+      { max: 1500, weight: 200, label: "мотоциклов", single: "мотоцикл", icon: "🏍", imagePath: "/assets/achievements/motorcycle.png" },
+      { max: 3000, weight: 1200, label: "маленьких автомобилей", single: "маленький автомобиль", icon: "🚗", imagePath: "/assets/achievements/car.png" },
+      { max: 7000, weight: 5000, label: "слонов", single: "слон", icon: "🐘", imagePath: "/assets/achievements/elephant.png" },
+      { max: 15000, weight: 12000, label: "автобусов", single: "автобус", icon: "🚌", imagePath: "/assets/achievements/bus.png" },
+      { max: 30000, weight: 25000, label: "вагонов метро", single: "вагон метро", icon: "🚇", imagePath: "/assets/achievements/metro.png" },
+      { max: 70000, weight: 60000, label: "локомотивов", single: "локомотив", icon: "🚂" },
+      { max: Infinity, weight: 120000, label: "башенных кранов", single: "башенный кран", icon: "🏗", imagePath: "/assets/achievements/crane.png" },
     ];
     const item = options.find(option => volume <= option.max) || options[options.length - 1];
     const count = Math.max(1, Math.round(volume / item.weight));
@@ -8762,6 +8908,8 @@ const toggleExerciseMeasurementSetting = (field) => {
     return {
       title: count === 1 ? `Это как ${objectLabel}` : `Это как ${count} ${objectLabel}`,
       subtitle: `примерно ${Math.round(volume).toLocaleString("ru-RU")} кг поднятого тоннажа`,
+      icon: item.icon,
+      imagePath: item.imagePath,
     };
   };
 
@@ -8971,6 +9119,22 @@ const toggleExerciseMeasurementSetting = (field) => {
     return `${item.sourceExerciseId || item.id || item.muscleGroup || item.group || muscleGroup}::${item.name || itemOrName}`;
   };
 
+  const focusCustomExerciseInPicker = (exercise, replaceKey = null) => {
+    const item = normalizeExerciseSourceItem(exercise);
+    const key = exercisePickerKey(item);
+    const group = item.group || item.muscleGroup || exerciseCategoryLabels[item.exerciseCategory] || "Другое";
+    setExerciseSearch("");
+    setSelectedExerciseGroup(group);
+    setCustomExerciseFocusKey(key);
+    if (exerciseBaseMode === "add") {
+      setPendingExerciseAdds(prev => {
+        const nextItem = { key, ...item };
+        const withoutPrevious = prev.filter(entry => entry.key !== key && (!replaceKey || entry.key !== replaceKey));
+        return [...withoutPrevious, nextItem];
+      });
+    }
+  };
+
   const togglePendingExerciseAdd = (itemOrName, muscleGroup = "") => {
     const item = normalizeExerciseSourceItem(typeof itemOrName === "object" ? itemOrName : { name: itemOrName, muscleGroup });
     const key = exercisePickerKey(item);
@@ -9104,8 +9268,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     setActiveExerciseIndex(firstTarget.exerciseIndex);
     setActiveSetId(firstTarget.setId);
     setElapsedWorkoutTime(0);
-    setRestTimer(null);
-    restAdvanceRef.current = null;
+    stopRestTimer();
     if (nextWorkout.supabaseId) {
       queueWorkoutPatch(nextWorkout.id, {
         workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
@@ -9182,18 +9345,33 @@ const toggleExerciseMeasurementSetting = (field) => {
     });
   };
 
-  const openWorkoutTypePicker = (mode) => {
+  const openWorkoutTitlePrompt = (mode) => {
     setIsAddMenuOpen(false);
-    setWorkoutTypePicker({ mode });
+    setWorkoutTitlePrompt({ mode, title: "" });
   };
 
-  const openPlanWorkoutScheduler = (workoutType = "strength") => {
+  const confirmWorkoutTitlePrompt = () => {
+    if (!workoutTitlePrompt) return;
+    const title = workoutTitlePrompt.title?.trim() || "Новая тренировка";
+    const mode = workoutTitlePrompt.mode || "active";
+    setWorkoutTitlePrompt(null);
+    openWorkoutTypePicker(mode, title);
+  };
+
+  const openWorkoutTypePicker = (mode, title = "Новая тренировка") => {
+    setIsAddMenuOpen(false);
+    setWorkoutTitlePrompt(null);
+    setWorkoutTypePicker({ mode, title: title?.trim() || "Новая тренировка" });
+  };
+
+  const openPlanWorkoutScheduler = (workoutType = "strength", title = "Запланированная тренировка") => {
     const now = new Date();
     setIsAddMenuOpen(false);
     setWorkoutTypePicker(null);
     setRepeatScheduler({
       workout: null,
       mode: "new_planned",
+      title: title?.trim() || "Запланированная тренировка",
       workoutType: normalizeWorkoutType(workoutType),
       dateKey: selectedDateKey || formatDateKey(now),
       hour: String(now.getHours()).padStart(2, "0"),
@@ -9203,7 +9381,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     });
   };
 
-  const openCompletedWorkoutScheduler = (workoutType = "strength") => {
+  const openCompletedWorkoutScheduler = (workoutType = "strength", title = "Выполненная тренировка") => {
     const now = new Date();
     const durationParts = durationPartsFromMinutes(45);
     setIsAddMenuOpen(false);
@@ -9211,6 +9389,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     setRepeatScheduler({
       workout: null,
       mode: "new_completed",
+      title: title?.trim() || "Выполненная тренировка",
       workoutType: normalizeWorkoutType(workoutType),
       dateKey: selectedDateKey || formatDateKey(now),
       hour: String(now.getHours()).padStart(2, "0"),
@@ -9335,7 +9514,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     setRepeatScheduler(null);
     await addWorkoutForDate({
       dateKey: scheduler.dateKey,
-      title: "Запланированная тренировка",
+      title: scheduler.title || "Запланированная тренировка",
       status: "planned",
       workoutType: scheduler.workoutType || "strength",
       durationMinutes: 0,
@@ -9354,7 +9533,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     setRepeatScheduler(null);
     await addWorkoutForDate({
       dateKey: scheduler.dateKey,
-      title: "Выполненная тренировка",
+      title: scheduler.title || "Выполненная тренировка",
       status: "completed",
       workoutType,
       durationMinutes,
@@ -9440,8 +9619,7 @@ const toggleExerciseMeasurementSetting = (field) => {
         setActiveExerciseIndex(firstTarget.exerciseIndex);
         setActiveSetId(firstTarget.setId);
         setElapsedWorkoutTime(0);
-        setRestTimer(null);
-        restAdvanceRef.current = null;
+        stopRestTimer();
       }
       const id = await createWorkoutTreeViaApi(pendingWorkout);
       if (!id) patchWorkoutInState(pendingWorkout.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
@@ -9456,26 +9634,26 @@ const toggleExerciseMeasurementSetting = (field) => {
       setActiveExerciseIndex(firstTarget.exerciseIndex);
       setActiveSetId(firstTarget.setId);
       setElapsedWorkoutTime(0);
-      setRestTimer(null);
-      restAdvanceRef.current = null;
+      stopRestTimer();
     }
   };
 
   const createWorkoutFromTypePicker = async (workoutType) => {
     const type = normalizeWorkoutType(workoutType);
     const mode = workoutTypePicker?.mode;
+    const title = workoutTypePicker?.title?.trim() || "Новая тренировка";
     setWorkoutTypePicker(null);
     if (mode === "planned") {
-      openPlanWorkoutScheduler(type);
+      openPlanWorkoutScheduler(type, title);
       return;
     }
     if (mode === "completed") {
-      openCompletedWorkoutScheduler(type);
+      openCompletedWorkoutScheduler(type, title);
       return;
     }
     const meta = getWorkoutTypeMeta(type);
     await addWorkoutForDate({
-      title: type === "strength" ? "Пустая тренировка" : meta.title,
+      title,
       status: "active",
       workoutType: type,
       durationMinutes: 0,
@@ -9695,8 +9873,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     setWorkouts(prev => prev.map(item => item.id === nextWorkout.id ? nextWorkout : item));
     setSelectedWorkout(nextWorkout);
     setWorkoutViewMode("overview");
-    setRestTimer(null);
-    restAdvanceRef.current = null;
+    stopRestTimer();
     setOpenMenu(null);
     setFinishChoiceSheet(null);
     setCompletionSaveError(null);
@@ -9710,6 +9887,35 @@ const toggleExerciseMeasurementSetting = (field) => {
     } else {
       setCompletionSaving(false);
     }
+  };
+
+  const completeWorkoutWithRemainingSets = (workout = selectedWorkout) => {
+    if (!workout) return;
+    const completedAt = new Date().toISOString();
+    const nextWorkout = {
+      ...workout,
+      exercises: (workout.exercises || []).map(exercise => ({
+        ...exercise,
+        sets: (exercise.sets || []).map(set => {
+          if (getSetStatus(set) === "completed") return set;
+          const plannedWeight = set.plannedWeight ?? set.planned_weight ?? exercise.plannedWeight ?? exercise.planned_weight;
+          const plannedReps = set.plannedReps ?? set.planned_reps ?? exercise.plannedReps ?? exercise.planned_reps ?? exercise.plannedRepMin ?? exercise.planned_rep_min;
+          const plannedWeightValue = Number(plannedWeight);
+          const plannedRepsValue = Number(plannedReps);
+          const nextSet = {
+            ...set,
+            status: "completed",
+            isCompleted: true,
+            completedAt,
+          };
+          if (Number.isFinite(plannedWeightValue) && Number(nextSet.weight || 0) <= 0) nextSet.weight = plannedWeightValue;
+          if (Number.isFinite(plannedRepsValue) && Number(nextSet.reps || 0) <= 0) nextSet.reps = plannedRepsValue;
+          return nextSet;
+        }),
+      })),
+      updatedAt: completedAt,
+    };
+    completeWorkoutAsIs(nextWorkout);
   };
 
   const finishActiveWorkout = () => {
@@ -9726,6 +9932,7 @@ const toggleExerciseMeasurementSetting = (field) => {
   const openExerciseBase = (mode = "view") => {
     setExerciseBaseMode(mode);
     if (mode === "add") setPendingExerciseAdds([]);
+    setCustomExerciseFocusKey(null);
     setSelectedExerciseGroup("Все");
     setIsExerciseBaseOpen(true);
   };
@@ -9733,6 +9940,7 @@ const toggleExerciseMeasurementSetting = (field) => {
   const closeExerciseBase = () => {
     setIsExerciseBaseOpen(false);
     setPendingExerciseAdds([]);
+    setCustomExerciseFocusKey(null);
     setExerciseSearch("");
   };
 
@@ -9764,6 +9972,7 @@ const toggleExerciseMeasurementSetting = (field) => {
   useAppBackLayer("workouts-week-stats", weekStatsOpen, () => setWeekStatsOpen(false), 150);
   useAppBackLayer("workouts-program-settings", Boolean(programSettingsSheet), () => setProgramSettingsSheet(null), 151);
   useAppBackLayer("workouts-templates", isTemplatesOpen, () => setIsTemplatesOpen(false), 145);
+  useAppBackLayer("workouts-title-prompt", Boolean(workoutTitlePrompt), () => setWorkoutTitlePrompt(null), 143);
   useAppBackLayer("workouts-type-picker", Boolean(workoutTypePicker), () => setWorkoutTypePicker(null), 142);
   useAppBackLayer("workouts-add-menu", isAddMenuOpen, () => setIsAddMenuOpen(false), 140);
   useAppBackLayer("workouts-edit-mode", Boolean(selectedWorkout && isEditingWorkout), () => setIsEditingWorkout(false), 90);
@@ -9819,6 +10028,16 @@ const toggleExerciseMeasurementSetting = (field) => {
       }))
       .filter(section => section.exercises.length);
   }, [exerciseSearch, selectedExerciseGroup, exerciseGroups, availableExerciseItems]);
+
+  useEffect(() => {
+    if (!customExerciseFocusKey || !isExerciseBaseOpen) return undefined;
+    const timer = window.setTimeout(() => {
+      const encodedKey = encodeURIComponent(customExerciseFocusKey);
+      const node = document.querySelector(`[data-exercise-picker-key="${encodedKey}"]`);
+      node?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [customExerciseFocusKey, isExerciseBaseOpen, filteredExerciseGroups]);
 
   const WorkoutCard = ({ workout }) => {
     const pointerTimerRef = useRef(null);
@@ -10180,8 +10399,10 @@ const toggleExerciseMeasurementSetting = (field) => {
               {section.exercises.map(exercise => {
                 const key = exercisePickerKey(exercise);
                 const selected = pendingExerciseAdds.some(item => item.key === key);
+                const focused = customExerciseFocusKey === key;
                 return <button
                   key={`${section.group}-${exercise.name}-${exercise.id || exercise.sourceExerciseId || ""}`}
+                  data-exercise-picker-key={encodeURIComponent(key)}
                   onClick={() => {
                     if (exerciseBaseMode === "add") {
                       togglePendingExerciseAdd(exercise);
@@ -10189,7 +10410,7 @@ const toggleExerciseMeasurementSetting = (field) => {
                     }
                     if (exerciseBaseMode === "replace") replaceActiveExercise(exercise.name, exercise.muscleGroup, exercise);
                   }}
-                  className={`flex w-full items-center justify-between rounded-2xl p-4 text-left font-semibold transition active:scale-[0.98] ${selected ? 'bg-red-500/15 text-white ring-1 ring-red-500/40' : 'bg-black/30 hover:bg-white/[0.06]'}`}
+                  className={`flex w-full items-center justify-between rounded-2xl p-4 text-left font-semibold transition active:scale-[0.98] ${selected ? 'bg-red-500/15 text-white ring-1 ring-red-500/40' : focused ? 'bg-red-500/10 text-white ring-1 ring-red-500/25' : 'bg-black/30 hover:bg-white/[0.06]'}`}
                 >
                   <span>
                     <span className="block">{exercise.name}</span>
@@ -10581,6 +10802,15 @@ const toggleExerciseMeasurementSetting = (field) => {
               : exerciseCompleted
                 ? "Следующее"
                 : "Следующий";
+      const handlePrimaryExerciseAction = (event) => {
+        event?.preventDefault?.();
+        closeCustomSetKeyboard();
+        if (canCompleteSets) {
+          completeCurrentSet();
+        } else {
+          setWorkoutViewMode("overview");
+        }
+      };
       const menuSet = openMenu?.type === "set" ? currentSets.find(set => set.id === openMenu.setId) : null;
       const measurementSettings = normalizeExerciseMeasurementSettings(currentExercise || {});
       const showWeightField = Boolean(measurementSettings.measureWeightEnabled);
@@ -10794,8 +11024,8 @@ const toggleExerciseMeasurementSetting = (field) => {
               >
                 <Plus size={24}/>
               </button>
-              <button onClick={() => canCompleteSets ? completeCurrentSet() : setWorkoutViewMode("overview")} className={`h-12 rounded-full px-4 text-base font-black transition active:scale-[0.98] ${canCompleteSets ? 'bg-red-500 text-black' : 'bg-white text-black'}`}>{confirmLabel}</button>
-              <button onClick={() => canCompleteSets && setRestTimer(prev => prev ? 0 : Number(currentExercise?.restSeconds || 120))} className={`h-12 rounded-full px-2 text-sm font-black transition ${restTimer ? 'bg-red-500/20 text-red-300' : 'bg-white/8 text-zinc-200'} ${!canCompleteSets ? 'opacity-40' : ''}`}>
+              <button onClick={handlePrimaryExerciseAction} className={`h-12 rounded-full px-4 text-base font-black transition active:scale-[0.98] ${canCompleteSets ? 'bg-red-500 text-black' : 'bg-white text-black'}`}>{confirmLabel}</button>
+              <button onClick={() => canCompleteSets && (restTimerState ? stopRestTimer() : startRestTimer(Number(currentExercise?.restSeconds || 120), null))} className={`h-12 rounded-full px-2 text-sm font-black transition ${restTimer ? 'bg-red-500/20 text-red-300' : 'bg-white/8 text-zinc-200'} ${!canCompleteSets ? 'opacity-40' : ''}`}>
                 {restTimer ? formatSecondsTimer(restTimer) : "отдых"}
               </button>
               <button onClick={() => goToExercise(activeExerciseIndex + 1)} disabled={activeExerciseIndex >= exercises.length - 1} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/8 text-zinc-200 disabled:opacity-30">→</button>
@@ -10842,7 +11072,7 @@ const toggleExerciseMeasurementSetting = (field) => {
               ["Редактировать упражнение", () => { setIsEditingWorkout(true); setOpenMenu(null); }],
               ["Редактировать измерение", () => openExerciseMeasurementEditor(currentExercise)],
               ["Редактировать подход", () => { setIsEditingWorkout(true); setOpenMenu(null); }],
-              ["Изменить отдых", () => { const value = prompt('Отдых в секундах', currentExercise?.restSeconds || 120); if (value) updateActiveExercise({ restSeconds: Number(value) }); setOpenMenu(null); }],
+              ["Изменить отдых", () => { const value = prompt('Отдых в секундах', currentExercise?.restSeconds || 120); if (value) { updateActiveExercise({ restSeconds: Number(value) }); if (restTimerState) updateActiveRestTimerDuration(Number(value)); } setOpenMenu(null); }],
               ["Добавить разминочный подход", () => addSetToActiveExercise("warmup")],
               ["Добавить упражнения", () => { setOpenMenu(null); openExerciseBase("add"); }],
               ["Заменить упражнение", () => { setOpenMenu(null); openExerciseBase("replace"); }],
@@ -10973,9 +11203,37 @@ const toggleExerciseMeasurementSetting = (field) => {
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <h2 className="text-xl font-black tracking-[-0.03em]">Добавить на {formatDayMonth(selectedDate)}</h2>
         <div className="mt-5 space-y-2">
-          <button onClick={() => openWorkoutTypePicker("active")} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Начать пустую тренировку</button>
-          <button onClick={() => openWorkoutTypePicker("planned")} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить запланированную</button>
-          <button onClick={() => openWorkoutTypePicker("completed")} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить выполненную</button>
+          <button onClick={() => openWorkoutTitlePrompt("active")} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Начать пустую тренировку</button>
+          <button onClick={() => openWorkoutTitlePrompt("planned")} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить запланированную</button>
+          <button onClick={() => openWorkoutTitlePrompt("completed")} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить выполненную</button>
+        </div>
+      </BottomSheetPanel>
+    </div>}
+
+    {workoutTitlePrompt && <div onClick={() => setWorkoutTitlePrompt(null)} className="onlypump-modal-layer fixed inset-0 z-[151] flex items-end bg-black/45 p-4 backdrop-blur-sm">
+      <BottomSheetPanel onClose={() => setWorkoutTitlePrompt(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Новая тренировка</p>
+            <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Назовите тренировку</h2>
+          </div>
+          <button onClick={() => setWorkoutTitlePrompt(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+        </div>
+        <label className="mt-5 block">
+          <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название</span>
+          <input
+            autoFocus
+            value={workoutTitlePrompt.title}
+            onChange={(e) => setWorkoutTitlePrompt(prev => ({ ...prev, title: e.target.value }))}
+            onKeyDown={(e) => { if (e.key === "Enter") confirmWorkoutTitlePrompt(); }}
+            className="onlypump-field-input mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-base font-semibold text-zinc-100 caret-red-500 outline-none transition placeholder:text-zinc-600 focus:border-red-500/60 focus:ring-1 focus:ring-red-500/40"
+            placeholder="Например: Грудь + спина"
+          />
+        </label>
+        <div className="mt-5 grid grid-cols-2 gap-3 pb-[var(--onlypump-safe-bottom)]">
+          <button onClick={() => setWorkoutTitlePrompt(null)} className="h-12 rounded-full bg-white/8 font-black text-zinc-200">Отмена</button>
+          <button onClick={confirmWorkoutTitlePrompt} className="h-12 rounded-full bg-red-500 font-black text-black">Продолжить</button>
         </div>
       </BottomSheetPanel>
     </div>}
@@ -11104,6 +11362,8 @@ const toggleExerciseMeasurementSetting = (field) => {
         </p>
         <div className="mt-5 space-y-2">
           <button onClick={() => completeWorkoutAsIs(workoutsRef.current.find(item => item.id === finishChoiceSheet.workoutId) || selectedWorkout)} className="w-full rounded-2xl bg-red-500 px-4 py-4 text-left font-black text-black transition active:scale-[0.98]">Завершить</button>
+          <button onClick={() => completeWorkoutWithRemainingSets(workoutsRef.current.find(item => item.id === finishChoiceSheet.workoutId) || selectedWorkout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Выполнить оставшиеся</button>
+          <p className="px-1 text-xs leading-5 text-zinc-500">Отметить все оставшиеся подходы выполненными и завершить тренировку.</p>
           <button type="button" onClick={() => { const id = finishChoiceSheet.workoutId; setFinishChoiceSheet(null); openDeleteSheet(id); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           <button onClick={() => setFinishChoiceSheet(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
         </div>
@@ -11138,6 +11398,7 @@ const toggleExerciseMeasurementSetting = (field) => {
           </div>}
 
           {completionSummarySheet.achievement && <div className="mt-4 rounded-[28px] border border-red-500/25 bg-red-500/10 p-5 text-center">
+            <AchievementImage achievement={completionSummarySheet.achievement} />
             <p className="text-xs font-black uppercase tracking-[0.18em] text-red-300">{completionSummarySheet.achievement.label || "Ачивка"}</p>
             <h3 className="mt-3 text-2xl font-black tracking-[-0.04em] text-white">{completionSummarySheet.achievement.title}</h3>
             <p className="mt-2 text-sm text-zinc-400">{completionSummarySheet.achievement.subtitle}</p>
@@ -11406,7 +11667,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	                    measurementMode,
 	                    countsInMuscleStats: shouldCountExerciseInMuscleStats(category, measurementMode),
 	                    doubleCountInStatistics: false,
-	                    primaryMuscles: category === "strength" ? (prev.primaryMuscles?.length ? prev.primaryMuscles : ["Грудь"]) : [],
+	                    primaryMuscles: category === "strength" ? (prev.primaryMuscles || []) : [],
 	                  };
 	                });
 	              }} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">
@@ -11432,7 +11693,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             <label className="block">
               <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Основная группа</span>
               <select disabled={customExerciseSheet.exerciseCategory !== "strength"} value={customExerciseSheet.primaryMuscles?.[0] || ""} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, primaryMuscles: e.target.value ? [e.target.value] : [] }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10 disabled:text-zinc-600">
-                <option value="">Без группы</option>
+                <option value="">Выберите группу</option>
                 {standardMuscleGroups.map(group => <option key={group} value={group}>{group}</option>)}
               </select>
             </label>
@@ -11984,7 +12245,7 @@ const normalizeNutritionDay = (result = {}, fallbackDate = formatDateKey(new Dat
   }));
   const computedTotals = getNutritionDayTotalsFromMeals(meals);
   const hasMealItems = meals.some(meal => (meal.items || []).length > 0);
-  const manualEntryEnabled = Boolean(day.manual_entry_enabled ?? day.manualEntryEnabled) && !hasMealItems;
+  const manualEntryEnabled = nutritionDayHasManualEntry(day) && !hasMealItems;
   const manualTotals = {
     calories: roundCalories(day.manual_calories_total ?? day.manualCaloriesTotal ?? 0),
     protein: roundMacro(day.manual_protein_total ?? day.manualProteinTotal ?? 0),
@@ -12048,7 +12309,7 @@ const recalculateNutritionDayLocal = (day) => {
   });
   const totals = getNutritionDayTotalsFromMeals(meals);
   const hasMealItems = meals.some(meal => (meal.items || []).length > 0);
-  const manualEntryEnabled = Boolean(day?.manual_entry_enabled || day?.manualEntryEnabled) && !hasMealItems;
+  const manualEntryEnabled = nutritionDayHasManualEntry(day) && !hasMealItems;
   const manualTotals = {
     calories: roundCalories(day?.manual_calories_total ?? day?.manualCaloriesTotal ?? 0),
     protein: roundMacro(day?.manual_protein_total ?? day?.manualProteinTotal ?? 0),
@@ -12187,6 +12448,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   const totals = day.totals || { calories: 0, protein: 0, fat: 0, carbs: 0 };
   const goal = day.goal || nutritionGoal || initialNutritionGoal;
   const dayHasItems = (day.meals || []).some(meal => (meal.items || []).length > 0);
+  const dayHasManualEntry = nutritionDayHasManualEntry(day) && !dayHasItems;
   const percent = (value, target) => Math.min(100, Math.round((Number(value || 0) / Math.max(1, Number(target || 1))) * 100));
   const caloriesPercent = percent(totals.calories, goal.calories);
   const calorieTarget = roundCalories(day?.calories_target ?? 2500);
@@ -12406,7 +12668,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
     <div className="mt-5 flex items-center justify-between gap-3">
       <h2 className="text-xl font-black tracking-[-0.03em]">Приемы пищи</h2>
       <div className="flex items-center gap-2">
-        {!dayHasItems && <button onClick={() => setManualEntryOpen(true)} className="min-h-10 rounded-full border border-red-500/60 bg-red-500/12 px-4 py-2 text-xs font-black text-red-300 transition hover:bg-red-500 hover:text-black">Внести КБЖУ вручную</button>}
+        {!dayHasItems && <button onClick={() => setManualEntryOpen(true)} className={`min-h-10 rounded-full border px-4 py-2 text-xs font-black transition ${dayHasManualEntry ? "border-red-500 bg-red-500 text-black shadow-lg shadow-red-500/20" : "border-red-500/60 bg-red-500/12 text-red-300 hover:bg-red-500 hover:text-black"}`}>Внести КБЖУ вручную</button>}
         <button onClick={openMealChoice} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/8 text-red-400"><Plus size={22}/></button>
       </div>
     </div>
@@ -12576,11 +12838,12 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
 }
 
 function ManualNutritionSheet({ day, dateKey, onSave, onClose }) {
+  const hasManualEntry = nutritionDayHasManualEntry(day);
   const [draft, setDraft] = useState({
-    calories: day?.manual_entry_enabled ? String(day.manual_calories_total || day.totals?.calories || "") : "",
-    protein: day?.manual_entry_enabled ? String(day.manual_protein_total || day.totals?.protein || "") : "",
-    fat: day?.manual_entry_enabled ? String(day.manual_fat_total || day.totals?.fat || "") : "",
-    carbs: day?.manual_entry_enabled ? String(day.manual_carbs_total || day.totals?.carbs || "") : "",
+    calories: hasManualEntry ? String(day?.manual_calories_total || day?.manualCaloriesTotal || day?.totals?.calories || "") : "",
+    protein: hasManualEntry ? String(day?.manual_protein_total || day?.manualProteinTotal || day?.totals?.protein || "") : "",
+    fat: hasManualEntry ? String(day?.manual_fat_total || day?.manualFatTotal || day?.totals?.fat || "") : "",
+    carbs: hasManualEntry ? String(day?.manual_carbs_total || day?.manualCarbsTotal || day?.totals?.carbs || "") : "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -13965,6 +14228,7 @@ const strengthAchievementDefs = [
   { id: "motorcycle", title: "Мотоцикл", threshold: 1500, icon: "🏍", imagePath: "/assets/achievements/motorcycle.png" },
   { id: "car", title: "Автомобиль", threshold: 5000, icon: "🚗", imagePath: "/assets/achievements/car.png" },
   { id: "elephant", title: "Слон", threshold: 10000, icon: "🐘", imagePath: "/assets/achievements/elephant.png" },
+  { id: "bus", title: "Автобус", threshold: 15000, icon: "🚌", imagePath: "/assets/achievements/bus.png" },
   { id: "metro", title: "Вагон метро", threshold: 30000, icon: "🚇", imagePath: "/assets/achievements/metro.png" },
   { id: "crane", title: "Кран", threshold: 60000, icon: "🏗", imagePath: "/assets/achievements/crane.png" },
   { id: "plane", title: "Самолёт", threshold: 100000, icon: "✈", imagePath: "/assets/achievements/plane.png" },
@@ -13987,7 +14251,7 @@ const activityAchievementDefs = {
     { id: "first", title: "Первая практика", metric: "count", threshold: 1, icon: "🧘", imagePath: "/assets/achievements/yoga-first.png" },
     { id: "minutes-30", title: "30 минут йоги", metric: "minutes", threshold: 30, icon: "🧘", imagePath: "/assets/achievements/yoga-30min.png" },
     { id: "count-3", title: "3 практики", metric: "count", threshold: 3, icon: "🧘", imagePath: "/assets/achievements/yoga-3-practices.png" },
-    { id: "count-7", title: "7 практик", metric: "count", threshold: 7, icon: "🧘", imagePath: "/assets/achievements/yoga-7-practices.png" },
+    { id: "count-7", title: "7 практик", metric: "count", threshold: 7, icon: "🧘", imagePath: "/assets/achievements/yoga-7-practice.png" },
     { id: "hours-5", title: "5 часов суммарно", metric: "minutes", threshold: 300, icon: "🌿", imagePath: "/assets/achievements/yoga-5h.png" },
   ],
   pilates: [
