@@ -4909,6 +4909,7 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
   const [valueDraft, setValueDraft] = useState(String(getPersonalTrackerEntry(normalized, dateKey).value || 0));
   const [noteDraft, setNoteDraft] = useState(getPersonalTrackerEntry(normalized, dateKey).note || "");
   const calendarSwipeRef = useRef(null);
+  const toggleDayGuardRef = useRef({ date: "", at: 0 });
   const config = getPersonalTrackerTypeConfig(normalized.type);
   const accent = getPersonalTrackerAccent(normalized);
   const isBinary = normalized.type === "habit" || normalized.type === "abstinence";
@@ -4948,8 +4949,24 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
     setFocusedDate(date);
   };
 
-  const toggleFocusedDay = () => {
+  const stopCalendarControlPointer = (event) => {
+    event?.stopPropagation?.();
+    calendarSwipeRef.current = null;
+  };
+
+  const toggleFocusedDay = (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    calendarSwipeRef.current = null;
+    const now = Date.now();
+    if (toggleDayGuardRef.current.date === focusedDate && now - toggleDayGuardRef.current.at < 350) return;
+    toggleDayGuardRef.current = { date: focusedDate, at: now };
     onSaveEntry(normalized.id, focusedDate, current => ({ done: !current.done, note: noteDraft }));
+  };
+
+  const changeNoteDraft = (nextNote) => {
+    setNoteDraft(nextNote);
+    onSaveEntry(normalized.id, focusedDate, { note: nextNote });
   };
 
   const startCalendarSwipe = (event) => {
@@ -5024,7 +5041,13 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
           </div>
           <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl bg-white/[0.035] p-2">
             <span className="pl-2 text-xs font-bold text-zinc-500">{formatCycleDate(focusedDate)}</span>
-            <button type="button" onClick={toggleFocusedDay} className={`rounded-full px-4 py-2 text-xs font-black ${entry.done ? accent.soft : "bg-white/8 text-zinc-300"}`}>{entry.done ? "Отмечено" : "Отметить день"}</button>
+            <button
+              type="button"
+              onPointerDown={stopCalendarControlPointer}
+              onPointerUp={stopCalendarControlPointer}
+              onClick={toggleFocusedDay}
+              className={`rounded-full px-4 py-2 text-xs font-black ${entry.done ? accent.soft : "bg-white/8 text-zinc-300"}`}
+            >{entry.done ? "Отмечено" : "Отметить день"}</button>
           </div>
           <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase text-zinc-500">
             {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map(day => <span key={day}>{day}</span>)}
@@ -5043,7 +5066,7 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
 
       <label className="mt-5 block rounded-2xl border border-white/10 bg-white/[0.04] p-4">
         <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Заметка дня</span>
-        <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onBlur={() => onSaveEntry(normalized.id, focusedDate, { note: noteDraft })} rows="3" className="mt-3 w-full resize-none bg-transparent text-sm outline-none" placeholder="Что важно запомнить?"/>
+        <textarea value={noteDraft} onChange={(event) => changeNoteDraft(event.target.value)} rows="3" className="mt-3 w-full resize-none bg-transparent text-base outline-none" style={{ fontSize: 16 }} placeholder="Что важно запомнить?"/>
       </label>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -5293,9 +5316,9 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     setSelectedDateKey(selectedDateKey);
     setActive("nutrition");
   };
-  const openAnalyticsFromHome = (type) => {
+  const openAnalyticsFromHome = (type, payload = {}) => {
     setSelectedDateKey(selectedDateKey);
-    if (onOpenAnalytics) onOpenAnalytics(type);
+    if (onOpenAnalytics) onOpenAnalytics(type, payload);
     else setActive("analytics");
   };
   const saveWaterQuick = (delta) => {
@@ -5636,8 +5659,9 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         setTrackerSettingsDraft({ isNew: false, tracker });
       }}
       onOpenAnalytics={() => {
+        const tracker = personalTrackers.find(item => item.id === activeTrackerId);
         setActiveTrackerId(null);
-        setActive("analytics");
+        openAnalyticsFromHome("personal_tracker", { trackerId: tracker?.id });
       }}
     />}
     {trackerSettingsDraft && <PersonalTrackerSettingsSheet
@@ -15618,10 +15642,19 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
 
   useEffect(() => {
     if (!analyticsIntent?.type) return;
+    if (analyticsIntent.type === "personal_tracker") {
+      const tracker = personalTrackers.find(item => item.id === analyticsIntent.trackerId);
+      if (tracker) {
+        setDetail(null);
+        setTrackerDetail(normalizePersonalTracker(tracker));
+      }
+      return;
+    }
     const config = analyticsTypeConfigs[analyticsIntent.type];
     if (!config) return;
+    setTrackerDetail(null);
     setDetail({ type: analyticsIntent.type, title: config.title });
-  }, [analyticsIntent?.nonce, analyticsIntent?.type]);
+  }, [analyticsIntent?.nonce, analyticsIntent?.type, analyticsIntent?.trackerId, personalTrackers]);
 
   const latestMeasurement = analyticsData.measurements?.length ? analyticsData.measurements[analyticsData.measurements.length - 1] : {};
   const openEditorForDetail = (metricKey) => {
@@ -16790,10 +16823,12 @@ function OnlyPumpPlatform() {
     });
   }, []);
 
-  const openAnalyticsType = useCallback((type) => {
-    const config = analyticsTypeConfigs[type];
-    if (!config) return;
-    setAnalyticsIntent({ type, nonce: Date.now() });
+  const openAnalyticsType = useCallback((type, payload = {}) => {
+    if (type !== "personal_tracker") {
+      const config = analyticsTypeConfigs[type];
+      if (!config) return;
+    }
+    setAnalyticsIntent({ type, ...payload, nonce: Date.now() });
     setActive("analytics");
   }, [setActive]);
 
