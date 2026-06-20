@@ -804,6 +804,14 @@ const DEFAULT_PROFILE = {
   default_weight_unit: "kg",
   access_status: "pending",
   is_admin: false,
+  is_owner: false,
+  is_trainer: false,
+  roles: [],
+  trainer_profile_id: null,
+  access_expires_at: null,
+  invited_by_profile_id: null,
+  invite_code: null,
+  deleted_at: null,
   access_requested_at: null,
   access_granted_at: null,
   access_note: null,
@@ -955,7 +963,44 @@ function getProfileAccessStatus(profile = {}) {
 }
 
 function profileHasTestAccess(profile = {}) {
-  return parseProfileBoolean(profile?.is_admin) || getProfileAccessStatus(profile) === "allowed";
+  if (profile?.deleted_at) return false;
+  if (profileHasAnyRole(profile, ["owner", "admin", "trainer"])) return true;
+  if (profile?.access_expires_at && new Date(profile.access_expires_at).getTime() <= Date.now()) return false;
+  return getProfileAccessStatus(profile) === "allowed";
+}
+
+function normalizeProfileRoles(value, profile = {}) {
+  const base = normalizeProfileStringArray(value, []);
+  const roles = new Set(base.map(role => String(role || "").trim().toLowerCase()).filter(Boolean));
+  if (parseProfileBoolean(profile?.is_owner)) roles.add("owner");
+  if (parseProfileBoolean(profile?.is_admin)) roles.add("admin");
+  if (parseProfileBoolean(profile?.is_trainer)) roles.add("trainer");
+  return Array.from(roles);
+}
+
+function profileHasRole(profile = {}, role = "") {
+  return normalizeProfileRoles(profile?.roles, profile).includes(String(role || "").trim().toLowerCase());
+}
+
+function profileHasAnyRole(profile = {}, roles = []) {
+  return roles.some(role => profileHasRole(profile, role));
+}
+
+function getProfileRoleLabels(profile = {}) {
+  const labels = {
+    owner: "владелец",
+    admin: "админ",
+    trainer: "тренер",
+  };
+  const roles = normalizeProfileRoles(profile?.roles, profile).filter(role => labels[role]);
+  return roles.length ? roles.map(role => labels[role]).join(" · ") : "пользователь";
+}
+
+function formatAccessUntil(value) {
+  if (!value) return "бессрочно";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "бессрочно";
+  return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function calculateProfileAge(birthDate) {
@@ -1028,6 +1073,14 @@ function buildFallbackProfile(overrides = {}) {
     default_weight_unit: normalizeWeightUnit(overrides.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
     access_status: normalizeAccessStatus(overrides.access_status ?? DEFAULT_PROFILE.access_status),
     is_admin: parseProfileBoolean(overrides.is_admin, DEFAULT_PROFILE.is_admin),
+    is_owner: parseProfileBoolean(overrides.is_owner, DEFAULT_PROFILE.is_owner),
+    is_trainer: parseProfileBoolean(overrides.is_trainer, DEFAULT_PROFILE.is_trainer),
+    roles: normalizeProfileRoles(overrides.roles, overrides),
+    trainer_profile_id: overrides.trainer_profile_id || DEFAULT_PROFILE.trainer_profile_id,
+    access_expires_at: overrides.access_expires_at || DEFAULT_PROFILE.access_expires_at,
+    invited_by_profile_id: overrides.invited_by_profile_id || DEFAULT_PROFILE.invited_by_profile_id,
+    invite_code: overrides.invite_code || DEFAULT_PROFILE.invite_code,
+    deleted_at: overrides.deleted_at || DEFAULT_PROFILE.deleted_at,
     access_requested_at: overrides.access_requested_at || DEFAULT_PROFILE.access_requested_at,
     access_granted_at: overrides.access_granted_at || DEFAULT_PROFILE.access_granted_at,
     access_note: overrides.access_note ?? DEFAULT_PROFILE.access_note,
@@ -1100,6 +1153,14 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     default_weight_unit: normalizeWeightUnit(record.default_weight_unit || fallback.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
     access_status: normalizeAccessStatus(record.access_status ?? fallback.access_status ?? DEFAULT_PROFILE.access_status),
     is_admin: parseProfileBoolean(record.is_admin, fallback.is_admin ?? DEFAULT_PROFILE.is_admin),
+    is_owner: parseProfileBoolean(record.is_owner, fallback.is_owner ?? DEFAULT_PROFILE.is_owner),
+    is_trainer: parseProfileBoolean(record.is_trainer, fallback.is_trainer ?? DEFAULT_PROFILE.is_trainer),
+    roles: normalizeProfileRoles(record.roles ?? fallback.roles ?? DEFAULT_PROFILE.roles, { ...fallback, ...record }),
+    trainer_profile_id: record.trainer_profile_id !== undefined ? (record.trainer_profile_id || null) : (fallback.trainer_profile_id || null),
+    access_expires_at: record.access_expires_at !== undefined ? (record.access_expires_at || null) : (fallback.access_expires_at || null),
+    invited_by_profile_id: record.invited_by_profile_id !== undefined ? (record.invited_by_profile_id || null) : (fallback.invited_by_profile_id || null),
+    invite_code: record.invite_code !== undefined ? (record.invite_code || null) : (fallback.invite_code || null),
+    deleted_at: record.deleted_at !== undefined ? (record.deleted_at || null) : (fallback.deleted_at || null),
     access_requested_at: record.access_requested_at || fallback.access_requested_at || null,
     access_granted_at: record.access_granted_at || fallback.access_granted_at || null,
     access_note: record.access_note ?? fallback.access_note ?? null,
@@ -16573,15 +16634,244 @@ function ThemeSettingsSheet({ profile = DEFAULT_PROFILE, saving = false, onClose
   </div>;
 }
 
-function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", onSaveProfile, profileSaving = false, onSaveThemeSettings, themeSaving = false, onResetProfile }) {
+function InvitePeriodPickerSheet({ value, onSave, onClose }) {
+  const [draft, setDraft] = useState(value ? String(value) : "");
+  const periodOptions = useMemo(() => [
+    { label: "Бессрочно", value: "" },
+    ...Array.from({ length: 365 }, (_, index) => ({ label: `${index + 1} дн`, value: String(index + 1) })),
+  ], []);
+  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[220] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} priority={220} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отменить</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Инвайт</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Период доступа</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+      <div className="mt-6 h-72 overflow-y-auto rounded-[24px] bg-black/28 p-2 onlypump-scrollbar-none" data-no-sheet-drag="true">
+        {periodOptions.map(option => <button key={option.value || "forever"} type="button" onClick={() => setDraft(option.value)} className={`block w-full rounded-2xl px-3 py-4 text-center text-sm font-black transition ${draft === option.value ? "bg-red-500 text-black" : "text-zinc-300 hover:bg-white/[0.08]"}`}>{option.label}</button>)}
+      </div>
+      <Button onClick={() => { onSave?.(draft ? Number(draft) : null); onClose(); }} className="mt-5 w-full bg-gradient-to-r from-red-700 to-red-500 text-black">Выбрать</Button>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData = "", onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [panel, setPanel] = useState({ permissions: {}, users: [], invites: [], students: [] });
+  const [inviteTitle, setInviteTitle] = useState("");
+  const [inviteDays, setInviteDays] = useState(null);
+  const [inviteMaxUses, setInviteMaxUses] = useState("");
+  const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
+  const canManageUsers = Boolean(panel.permissions?.can_manage_users);
+  const canCreateInvites = Boolean(panel.permissions?.can_create_invites);
+  const canViewStudents = Boolean(panel.permissions?.can_view_students);
+  const periodLabel = inviteDays ? `${inviteDays} дн` : "Бессрочно";
+
+  const loadPanel = useCallback(async () => {
+    if (!telegramInitData) {
+      setError("Управление доступно только внутри Telegram.");
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const result = await callOnlyPumpProfileApi(telegramInitData, "load_access_panel", {});
+      setPanel({
+        permissions: result.permissions || {},
+        users: Array.isArray(result.users) ? result.users : [],
+        invites: Array.isArray(result.invites) ? result.invites : [],
+        students: Array.isArray(result.students) ? result.students : [],
+      });
+    } catch (loadError) {
+      console.error("profile access panel error:", loadError);
+      setError("Не удалось загрузить управление доступом.");
+    } finally {
+      setLoading(false);
+    }
+  }, [telegramInitData]);
+
+  useEffect(() => {
+    loadPanel();
+  }, [loadPanel]);
+
+  const copyInvite = async (invite) => {
+    const value = invite.invite_url || invite.code || "";
+    if (!value) return;
+    try {
+      await navigator.clipboard?.writeText(value);
+      setError("Ссылка скопирована.");
+    } catch (_error) {
+      setError(`Код инвайта: ${invite.code}`);
+    }
+  };
+
+  const createInvite = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      await callOnlyPumpProfileApi(telegramInitData, "create_invite_link", {
+        title: inviteTitle,
+        access_days: inviteDays,
+        max_uses: inviteMaxUses ? Number(inviteMaxUses) : null,
+      });
+      setInviteTitle("");
+      setInviteMaxUses("");
+      await loadPanel();
+    } catch (createError) {
+      console.error("profile invite create error:", createError);
+      setError("Не удалось создать инвайт.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const revokeInvite = async (invite) => {
+    setSaving(true);
+    setError("");
+    try {
+      await callOnlyPumpProfileApi(telegramInitData, "revoke_invite_link", { invite_id: invite.id });
+      await loadPanel();
+    } catch (revokeError) {
+      console.error("profile invite revoke error:", revokeError);
+      setError("Не удалось отключить ссылку.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateUserAccess = async (user, operation) => {
+    if (operation === "delete" && !window.confirm(`Удалить пользователя ${userTitle(user)} из списка доступа?`)) return;
+    setSaving(true);
+    setError("");
+    try {
+      await callOnlyPumpProfileApi(telegramInitData, "update_user_access", {
+        target_profile_id: user.id,
+        operation,
+      });
+      await loadPanel();
+    } catch (accessError) {
+      console.error("profile access update error:", accessError);
+      setError("Не удалось изменить доступ пользователя.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const userTitle = (user) => user.display_name || user.telegram_username || user.telegram_id || "Пользователь";
+
+  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[190] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} priority={190} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-5xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem] sm:p-6">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-4">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отменить</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs uppercase tracking-wider text-red-500">Личный кабинет</p>
+          <h2 className="mt-2 text-2xl font-black">Доступ и ученики</h2>
+          <p className="mt-1 text-xs text-zinc-500">{getProfileRoleLabels(profile)}</p>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+
+      {loading ? <p className="mt-6 rounded-2xl bg-white/[0.04] p-4 text-sm text-zinc-400">Загружаю...</p> : <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        {canCreateInvites && <Card className="p-4 lg:col-span-2">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-black">Инвайт-ссылки</h3>
+              <p className="mt-1 text-sm text-zinc-500">Период доступа выбирается барабаном: от 1 дня до бессрочно.</p>
+            </div>
+            <ShieldCheck className="shrink-0 text-red-500"/>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_160px_140px_auto]">
+            <input value={inviteTitle} onChange={(event) => setInviteTitle(event.target.value)} placeholder="Название ссылки" className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none"/>
+            <button type="button" onClick={() => setPeriodPickerOpen(true)} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-black">{periodLabel}</button>
+            <input value={inviteMaxUses} onChange={(event) => setInviteMaxUses(event.target.value)} type="number" min="1" inputMode="numeric" placeholder="Лимит" className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none"/>
+            <Button onClick={createInvite} disabled={saving} className="bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">Создать</Button>
+          </div>
+          <div className="mt-4 space-y-2">
+            {panel.invites.length ? panel.invites.map(invite => <div key={invite.id} className="rounded-2xl bg-white/[0.035] p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-black">{invite.title || invite.code}</p>
+                  <p className="mt-1 break-all text-xs text-zinc-500">{invite.invite_url || invite.code}</p>
+                  <p className="mt-1 text-xs text-zinc-600">доступ: {invite.access_days ? `${invite.access_days} дн` : "бессрочно"} · использовано {invite.uses_count || 0}{invite.max_uses ? `/${invite.max_uses}` : ""}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => copyInvite(invite)} className="rounded-full bg-white/8 px-3 py-2 text-xs font-black">Копировать</button>
+                  {invite.is_active && <button type="button" onClick={() => revokeInvite(invite)} disabled={saving} className="rounded-full bg-red-500/10 px-3 py-2 text-xs font-black text-red-300 disabled:opacity-50">Отключить</button>}
+                </div>
+              </div>
+            </div>) : <p className="rounded-2xl bg-white/[0.035] p-4 text-sm text-zinc-500">Инвайтов пока нет.</p>}
+          </div>
+        </Card>}
+
+        {canManageUsers && <Card className="p-4 lg:col-span-2">
+          <div className="flex items-center justify-between gap-4">
+            <h3 className="text-lg font-black">Пользователи</h3>
+            <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-zinc-400">{panel.users.length}</span>
+          </div>
+          <div className="mt-4 space-y-2">
+            {panel.users.map(user => <div key={user.id} className="rounded-2xl bg-white/[0.035] p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-black">{userTitle(user)}</p>
+                  <p className="mt-1 text-xs text-zinc-500">{user.telegram_username ? `@${user.telegram_username}` : `ID ${user.telegram_id || "—"}`} · {getProfileRoleLabels(user)}</p>
+                  <p className="mt-1 text-xs text-zinc-600">статус: {user.access_status} · доступ до {formatAccessUntil(user.access_expires_at)}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {user.access_status === "blocked"
+                    ? <button type="button" onClick={() => updateUserAccess(user, "unblock")} disabled={saving} className="rounded-full bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-300 disabled:opacity-50">Разблокировать</button>
+                    : <button type="button" onClick={() => updateUserAccess(user, "block")} disabled={saving} className="rounded-full bg-white/8 px-3 py-2 text-xs font-black disabled:opacity-50">Блокировать</button>}
+                  <button type="button" onClick={() => updateUserAccess(user, "delete")} disabled={saving} className="rounded-full bg-red-500/10 px-3 py-2 text-xs font-black text-red-300 disabled:opacity-50">Удалить</button>
+                </div>
+              </div>
+            </div>)}
+          </div>
+        </Card>}
+
+        {canViewStudents && <Card className="p-4 lg:col-span-2">
+          <div className="flex items-center justify-between gap-4">
+            <h3 className="text-lg font-black">Мои ученики</h3>
+            <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-zinc-400">{panel.students.length}</span>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {panel.students.length ? panel.students.map(student => <div key={student.id} className="rounded-2xl bg-white/[0.035] p-4">
+              <p className="break-words text-sm font-black">{userTitle(student)}</p>
+              <p className="mt-1 text-xs text-zinc-500">{student.telegram_username ? `@${student.telegram_username}` : `ID ${student.telegram_id || "—"}`}</p>
+              <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-xl bg-white/[0.04] p-3"><b className="block text-lg">{student.analytics_30d?.completed_workouts_count || 0}</b><span className="text-zinc-500">тренировок</span></div>
+                <div className="rounded-xl bg-white/[0.04] p-3"><b className="block text-lg">{Math.round(student.analytics_30d?.total_volume || 0).toLocaleString("ru-RU")}</b><span className="text-zinc-500">тоннаж</span></div>
+                <div className="rounded-xl bg-white/[0.04] p-3"><b className="block text-lg">{student.analytics_30d?.total_sets || 0}</b><span className="text-zinc-500">подходов</span></div>
+                <div className="rounded-xl bg-white/[0.04] p-3"><b className="block text-lg">{(student.analytics_30d?.steps_average || 0).toLocaleString("ru-RU")}</b><span className="text-zinc-500">шаги ср.</span></div>
+              </div>
+            </div>) : <p className="rounded-2xl bg-white/[0.035] p-4 text-sm text-zinc-500">Ученики пока не назначены.</p>}
+          </div>
+        </Card>}
+      </div>}
+
+      {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+      {periodPickerOpen && <InvitePeriodPickerSheet value={inviteDays} onSave={setInviteDays} onClose={() => setPeriodPickerOpen(false)}/>}
+    </BottomSheetPanel>
+  </div>;
+}
+
+function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onSaveProfile, profileSaving = false, onSaveThemeSettings, themeSaving = false, onResetProfile }) {
   const displayName = getProfileDisplayName(profile);
   const telegramLabel = profile?.telegram_username ? `@${profile.telegram_username}` : profile?.telegram_id ? `ID ${profile.telegram_id}` : "Обычная web-версия";
   const profileSource = profileStatus === "verified" ? "Supabase: Telegram проверен" : profileStatus === "loaded" ? "Supabase: профиль загружен" : profileStatus === "created" ? "Supabase: профиль создан" : "Локальный fallback";
   const calculatedAge = calculateProfileAge(profile?.birth_date);
   const [editOpen, setEditOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
+  const [accessPanelOpen, setAccessPanelOpen] = useState(false);
   const [themeError, setThemeError] = useState("");
   const [resetError, setResetError] = useState("");
+  const canOpenAccessPanel = profileStatus === "verified" && profileHasAnyRole(profile, ["owner", "admin", "trainer"]);
   const lightThemeEnabled = parseProfileBoolean(profile?.light_theme_enabled, DEFAULT_PROFILE.light_theme_enabled);
   const lightThemeAlways = parseProfileBoolean(profile?.light_theme_always, DEFAULT_PROFILE.light_theme_always);
   const lightThemeSchedule = lightThemeAlways
@@ -16615,10 +16905,11 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", onSav
   };
 
   return <div className="profile-screen"><Header title="Личный кабинет" subtitle="Профиль, тариф, подписка, настройки, доступы и история платежей."/><PageGrid>
-    <Card className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p></Card>
+    <Card className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p><p className="mt-3 rounded-full bg-white/8 px-3 py-1 text-xs font-black text-zinc-300">{getProfileRoleLabels(profile)}</p></Card>
     <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? formatAgeRu(calculatedAge) : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profileWeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profileHeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profileActivityLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">КБЖУ</span><span>{profileNutritionLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profile.manual_nutrition_targets_enabled ? "ручной" : "авто"}{profile.high_protein_enabled ? " · белок+" : ""}{profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><Button onClick={() => setEditOpen(true)} className="mt-5 w-full bg-white/8">Редактировать</Button></Card>
     <Card className="p-5"><CreditCard className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Подписка</h2><p className="mt-2 text-zinc-400">Активна до {new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</p><Button className="mt-5 w-full bg-white/8">Управлять</Button></Card>
     <Card className="p-5"><ShieldCheck className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Доступы</h2><p className="mt-2 text-zinc-400">Все модули открыты</p><div className="mt-5 flex gap-2 text-xs text-zinc-500"><Lock size={14}/> 1PM bonus locked</div></Card>
+    {canOpenAccessPanel && <Card className="p-5 xl:col-span-2"><Users className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Пользователи и ученики</h2><p className="mt-2 text-zinc-400">{profileHasRole(profile, "owner") ? "Инвайт-ссылки, пользователи и ученики." : profileHasRole(profile, "admin") ? "Блокировка, разблокировка и удаление пользователей." : "Аналитика твоих учеников."}</p><Button onClick={() => setAccessPanelOpen(true)} className="mt-5 w-full bg-white/8">Открыть управление</Button></Card>}
 	    <Card className="p-5 xl:col-span-2"><Settings className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Настройки</h2>{["Уведомления", "Единицы измерения", "Интеграции", "Безопасность"].map(x=><div key={x} className="mt-3 rounded-lg bg-white/[0.03] p-3 text-sm">{x}</div>)}
 	      <div className="mt-5 border-t border-white/10 pt-5">
 	        <ProfileToggle label="Светлая тема" description={`Режим: ${lightThemeEnabled ? lightThemeSchedule : "выключена"}`} checked={lightThemeEnabled} onChange={toggleLightTheme}/>
@@ -16633,6 +16924,7 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", onSav
 	    </Card>
     {editOpen && <ProfileEditSheet profile={profile} saving={profileSaving} onClose={() => setEditOpen(false)} onSave={onSaveProfile}/>}
     {themeOpen && <ThemeSettingsSheet profile={profile} saving={themeSaving} onClose={() => setThemeOpen(false)} onSave={onSaveThemeSettings}/>}
+    {accessPanelOpen && <ProfileAccessPanelSheet profile={profile} telegramInitData={telegramInitData} onClose={() => setAccessPanelOpen(false)}/>}
   </PageGrid></div>;
 }
 
@@ -17710,7 +18002,7 @@ function OnlyPumpPlatform() {
     progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} onProgressProfileSaved={handleProgressProfileSaved}/>,
     analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} nutritionDay={nutritionDay} healthLog={healthLog} healthLogs={healthLogs} personalTrackers={personalTrackers} healthSaving={healthSaving} healthRefreshing={healthRefreshing} profileSaving={profileSaving} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} analyticsIntent={analyticsIntent} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onSaveAnalyticsCardSettings={handleSaveAnalyticsCardSettings} onOpenNutrition={() => setActive("nutrition")} onOpenProgress={() => setActive("progress")}/>,
     community: <CommunityPage/>,
-    profile: <ProfilePage profile={profile} profileStatus={profileStatus} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings}/>,
+    profile: <ProfilePage profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings}/>,
   }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, personalTrackers, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, handleNutritionAction, handleSaveProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog]);
 
   if (appLoading || profileLoading) {
