@@ -14156,7 +14156,7 @@ const analyticsPeriodItems = (period, selectedDateKey) => {
     if (period === "week") {
       const date = addLocalDaysToDate(selected, offset * 7);
       const range = analyticsPeriodRange("week", formatDateKey(date));
-      return { key: range.startKey, label: `Нед ${range.weekIndex}`, sub: String(parseDateKeyLocal(range.startKey).getFullYear()), active: offset === 0 };
+      return { key: range.startKey, label: String(range.weekIndex).padStart(2, "0"), sub: "", active: offset === 0 };
     }
     const date = addLocalDaysToDate(selected, offset);
     return { key: formatDateKey(date), label: String(date.getDate()), sub: date.toLocaleDateString("ru-RU", { weekday: "short" }).replace(".", ""), active: offset === 0 };
