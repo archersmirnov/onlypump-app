@@ -4742,8 +4742,21 @@ function PersonalTrackerCard({ tracker, dateKey, onOpen, onQuickAdd }) {
       <PersonalTrackerIcon tracker={tracker}/>
     </div>
     {isBinary ? <div className="mt-4">
-      <div className="text-3xl font-black">{stats.streak} дн</div>
-      <p className="mt-1 text-xs text-zinc-500">серия · осталось {stats.remaining} дн</p>
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <div className="text-3xl font-black">{stats.streak} дн</div>
+          <p className="mt-1 text-xs text-zinc-500">серия · осталось {stats.remaining} дн</p>
+        </div>
+        <span className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black ${entry.done ? accent.soft : "bg-white/[0.06] text-zinc-500"}`}>
+          {entry.done ? "Отмечено" : "Не отмечено"}
+        </span>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-zinc-500">
+        <span>{stats.completed}/{tracker.durationDays || tracker.target} дней</span>
+        <span>{formatCycleDate(dateKey)}</span>
+      </div>
+      <div className="mt-2"><Progress value={progress}/></div>
+      {entry.note && <p className="mt-3 line-clamp-2 rounded-2xl bg-white/[0.04] p-3 text-xs leading-5 text-zinc-400">{entry.note}</p>}
       <div className="mt-4 grid grid-cols-7 gap-1">
         {Array.from({ length: 14 }, (_, index) => {
           const date = addLocalDaysToDate(parseDateKeyLocal(dateKey), index - 13);
@@ -4893,6 +4906,7 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
   const [focusedDate, setFocusedDate] = useState(dateKey);
   const [valueDraft, setValueDraft] = useState(String(getPersonalTrackerEntry(normalized, dateKey).value || 0));
   const [noteDraft, setNoteDraft] = useState(getPersonalTrackerEntry(normalized, dateKey).note || "");
+  const calendarSwipeRef = useRef(null);
   const config = getPersonalTrackerTypeConfig(normalized.type);
   const accent = getPersonalTrackerAccent(normalized);
   const isBinary = normalized.type === "habit" || normalized.type === "abstinence";
@@ -4920,10 +4934,34 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
     onClose();
   };
 
-  const toggleDay = (date) => {
-    const dayEntry = getPersonalTrackerEntry(normalized, date);
-    onSaveEntry(normalized.id, date, { ...dayEntry, done: !dayEntry.done });
+  const shiftFocusedMonth = (amount) => {
+    const current = parseDateKeyLocal(focusedDate);
+    const targetMonth = new Date(current.getFullYear(), current.getMonth() + amount, 1);
+    const maxDay = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0).getDate();
+    targetMonth.setDate(Math.min(current.getDate(), maxDay));
+    setFocusedDate(formatDateKey(targetMonth));
+  };
+
+  const selectDay = (date) => {
     setFocusedDate(date);
+  };
+
+  const toggleFocusedDay = () => {
+    onSaveEntry(normalized.id, focusedDate, { ...entry, done: !entry.done, note: noteDraft });
+  };
+
+  const startCalendarSwipe = (event) => {
+    calendarSwipeRef.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+  };
+
+  const endCalendarSwipe = (event) => {
+    const start = calendarSwipeRef.current;
+    calendarSwipeRef.current = null;
+    if (!start || start.pointerId !== event.pointerId) return;
+    const dx = event.clientX - start.x;
+    const dy = Math.abs(event.clientY - start.y);
+    if (Math.abs(dx) < 64 || dy > 42) return;
+    shiftFocusedMonth(dx < 0 ? 1 : -1);
   };
 
   return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -4969,10 +5007,22 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
           <div className="rounded-2xl bg-white/[0.04] p-3 text-center"><b className="block text-2xl">{stats.completed}</b><span className="text-xs text-zinc-500">отмечено</span></div>
           <div className="rounded-2xl bg-white/[0.04] p-3 text-center"><b className="block text-2xl">{stats.remaining}</b><span className="text-xs text-zinc-500">осталось</span></div>
         </div>
-        <div className="mt-5 rounded-3xl bg-white/[0.035] p-4" data-no-sheet-drag="true">
+        <div
+          className="mt-5 rounded-3xl bg-white/[0.035] p-4"
+          data-no-sheet-drag="true"
+          data-calendar-swipe="true"
+          onPointerDown={startCalendarSwipe}
+          onPointerUp={endCalendarSwipe}
+          onPointerCancel={() => { calendarSwipeRef.current = null; }}
+        >
           <div className="mb-3 flex items-center justify-between">
-            <b>{selectedMonth.toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}</b>
-            <button type="button" onClick={() => toggleDay(focusedDate)} className={`rounded-full px-4 py-2 text-xs font-black ${entry.done ? accent.soft : "bg-white/8 text-zinc-300"}`}>{entry.done ? "Отмечено" : "Отметить день"}</button>
+            <button type="button" onClick={() => shiftFocusedMonth(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-lg font-black text-zinc-300">‹</button>
+            <b className="text-center">{selectedMonth.toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}</b>
+            <button type="button" onClick={() => shiftFocusedMonth(1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-lg font-black text-zinc-300">›</button>
+          </div>
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl bg-white/[0.035] p-2">
+            <span className="pl-2 text-xs font-bold text-zinc-500">{formatCycleDate(focusedDate)}</span>
+            <button type="button" onClick={toggleFocusedDay} className={`rounded-full px-4 py-2 text-xs font-black ${entry.done ? accent.soft : "bg-white/8 text-zinc-300"}`}>{entry.done ? "Отмечено" : "Отметить день"}</button>
           </div>
           <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase text-zinc-500">
             {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map(day => <span key={day}>{day}</span>)}
@@ -4983,7 +5033,7 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
               const inMonth = date.getMonth() === selectedMonth.getMonth();
               const active = day === focusedDate;
               const done = parseProfileBoolean(normalized.entries?.[day]?.done, false);
-              return <button key={day} type="button" onClick={() => toggleDay(day)} className={`aspect-square rounded-full text-xs font-black transition ${active ? "ring-2 ring-red-400" : ""} ${done ? `${accent.soft} text-black` : inMonth ? "bg-white/[0.06] text-zinc-300" : "bg-white/[0.02] text-zinc-700"}`}>{date.getDate()}</button>;
+              return <button key={day} type="button" onClick={() => selectDay(day)} className={`aspect-square rounded-full text-xs font-black transition ${active ? "ring-2 ring-red-400" : ""} ${done ? `${accent.soft} text-black` : inMonth ? "bg-white/[0.06] text-zinc-300" : "bg-white/[0.02] text-zinc-700"}`}>{date.getDate()}</button>;
             })}
           </div>
         </div>
