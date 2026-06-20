@@ -14457,6 +14457,21 @@ const analyticsLabelIndexes = (count) => {
   return Array.from(values).sort((a, b) => a - b);
 };
 
+const buildAnalyticsEmptyPeriodPoints = (period = "month", selectedDateKey = formatDateKey(new Date())) => {
+  const days = analyticsPeriods.find(item => item.id === period)?.days || 30;
+  const range = ["day", "week", "month", "year"].includes(period)
+    ? analyticsPeriodRange(period, selectedDateKey)
+    : { startKey: dateKeyDaysAgo(selectedDateKey, days - 1), endKey: selectedDateKey };
+  const start = parseDateKeyLocal(range.startKey);
+  const end = parseDateKeyLocal(range.endKey);
+  const totalDays = Math.max(0, Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
+  const pointCount = period === "day" ? 1 : Math.min(8, totalDays + 1);
+  return Array.from({ length: Math.max(1, pointCount) }, (_, index) => {
+    const offset = pointCount <= 1 ? 0 : Math.round((totalDays * index) / (pointCount - 1));
+    return { date: formatDateKey(addLocalDaysToDate(start, offset)), value: 0, isEmptyPoint: true };
+  });
+};
+
 function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "", period = "month", selectedDateKey = formatDateKey(new Date()), onSwipePeriod }) {
   const [selected, setSelected] = useState(null);
   const [dragX, setDragX] = useState(0);
@@ -14464,15 +14479,17 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
   const suppressChartClickRef = useRef(false);
   const suppressResetRef = useRef(null);
   const safePoints = points.slice(-32);
-  const values = safePoints.map(point => Number(point.value || 0));
+  const hasDataPoints = safePoints.length > 0;
+  const chartPoints = hasDataPoints ? safePoints : buildAnalyticsEmptyPeriodPoints(period, selectedDateKey);
+  const values = hasDataPoints ? chartPoints.map(point => Number(point.value || 0)) : [1];
   const max = Math.max(...values, 1);
   const scaleMax = niceChartMax(max, metricKey);
   const plot = { left: 18, right: 346, top: 18, bottom: 166 };
   const plotWidth = plot.right - plot.left;
   const plotHeight = plot.bottom - plot.top;
-  const coords = safePoints.map((point, index) => ({
+  const coords = chartPoints.map((point, index) => ({
     ...point,
-    x: safePoints.length === 1 ? plot.left + plotWidth / 2 : plot.left + (index / Math.max(1, safePoints.length - 1)) * plotWidth,
+    x: chartPoints.length === 1 ? plot.left + plotWidth / 2 : plot.left + (index / Math.max(1, chartPoints.length - 1)) * plotWidth,
     y: plot.bottom - (Math.max(0, Number(point.value || 0)) / scaleMax) * plotHeight,
   }));
   const path = coords.map((point, index) => `${index ? "L" : "M"} ${point.x} ${point.y}`).join(" ");
@@ -14483,8 +14500,8 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
       y: plot.top + plotHeight * ratio,
     };
   });
-  const xLabelIndexes = analyticsLabelIndexes(safePoints.length);
-  const barWidth = Math.max(6, Math.min(24, (plotWidth / Math.max(1, safePoints.length)) * 0.58));
+  const xLabelIndexes = analyticsLabelIndexes(chartPoints.length);
+  const barWidth = Math.max(6, Math.min(24, (plotWidth / Math.max(1, chartPoints.length)) * 0.58));
 
   useEffect(() => {
     setSelected(null);
@@ -14556,8 +14573,6 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
     }
   };
 
-  if (!safePoints.length) return <div className="mt-5 rounded-2xl bg-white/[0.04] p-8 text-center text-sm text-zinc-500">Недостаточно данных для графика.</div>;
-
   return <div
     data-calendar-swipe="true"
     className="mt-5 touch-pan-y select-none rounded-3xl bg-white/[0.035] p-4"
@@ -14581,13 +14596,14 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
           return <line key={`x-${index}`} x1={point.x} y1={plot.top} x2={point.x} y2={plot.bottom} stroke="var(--chart-grid)" strokeWidth="1"/>;
         })}
         <line x1={plot.left} y1={plot.bottom} x2={plot.right} y2={plot.bottom} stroke="var(--chart-axis)" strokeWidth="1.2"/>
-        {type === "bar" ? coords.map((point, index) => {
+        {!hasDataPoints && <text x="182" y="98" textAnchor="middle" fill="var(--chart-label)" fontSize="13" fontWeight="800">Нет данных в этом периоде</text>}
+        {hasDataPoints && (type === "bar" ? coords.map((point, index) => {
           const height = plot.bottom - point.y;
           return <rect key={`${point.date}-${index}`} x={point.x - barWidth / 2} y={point.y} width={barWidth} height={height} rx="6" fill="#ef4444" opacity={selected?.date === point.date ? 1 : 0.78} onClick={(event) => { if (suppressChartClickRef.current) return; setSelected(point); }}/>;
         }) : <>
           <path d={path} fill="none" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
           {coords.map((point, index) => <circle key={`${point.date}-${index}`} cx={point.x} cy={point.y} r={selected?.date === point.date ? 6 : 4} fill="#ef4444" stroke="var(--onlypump-card-solid)" strokeWidth="2" onClick={(event) => { if (suppressChartClickRef.current) return; setSelected(point); }}/>)}
-        </>}
+        </>)}
         {xLabelIndexes.map(index => {
           const point = coords[index];
           if (!point) return null;
@@ -14595,15 +14611,16 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
         })}
       </g>
     </svg>
-    {selected && <div className="mt-3 rounded-2xl bg-black/35 p-3 text-sm"><span className="text-zinc-500">{formatShortDateRu(selected.date)}</span><span className="float-right font-semibold text-zinc-100">{formatAnalyticsValue(selected.value, unit, metricKey)}</span></div>}
+    {selected && hasDataPoints && <div className="mt-3 rounded-2xl bg-black/35 p-3 text-sm"><span className="text-zinc-500">{formatShortDateRu(selected.date)}</span><span className="float-right font-semibold text-zinc-100">{formatAnalyticsValue(selected.value, unit, metricKey)}</span></div>}
   </div>;
 }
 
-function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutritionDays = [], workouts, selectedDateKey, setSelectedDateKey = () => {}, profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onClose, onOpenEditor }) {
+function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutritionDays = [], workouts, selectedDateKey, profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onClose, onOpenEditor }) {
   const typeConfig = analyticsTypeConfigs[type] || analyticsTypeConfigs.measurements;
   const metricOptions = typeConfig.metrics.length ? typeConfig.metrics : measurementAnalyticsMetrics;
   const [metric, setMetric] = useState(typeConfig.defaultMetric || metricOptions[0].key);
   const [period, setPeriod] = useState(typeConfig.source === "training" ? "week" : "month");
+  const [chartDateKey, setChartDateKey] = useState(selectedDateKey);
   const [remoteData, setRemoteData] = useState({ measurements: [], health_logs: [], nutrition_days: [] });
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -14619,17 +14636,18 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
       : typeConfig.source === "nutrition"
         ? buildNutritionSeries(sourceNutritionDays, metric)
         : buildMeasurementSeries(sourceMeasurements, metric);
-  const points = filterAnalyticsPoints(allPoints, period, selectedDateKey);
+  const points = filterAnalyticsPoints(allPoints, period, chartDateKey);
   const summary = analyticsSummary(points);
   const chartType = metricConfig.type || (typeConfig.source === "health" || typeConfig.source === "nutrition" ? "bar" : "line");
   const sheetTitle = title || typeConfig.title;
   const shiftChartPeriod = (amount) => {
-    setSelectedDateKey(shiftAnalyticsPeriodDate(selectedDateKey, period, amount));
+    setChartDateKey(current => shiftAnalyticsPeriodDate(current, period, amount));
   };
 
   useEffect(() => {
     setMetric(typeConfig.defaultMetric || metricOptions[0].key);
     setPeriod(typeConfig.source === "training" ? "week" : "month");
+    setChartDateKey(selectedDateKey);
   }, [type]);
 
   useEffect(() => {
@@ -14642,7 +14660,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
       };
     }
 
-    const cached = readCachedAnalyticsForProfile(profile, type, metric, period, selectedDateKey);
+    const cached = readCachedAnalyticsForProfile(profile, type, metric, period, chartDateKey);
     if (cached) {
       setRemoteData(normalizeAnalyticsRemotePayload(cached));
     }
@@ -14652,11 +14670,11 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
       setLoadError("");
       const days = analyticsPeriods.find(item => item.id === period)?.days || 30;
       const range = ["day", "week", "month", "year"].includes(period)
-        ? analyticsPeriodRange(period, selectedDateKey)
-        : { startKey: dateKeyDaysAgo(selectedDateKey, days - 1), endKey: selectedDateKey };
+        ? analyticsPeriodRange(period, chartDateKey)
+        : { startKey: dateKeyDaysAgo(chartDateKey, days - 1), endKey: chartDateKey };
       try {
         const result = await callOnlyPumpProfileApi(telegramInitData, "load_analytics", {
-          date: selectedDateKey,
+          date: chartDateKey,
           start_date: range.startKey,
           end_date: range.endKey,
           scope: type,
@@ -14665,7 +14683,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
         if (cancelled) return;
         const next = normalizeAnalyticsRemotePayload(result);
         setRemoteData(next);
-        writeCachedAnalyticsForProfile(profile, type, metric, period, selectedDateKey, next);
+        writeCachedAnalyticsForProfile(profile, type, metric, period, chartDateKey, next);
       } catch (error) {
         if (!cancelled) {
           console.error("onlypump-profile-api analytics error:", error);
@@ -14680,7 +14698,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
     return () => {
       cancelled = true;
     };
-  }, [canLoadRemote, metric, period, profile?.id, selectedDateKey, telegramInitData, type]);
+  }, [canLoadRemote, chartDateKey, metric, period, profile?.id, telegramInitData, type]);
 
   return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[185] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-3xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
@@ -14704,7 +14722,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
       </div>
 
       {(loading || loadError) && <p className={`mt-4 rounded-2xl p-3 text-sm ${loadError ? "bg-red-500/10 text-red-300" : "bg-white/[0.04] text-zinc-400"}`}>{loadError || "Обновляю график..."}</p>}
-      <AnalyticsChart points={points} type={chartType} unit={metricConfig.unit} metricKey={metric} period={period} selectedDateKey={selectedDateKey} onSwipePeriod={shiftChartPeriod}/>
+      <AnalyticsChart points={points} type={chartType} unit={metricConfig.unit} metricKey={metric} period={period} selectedDateKey={chartDateKey} onSwipePeriod={shiftChartPeriod}/>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <div className="rounded-2xl bg-white/[0.04] p-3"><p className="text-[10px] uppercase text-zinc-500">Среднее</p><b>{Math.round(summary.avg * 10) / 10}</b></div>
@@ -15194,7 +15212,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     <PageGrid>
       {visibleCardIds.map(renderAnalyticsCard)}
     </PageGrid>
-    {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} nutritionDays={analyticsData.nutrition_days} workouts={workouts} selectedDateKey={selectedDateKey} setSelectedDateKey={setSelectedDateKey} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onClose={() => setDetail(null)} onOpenEditor={detail.type === "training_load" || analyticsPeriod !== "day" ? null : openEditorForDetail}/>}
+    {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} nutritionDays={analyticsData.nutrition_days} workouts={workouts} selectedDateKey={selectedDateKey} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onClose={() => setDetail(null)} onOpenEditor={detail.type === "training_load" || analyticsPeriod !== "day" ? null : openEditorForDetail}/>}
     {editorType === "weight" && <WeightEditorSheet dateKey={selectedDateKey} measurements={latestMeasurement} profile={profile} saving={profileSaving} onClose={() => setEditorType(null)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => setEditorType(null)}/>}
     {editorType === "measurement" && <MeasurementEditorSheet dateKey={selectedDateKey} metricKey={editorMetric || "waist_cm"} measurements={latestMeasurement} profile={profile} saving={profileSaving} onClose={() => setEditorType(null)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => setEditorType(null)}/>}
     {editorType === "water" && <WaterEditorSheet dateKey={selectedDateKey} healthLog={currentHealthLog} saving={healthSaving} onClose={() => setEditorType(null)} onSave={onSaveHealthLog} onOpenAnalytics={() => setEditorType(null)}/>}
