@@ -814,6 +814,8 @@ const DEFAULT_PROFILE = {
   theme_updated_at: null,
   analytics_cards_order: [],
   analytics_cards_hidden: [],
+  home_widgets_order: null,
+  personal_trackers: null,
   source: "fallback",
 };
 
@@ -884,6 +886,22 @@ function normalizeProfileStringArray(value, fallback = []) {
     return trimmed.split(",").map(item => item.trim()).filter(Boolean);
   }
   return Array.isArray(fallback) ? fallback.map(item => String(item || "").trim()).filter(Boolean) : [];
+}
+
+function normalizeProfileJsonArray(value, fallback = null) {
+  if (value === null || value === undefined) return fallback;
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return fallback;
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed : fallback;
+    } catch (error) {
+      return fallback;
+    }
+  }
+  return fallback;
 }
 
 function normalizeThemeTime(value, fallback = "06:00") {
@@ -1020,6 +1038,8 @@ function buildFallbackProfile(overrides = {}) {
     theme_updated_at: overrides.theme_updated_at || DEFAULT_PROFILE.theme_updated_at,
     analytics_cards_order: normalizeProfileStringArray(overrides.analytics_cards_order, DEFAULT_PROFILE.analytics_cards_order),
     analytics_cards_hidden: normalizeProfileStringArray(overrides.analytics_cards_hidden, DEFAULT_PROFILE.analytics_cards_hidden),
+    home_widgets_order: normalizeProfileJsonArray(overrides.home_widgets_order, DEFAULT_PROFILE.home_widgets_order),
+    personal_trackers: normalizeProfileJsonArray(overrides.personal_trackers, DEFAULT_PROFILE.personal_trackers),
     source: overrides.source || "fallback",
   };
 }
@@ -1090,6 +1110,8 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     theme_updated_at: record.theme_updated_at || fallback.theme_updated_at || null,
     analytics_cards_order: normalizeProfileStringArray(record.analytics_cards_order, fallback.analytics_cards_order || DEFAULT_PROFILE.analytics_cards_order),
     analytics_cards_hidden: normalizeProfileStringArray(record.analytics_cards_hidden, fallback.analytics_cards_hidden || DEFAULT_PROFILE.analytics_cards_hidden),
+    home_widgets_order: normalizeProfileJsonArray(record.home_widgets_order, fallback.home_widgets_order ?? DEFAULT_PROFILE.home_widgets_order),
+    personal_trackers: normalizeProfileJsonArray(record.personal_trackers, fallback.personal_trackers ?? DEFAULT_PROFILE.personal_trackers),
     source: record.source || fallback.source || "supabase",
   };
 }
@@ -1617,6 +1639,7 @@ const personalTrackerIdFromWidget = (widgetId = "") => String(widgetId).slice(PE
 const getPersonalTrackerTypeConfig = (type = "liquid") => personalTrackerTypeConfigs[type] || personalTrackerTypeConfigs.liquid;
 const getPersonalTrackerAccent = (tracker = {}) => personalTrackerAccents[getPersonalTrackerTypeConfig(tracker.type).accent] || personalTrackerAccents.red;
 
+const getHomeWidgetsCacheKey = (profile = DEFAULT_PROFILE) => `onlypump_home_widgets_${profile?.telegram_id || profile?.id || "local"}`;
 const getPersonalTrackerCacheKey = (profile = DEFAULT_PROFILE) => `onlypump_personal_trackers_${profile?.telegram_id || profile?.id || "local"}`;
 
 const normalizePersonalTrackerEntry = (entry = {}) => ({
@@ -1648,6 +1671,12 @@ const normalizePersonalTracker = (tracker = {}) => {
     durationDays: Math.max(1, profileNonNegativeNumber(tracker.durationDays ?? tracker.duration_days, config.defaultTarget)),
     entries,
   };
+};
+
+const normalizePersonalTrackersState = (value, fallback = []) => {
+  const source = normalizeProfileJsonArray(value, null);
+  if (!Array.isArray(source)) return Array.isArray(fallback) ? fallback.map(normalizePersonalTracker).slice(0, PERSONAL_TRACKERS_LIMIT) : [];
+  return source.map(normalizePersonalTracker).slice(0, PERSONAL_TRACKERS_LIMIT);
 };
 
 const readCachedPersonalTrackersForProfile = (profile = DEFAULT_PROFILE) => {
@@ -1828,6 +1857,37 @@ function buildHomeWidgetsAfterRemoving(prevWidgets, id) {
   if (id === "metricProtein") next = next.filter(widgetId => widgetId !== "metricCalories");
   if (id === "macros") next = next.filter(widgetId => widgetId !== "metricCalories");
   return enforceHomeWidgetRules(next);
+}
+
+function normalizeHomeWidgetsOrder(value, fallback = defaultHomeWidgets) {
+  const source = normalizeProfileJsonArray(value, null);
+  const validIds = homeWidgetCatalog.map(w => w.id);
+  const base = Array.isArray(source) ? source : fallback;
+  if (!Array.isArray(base)) return enforceHomeWidgetRules(defaultHomeWidgets);
+  const cleaned = base.filter(id => validIds.includes(id) || isPersonalTrackerWidgetId(id));
+  return enforceHomeWidgetRules(cleaned);
+}
+
+function readCachedHomeWidgetsForProfile(profile = DEFAULT_PROFILE) {
+  try {
+    const profileKey = getHomeWidgetsCacheKey(profile);
+    const saved = localStorage.getItem(profileKey) || localStorage.getItem("onlypump-home-widgets");
+    if (!saved) return enforceHomeWidgetRules(defaultHomeWidgets);
+    return normalizeHomeWidgetsOrder(JSON.parse(saved), defaultHomeWidgets);
+  } catch (error) {
+    console.log("Home widgets cache error", error);
+    return enforceHomeWidgetRules(defaultHomeWidgets);
+  }
+}
+
+function writeCachedHomeWidgetsForProfile(profile = DEFAULT_PROFILE, widgets = []) {
+  try {
+    const normalized = normalizeHomeWidgetsOrder(widgets, []);
+    localStorage.setItem(getHomeWidgetsCacheKey(profile), JSON.stringify(normalized));
+    localStorage.setItem("onlypump-home-widgets", JSON.stringify(normalized));
+  } catch (error) {
+    console.log("Home widgets cache error", error);
+  }
 }
 
 const lessons = [
@@ -16632,6 +16692,7 @@ function OnlyPumpPlatform() {
   const canGoBackRef = useRef(false);
   const supabaseClientRef = useRef(null);
   const profileSaveReadyRef = useRef(false);
+  const homeStateSaveTimerRef = useRef(null);
   const nutritionLoadingKeyRef = useRef("");
   const [supabaseClient, setSupabaseClient] = useState(null);
   const [telegramInitData, setTelegramInitData] = useState(telegramBootInitData);
@@ -16859,22 +16920,10 @@ function OnlyPumpPlatform() {
   const [themeTick, setThemeTick] = useState(() => Date.now());
   const [profileStatus, setProfileStatus] = useState("local");
   const [lectureItems, setLectureItems] = useState(initialLectures);
-  const [homeWidgets, setHomeWidgets] = useState(() => {
-    try {
-      const saved = localStorage.getItem("onlypump-home-widgets");
-      if (!saved) return defaultHomeWidgets;
-      const parsed = JSON.parse(saved);
-      if (!Array.isArray(parsed)) return defaultHomeWidgets;
-      const validIds = homeWidgetCatalog.map(w => w.id);
-      const cleaned = parsed.filter(id => validIds.includes(id) || isPersonalTrackerWidgetId(id));
-      const missingDefaultWidgets = defaultHomeWidgets.filter(id => !cleaned.includes(id));
-      return enforceHomeWidgetRules([...missingDefaultWidgets, ...cleaned]);
-    } catch {
-      return enforceHomeWidgetRules(defaultHomeWidgets);
-    }
-  });
+  const [homeWidgets, setHomeWidgets] = useState(() => readCachedHomeWidgetsForProfile(DEFAULT_PROFILE));
   const [personalTrackers, setPersonalTrackers] = useState(() => readCachedPersonalTrackersForProfile(profile || DEFAULT_PROFILE));
   const [personalTrackersOwnerKey, setPersonalTrackersOwnerKey] = useState(() => getPersonalTrackerCacheKey(profile || DEFAULT_PROFILE));
+  const [homeStateReady, setHomeStateReady] = useState(!isTelegramBootMode);
 
   const activeTheme = useMemo(
     () => profileWantsLightTheme(profile || DEFAULT_PROFILE, new Date(themeTick)) ? "light" : "dark",
@@ -17043,6 +17092,37 @@ function OnlyPumpPlatform() {
       return false;
     }
   }, [applyProfileState, profile, profileStatus, telegramInitData]);
+
+  const handleSaveHomeState = useCallback(async (widgets = homeWidgets, trackers = personalTrackers) => {
+    if (!profile) return false;
+    const payload = {
+      home_widgets_order: normalizeHomeWidgetsOrder(widgets, []),
+      personal_trackers: normalizePersonalTrackersState(trackers, []),
+    };
+
+    writeCachedHomeWidgetsForProfile(profile, payload.home_widgets_order);
+    writeCachedPersonalTrackersForProfile(profile, payload.personal_trackers);
+    setProfile(prev => normalizeProfileRecord({
+      ...(prev || profile || DEFAULT_PROFILE),
+      ...payload,
+      profile_updated_at: new Date().toISOString(),
+      source: prev?.source || profile?.source || "fallback",
+    }, prev || profile || DEFAULT_PROFILE));
+
+    if (!(profileStatus === "verified" && profileHasTestAccess(profile) && telegramInitData && profile?.id)) return true;
+
+    try {
+      console.log("Saving home state", { widgets: payload.home_widgets_order.length, trackers: payload.personal_trackers.length });
+      const result = await callOnlyPumpProfileApi(telegramInitData, "update_home_state", payload);
+      setProfile(prev => normalizeProfileRecord(result.profile || { ...(prev || profile || DEFAULT_PROFILE), ...payload }, prev || profile || DEFAULT_PROFILE));
+      setProfileStatus("verified");
+      console.log("Home state saved", { widgets: payload.home_widgets_order.length, trackers: payload.personal_trackers.length });
+      return true;
+    } catch (error) {
+      console.error("onlypump-profile-api home state error:", error);
+      return false;
+    }
+  }, [homeWidgets, personalTrackers, profile, profileStatus, telegramInitData]);
 
   const handleResetProfileSettings = useCallback(async () => {
     const resetLocalProfile = normalizeProfileRecord({
@@ -17476,20 +17556,36 @@ function OnlyPumpPlatform() {
   }, [profile?.id, profile?.telegram_id, nutritionDay, nutritionMarkedDateKeys]);
 
   useEffect(() => {
-    localStorage.setItem("onlypump-home-widgets", JSON.stringify(homeWidgets));
-  }, [homeWidgets]);
-
-  useEffect(() => {
+    if (!profile) return;
     const key = getPersonalTrackerCacheKey(profile || DEFAULT_PROFILE);
     setPersonalTrackersOwnerKey(key);
-    setPersonalTrackers(readCachedPersonalTrackersForProfile(profile || DEFAULT_PROFILE));
-  }, [profile?.id, profile?.telegram_id]);
+    const cachedWidgets = readCachedHomeWidgetsForProfile(profile || DEFAULT_PROFILE);
+    const cachedTrackers = readCachedPersonalTrackersForProfile(profile || DEFAULT_PROFILE);
+    const remoteWidgets = Array.isArray(profile.home_widgets_order)
+      ? normalizeHomeWidgetsOrder(profile.home_widgets_order, [])
+      : cachedWidgets;
+    const remoteTrackers = Array.isArray(profile.personal_trackers)
+      ? normalizePersonalTrackersState(profile.personal_trackers, [])
+      : cachedTrackers;
+    setHomeWidgets(remoteWidgets);
+    setPersonalTrackers(remoteTrackers);
+    setHomeStateReady(true);
+  }, [profile?.id, profile?.telegram_id, profile?.home_state_updated_at, JSON.stringify(profile?.home_widgets_order || null), JSON.stringify(profile?.personal_trackers || null)]);
 
   useEffect(() => {
+    if (!profile || !homeStateReady) return;
     const key = getPersonalTrackerCacheKey(profile || DEFAULT_PROFILE);
     if (personalTrackersOwnerKey !== key) return;
-    writeCachedPersonalTrackersForProfile(profile || DEFAULT_PROFILE, personalTrackers);
-  }, [personalTrackers, personalTrackersOwnerKey, profile?.id, profile?.telegram_id]);
+    const normalizedWidgets = normalizeHomeWidgetsOrder(homeWidgets, []);
+    const normalizedTrackers = normalizePersonalTrackersState(personalTrackers, []);
+    writeCachedHomeWidgetsForProfile(profile || DEFAULT_PROFILE, normalizedWidgets);
+    writeCachedPersonalTrackersForProfile(profile || DEFAULT_PROFILE, normalizedTrackers);
+    window.clearTimeout(homeStateSaveTimerRef.current);
+    homeStateSaveTimerRef.current = window.setTimeout(() => {
+      handleSaveHomeState(normalizedWidgets, normalizedTrackers);
+    }, 700);
+    return () => window.clearTimeout(homeStateSaveTimerRef.current);
+  }, [homeStateReady, JSON.stringify(homeWidgets), JSON.stringify(personalTrackers), personalTrackersOwnerKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData]);
 
   const page = useMemo(() => ({
     home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionDay={nutritionDay} nutritionMarkedDateKeys={nutritionMarkedDateKeys} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} personalTrackers={personalTrackers} setPersonalTrackers={setPersonalTrackers} profile={profile} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} profileSaving={profileSaving} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onOpenAnalytics={openAnalyticsType}/>,
