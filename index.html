@@ -6468,15 +6468,17 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   }, [canUseWorkoutApi, profile?.id, telegramInitData]);
 
   const openCustomExerciseEditor = (exercise = null) => {
+    setEditError(null);
     const category = normalizeExerciseCategory(exercise?.exerciseCategory || exercise?.category || selectedWorkout?.workoutType || "strength");
     const primary = (exercise?.primaryMuscles || [exercise?.muscleGroup]).filter(Boolean);
     const settings = normalizeExerciseMeasurementSettings(exercise || { exerciseCategory: category });
     const isEditingCustomExercise = Boolean(exercise);
     const measurementMode = normalizeMeasurementMode(exercise?.measurementMode || settings.measurementMode, category === "strength" ? "weight_reps" : "time");
     const autoCountsInMuscleStats = shouldCountExerciseInMuscleStats(category, measurementMode);
+    const searchedName = exerciseSearch.trim();
     setCustomExerciseSheet({
       id: exercise?.sourceExerciseId || exercise?.id || null,
-      name: exercise?.name || "",
+      name: exercise?.name || searchedName || "",
       exerciseCategory: category,
       primaryMuscles: primary.length ? primary : [],
       secondaryMuscles: exercise?.secondaryMuscles || [],
@@ -6486,21 +6488,24 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       countsInMuscleStats: isEditingCustomExercise ? Boolean(exercise?.countsInMuscleStats ?? exercise?.counts_in_muscle_stats ?? autoCountsInMuscleStats) : autoCountsInMuscleStats,
       doubleCountInStatistics: isEditingCustomExercise ? Boolean(exercise?.doubleCountInStatistics ?? exercise?.double_count_in_statistics ?? false) : false,
       notes: exercise?.notes || "",
+      validationError: "",
+      validationField: "",
     });
   };
 
   const saveCustomExercise = async () => {
     if (!customExerciseSheet) return;
+    setEditError(null);
     const name = customExerciseSheet.name.trim();
     if (!name) {
-      setEditError({ title: "Нужно название", description: "Введи название упражнения, чтобы сохранить его в базу." });
+      setCustomExerciseSheet(prev => prev ? ({ ...prev, validationField: "name", validationError: "Введите название упражнения" }) : prev);
       return;
     }
     const category = normalizeExerciseCategory(customExerciseSheet.exerciseCategory);
     const measurementMode = normalizeMeasurementMode(customExerciseSheet.measurementMode, category === "strength" ? "weight_reps" : "time");
     const primaryMuscles = (customExerciseSheet.primaryMuscles || []).filter(Boolean);
     if (category === "strength" && !primaryMuscles.length) {
-      setEditError({ title: "Выберите основную мышечную группу", description: "Для силового упражнения нужна основная мышечная группа, чтобы оно корректно попало в тренировку и аналитику." });
+      setCustomExerciseSheet(prev => prev ? ({ ...prev, validationField: "primaryMuscle", validationError: "Выберите основную мышечную группу" }) : prev);
       return;
     }
     const isEditingCustomExercise = Boolean(customExerciseSheet.id);
@@ -8890,21 +8895,25 @@ const toggleExerciseMeasurementSetting = (field) => {
   const pickTonnageAchievement = (volumeKg) => {
     const volume = Math.max(0, safeWorkoutNumber(volumeKg, 0));
     const options = [
-      { max: 80, weight: 4, label: "кошки", single: "кошка", icon: "🐈", imagePath: "/assets/achievements/cat.png" },
-      { max: 200, weight: 10, label: "маленьких собак", single: "маленькая собака", icon: "🐾" },
-      { max: 400, weight: 25, label: "больших собак", single: "большая собака", icon: "🐾" },
-      { max: 700, weight: 80, label: "мужчин", single: "мужчина", icon: "🧍", imagePath: "/assets/achievements/person.png" },
-      { max: 1500, weight: 200, label: "мотоциклов", single: "мотоцикл", icon: "🏍", imagePath: "/assets/achievements/motorcycle.png" },
-      { max: 3000, weight: 1200, label: "маленьких автомобилей", single: "маленький автомобиль", icon: "🚗", imagePath: "/assets/achievements/car.png" },
-      { max: 7000, weight: 5000, label: "слонов", single: "слон", icon: "🐘", imagePath: "/assets/achievements/elephant.png" },
-      { max: 15000, weight: 12000, label: "автобусов", single: "автобус", icon: "🚌", imagePath: "/assets/achievements/bus.png" },
-      { max: 30000, weight: 25000, label: "вагонов метро", single: "вагон метро", icon: "🚇", imagePath: "/assets/achievements/metro.png" },
-      { max: 70000, weight: 60000, label: "локомотивов", single: "локомотив", icon: "🚂" },
-      { max: Infinity, weight: 120000, label: "башенных кранов", single: "башенный кран", icon: "🏗", imagePath: "/assets/achievements/crane.png" },
+      { max: 80, weight: 4, label: "кошек", few: "кошки", single: "кошка", icon: "🐈", imagePath: "/assets/achievements/cat.png" },
+      { max: 700, weight: 80, label: "мужчин", few: "мужчины", single: "мужчина", icon: "🧍", imagePath: "/assets/achievements/person.png" },
+      { max: 1500, weight: 200, label: "мотоциклов", few: "мотоцикла", single: "мотоцикл", icon: "🏍", imagePath: "/assets/achievements/motorcycle.png" },
+      { max: 6000, weight: 1500, label: "автомобилей", few: "автомобиля", single: "автомобиль", icon: "🚗", imagePath: "/assets/achievements/car.png" },
+      { max: 15000, weight: 7000, label: "слонов", few: "слона", single: "слон", icon: "🐘", imagePath: "/assets/achievements/elephant.png" },
+      { max: 30000, weight: 12000, label: "автобусов", few: "автобуса", single: "автобус", icon: "🚌", imagePath: "/assets/achievements/bus.png" },
+      { max: 90000, weight: 30000, label: "вагонов метро", few: "вагона метро", single: "вагон метро", icon: "🚇", imagePath: "/assets/achievements/metro.png" },
+      { max: 180000, weight: 120000, label: "локомотивов", few: "локомотива", single: "локомотив", icon: "🚂", imagePath: "/assets/achievements/locomotive.png" },
+      { max: Infinity, weight: 250000, label: "башенных кранов", few: "башенных крана", single: "башенный кран", icon: "🏗", imagePath: "/assets/achievements/crane.png" },
     ];
     const item = options.find(option => volume <= option.max) || options[options.length - 1];
     const count = Math.max(1, Math.round(volume / item.weight));
-    const objectLabel = count === 1 ? item.single : item.label;
+    const mod10 = count % 10;
+    const mod100 = count % 100;
+    const objectLabel = count === 1
+      ? item.single
+      : (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14))
+        ? (item.few || item.label)
+        : item.label;
     return {
       title: count === 1 ? `Это как ${objectLabel}` : `Это как ${count} ${objectLabel}`,
       subtitle: `примерно ${Math.round(volume).toLocaleString("ru-RU")} кг поднятого тоннажа`,
@@ -11648,7 +11657,13 @@ const toggleExerciseMeasurementSetting = (field) => {
         <div className="onlypump-sheet-list onlypump-keyboard-aware-list mt-5 flex-1 space-y-4 overflow-y-auto pr-1 onlypump-scrollbar-none">
           <label className="block">
             <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название</span>
-            <input value={customExerciseSheet.name} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, name: e.target.value }))} className="onlypump-field-input onlypump-custom-exercise-name-input mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-base font-semibold text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-red-500/60 focus:ring-1 focus:ring-red-500/40" placeholder="Например: подъём на платформу" />
+            <input value={customExerciseSheet.name} onChange={(e) => setCustomExerciseSheet(prev => prev ? ({
+              ...prev,
+              name: e.target.value,
+              validationField: prev.validationField === "name" ? "" : prev.validationField,
+              validationError: prev.validationField === "name" ? "" : prev.validationError,
+            }) : prev)} className={`onlypump-field-input onlypump-custom-exercise-name-input mt-2 w-full rounded-2xl border bg-black/30 px-4 py-3 text-base font-semibold text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-red-500/60 focus:ring-1 focus:ring-red-500/40 ${customExerciseSheet.validationField === "name" ? "border-red-500/70 ring-1 ring-red-500/60" : "border-white/10"}`} placeholder="Например: подъём на платформу" />
+            {customExerciseSheet.validationField === "name" && customExerciseSheet.validationError && <p className="mt-2 text-sm font-bold text-red-400">{customExerciseSheet.validationError}</p>}
           </label>
 
           <div className="grid grid-cols-2 gap-3">
@@ -11668,9 +11683,11 @@ const toggleExerciseMeasurementSetting = (field) => {
 	                    countsInMuscleStats: shouldCountExerciseInMuscleStats(category, measurementMode),
 	                    doubleCountInStatistics: false,
 	                    primaryMuscles: category === "strength" ? (prev.primaryMuscles || []) : [],
-	                  };
-	                });
-	              }} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">
+		                    validationError: "",
+		                    validationField: "",
+		                  };
+		                });
+		              }} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">
                 {workoutTypeDefinitions.map(type => <option key={type.id} value={type.id}>{type.label}</option>)}
               </select>
             </label>
@@ -11692,10 +11709,16 @@ const toggleExerciseMeasurementSetting = (field) => {
           <div className="grid grid-cols-1 gap-3">
             <label className="block">
               <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Основная группа</span>
-              <select disabled={customExerciseSheet.exerciseCategory !== "strength"} value={customExerciseSheet.primaryMuscles?.[0] || ""} onChange={(e) => setCustomExerciseSheet(prev => ({ ...prev, primaryMuscles: e.target.value ? [e.target.value] : [] }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10 disabled:text-zinc-600">
+              <select disabled={customExerciseSheet.exerciseCategory !== "strength"} value={customExerciseSheet.primaryMuscles?.[0] || ""} onChange={(e) => setCustomExerciseSheet(prev => prev ? ({
+                ...prev,
+                primaryMuscles: e.target.value ? [e.target.value] : [],
+                validationField: prev.validationField === "primaryMuscle" ? "" : prev.validationField,
+                validationError: prev.validationField === "primaryMuscle" ? "" : prev.validationError,
+              }) : prev)} className={`mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 disabled:text-zinc-600 ${customExerciseSheet.validationField === "primaryMuscle" ? "ring-red-500/70" : "ring-white/10"}`}>
                 <option value="">Выберите группу</option>
                 {standardMuscleGroups.map(group => <option key={group} value={group}>{group}</option>)}
               </select>
+              {customExerciseSheet.validationField === "primaryMuscle" && customExerciseSheet.validationError && <p className="mt-2 text-sm font-bold text-red-400">{customExerciseSheet.validationError}</p>}
             </label>
           </div>
 
@@ -14230,8 +14253,9 @@ const strengthAchievementDefs = [
   { id: "elephant", title: "Слон", threshold: 10000, icon: "🐘", imagePath: "/assets/achievements/elephant.png" },
   { id: "bus", title: "Автобус", threshold: 15000, icon: "🚌", imagePath: "/assets/achievements/bus.png" },
   { id: "metro", title: "Вагон метро", threshold: 30000, icon: "🚇", imagePath: "/assets/achievements/metro.png" },
-  { id: "crane", title: "Кран", threshold: 60000, icon: "🏗", imagePath: "/assets/achievements/crane.png" },
-  { id: "plane", title: "Самолёт", threshold: 100000, icon: "✈", imagePath: "/assets/achievements/plane.png" },
+  { id: "locomotive", title: "Локомотив", threshold: 120000, icon: "🚂", imagePath: "/assets/achievements/locomotive.png" },
+  { id: "crane", title: "Кран", threshold: 250000, icon: "🏗", imagePath: "/assets/achievements/crane.png" },
+  { id: "plane", title: "Самолёт", threshold: 500000, icon: "✈", imagePath: "/assets/achievements/plane.png" },
 ];
 
 const activityAchievementDefs = {
