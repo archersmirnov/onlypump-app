@@ -14457,8 +14457,12 @@ const analyticsLabelIndexes = (count) => {
   return Array.from(values).sort((a, b) => a - b);
 };
 
-function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "", period = "month" }) {
+function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "", period = "month", selectedDateKey = formatDateKey(new Date()), onSwipePeriod }) {
   const [selected, setSelected] = useState(null);
+  const [dragX, setDragX] = useState(0);
+  const dragRef = useRef(null);
+  const suppressChartClickRef = useRef(false);
+  const suppressResetRef = useRef(null);
   const safePoints = points.slice(-32);
   const values = safePoints.map(point => Number(point.value || 0));
   const max = Math.max(...values, 1);
@@ -14482,38 +14486,120 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
   const xLabelIndexes = analyticsLabelIndexes(safePoints.length);
   const barWidth = Math.max(6, Math.min(24, (plotWidth / Math.max(1, safePoints.length)) * 0.58));
 
+  useEffect(() => {
+    setSelected(null);
+    setDragX(0);
+    dragRef.current = null;
+  }, [metricKey, period, selectedDateKey]);
+
+  const startChartDrag = (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    clearTimeout(suppressResetRef.current);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      swiping: false,
+      captured: false,
+    };
+    suppressChartClickRef.current = false;
+    setDragX(0);
+  };
+
+  const moveChartDrag = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+
+    if (!drag.swiping) {
+      if (absX < 12 && absY < 12) return;
+      if (absY > 12 && absY > absX * 0.9) {
+        dragRef.current = null;
+        setDragX(0);
+        return;
+      }
+      if (absX < 20 || absX < absY * 1.55) return;
+      drag.swiping = true;
+      suppressChartClickRef.current = true;
+      if (!drag.captured) {
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        drag.captured = true;
+      }
+    }
+
+    event.preventDefault();
+    setDragX(Math.max(-150, Math.min(150, dx * 0.82)));
+  };
+
+  const endChartDrag = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    if (drag.captured) {
+      try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+    }
+    const dx = event.clientX - drag.startX;
+    const dy = Math.abs(event.clientY - drag.startY);
+    const shouldShift = drag.swiping && Math.abs(dx) > 64 && dy < 46;
+    if (shouldShift && typeof onSwipePeriod === "function") {
+      onSwipePeriod(dx < 0 ? 1 : -1);
+    }
+    setDragX(0);
+    if (drag.swiping) {
+      clearTimeout(suppressResetRef.current);
+      suppressResetRef.current = setTimeout(() => {
+        suppressChartClickRef.current = false;
+      }, 160);
+    }
+  };
+
   if (!safePoints.length) return <div className="mt-5 rounded-2xl bg-white/[0.04] p-8 text-center text-sm text-zinc-500">Недостаточно данных для графика.</div>;
 
-  return <div className="mt-5 rounded-3xl bg-white/[0.035] p-4">
-    <svg viewBox="0 0 430 218" className="h-56 w-full overflow-visible">
+  return <div
+    data-calendar-swipe="true"
+    className="mt-5 touch-pan-y select-none rounded-3xl bg-white/[0.035] p-4"
+    onPointerDown={startChartDrag}
+    onPointerMove={moveChartDrag}
+    onPointerUp={endChartDrag}
+    onPointerCancel={endChartDrag}
+  >
+    <svg viewBox="0 0 430 218" className="h-56 w-full overflow-hidden">
       {yTicks.map((tick, index) => <g key={`y-${index}`}>
         <line x1={plot.left} y1={tick.y} x2={plot.right} y2={tick.y} stroke="var(--chart-grid)" strokeWidth="1"/>
         <text x="360" y={tick.y + 4} fill="var(--chart-label)" fontSize="11" fontWeight="700">{formatAnalyticsValue(tick.value, "", metricKey)}</text>
       </g>)}
-      {xLabelIndexes.map(index => {
-        const point = coords[index];
-        if (!point) return null;
-        return <line key={`x-${index}`} x1={point.x} y1={plot.top} x2={point.x} y2={plot.bottom} stroke="var(--chart-grid)" strokeWidth="1"/>;
-      })}
-      <line x1={plot.left} y1={plot.bottom} x2={plot.right} y2={plot.bottom} stroke="var(--chart-axis)" strokeWidth="1.2"/>
-      {type === "bar" ? coords.map((point, index) => {
-        const height = plot.bottom - point.y;
-        return <rect key={`${point.date}-${index}`} x={point.x - barWidth / 2} y={point.y} width={barWidth} height={height} rx="6" fill="#ef4444" opacity={selected?.date === point.date ? 1 : 0.78} onClick={() => setSelected(point)}/>;
-      }) : <>
-        <path d={path} fill="none" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-        {coords.map((point, index) => <circle key={`${point.date}-${index}`} cx={point.x} cy={point.y} r={selected?.date === point.date ? 6 : 4} fill="#ef4444" stroke="var(--onlypump-card-solid)" strokeWidth="2" onClick={() => setSelected(point)}/>)}
-      </>}
-      {xLabelIndexes.map(index => {
-        const point = coords[index];
-        if (!point) return null;
-        return <text key={`label-${index}`} x={point.x} y="198" textAnchor="middle" fill="var(--chart-label)" fontSize="11" fontWeight="700">{formatAnalyticsDateTick(point.date, period)}</text>;
-      })}
+      <g
+        transform={`translate(${dragX} 0)`}
+        style={{ transition: dragRef.current ? "none" : "transform 180ms ease", willChange: "transform" }}
+      >
+        {xLabelIndexes.map(index => {
+          const point = coords[index];
+          if (!point) return null;
+          return <line key={`x-${index}`} x1={point.x} y1={plot.top} x2={point.x} y2={plot.bottom} stroke="var(--chart-grid)" strokeWidth="1"/>;
+        })}
+        <line x1={plot.left} y1={plot.bottom} x2={plot.right} y2={plot.bottom} stroke="var(--chart-axis)" strokeWidth="1.2"/>
+        {type === "bar" ? coords.map((point, index) => {
+          const height = plot.bottom - point.y;
+          return <rect key={`${point.date}-${index}`} x={point.x - barWidth / 2} y={point.y} width={barWidth} height={height} rx="6" fill="#ef4444" opacity={selected?.date === point.date ? 1 : 0.78} onClick={(event) => { if (suppressChartClickRef.current) return; setSelected(point); }}/>;
+        }) : <>
+          <path d={path} fill="none" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+          {coords.map((point, index) => <circle key={`${point.date}-${index}`} cx={point.x} cy={point.y} r={selected?.date === point.date ? 6 : 4} fill="#ef4444" stroke="var(--onlypump-card-solid)" strokeWidth="2" onClick={(event) => { if (suppressChartClickRef.current) return; setSelected(point); }}/>)}
+        </>}
+        {xLabelIndexes.map(index => {
+          const point = coords[index];
+          if (!point) return null;
+          return <text key={`label-${index}`} x={point.x} y="198" textAnchor="middle" fill="var(--chart-label)" fontSize="11" fontWeight="700">{formatAnalyticsDateTick(point.date, period)}</text>;
+        })}
+      </g>
     </svg>
     {selected && <div className="mt-3 rounded-2xl bg-black/35 p-3 text-sm"><span className="text-zinc-500">{formatShortDateRu(selected.date)}</span><span className="float-right font-semibold text-zinc-100">{formatAnalyticsValue(selected.value, unit, metricKey)}</span></div>}
   </div>;
 }
 
-function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutritionDays = [], workouts, selectedDateKey, profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onClose, onOpenEditor }) {
+function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutritionDays = [], workouts, selectedDateKey, setSelectedDateKey = () => {}, profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onClose, onOpenEditor }) {
   const typeConfig = analyticsTypeConfigs[type] || analyticsTypeConfigs.measurements;
   const metricOptions = typeConfig.metrics.length ? typeConfig.metrics : measurementAnalyticsMetrics;
   const [metric, setMetric] = useState(typeConfig.defaultMetric || metricOptions[0].key);
@@ -14537,6 +14623,9 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
   const summary = analyticsSummary(points);
   const chartType = metricConfig.type || (typeConfig.source === "health" || typeConfig.source === "nutrition" ? "bar" : "line");
   const sheetTitle = title || typeConfig.title;
+  const shiftChartPeriod = (amount) => {
+    setSelectedDateKey(shiftAnalyticsPeriodDate(selectedDateKey, period, amount));
+  };
 
   useEffect(() => {
     setMetric(typeConfig.defaultMetric || metricOptions[0].key);
@@ -14615,7 +14704,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
       </div>
 
       {(loading || loadError) && <p className={`mt-4 rounded-2xl p-3 text-sm ${loadError ? "bg-red-500/10 text-red-300" : "bg-white/[0.04] text-zinc-400"}`}>{loadError || "Обновляю график..."}</p>}
-      <AnalyticsChart points={points} type={chartType} unit={metricConfig.unit} metricKey={metric} period={period}/>
+      <AnalyticsChart points={points} type={chartType} unit={metricConfig.unit} metricKey={metric} period={period} selectedDateKey={selectedDateKey} onSwipePeriod={shiftChartPeriod}/>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <div className="rounded-2xl bg-white/[0.04] p-3"><p className="text-[10px] uppercase text-zinc-500">Среднее</p><b>{Math.round(summary.avg * 10) / 10}</b></div>
@@ -15105,7 +15194,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     <PageGrid>
       {visibleCardIds.map(renderAnalyticsCard)}
     </PageGrid>
-    {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} nutritionDays={analyticsData.nutrition_days} workouts={workouts} selectedDateKey={selectedDateKey} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onClose={() => setDetail(null)} onOpenEditor={detail.type === "training_load" || analyticsPeriod !== "day" ? null : openEditorForDetail}/>}
+    {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} nutritionDays={analyticsData.nutrition_days} workouts={workouts} selectedDateKey={selectedDateKey} setSelectedDateKey={setSelectedDateKey} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onClose={() => setDetail(null)} onOpenEditor={detail.type === "training_load" || analyticsPeriod !== "day" ? null : openEditorForDetail}/>}
     {editorType === "weight" && <WeightEditorSheet dateKey={selectedDateKey} measurements={latestMeasurement} profile={profile} saving={profileSaving} onClose={() => setEditorType(null)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => setEditorType(null)}/>}
     {editorType === "measurement" && <MeasurementEditorSheet dateKey={selectedDateKey} metricKey={editorMetric || "waist_cm"} measurements={latestMeasurement} profile={profile} saving={profileSaving} onClose={() => setEditorType(null)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => setEditorType(null)}/>}
     {editorType === "water" && <WaterEditorSheet dateKey={selectedDateKey} healthLog={currentHealthLog} saving={healthSaving} onClose={() => setEditorType(null)} onSave={onSaveHealthLog} onOpenAnalytics={() => setEditorType(null)}/>}
