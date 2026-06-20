@@ -1757,7 +1757,7 @@ const getPersonalTrackerValueLabel = (tracker = {}, dateKey = formatDateKey(new 
   const entry = getPersonalTrackerEntry(tracker, dateKey);
   if (tracker.type === "habit" || tracker.type === "abstinence") {
     const stats = getPersonalTrackerStreakStats(tracker, dateKey);
-    return `${stats.streak} дн`;
+    return `${stats.completed} дн`;
   }
   const value = profileNonNegativeNumber(entry.value, 0);
   return `${value.toLocaleString("ru-RU")} ${tracker.unit || getPersonalTrackerTypeConfig(tracker.type).unit}`;
@@ -4745,8 +4745,8 @@ function PersonalTrackerCard({ tracker, dateKey, onOpen, onQuickAdd }) {
     {isBinary ? <div className="mt-4">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <div className="text-3xl font-black">{stats.streak} дн</div>
-          <p className="mt-1 text-xs text-zinc-500">серия · осталось {stats.remaining} дн</p>
+          <div className="text-3xl font-black">{stats.completed} дн</div>
+          <p className="mt-1 text-xs text-zinc-500">отмечено · осталось {stats.remaining} дн</p>
         </div>
         <span className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black ${entry.done ? accent.soft : "bg-white/[0.06] text-zinc-500"}`}>
           {entry.done ? "Отмечено" : "Не отмечено"}
@@ -4909,7 +4909,8 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
   const [valueDraft, setValueDraft] = useState(String(getPersonalTrackerEntry(normalized, dateKey).value || 0));
   const [noteDraft, setNoteDraft] = useState(getPersonalTrackerEntry(normalized, dateKey).note || "");
   const calendarSwipeRef = useRef(null);
-  const toggleDayGuardRef = useRef({ date: "", at: 0 });
+  const toggleDayGuardRef = useRef({ date: "", source: "", at: 0 });
+  const lastDayTapRef = useRef({ date: "", at: 0 });
   const config = getPersonalTrackerTypeConfig(normalized.type);
   const accent = getPersonalTrackerAccent(normalized);
   const isBinary = normalized.type === "habit" || normalized.type === "abstinence";
@@ -4945,23 +4946,37 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
     setFocusedDate(formatDateKey(targetMonth));
   };
 
-  const selectDay = (date) => {
+  const toggleTrackerDay = (date, source = "button", event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    calendarSwipeRef.current = null;
+    const now = Date.now();
+    const isDuplicateEvent = toggleDayGuardRef.current.date === date
+      && now - toggleDayGuardRef.current.at < 450;
+    if (isDuplicateEvent) return;
+    toggleDayGuardRef.current = { date, source, at: now };
+    const currentEntry = getPersonalTrackerEntry(normalized, date);
+    const nextDone = !parseProfileBoolean(currentEntry.done, false);
+    onSaveEntry(normalized.id, date, current => ({
+      done: nextDone,
+      note: date === focusedDate ? noteDraft : current.note,
+    }));
+  };
+
+  const selectDay = (date, event) => {
+    event?.stopPropagation?.();
+    const now = Date.now();
+    const isDoubleTap = lastDayTapRef.current.date === date && now - lastDayTapRef.current.at < 320;
+    lastDayTapRef.current = { date, at: now };
     setFocusedDate(date);
+    if (isDoubleTap) {
+      toggleTrackerDay(date, "day-double", event);
+    }
   };
 
   const stopCalendarControlPointer = (event) => {
     event?.stopPropagation?.();
     calendarSwipeRef.current = null;
-  };
-
-  const toggleFocusedDay = (event) => {
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    calendarSwipeRef.current = null;
-    const now = Date.now();
-    if (toggleDayGuardRef.current.date === focusedDate && now - toggleDayGuardRef.current.at < 350) return;
-    toggleDayGuardRef.current = { date: focusedDate, at: now };
-    onSaveEntry(normalized.id, focusedDate, current => ({ done: !current.done, note: noteDraft }));
   };
 
   const changeNoteDraft = (nextNote) => {
@@ -5035,9 +5050,9 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
           onPointerCancel={() => { calendarSwipeRef.current = null; }}
         >
           <div className="mb-3 flex items-center justify-between">
-            <button type="button" onClick={() => shiftFocusedMonth(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-lg font-black text-zinc-300">‹</button>
+            <button type="button" onPointerDown={stopCalendarControlPointer} onPointerUp={stopCalendarControlPointer} onClick={() => shiftFocusedMonth(-1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-lg font-black text-zinc-300">‹</button>
             <b className="text-center">{selectedMonth.toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}</b>
-            <button type="button" onClick={() => shiftFocusedMonth(1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-lg font-black text-zinc-300">›</button>
+            <button type="button" onPointerDown={stopCalendarControlPointer} onPointerUp={stopCalendarControlPointer} onClick={() => shiftFocusedMonth(1)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-lg font-black text-zinc-300">›</button>
           </div>
           <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl bg-white/[0.035] p-2">
             <span className="pl-2 text-xs font-bold text-zinc-500">{formatCycleDate(focusedDate)}</span>
@@ -5045,7 +5060,7 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
               type="button"
               onPointerDown={stopCalendarControlPointer}
               onPointerUp={stopCalendarControlPointer}
-              onClick={toggleFocusedDay}
+              onClick={(event) => toggleTrackerDay(focusedDate, "button", event)}
               className={`rounded-full px-4 py-2 text-xs font-black ${entry.done ? accent.soft : "bg-white/8 text-zinc-300"}`}
             >{entry.done ? "Отмечено" : "Отметить день"}</button>
           </div>
@@ -5058,7 +5073,7 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
               const inMonth = date.getMonth() === selectedMonth.getMonth();
               const active = day === focusedDate;
               const done = parseProfileBoolean(normalized.entries?.[day]?.done, false);
-              return <button key={day} type="button" onClick={() => selectDay(day)} className={`aspect-square rounded-full text-xs font-black transition ${active ? "ring-2 ring-red-400" : ""} ${done ? `${accent.soft} text-black` : inMonth ? "bg-white/[0.06] text-zinc-300" : "bg-white/[0.02] text-zinc-700"}`}>{date.getDate()}</button>;
+              return <button key={day} type="button" onClick={(event) => selectDay(day, event)} className={`aspect-square rounded-full text-xs font-black transition ${active ? "ring-2 ring-red-400" : ""} ${done ? `${accent.soft} text-black` : inMonth ? "bg-white/[0.06] text-zinc-300" : "bg-white/[0.02] text-zinc-700"}`}>{date.getDate()}</button>;
             })}
           </div>
         </div>
@@ -15816,7 +15831,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     const entry = getPersonalTrackerEntry(normalized, selectedDateKey);
     const progress = getPersonalTrackerProgress(normalized, entry, selectedDateKey);
     const value = normalized.type === "habit" || normalized.type === "abstinence"
-      ? `${getPersonalTrackerStreakStats(normalized, selectedDateKey).streak} дн`
+      ? `${getPersonalTrackerStreakStats(normalized, selectedDateKey).completed} дн`
       : stats.label;
     return <Card key={`tracker-analytics-${normalized.id}`} onClick={() => setTrackerDetail(normalized)} className="cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5">
       <Icon className={accent.text}/>
@@ -16778,6 +16793,7 @@ function OnlyPumpPlatform() {
   const supabaseClientRef = useRef(null);
   const profileSaveReadyRef = useRef(false);
   const homeStateSaveTimerRef = useRef(null);
+  const homeStateLocalVersionRef = useRef(0);
   const nutritionLoadingKeyRef = useRef("");
   const [supabaseClient, setSupabaseClient] = useState(null);
   const [telegramInitData, setTelegramInitData] = useState(telegramBootInitData);
@@ -17180,12 +17196,16 @@ function OnlyPumpPlatform() {
     }
   }, [applyProfileState, profile, profileStatus, telegramInitData]);
 
-  const handleSaveHomeState = useCallback(async (widgets = homeWidgets, trackers = personalTrackers) => {
+  const handleSaveHomeState = useCallback(async (widgets = homeWidgets, trackers = personalTrackers, localVersion = homeStateLocalVersionRef.current) => {
     if (!profile) return false;
     const payload = {
       home_widgets_order: normalizeHomeWidgetsOrder(widgets, []),
       personal_trackers: normalizePersonalTrackersState(trackers, []),
     };
+    if (localVersion !== homeStateLocalVersionRef.current) {
+      console.log("Home state stale save skipped", { localVersion, currentVersion: homeStateLocalVersionRef.current });
+      return true;
+    }
 
     writeCachedHomeWidgetsForProfile(profile, payload.home_widgets_order);
     writeCachedPersonalTrackersForProfile(profile, payload.personal_trackers);
@@ -17201,6 +17221,10 @@ function OnlyPumpPlatform() {
     try {
       console.log("Saving home state", { widgets: payload.home_widgets_order.length, trackers: payload.personal_trackers.length });
       const result = await callOnlyPumpProfileApi(telegramInitData, "update_home_state", payload);
+      if (localVersion !== homeStateLocalVersionRef.current) {
+        console.log("Home state stale save ignored", { localVersion, currentVersion: homeStateLocalVersionRef.current });
+        return true;
+      }
       setProfile(prev => normalizeProfileRecord(result.profile || { ...(prev || profile || DEFAULT_PROFILE), ...payload }, prev || profile || DEFAULT_PROFILE));
       setProfileStatus("verified");
       console.log("Home state saved", { widgets: payload.home_widgets_order.length, trackers: payload.personal_trackers.length });
@@ -17665,11 +17689,13 @@ function OnlyPumpPlatform() {
     if (personalTrackersOwnerKey !== key) return;
     const normalizedWidgets = normalizeHomeWidgetsOrder(homeWidgets, []);
     const normalizedTrackers = normalizePersonalTrackersState(personalTrackers, []);
+    const localVersion = homeStateLocalVersionRef.current + 1;
+    homeStateLocalVersionRef.current = localVersion;
     writeCachedHomeWidgetsForProfile(profile || DEFAULT_PROFILE, normalizedWidgets);
     writeCachedPersonalTrackersForProfile(profile || DEFAULT_PROFILE, normalizedTrackers);
     window.clearTimeout(homeStateSaveTimerRef.current);
     homeStateSaveTimerRef.current = window.setTimeout(() => {
-      handleSaveHomeState(normalizedWidgets, normalizedTrackers);
+      handleSaveHomeState(normalizedWidgets, normalizedTrackers, localVersion);
     }, 700);
     return () => window.clearTimeout(homeStateSaveTimerRef.current);
   }, [homeStateReady, JSON.stringify(homeWidgets), JSON.stringify(personalTrackers), personalTrackersOwnerKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData]);
