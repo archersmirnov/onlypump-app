@@ -806,6 +806,7 @@ const DEFAULT_PROFILE = {
   is_admin: false,
   is_owner: false,
   is_trainer: false,
+  member_role: "user",
   roles: [],
   trainer_profile_id: null,
   access_expires_at: null,
@@ -975,6 +976,8 @@ function normalizeProfileRoles(value, profile = {}) {
   if (parseProfileBoolean(profile?.is_owner)) roles.add("owner");
   if (parseProfileBoolean(profile?.is_admin)) roles.add("admin");
   if (parseProfileBoolean(profile?.is_trainer)) roles.add("trainer");
+  const memberRole = normalizeProfileMemberRole(profile);
+  if (memberRole === "admin" || memberRole === "trainer") roles.add(memberRole);
   return Array.from(roles);
 }
 
@@ -991,9 +994,47 @@ function getProfileRoleLabels(profile = {}) {
     owner: "владелец",
     admin: "админ",
     trainer: "тренер",
+    student: "ученик",
+    user: "пользователь",
   };
   const roles = normalizeProfileRoles(profile?.roles, profile).filter(role => labels[role]);
-  return roles.length ? roles.map(role => labels[role]).join(" · ") : "пользователь";
+  if (roles.length) return roles.map(role => labels[role]).join(" · ");
+  return labels[normalizeProfileMemberRole(profile)] || labels.user;
+}
+
+function normalizeAssignableProfileRole(value, fallback = "user") {
+  const role = String(value || fallback || "user").trim().toLowerCase();
+  return ["admin", "trainer", "student", "user"].includes(role) ? role : "user";
+}
+
+function normalizeProfileMemberRole(profile = {}) {
+  if (parseProfileBoolean(profile?.is_admin)) return "admin";
+  if (parseProfileBoolean(profile?.is_trainer)) return "trainer";
+  return normalizeAssignableProfileRole(profile?.member_role, "user");
+}
+
+function isArcherOwnerProfile(profile = {}) {
+  return String(profile?.telegram_username || "").replace(/^@/, "").trim().toLowerCase() === "archer_ss";
+}
+
+function isProtectedManagedProfile(user = {}, currentProfile = {}) {
+  const sameProfile = user?.id && currentProfile?.id && String(user.id) === String(currentProfile.id);
+  return Boolean(sameProfile || isArcherOwnerProfile(user) || parseProfileBoolean(user?.is_owner) || profileHasRole(user, "owner"));
+}
+
+function formatInvitePeriodLabel(days) {
+  const totalDays = Number(days);
+  if (!Number.isFinite(totalDays) || totalDays <= 0) return "Бессрочно";
+  const months = Math.floor(Math.round(totalDays) / 30);
+  const restDays = Math.round(totalDays) % 30;
+  return `${String(months).padStart(2, "0")}:${String(restDays).padStart(2, "0")}`;
+}
+
+function formatInviteDraftPeriodLabel(months, days) {
+  const safeMonths = Math.max(0, Number(months) || 0);
+  const safeDays = Math.max(0, Number(days) || 0);
+  if (safeMonths === 0 && safeDays === 0) return "00:01";
+  return `${String(safeMonths).padStart(2, "0")}:${String(safeDays).padStart(2, "0")}`;
 }
 
 function formatAccessUntil(value) {
@@ -1075,6 +1116,7 @@ function buildFallbackProfile(overrides = {}) {
     is_admin: parseProfileBoolean(overrides.is_admin, DEFAULT_PROFILE.is_admin),
     is_owner: parseProfileBoolean(overrides.is_owner, DEFAULT_PROFILE.is_owner),
     is_trainer: parseProfileBoolean(overrides.is_trainer, DEFAULT_PROFILE.is_trainer),
+    member_role: normalizeAssignableProfileRole(overrides.member_role, DEFAULT_PROFILE.member_role),
     roles: normalizeProfileRoles(overrides.roles, overrides),
     trainer_profile_id: overrides.trainer_profile_id || DEFAULT_PROFILE.trainer_profile_id,
     access_expires_at: overrides.access_expires_at || DEFAULT_PROFILE.access_expires_at,
@@ -1155,6 +1197,7 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     is_admin: parseProfileBoolean(record.is_admin, fallback.is_admin ?? DEFAULT_PROFILE.is_admin),
     is_owner: parseProfileBoolean(record.is_owner, fallback.is_owner ?? DEFAULT_PROFILE.is_owner),
     is_trainer: parseProfileBoolean(record.is_trainer, fallback.is_trainer ?? DEFAULT_PROFILE.is_trainer),
+    member_role: normalizeAssignableProfileRole(record.member_role ?? fallback.member_role, fallback.member_role || DEFAULT_PROFILE.member_role),
     roles: normalizeProfileRoles(record.roles ?? fallback.roles ?? DEFAULT_PROFILE.roles, { ...fallback, ...record }),
     trainer_profile_id: record.trainer_profile_id !== undefined ? (record.trainer_profile_id || null) : (fallback.trainer_profile_id || null),
     access_expires_at: record.access_expires_at !== undefined ? (record.access_expires_at || null) : (fallback.access_expires_at || null),
@@ -16634,12 +16677,41 @@ function ThemeSettingsSheet({ profile = DEFAULT_PROFILE, saving = false, onClose
   </div>;
 }
 
-function InvitePeriodPickerSheet({ value, onSave, onClose }) {
-  const [draft, setDraft] = useState(value ? String(value) : "");
-  const periodOptions = useMemo(() => [
-    { label: "Бессрочно", value: "" },
-    ...Array.from({ length: 365 }, (_, index) => ({ label: `${index + 1} дн`, value: String(index + 1) })),
-  ], []);
+const MANAGED_ROLE_OPTIONS = [
+  { id: "admin", label: "админ" },
+  { id: "trainer", label: "тренер" },
+  { id: "student", label: "ученик" },
+  { id: "user", label: "пользователь" },
+];
+
+function getManagedUserTitle(user = {}) {
+  return user.display_name || user.telegram_username || user.telegram_id || "Пользователь";
+}
+
+function InvitePeriodPickerSheet({ value = 30, onSave, onClose }) {
+  const initialTotal = Number.isFinite(Number(value)) && Number(value) > 0 ? Math.round(Number(value)) : 30;
+  const [permanent, setPermanent] = useState(value === null);
+  const [months, setMonths] = useState(Math.max(0, Math.min(24, Math.floor(initialTotal / 30))));
+  const [days, setDays] = useState(Math.max(0, Math.min(29, initialTotal % 30)));
+  const monthOptions = useMemo(() => Array.from({ length: 25 }, (_, index) => index), []);
+  const dayOptions = useMemo(() => Array.from({ length: 30 }, (_, index) => index), []);
+  const chooseMonth = (value) => {
+    setMonths(value);
+    setPermanent(false);
+  };
+  const chooseDay = (value) => {
+    setDays(value);
+    setPermanent(false);
+  };
+  const save = () => {
+    if (permanent) {
+      onSave?.(null);
+      onClose();
+      return;
+    }
+    onSave?.(Math.max(1, months * 30 + days));
+    onClose();
+  };
   return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[220] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <BottomSheetPanel onClose={onClose} priority={220} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
@@ -16651,10 +16723,65 @@ function InvitePeriodPickerSheet({ value, onSave, onClose }) {
         </div>
         <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
       </div>
-      <div className="mt-6 h-72 overflow-y-auto rounded-[24px] bg-black/28 p-2 onlypump-scrollbar-none" data-no-sheet-drag="true">
-        {periodOptions.map(option => <button key={option.value || "forever"} type="button" onClick={() => setDraft(option.value)} className={`block w-full rounded-2xl px-3 py-4 text-center text-sm font-black transition ${draft === option.value ? "bg-red-500 text-black" : "text-zinc-300 hover:bg-white/[0.08]"}`}>{option.label}</button>)}
+      <div className="mt-6 grid grid-cols-[1fr_1fr_110px] gap-3" data-no-sheet-drag="true">
+        <div className="h-72 overflow-y-auto rounded-[24px] bg-black/28 p-2 onlypump-scrollbar-none">
+          <p className="sticky top-0 z-10 bg-zinc-950/90 py-2 text-center text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">мм</p>
+          {monthOptions.map(option => <button key={option} type="button" onClick={() => chooseMonth(option)} className={`block w-full rounded-2xl px-3 py-4 text-center text-sm font-black transition ${!permanent && months === option ? "bg-red-500 text-black" : "text-zinc-300 hover:bg-white/[0.08]"}`}>{String(option).padStart(2, "0")}</button>)}
+        </div>
+        <div className="h-72 overflow-y-auto rounded-[24px] bg-black/28 p-2 onlypump-scrollbar-none">
+          <p className="sticky top-0 z-10 bg-zinc-950/90 py-2 text-center text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">дд</p>
+          {dayOptions.map(option => <button key={option} type="button" onClick={() => chooseDay(option)} className={`block w-full rounded-2xl px-3 py-4 text-center text-sm font-black transition ${!permanent && days === option ? "bg-red-500 text-black" : "text-zinc-300 hover:bg-white/[0.08]"}`}>{String(option).padStart(2, "0")}</button>)}
+        </div>
+        <button type="button" onClick={() => setPermanent(true)} className={`h-72 rounded-[24px] px-3 text-sm font-black transition ${permanent ? "bg-red-500 text-black" : "bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]"}`}>Бессрочно</button>
       </div>
-      <Button onClick={() => { onSave?.(draft ? Number(draft) : null); onClose(); }} className="mt-5 w-full bg-gradient-to-r from-red-700 to-red-500 text-black">Выбрать</Button>
+      <Button onClick={save} className="mt-5 w-full bg-gradient-to-r from-red-700 to-red-500 text-black">Выбрать {permanent ? "бессрочно" : formatInviteDraftPeriodLabel(months, days)}</Button>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function ManagedUserRoleSheet({ user, currentProfile, saving, onClose, onRoleChange, onAccessChange }) {
+  const protectedUser = isProtectedManagedProfile(user, currentProfile);
+  const selectedRole = normalizeProfileMemberRole(user);
+  const userName = getManagedUserTitle(user);
+  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[230] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} priority={230} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отменить</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Пользователь</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">{userName}</h2>
+          <p className="mt-1 text-xs text-zinc-500">{user?.telegram_username ? `@${user.telegram_username}` : `ID ${user?.telegram_id || "—"}`}</p>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+
+      <div className="mt-6 rounded-[24px] bg-white/[0.035] p-4">
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Назначить роль</p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {MANAGED_ROLE_OPTIONS.map(option => <button
+            key={option.id}
+            type="button"
+            onClick={() => onRoleChange?.(user, option.id)}
+            disabled={saving || protectedUser}
+            className={`rounded-2xl px-3 py-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${selectedRole === option.id ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-200 hover:bg-white/[0.1]"}`}
+          >
+            {option.label}
+          </button>)}
+        </div>
+        {protectedUser && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-xs font-semibold text-red-300">Владельца нельзя заблокировать, удалить или переназначить через панель.</p>}
+      </div>
+
+      <div className="mt-4 rounded-[24px] bg-white/[0.035] p-4">
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Доступ</p>
+        <p className="mt-2 text-sm text-zinc-400">Статус: {user?.access_status || "pending"} · до {formatAccessUntil(user?.access_expires_at)}</p>
+        <div className="mt-4 flex flex-col gap-2">
+          {user?.access_status === "blocked"
+            ? <button type="button" onClick={() => onAccessChange?.(user, "unblock")} disabled={saving || protectedUser} className="rounded-2xl bg-emerald-500/10 px-4 py-3 text-sm font-black text-emerald-300 disabled:cursor-not-allowed disabled:opacity-45">Разблокировать</button>
+            : <button type="button" onClick={() => onAccessChange?.(user, "block")} disabled={saving || protectedUser} className="rounded-2xl bg-white/[0.06] px-4 py-3 text-sm font-black text-zinc-100 disabled:cursor-not-allowed disabled:opacity-45">Блокировать</button>}
+          <button type="button" onClick={() => onAccessChange?.(user, "delete")} disabled={saving || protectedUser} className="rounded-2xl bg-red-500/10 px-4 py-3 text-sm font-black text-red-300 disabled:cursor-not-allowed disabled:opacity-45">Удалить</button>
+        </div>
+      </div>
     </BottomSheetPanel>
   </div>;
 }
@@ -16665,13 +16792,14 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
   const [error, setError] = useState("");
   const [panel, setPanel] = useState({ permissions: {}, users: [], invites: [], students: [] });
   const [inviteTitle, setInviteTitle] = useState("");
-  const [inviteDays, setInviteDays] = useState(null);
-  const [inviteMaxUses, setInviteMaxUses] = useState("");
+  const [inviteRole, setInviteRole] = useState("user");
+  const [inviteDays, setInviteDays] = useState(30);
+  const [selectedUser, setSelectedUser] = useState(null);
   const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
   const canManageUsers = Boolean(panel.permissions?.can_manage_users);
   const canCreateInvites = Boolean(panel.permissions?.can_create_invites);
   const canViewStudents = Boolean(panel.permissions?.can_view_students);
-  const periodLabel = inviteDays ? `${inviteDays} дн` : "Бессрочно";
+  const periodLabel = formatInvitePeriodLabel(inviteDays);
 
   const loadPanel = useCallback(async () => {
     if (!telegramInitData) {
@@ -16719,10 +16847,11 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
       await callOnlyPumpProfileApi(telegramInitData, "create_invite_link", {
         title: inviteTitle,
         access_days: inviteDays,
-        max_uses: inviteMaxUses ? Number(inviteMaxUses) : null,
+        issued_role: inviteRole,
       });
       setInviteTitle("");
-      setInviteMaxUses("");
+      setInviteRole("user");
+      setInviteDays(30);
       await loadPanel();
     } catch (createError) {
       console.error("profile invite create error:", createError);
@@ -16747,15 +16876,20 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
   };
 
   const updateUserAccess = async (user, operation) => {
-    if (operation === "delete" && !window.confirm(`Удалить пользователя ${userTitle(user)} из списка доступа?`)) return;
+    if (isProtectedManagedProfile(user, profile)) {
+      setError("Владельца нельзя удалить или заблокировать.");
+      return;
+    }
+    if (operation === "delete" && !window.confirm(`Удалить пользователя ${getManagedUserTitle(user)} из списка доступа?`)) return;
     setSaving(true);
     setError("");
     try {
-      await callOnlyPumpProfileApi(telegramInitData, "update_user_access", {
+      const result = await callOnlyPumpProfileApi(telegramInitData, "update_user_access", {
         target_profile_id: user.id,
         operation,
       });
       await loadPanel();
+      setSelectedUser(operation === "delete" ? null : (result.profile || user));
     } catch (accessError) {
       console.error("profile access update error:", accessError);
       setError("Не удалось изменить доступ пользователя.");
@@ -16764,7 +16898,27 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
     }
   };
 
-  const userTitle = (user) => user.display_name || user.telegram_username || user.telegram_id || "Пользователь";
+  const updateUserRole = async (user, role) => {
+    if (isProtectedManagedProfile(user, profile)) {
+      setError("Роль владельца нельзя менять через панель.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const result = await callOnlyPumpProfileApi(telegramInitData, "update_user_role", {
+        target_profile_id: user.id,
+        role,
+      });
+      await loadPanel();
+      setSelectedUser(result.profile || { ...user, member_role: role });
+    } catch (roleError) {
+      console.error("profile role update error:", roleError);
+      setError("Не удалось изменить роль пользователя.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[190] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <BottomSheetPanel onClose={onClose} priority={190} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-5xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem] sm:p-6">
@@ -16784,24 +16938,26 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
           <div className="flex items-start justify-between gap-4">
             <div>
               <h3 className="text-lg font-black">Инвайт-ссылки</h3>
-              <p className="mt-1 text-sm text-zinc-500">Период доступа выбирается барабаном: от 1 дня до бессрочно.</p>
+              <p className="mt-1 text-sm text-zinc-500">Поля ссылки: название, выдаваемая роль и срок доступа.</p>
             </div>
             <ShieldCheck className="shrink-0 text-red-500"/>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_160px_140px_auto]">
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_150px_130px_auto]">
             <input value={inviteTitle} onChange={(event) => setInviteTitle(event.target.value)} placeholder="Название ссылки" className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none"/>
+            <select value={inviteRole} onChange={(event) => setInviteRole(normalizeAssignableProfileRole(event.target.value))} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-black outline-none">
+              {MANAGED_ROLE_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
             <button type="button" onClick={() => setPeriodPickerOpen(true)} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-black">{periodLabel}</button>
-            <input value={inviteMaxUses} onChange={(event) => setInviteMaxUses(event.target.value)} type="number" min="1" inputMode="numeric" placeholder="Лимит" className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none"/>
             <Button onClick={createInvite} disabled={saving} className="bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">Создать</Button>
           </div>
           <div className="mt-4 space-y-2">
             {panel.invites.length ? panel.invites.map(invite => <div key={invite.id} className="rounded-2xl bg-white/[0.035] p-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="break-words text-sm font-black">{invite.title || invite.code}</p>
-                  <p className="mt-1 break-all text-xs text-zinc-500">{invite.invite_url || invite.code}</p>
-                  <p className="mt-1 text-xs text-zinc-600">доступ: {invite.access_days ? `${invite.access_days} дн` : "бессрочно"} · использовано {invite.uses_count || 0}{invite.max_uses ? `/${invite.max_uses}` : ""}</p>
-                </div>
+	                  <p className="break-words text-sm font-black">{invite.title || invite.code}</p>
+	                  <p className="mt-1 break-all text-xs text-zinc-500">{invite.invite_url || invite.code}</p>
+	                  <p className="mt-1 text-xs text-zinc-600">роль: {MANAGED_ROLE_OPTIONS.find(option => option.id === normalizeAssignableProfileRole(invite.issued_role))?.label || "пользователь"} · срок: {formatInvitePeriodLabel(invite.access_days)} · использовано {invite.uses_count || 0}</p>
+	                </div>
                 <div className="flex gap-2">
                   <button type="button" onClick={() => copyInvite(invite)} className="rounded-full bg-white/8 px-3 py-2 text-xs font-black">Копировать</button>
                   {invite.is_active && <button type="button" onClick={() => revokeInvite(invite)} disabled={saving} className="rounded-full bg-red-500/10 px-3 py-2 text-xs font-black text-red-300 disabled:opacity-50">Отключить</button>}
@@ -16815,25 +16971,23 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
           <div className="flex items-center justify-between gap-4">
             <h3 className="text-lg font-black">Пользователи</h3>
             <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-zinc-400">{panel.users.length}</span>
-          </div>
-          <div className="mt-4 space-y-2">
-            {panel.users.map(user => <div key={user.id} className="rounded-2xl bg-white/[0.035] p-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="break-words text-sm font-black">{userTitle(user)}</p>
-                  <p className="mt-1 text-xs text-zinc-500">{user.telegram_username ? `@${user.telegram_username}` : `ID ${user.telegram_id || "—"}`} · {getProfileRoleLabels(user)}</p>
-                  <p className="mt-1 text-xs text-zinc-600">статус: {user.access_status} · доступ до {formatAccessUntil(user.access_expires_at)}</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {user.access_status === "blocked"
-                    ? <button type="button" onClick={() => updateUserAccess(user, "unblock")} disabled={saving} className="rounded-full bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-300 disabled:opacity-50">Разблокировать</button>
-                    : <button type="button" onClick={() => updateUserAccess(user, "block")} disabled={saving} className="rounded-full bg-white/8 px-3 py-2 text-xs font-black disabled:opacity-50">Блокировать</button>}
-                  <button type="button" onClick={() => updateUserAccess(user, "delete")} disabled={saving} className="rounded-full bg-red-500/10 px-3 py-2 text-xs font-black text-red-300 disabled:opacity-50">Удалить</button>
-                </div>
-              </div>
-            </div>)}
-          </div>
-        </Card>}
+	          </div>
+	          <div className="mt-4 space-y-2">
+	            {panel.users.map(user => {
+                const protectedUser = isProtectedManagedProfile(user, profile);
+                return <button key={user.id} type="button" onClick={() => setSelectedUser(user)} className="block w-full rounded-2xl bg-white/[0.035] p-3 text-left transition hover:bg-white/[0.06]">
+	              <div className="flex flex-wrap items-center justify-between gap-3">
+	                <div className="min-w-0">
+	                  <p className="break-words text-sm font-black">{getManagedUserTitle(user)}</p>
+	                  <p className="mt-1 text-xs text-zinc-500">{user.telegram_username ? `@${user.telegram_username}` : `ID ${user.telegram_id || "—"}`} · {getProfileRoleLabels(user)}</p>
+	                  <p className="mt-1 text-xs text-zinc-600">статус: {user.access_status} · доступ до {formatAccessUntil(user.access_expires_at)}</p>
+	                </div>
+	                <span className={`rounded-full px-3 py-2 text-xs font-black ${protectedUser ? "bg-red-500/10 text-red-300" : "bg-white/8 text-zinc-300"}`}>{protectedUser ? "защищён" : "открыть"}</span>
+	              </div>
+	            </button>;
+              })}
+	          </div>
+	        </Card>}
 
         {canViewStudents && <Card className="p-4 lg:col-span-2">
           <div className="flex items-center justify-between gap-4">
@@ -16842,7 +16996,7 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {panel.students.length ? panel.students.map(student => <div key={student.id} className="rounded-2xl bg-white/[0.035] p-4">
-              <p className="break-words text-sm font-black">{userTitle(student)}</p>
+	              <p className="break-words text-sm font-black">{getManagedUserTitle(student)}</p>
               <p className="mt-1 text-xs text-zinc-500">{student.telegram_username ? `@${student.telegram_username}` : `ID ${student.telegram_id || "—"}`}</p>
               <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
                 <div className="rounded-xl bg-white/[0.04] p-3"><b className="block text-lg">{student.analytics_30d?.completed_workouts_count || 0}</b><span className="text-zinc-500">тренировок</span></div>
@@ -16855,10 +17009,11 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
         </Card>}
       </div>}
 
-      {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
-      {periodPickerOpen && <InvitePeriodPickerSheet value={inviteDays} onSave={setInviteDays} onClose={() => setPeriodPickerOpen(false)}/>}
-    </BottomSheetPanel>
-  </div>;
+	      {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+	      {periodPickerOpen && <InvitePeriodPickerSheet value={inviteDays} onSave={setInviteDays} onClose={() => setPeriodPickerOpen(false)}/>}
+        {selectedUser && <ManagedUserRoleSheet user={selectedUser} currentProfile={profile} saving={saving} onClose={() => setSelectedUser(null)} onRoleChange={updateUserRole} onAccessChange={updateUserAccess}/>}
+	    </BottomSheetPanel>
+	  </div>;
 }
 
 function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onSaveProfile, profileSaving = false, onSaveThemeSettings, themeSaving = false, onResetProfile }) {
