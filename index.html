@@ -3450,7 +3450,9 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
   const maxOffset = -Math.max(1, actions.length) * actionWidth;
   const totalActionWidth = Math.max(1, actions.length) * actionWidth;
   const isExternallyOpen = rowId != null && swipedId === rowId;
-  const actionsVisible = offset < -4 || isExternallyOpen;
+  const actionRevealWidth = Math.max(0, Math.min(totalActionWidth, -offset));
+  const actionsVisible = actionRevealWidth > 1 || isExternallyOpen;
+  const actionsInteractive = actionRevealWidth > totalActionWidth - 12;
 
   const setRowOffset = (value) => {
     const next = Math.max(maxOffset, Math.min(0, value));
@@ -3514,7 +3516,7 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
   };
 
   const getActionFromPoint = (event, clientX) => {
-    if (!actionsVisible || !actions.length || clientX == null) return false;
+    if (!actionsInteractive || !actions.length || clientX == null) return false;
     const rect = rootRef.current?.getBoundingClientRect?.() || event.currentTarget.getBoundingClientRect();
     const actionsLeft = rect.right - totalActionWidth;
     if (clientX < actionsLeft || clientX > rect.right) return false;
@@ -3569,7 +3571,7 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
       node.removeEventListener("touchstart", onTouchStart, { capture: true });
       node.removeEventListener("click", onClick, true);
     };
-  }, [actionsVisible, totalActionWidth, actionWidth, actions]);
+  }, [actionsVisible, actionsInteractive, totalActionWidth, actionWidth, actions]);
 
   return <div
     ref={rootRef}
@@ -3584,32 +3586,33 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
     style={{ touchAction: 'pan-y' }}
   >
     <div
-      className="absolute inset-y-0 right-0 z-20 flex transition-all duration-200"
+      className="absolute inset-y-0 right-0 z-0 overflow-hidden rounded-r-[22px]"
       style={{
-        pointerEvents: actionsVisible ? "auto" : "none",
-        opacity: actionsVisible ? 1 : 0,
+        width: actionRevealWidth,
+        pointerEvents: actionsInteractive ? "auto" : "none",
         visibility: actionsVisible ? "visible" : "hidden",
-        transform: actionsVisible ? "translateX(0)" : "translateX(100%)",
       }}
     >
-      {actions.map(action => <button
-        key={action.label}
-        type="button"
-        onPointerDown={(event) => event.stopPropagation()}
-        onTouchStart={(event) => event.stopPropagation()}
-        onPointerUp={(event) => triggerAction(event, action)}
-        onTouchEnd={(event) => triggerAction(event, action)}
-        onClick={(event) => triggerAction(event, action)}
-        className={`flex h-full items-center justify-center text-lg font-black text-white ${action.className || 'bg-red-500'}`}
-        style={{ width: actionWidth, minWidth: actionWidth, touchAction: "manipulation" }}
-        aria-label={action.label}
-      >
-        {action.icon || action.label}
-      </button>)}
+      <div className="absolute inset-y-0 right-0 flex" style={{ width: totalActionWidth }}>
+        {actions.map(action => <button
+          key={action.label}
+          type="button"
+          onPointerDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+          onPointerUp={(event) => triggerAction(event, action)}
+          onTouchEnd={(event) => triggerAction(event, action)}
+          onClick={(event) => triggerAction(event, action)}
+          className={`flex h-full items-center justify-center text-lg font-black text-white ${action.className || 'bg-red-500'}`}
+          style={{ width: actionWidth, minWidth: actionWidth, touchAction: "manipulation" }}
+          aria-label={action.label}
+        >
+          {action.icon || action.label}
+        </button>)}
+      </div>
     </div>
-    {actionsVisible && <div
+    {actionsInteractive && <div
       className="absolute inset-y-0 right-0 z-40 flex"
-      style={{ width: totalActionWidth, touchAction: "manipulation" }}
+      style={{ width: actionRevealWidth, touchAction: "manipulation" }}
       onPointerDown={(event) => event.stopPropagation()}
       onTouchStart={(event) => event.stopPropagation()}
       onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
@@ -10068,6 +10071,9 @@ const toggleExerciseMeasurementSetting = (field) => {
     const [cardOffset, setCardOffset] = useState(swipedWorkoutId === workout.id ? -148 : 0);
     const statusColor = workoutStatusColors[workout.status] || workoutStatusColors.completed;
     const isOpen = swipedWorkoutId === workout.id;
+    const workoutActionWidth = 148;
+    const workoutActionRevealWidth = Math.max(0, Math.min(workoutActionWidth, -cardOffset));
+    const workoutActionsInteractive = workoutActionRevealWidth > workoutActionWidth - 12;
 
     const setWorkoutCardOffset = (value) => {
       const next = Math.max(-148, Math.min(0, value));
@@ -10236,34 +10242,43 @@ const toggleExerciseMeasurementSetting = (field) => {
       className="relative mb-4 overflow-hidden rounded-[22px]"
       style={{ touchAction: "pan-y" }}
     >
-      <div className="absolute inset-y-0 right-0 z-0 flex overflow-hidden rounded-r-[22px]">
-        <button
-          type="button"
-          data-workout-swipe-action="true"
-          aria-label="Повторить"
-          className="flex h-full w-[74px] items-center justify-center bg-zinc-700 text-white"
-          style={{ touchAction: "manipulation" }}
-          onPointerDown={(event) => handleActionPointerDown(event, "repeat")}
-          onPointerUp={(event) => handleActionPointerUp(event, "repeat")}
-          onPointerCancel={(event) => { event.stopPropagation(); actionPressRef.current = { action: "", pointerId: null, startX: 0, startY: 0 }; }}
-          onClick={(event) => handleActionClick(event, "repeat")}
-        >
-          <Repeat2 size={22}/>
-        </button>
-        <button
-          type="button"
-          data-workout-swipe-action="true"
-          data-workout-delete-entry="true"
-          aria-label="Удалить"
-          className="flex h-full w-[74px] items-center justify-center bg-red-500 text-xl font-black text-white"
-          style={{ touchAction: "manipulation" }}
-          onPointerDown={(event) => handleActionPointerDown(event, "delete")}
-          onPointerUp={(event) => handleActionPointerUp(event, "delete")}
-          onPointerCancel={(event) => { event.stopPropagation(); actionPressRef.current = { action: "", pointerId: null, startX: 0, startY: 0 }; }}
-          onClick={(event) => handleActionClick(event, "delete")}
-        >
-          🗑
-        </button>
+      <div
+        className="absolute inset-y-0 right-0 z-0 overflow-hidden rounded-r-[22px]"
+        style={{
+          width: workoutActionRevealWidth,
+          pointerEvents: workoutActionsInteractive ? "auto" : "none",
+          visibility: workoutActionRevealWidth > 1 ? "visible" : "hidden",
+        }}
+      >
+        <div className="absolute inset-y-0 right-0 flex w-[148px]">
+          <button
+            type="button"
+            data-workout-swipe-action="true"
+            aria-label="Повторить"
+            className="flex h-full w-[74px] items-center justify-center bg-zinc-700 text-white"
+            style={{ touchAction: "manipulation" }}
+            onPointerDown={(event) => handleActionPointerDown(event, "repeat")}
+            onPointerUp={(event) => handleActionPointerUp(event, "repeat")}
+            onPointerCancel={(event) => { event.stopPropagation(); actionPressRef.current = { action: "", pointerId: null, startX: 0, startY: 0 }; }}
+            onClick={(event) => handleActionClick(event, "repeat")}
+          >
+            <Repeat2 size={22}/>
+          </button>
+          <button
+            type="button"
+            data-workout-swipe-action="true"
+            data-workout-delete-entry="true"
+            aria-label="Удалить"
+            className="flex h-full w-[74px] items-center justify-center bg-red-500 text-xl font-black text-white"
+            style={{ touchAction: "manipulation" }}
+            onPointerDown={(event) => handleActionPointerDown(event, "delete")}
+            onPointerUp={(event) => handleActionPointerUp(event, "delete")}
+            onPointerCancel={(event) => { event.stopPropagation(); actionPressRef.current = { action: "", pointerId: null, startX: 0, startY: 0 }; }}
+            onClick={(event) => handleActionClick(event, "delete")}
+          >
+            🗑
+          </button>
+        </div>
       </div>
       <button
         type="button"
@@ -10274,7 +10289,7 @@ const toggleExerciseMeasurementSetting = (field) => {
         onPointerCancel={handleCardPointerUp}
         onPointerLeave={cancelLongPress}
         onContextMenu={(event) => { event.preventDefault(); setWeekMenuGroup({ type: "workout", workout }); }}
-        className="relative z-10 block w-full rounded-[22px] border border-white/10 bg-zinc-950 p-4 text-left transition active:scale-[0.98] hover:border-red-500/40 hover:bg-red-500/5"
+        className="relative z-10 block w-full rounded-[22px] border border-white/10 bg-zinc-950 p-4 text-left transition hover:border-red-500/40 hover:bg-red-500/5"
         style={{
           transform: `translate3d(${cardOffset}px, 0, 0)`,
           transition: swipeRef.current.dragging ? "none" : "transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)",
