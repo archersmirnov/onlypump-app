@@ -1580,6 +1580,7 @@ const homeWidgetCatalog = [
   { id: "metricSteps", label: "Шаги", description: "Шаги за выбранный день", default: false, span: "compact" },
   { id: "macros", label: "БЖУ", description: "Белки, жиры и углеводы со шкалами", default: false, span: "compact" },
   { id: "water", label: "Вода", description: "Трекер выпитой воды за день", default: false, span: "compact" },
+  { id: "personalTracker", label: "Трекер", description: "Персональный трекер жидкости, еды, привычки или отказа", default: false, span: "compact" },
   { id: "workout", label: "Сегодняшняя тренировка", description: "План и прогресс тренировки дня", default: false, span: "large" },
   { id: "nutrition", label: "Питание на сегодня", description: "Калории и кольцо прогресса", default: false, span: "large" },
   { id: "weekProgress", label: "Прогресс недели", description: "График выполнения плана", default: false, span: "large" },
@@ -1592,10 +1593,175 @@ const homeWidgetCatalog = [
 const defaultHomeWidgets = homeWidgetCatalog.filter(w => w.default).map(w => w.id);
 
 const nutritionHomeWidgetIds = ["metricCalories", "metricProtein", "macros", "nutrition"];
+const PERSONAL_TRACKER_WIDGET_ID = "personalTracker";
+const PERSONAL_TRACKER_WIDGET_PREFIX = "tracker:";
+const PERSONAL_TRACKERS_LIMIT = 10;
+
+const personalTrackerTypeConfigs = {
+  liquid: { label: "Трекер жидкости", shortLabel: "Жидкость", icon: Droplets, accent: "sky", unit: "мл", defaultTitle: "Кофе", defaultTarget: 500, defaultPortions: [100, 200], modeLabel: "цели" },
+  food: { label: "Трекер еды", shortLabel: "Еда", icon: Apple, accent: "red", unit: "г", defaultTitle: "Сладкое", defaultTarget: 100, defaultPortions: [25, 50], modeLabel: "цели" },
+  habit: { label: "Трекер привычки", shortLabel: "Привычка", icon: CheckCircle2, accent: "green", unit: "дней", defaultTitle: "Привычка", defaultTarget: 30, defaultPortions: [], modeLabel: "срока" },
+  abstinence: { label: "Трекер отказа", shortLabel: "Без", icon: ShieldCheck, accent: "violet", unit: "дней", defaultTitle: "Без сахара", defaultTarget: 30, defaultPortions: [], modeLabel: "срока" },
+};
+
+const personalTrackerAccents = {
+  sky: { color: "#38bdf8", text: "text-sky-400", soft: "bg-sky-500/15 text-sky-300 hover:bg-sky-500/25", ring: "from-sky-500 to-cyan-400" },
+  red: { color: "#ef4444", text: "text-red-500", soft: "bg-red-500/15 text-red-300 hover:bg-red-500/25", ring: "from-red-700 to-red-500" },
+  green: { color: "#22c55e", text: "text-emerald-400", soft: "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25", ring: "from-emerald-500 to-lime-400" },
+  violet: { color: "#a855f7", text: "text-violet-400", soft: "bg-violet-500/15 text-violet-300 hover:bg-violet-500/25", ring: "from-violet-500 to-fuchsia-400" },
+};
+
+const isPersonalTrackerWidgetId = (id = "") => String(id).startsWith(PERSONAL_TRACKER_WIDGET_PREFIX);
+const personalTrackerWidgetId = (trackerId = "") => `${PERSONAL_TRACKER_WIDGET_PREFIX}${trackerId}`;
+const personalTrackerIdFromWidget = (widgetId = "") => String(widgetId).slice(PERSONAL_TRACKER_WIDGET_PREFIX.length);
+const getPersonalTrackerTypeConfig = (type = "liquid") => personalTrackerTypeConfigs[type] || personalTrackerTypeConfigs.liquid;
+const getPersonalTrackerAccent = (tracker = {}) => personalTrackerAccents[getPersonalTrackerTypeConfig(tracker.type).accent] || personalTrackerAccents.red;
+
+const getPersonalTrackerCacheKey = (profile = DEFAULT_PROFILE) => `onlypump_personal_trackers_${profile?.telegram_id || profile?.id || "local"}`;
+
+const normalizePersonalTrackerEntry = (entry = {}) => ({
+  value: profileNonNegativeNumber(entry.value, 0),
+  done: parseProfileBoolean(entry.done, false),
+  note: String(entry.note || ""),
+});
+
+const normalizePersonalTracker = (tracker = {}) => {
+  const type = personalTrackerTypeConfigs[tracker.type] ? tracker.type : "liquid";
+  const config = getPersonalTrackerTypeConfig(type);
+  const id = String(tracker.id || `tracker-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const entries = {};
+  Object.entries(tracker.entries || {}).forEach(([dateKey, entry]) => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) entries[dateKey] = normalizePersonalTrackerEntry(entry);
+  });
+  const portions = Array.isArray(tracker.portions) && tracker.portions.length
+    ? tracker.portions.map(value => profileNonNegativeNumber(value, 0)).filter(value => value > 0).slice(0, 4)
+    : config.defaultPortions;
+  return {
+    id,
+    type,
+    title: String(tracker.title || config.defaultTitle).trim() || config.defaultTitle,
+    mode: tracker.mode === "limit" ? "limit" : "goal",
+    target: Math.max(1, profileNonNegativeNumber(tracker.target, config.defaultTarget)),
+    unit: String(tracker.unit || config.unit || "").trim(),
+    portions,
+    startDate: tracker.startDate || tracker.start_date || formatDateKey(new Date()),
+    durationDays: Math.max(1, profileNonNegativeNumber(tracker.durationDays ?? tracker.duration_days, config.defaultTarget)),
+    entries,
+  };
+};
+
+const readCachedPersonalTrackersForProfile = (profile = DEFAULT_PROFILE) => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(getPersonalTrackerCacheKey(profile)) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(normalizePersonalTracker).slice(0, PERSONAL_TRACKERS_LIMIT);
+  } catch (error) {
+    console.log("Personal trackers cache error", error);
+    return [];
+  }
+};
+
+const writeCachedPersonalTrackersForProfile = (profile = DEFAULT_PROFILE, trackers = []) => {
+  try {
+    localStorage.setItem(getPersonalTrackerCacheKey(profile), JSON.stringify((trackers || []).map(normalizePersonalTracker).slice(0, PERSONAL_TRACKERS_LIMIT)));
+  } catch (error) {
+    console.log("Personal trackers cache error", error);
+  }
+};
+
+const createPersonalTrackerDraft = (overrides = {}) => normalizePersonalTracker({
+  id: `tracker-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  type: "liquid",
+  mode: "goal",
+  entries: {},
+  ...overrides,
+});
+
+const getPersonalTrackerEntry = (tracker = {}, dateKey = formatDateKey(new Date())) => normalizePersonalTrackerEntry(tracker.entries?.[dateKey] || {});
+
+const upsertPersonalTrackerEntry = (trackers = [], trackerId, dateKey, entryPatch = {}) => trackers.map(tracker => {
+  if (tracker.id !== trackerId) return tracker;
+  const normalized = normalizePersonalTracker(tracker);
+  const current = getPersonalTrackerEntry(normalized, dateKey);
+  return normalizePersonalTracker({
+    ...normalized,
+    entries: {
+      ...normalized.entries,
+      [dateKey]: normalizePersonalTrackerEntry({ ...current, ...entryPatch }),
+    },
+  });
+});
+
+const getPersonalTrackerProgress = (tracker = {}, entry = {}, dateKey = formatDateKey(new Date())) => {
+  const config = getPersonalTrackerTypeConfig(tracker.type);
+  if (tracker.type === "habit" || tracker.type === "abstinence") {
+    const stats = getPersonalTrackerStreakStats(tracker, dateKey);
+    return Math.min(100, Math.round((stats.streak / Math.max(1, tracker.durationDays || config.defaultTarget)) * 100));
+  }
+  const value = profileNonNegativeNumber(entry.value, 0);
+  const target = Math.max(1, profileNonNegativeNumber(tracker.target, config.defaultTarget));
+  return tracker.mode === "limit"
+    ? Math.min(100, Math.round((value / target) * 100))
+    : Math.min(100, Math.round((value / target) * 100));
+};
+
+const getPersonalTrackerStreakStats = (tracker = {}, selectedDateKey = formatDateKey(new Date())) => {
+  const normalized = normalizePersonalTracker(tracker);
+  const start = parseDateKeyLocal(normalized.startDate);
+  const selected = parseDateKeyLocal(selectedDateKey);
+  const elapsed = Math.max(0, Math.round((selected.getTime() - start.getTime()) / (24 * 60 * 60 * 1000))) + 1;
+  const remaining = Math.max(0, normalized.durationDays - elapsed);
+  let streak = 0;
+  let cursor = selected;
+  while (streak < 500) {
+    const key = formatDateKey(cursor);
+    if (!parseProfileBoolean(normalized.entries?.[key]?.done, false)) break;
+    streak += 1;
+    cursor = addLocalDaysToDate(cursor, -1);
+  }
+  const completed = Object.values(normalized.entries || {}).filter(entry => parseProfileBoolean(entry.done, false)).length;
+  return { streak, completed, elapsed, remaining };
+};
+
+const getPersonalTrackerValueLabel = (tracker = {}, dateKey = formatDateKey(new Date())) => {
+  const entry = getPersonalTrackerEntry(tracker, dateKey);
+  if (tracker.type === "habit" || tracker.type === "abstinence") {
+    const stats = getPersonalTrackerStreakStats(tracker, dateKey);
+    return `${stats.streak} дн`;
+  }
+  const value = profileNonNegativeNumber(entry.value, 0);
+  return `${value.toLocaleString("ru-RU")} ${tracker.unit || getPersonalTrackerTypeConfig(tracker.type).unit}`;
+};
+
+const getPersonalTrackerPeriodStats = (tracker = {}, period = "day", selectedDateKey = formatDateKey(new Date())) => {
+  const range = analyticsPeriodRange(period, selectedDateKey);
+  const rows = Object.entries(tracker.entries || {})
+    .filter(([dateKey]) => isDateKeyInRange(dateKey, range))
+    .map(([dateKey, entry]) => ({ dateKey, entry: normalizePersonalTrackerEntry(entry) }));
+  if (tracker.type === "habit" || tracker.type === "abstinence") {
+    return {
+      count: rows.filter(row => row.entry.done).length,
+      rows,
+      label: rows.filter(row => row.entry.done).length.toLocaleString("ru-RU"),
+      sub: "отмечено дней",
+    };
+  }
+  const total = rows.reduce((sum, row) => sum + profileNonNegativeNumber(row.entry.value, 0), 0);
+  const average = rows.length ? Math.round(total / rows.length) : 0;
+  return {
+    count: rows.length,
+    rows,
+    total,
+    average,
+    label: total ? `${Math.round(total).toLocaleString("ru-RU")} ${tracker.unit}` : "нет данных",
+    sub: rows.length ? `среднее ${average.toLocaleString("ru-RU")} ${tracker.unit}` : "Нет данных за выбранный период",
+  };
+};
 
 function enforceHomeWidgetRules(widgets = []) {
   const unique = [];
   widgets.forEach(id => {
+    if (id === PERSONAL_TRACKER_WIDGET_ID) return;
     if (!unique.includes(id)) unique.push(id);
   });
 
@@ -1617,8 +1783,19 @@ function enforceHomeWidgetRules(widgets = []) {
 }
 
 function buildHomeWidgetsAfterAdding(prevWidgets, id) {
+  if (isPersonalTrackerWidgetId(id)) {
+    const firstLargeIndex = prevWidgets.findIndex(widgetId => {
+      if (isPersonalTrackerWidgetId(widgetId)) return false;
+      return homeWidgetCatalog.find(w => w.id === widgetId)?.span !== "compact";
+    });
+    if (prevWidgets.includes(id)) return enforceHomeWidgetRules(prevWidgets);
+    const next = firstLargeIndex === -1
+      ? [...prevWidgets, id]
+      : [...prevWidgets.slice(0, firstLargeIndex), id, ...prevWidgets.slice(firstLargeIndex)];
+    return enforceHomeWidgetRules(next);
+  }
   const withoutNutritionGroup = prevWidgets.filter(widgetId => !nutritionHomeWidgetIds.includes(widgetId));
-  const compactInsertIndex = withoutNutritionGroup.findIndex(widgetId => homeWidgetCatalog.find(w => w.id === widgetId)?.span !== "compact");
+  const compactInsertIndex = withoutNutritionGroup.findIndex(widgetId => (isPersonalTrackerWidgetId(widgetId) ? "compact" : homeWidgetCatalog.find(w => w.id === widgetId)?.span) !== "compact");
   const insertCompact = (items) => {
     const cleanItems = items.filter((item, index) => items.indexOf(item) === index);
     if (compactInsertIndex === -1) return [...withoutNutritionGroup, ...cleanItems];
@@ -4468,8 +4645,347 @@ function WaterEditorSheet({ dateKey, healthLog, onSave, onClose, saving = false,
   </div>;
 }
 
-function HomeWidgetSettingsModal({ enabledWidgets, onAdd, onClose }) {
-  const availableWidgets = homeWidgetCatalog.filter(widget => !enabledWidgets.includes(widget.id));
+function PersonalTrackerIcon({ tracker, size = 18 }) {
+  const config = getPersonalTrackerTypeConfig(tracker?.type);
+  const Icon = config.icon || Target;
+  const accent = getPersonalTrackerAccent(tracker || {});
+  return <Icon size={size} className={accent.text}/>;
+}
+
+function PersonalTrackerRing({ tracker, value = 0, progress = 0, label }) {
+  const accent = getPersonalTrackerAccent(tracker);
+  const safeProgress = Math.min(100, Math.max(0, Math.round(progress || 0)));
+  return <div className="relative flex h-24 w-24 shrink-0 items-center justify-center rounded-full" style={{ background: `conic-gradient(${accent.color} 0 ${safeProgress}%, var(--chart-track) ${safeProgress}% 100%)` }}>
+    <div className="flex h-20 w-20 flex-col items-center justify-center rounded-full bg-zinc-950 px-2 text-center">
+      <span className="text-lg font-black leading-none">{value}</span>
+      <span className="mt-1 text-[10px] leading-none text-zinc-500">{label}</span>
+    </div>
+  </div>;
+}
+
+function PersonalTrackerCard({ tracker, dateKey, onOpen, onQuickAdd }) {
+  const entry = getPersonalTrackerEntry(tracker, dateKey);
+  const config = getPersonalTrackerTypeConfig(tracker.type);
+  const accent = getPersonalTrackerAccent(tracker);
+  const value = profileNonNegativeNumber(entry.value, 0);
+  const isBinary = tracker.type === "habit" || tracker.type === "abstinence";
+  const stats = isBinary ? getPersonalTrackerStreakStats(tracker, dateKey) : null;
+  const progress = getPersonalTrackerProgress(tracker, entry, dateKey);
+  const titlePrefix = tracker.mode === "limit" && !isBinary ? "лимит" : "цель";
+
+  return <Card onClick={onOpen} className="h-full cursor-pointer p-4 transition hover:border-red-500/50 hover:bg-red-500/5">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-xs text-zinc-500">{config.shortLabel}</p>
+        <h3 className="mt-1 break-words text-lg font-black leading-tight">{tracker.title}</h3>
+      </div>
+      <PersonalTrackerIcon tracker={tracker}/>
+    </div>
+    {isBinary ? <div className="mt-4">
+      <div className="text-3xl font-black">{stats.streak} дн</div>
+      <p className="mt-1 text-xs text-zinc-500">серия · осталось {stats.remaining} дн</p>
+      <div className="mt-4 grid grid-cols-7 gap-1">
+        {Array.from({ length: 14 }, (_, index) => {
+          const date = addLocalDaysToDate(parseDateKeyLocal(dateKey), index - 13);
+          const key = formatDateKey(date);
+          const done = parseProfileBoolean(tracker.entries?.[key]?.done, false);
+          return <span key={key} className={`aspect-square rounded-full ${done ? accent.soft.split(" ")[0] : "bg-white/[0.06]"}`}/>;
+        })}
+      </div>
+    </div> : <>
+      <div className="mt-4 flex items-center gap-4">
+        <PersonalTrackerRing tracker={tracker} value={value.toLocaleString("ru-RU")} progress={progress} label={tracker.unit}/>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-zinc-500">{titlePrefix} {tracker.target.toLocaleString("ru-RU")} {tracker.unit}</p>
+          <div className="mt-3"><Progress value={progress}/></div>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {(tracker.portions || []).slice(0, 2).map(portion => <button key={portion} type="button" onClick={(event) => { event.stopPropagation(); onQuickAdd(portion); }} className={`rounded-full px-3 py-1.5 text-[11px] font-black ${accent.soft}`}>+{portion}</button>)}
+      </div>
+    </>}
+  </Card>;
+}
+
+function PersonalTrackerSettingsSheet({ tracker, isNew = false, onSave, onDelete, onClose }) {
+  const initial = normalizePersonalTracker(tracker || createPersonalTrackerDraft());
+  const [type, setType] = useState(initial.type);
+  const [title, setTitle] = useState(initial.title);
+  const [mode, setMode] = useState(initial.mode);
+  const [target, setTarget] = useState(String(initial.target));
+  const [unit, setUnit] = useState(initial.unit);
+  const [portionA, setPortionA] = useState(String(initial.portions?.[0] || ""));
+  const [portionB, setPortionB] = useState(String(initial.portions?.[1] || ""));
+  const [startDate, setStartDate] = useState(initial.startDate);
+  const [durationDays, setDurationDays] = useState(String(initial.durationDays));
+  const [error, setError] = useState("");
+  const config = getPersonalTrackerTypeConfig(type);
+  const isBinary = type === "habit" || type === "abstinence";
+  const currentAccent = getPersonalTrackerAccent({ type });
+
+  const chooseType = (nextType) => {
+    const nextConfig = getPersonalTrackerTypeConfig(nextType);
+    setType(nextType);
+    setTitle(prev => prev && prev !== config.defaultTitle ? prev : nextConfig.defaultTitle);
+    setTarget(String(nextConfig.defaultTarget));
+    setUnit(nextConfig.unit);
+    setPortionA(String(nextConfig.defaultPortions?.[0] || ""));
+    setPortionB(String(nextConfig.defaultPortions?.[1] || ""));
+    if (nextType === "habit" || nextType === "abstinence") setMode("goal");
+  };
+
+  const save = () => {
+    const cleanTitle = String(title || "").trim();
+    if (!cleanTitle) {
+      setError("Введите название трекера.");
+      return;
+    }
+    const portions = [portionA, portionB].map(value => profileNonNegativeNumber(value, 0)).filter(value => value > 0);
+    const next = normalizePersonalTracker({
+      ...initial,
+      type,
+      title: cleanTitle,
+      mode: isBinary ? "goal" : mode,
+      target: isBinary ? durationDays : target,
+      unit: isBinary ? "дней" : unit,
+      portions,
+      startDate,
+      durationDays,
+    });
+    onSave(next);
+    onClose();
+  };
+
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-lg overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отмена</button>
+        <div className="min-w-0 text-center">
+          <p className={`text-xs font-black uppercase tracking-[0.18em] ${currentAccent.text}`}>Трекер</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">{isNew ? "Новый трекер" : "Настройка трекера"}</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+
+      <div className="mt-6 grid grid-cols-2 gap-2">
+        {Object.entries(personalTrackerTypeConfigs).map(([key, item]) => {
+          const Icon = item.icon;
+          const active = type === key;
+          return <button key={key} type="button" onClick={() => chooseType(key)} className={`rounded-2xl border p-3 text-left transition ${active ? "border-red-500/60 bg-red-500/10" : "border-white/10 bg-white/[0.04]"}`}>
+            <Icon size={18} className={active ? "text-red-400" : "text-zinc-500"}/>
+            <span className="mt-2 block text-sm font-black">{item.label}</span>
+          </button>;
+        })}
+      </div>
+
+      <label className="mt-5 block rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+        <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название</span>
+        <input value={title} onChange={(event) => setTitle(event.target.value)} className="mt-3 w-full bg-transparent text-2xl font-black outline-none" placeholder={config.defaultTitle}/>
+      </label>
+
+      {!isBinary && <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-2">
+          {["goal", "limit"].map(option => <button key={option} type="button" onClick={() => setMode(option)} className={`w-1/2 rounded-xl px-2 py-3 text-sm font-black ${mode === option ? "bg-red-500 text-black" : "text-zinc-400"}`}>{option === "goal" ? "Цель" : "Лимит"}</button>)}
+        </div>
+        <label className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+          <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">{mode === "limit" ? "Лимит" : "Цель"}</span>
+          <input type="number" min="1" inputMode="numeric" value={target} onChange={(event) => setTarget(event.target.value)} className="mt-2 w-full bg-transparent text-xl font-black outline-none"/>
+        </label>
+        <label className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+          <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Ед. измерения</span>
+          <input value={unit} onChange={(event) => setUnit(event.target.value)} className="mt-2 w-full bg-transparent text-xl font-black outline-none"/>
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Порция 1</span>
+            <input type="number" min="0" inputMode="numeric" value={portionA} onChange={(event) => setPortionA(event.target.value)} className="mt-2 w-full bg-transparent text-xl font-black outline-none"/>
+          </label>
+          <label className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Порция 2</span>
+            <input type="number" min="0" inputMode="numeric" value={portionB} onChange={(event) => setPortionB(event.target.value)} className="mt-2 w-full bg-transparent text-xl font-black outline-none"/>
+          </label>
+        </div>
+      </div>}
+
+      {isBinary && <div className="mt-4 grid grid-cols-2 gap-3">
+        <label className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+          <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Старт</span>
+          <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="mt-2 w-full bg-transparent text-base font-black outline-none"/>
+        </label>
+        <label className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+          <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Срок, дней</span>
+          <input type="number" min="1" inputMode="numeric" value={durationDays} onChange={(event) => setDurationDays(event.target.value)} className="mt-2 w-full bg-transparent text-xl font-black outline-none"/>
+        </label>
+      </div>}
+
+      {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+      <div className="mt-6 grid gap-3 sm:grid-cols-2">
+        {!isNew && <Button onClick={() => { onDelete?.(initial.id); onClose(); }} className="bg-red-500/10 text-red-300">Удалить трекер</Button>}
+        <Button onClick={save} className={`bg-gradient-to-r ${currentAccent.ring} text-black ${isNew ? "sm:col-span-2" : ""}`}>Сохранить</Button>
+      </div>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onOpenSettings, onOpenAnalytics }) {
+  const normalized = normalizePersonalTracker(tracker);
+  const [focusedDate, setFocusedDate] = useState(dateKey);
+  const [valueDraft, setValueDraft] = useState(String(getPersonalTrackerEntry(normalized, dateKey).value || 0));
+  const [noteDraft, setNoteDraft] = useState(getPersonalTrackerEntry(normalized, dateKey).note || "");
+  const config = getPersonalTrackerTypeConfig(normalized.type);
+  const accent = getPersonalTrackerAccent(normalized);
+  const isBinary = normalized.type === "habit" || normalized.type === "abstinence";
+  const entry = getPersonalTrackerEntry(normalized, focusedDate);
+  const value = profileNonNegativeNumber(valueDraft, 0);
+  const progress = getPersonalTrackerProgress(normalized, { ...entry, value }, focusedDate);
+  const stats = getPersonalTrackerStreakStats(normalized, focusedDate);
+  const selectedMonth = parseDateKeyLocal(focusedDate);
+  const monthStart = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1);
+  const gridStart = addLocalDaysToDate(monthStart, -((monthStart.getDay() + 6) % 7));
+  const calendarDays = Array.from({ length: 42 }, (_, index) => formatDateKey(addLocalDaysToDate(gridStart, index)));
+
+  useEffect(() => {
+    const nextEntry = getPersonalTrackerEntry(normalized, focusedDate);
+    setValueDraft(String(nextEntry.value || 0));
+    setNoteDraft(nextEntry.note || "");
+  }, [focusedDate, normalized.id]);
+
+  const persistValue = (nextValue = value, extra = {}) => {
+    onSaveEntry(normalized.id, focusedDate, { ...entry, value: Math.max(0, nextValue), note: noteDraft, ...extra });
+  };
+
+  const saveAndClose = () => {
+    persistValue();
+    onClose();
+  };
+
+  const toggleDay = (date) => {
+    const dayEntry = getPersonalTrackerEntry(normalized, date);
+    onSaveEntry(normalized.id, date, { ...dayEntry, done: !dayEntry.done });
+    setFocusedDate(date);
+  };
+
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-lg overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отмена</button>
+        <div className="min-w-0 text-center">
+          <p className={`text-xs font-black uppercase tracking-[0.18em] ${accent.text}`}>{formatCycleDate(focusedDate)}</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">{normalized.title}</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+
+      {!isBinary ? <>
+        <div className="mt-6 grid grid-cols-[116px_1fr] items-center gap-4">
+          <PersonalTrackerRing tracker={normalized} value={value.toLocaleString("ru-RU")} progress={progress} label={normalized.unit}/>
+          <div>
+            <p className="text-sm text-zinc-400">{normalized.mode === "limit" ? "Лимит" : "Цель"} {normalized.target.toLocaleString("ru-RU")} {normalized.unit}</p>
+            <div className="mt-3"><Progress value={progress}/></div>
+          </div>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          {(normalized.portions || []).map(portion => <button key={portion} type="button" onClick={() => {
+            const next = value + portion;
+            setValueDraft(String(next));
+            persistValue(next);
+          }} className={`rounded-2xl px-3 py-3 text-sm font-black ${accent.soft}`}>+{portion} {normalized.unit}</button>)}
+          <button type="button" onClick={() => {
+            const next = Math.max(0, value - (normalized.portions?.[0] || 1));
+            setValueDraft(String(next));
+            persistValue(next);
+          }} className="rounded-2xl bg-white/8 px-3 py-3 text-sm font-black text-zinc-300">−{normalized.portions?.[0] || 1}</button>
+          <button type="button" onClick={() => { setValueDraft("0"); persistValue(0); }} className="rounded-2xl bg-white/8 px-3 py-3 text-sm font-black text-zinc-300">Сброс</button>
+        </div>
+        <label className="mt-5 block rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+          <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Количество</span>
+          <input type="number" min="0" inputMode="numeric" value={valueDraft} onChange={(event) => setValueDraft(event.target.value)} className="mt-3 w-full bg-transparent text-3xl font-black outline-none"/>
+        </label>
+      </> : <>
+        <div className="mt-6 grid grid-cols-3 gap-3">
+          <div className="rounded-2xl bg-white/[0.04] p-3 text-center"><b className="block text-2xl">{stats.streak}</b><span className="text-xs text-zinc-500">дней подряд</span></div>
+          <div className="rounded-2xl bg-white/[0.04] p-3 text-center"><b className="block text-2xl">{stats.completed}</b><span className="text-xs text-zinc-500">отмечено</span></div>
+          <div className="rounded-2xl bg-white/[0.04] p-3 text-center"><b className="block text-2xl">{stats.remaining}</b><span className="text-xs text-zinc-500">осталось</span></div>
+        </div>
+        <div className="mt-5 rounded-3xl bg-white/[0.035] p-4" data-no-sheet-drag="true">
+          <div className="mb-3 flex items-center justify-between">
+            <b>{selectedMonth.toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}</b>
+            <button type="button" onClick={() => toggleDay(focusedDate)} className={`rounded-full px-4 py-2 text-xs font-black ${entry.done ? accent.soft : "bg-white/8 text-zinc-300"}`}>{entry.done ? "Отмечено" : "Отметить день"}</button>
+          </div>
+          <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase text-zinc-500">
+            {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map(day => <span key={day}>{day}</span>)}
+          </div>
+          <div className="mt-2 grid grid-cols-7 gap-1">
+            {calendarDays.map(day => {
+              const date = parseDateKeyLocal(day);
+              const inMonth = date.getMonth() === selectedMonth.getMonth();
+              const active = day === focusedDate;
+              const done = parseProfileBoolean(normalized.entries?.[day]?.done, false);
+              return <button key={day} type="button" onClick={() => toggleDay(day)} className={`aspect-square rounded-full text-xs font-black transition ${active ? "ring-2 ring-red-400" : ""} ${done ? `${accent.soft} text-black` : inMonth ? "bg-white/[0.06] text-zinc-300" : "bg-white/[0.02] text-zinc-700"}`}>{date.getDate()}</button>;
+            })}
+          </div>
+        </div>
+      </>}
+
+      <label className="mt-5 block rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+        <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Заметка дня</span>
+        <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onBlur={() => onSaveEntry(normalized.id, focusedDate, { ...entry, note: noteDraft })} rows="3" className="mt-3 w-full resize-none bg-transparent text-sm outline-none" placeholder="Что важно запомнить?"/>
+      </label>
+
+      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+        <Button onClick={onOpenSettings} className="bg-white/8">Настроить</Button>
+        <Button onClick={onOpenAnalytics} className="bg-white/8">Аналитика</Button>
+        <Button onClick={saveAndClose} className={`bg-gradient-to-r ${accent.ring} text-black`}>Сохранить</Button>
+      </div>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function PersonalTrackerAnalyticsSheet({ tracker, selectedDateKey, onClose }) {
+  const normalized = normalizePersonalTracker(tracker);
+  const [period, setPeriod] = useState("week");
+  const [chartDateKey, setChartDateKey] = useState(selectedDateKey);
+  const config = getPersonalTrackerTypeConfig(normalized.type);
+  const accent = getPersonalTrackerAccent(normalized);
+  const points = Object.entries(normalized.entries || {})
+    .map(([date, entry]) => ({ date, value: normalized.type === "habit" || normalized.type === "abstinence" ? (entry.done ? 1 : 0) : profileNonNegativeNumber(entry.value, 0) }))
+    .filter(point => point.date && Number(point.value) > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const filteredPoints = filterAnalyticsPoints(points, period, chartDateKey);
+  const stats = getPersonalTrackerPeriodStats(normalized, period, chartDateKey);
+  const unit = normalized.type === "habit" || normalized.type === "abstinence" ? "дн" : normalized.unit;
+
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-3xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className={`text-xs font-black uppercase tracking-[0.18em] ${accent.text}`}>{config.label}</p>
+          <h2 className="mt-2 text-2xl font-black">{normalized.title}</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-zinc-300">×</button>
+      </div>
+      <div className="mt-5 flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
+        {analyticsPeriods.filter(item => ["day", "week", "month", "year"].includes(item.id)).map(item => <button key={item.id} type="button" onClick={() => setPeriod(item.id)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold ${period === item.id ? "onlypump-chart-segment-active bg-red-500 text-black" : "bg-white/[0.06] text-zinc-300"}`}>{item.label}</button>)}
+      </div>
+      <AnalyticsChart points={filteredPoints} type={normalized.type === "habit" || normalized.type === "abstinence" ? "bar" : "bar"} unit={unit} metricKey="personal_tracker" period={period} selectedDateKey={chartDateKey} onSwipePeriod={(amount) => setChartDateKey(current => shiftAnalyticsPeriodDate(current, period, amount))}/>
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-2xl bg-white/[0.04] p-3"><p className="text-[10px] uppercase text-zinc-500">Период</p><b>{analyticsPeriodRange(period, chartDateKey).label}</b></div>
+        <div className="rounded-2xl bg-white/[0.04] p-3"><p className="text-[10px] uppercase text-zinc-500">Итог</p><b>{stats.label}</b></div>
+        <div className="rounded-2xl bg-white/[0.04] p-3"><p className="text-[10px] uppercase text-zinc-500">Записей</p><b>{stats.rows.length}</b></div>
+        <div className="rounded-2xl bg-white/[0.04] p-3"><p className="text-[10px] uppercase text-zinc-500">{normalized.mode === "limit" ? "Лимит" : "Цель"}</p><b>{normalized.target} {normalized.unit}</b></div>
+      </div>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function HomeWidgetSettingsModal({ enabledWidgets, personalTrackerCount = 0, onAdd, onClose }) {
+  const availableWidgets = homeWidgetCatalog.filter(widget => {
+    if (widget.id === PERSONAL_TRACKER_WIDGET_ID) return personalTrackerCount < PERSONAL_TRACKERS_LIMIT;
+    return !enabledWidgets.includes(widget.id);
+  });
 
   return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <BottomSheetPanel onClose={onClose} onClick={(e) => e.stopPropagation()} className="w-full max-w-lg rounded-t-[2rem] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
@@ -4538,7 +5054,7 @@ function MasonryGrid({ children, className = "" }) {
   return <div ref={gridRef} className={`onlypump-masonry-grid ${className}`}>{children}</div>;
 }
 
-function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutritionMarkedDateKeys = [], nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, setHomeWidgets, profile, selectedDateKey: controlledSelectedDateKey, setSelectedDateKey: controlledSetSelectedDateKey, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], healthSaving = false, profileSaving = false, onSaveHealthLog, onSaveWeightMeasurement, onOpenAnalytics }) {
+function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutritionMarkedDateKeys = [], nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, setHomeWidgets, personalTrackers = [], setPersonalTrackers = () => {}, profile, selectedDateKey: controlledSelectedDateKey, setSelectedDateKey: controlledSetSelectedDateKey, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], healthSaving = false, profileSaving = false, onSaveHealthLog, onSaveWeightMeasurement, onOpenAnalytics }) {
   const nutritionTotals = useMemo(() => nutritionMeals.reduce((acc, meal) => ({
     calories: acc.calories + Number(meal.calories || 0),
     protein: acc.protein + Number(meal.protein || 0),
@@ -4565,11 +5081,16 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     ? buildNutritionTotalsForDate(selectedDateKey, nutritionDay?.totals || nutritionTotals)
     : { calories: 0, protein: 0, fat: 0, carbs: 0 }, [selectedDateKey, selectedNutritionDayMatches, nutritionDay?.totals, nutritionTotals]);
   const selectedNutritionMeals = useMemo(() => selectedNutritionDayMatches ? deriveHomeMealsFromNutritionDay(nutritionDay) : [], [selectedNutritionDayMatches, nutritionDay]);
+  const personalTrackerMarkedDateKeys = useMemo(() => personalTrackers.flatMap(tracker => Object.keys(tracker.entries || {}).filter(dateKey => {
+    const entry = getPersonalTrackerEntry(tracker, dateKey);
+    return entry.done || profileNonNegativeNumber(entry.value, 0) > 0 || String(entry.note || "").trim();
+  })), [personalTrackers]);
   const homeMarkedDateKeys = useMemo(() => Array.from(new Set([
     ...workouts.map(workout => workout.date).filter(Boolean),
     ...nutritionMarkedDateKeys.filter(Boolean),
     ...healthLogs.filter(healthLogHasRealData).map(log => log.log_date || log.date).filter(Boolean),
-  ])).sort(), [workouts, nutritionMarkedDateKeys, healthLogs]);
+    ...personalTrackerMarkedDateKeys,
+  ])).sort(), [workouts, nutritionMarkedDateKeys, healthLogs, personalTrackerMarkedDateKeys]);
   const homeHistoryByDate = useMemo(() => {
     const map = {};
     const push = (date, event) => {
@@ -4606,8 +5127,22 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         target: "analytics",
       });
     });
+    personalTrackers.forEach(tracker => {
+      Object.entries(tracker.entries || {}).forEach(([date, entry]) => {
+        const normalizedEntry = normalizePersonalTrackerEntry(entry);
+        if (!normalizedEntry.done && !profileNonNegativeNumber(normalizedEntry.value, 0) && !String(normalizedEntry.note || "").trim()) return;
+        push(date, {
+          type: "Трекер",
+          title: tracker.title,
+          meta: tracker.type === "habit" || tracker.type === "abstinence"
+            ? (normalizedEntry.done ? "День отмечен" : "Есть заметка")
+            : `${profileNonNegativeNumber(normalizedEntry.value, 0).toLocaleString("ru-RU")} ${tracker.unit}`,
+          target: "analytics",
+        });
+      });
+    });
     return map;
-  }, [workouts, nutritionMarkedDateKeys, healthLogs, profile]);
+  }, [workouts, nutritionMarkedDateKeys, healthLogs, personalTrackers, profile]);
   const selectedWorkoutSummary = useMemo(() => summarizeWorkouts(selectedDateWorkouts), [selectedDateWorkouts]);
   const currentWeekWorkoutSummary = useMemo(() => summarizeCurrentWeekWorkouts(workouts, new Date()), [workouts]);
   const currentWeekTonnageProgress = currentWeekWorkoutSummary.plannedVolume
@@ -4665,17 +5200,51 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const [waterSheetOpen, setWaterSheetOpen] = useState(false);
   const [sleepSheetOpen, setSleepSheetOpen] = useState(false);
   const [stepsSheetOpen, setStepsSheetOpen] = useState(false);
+  const [activeTrackerId, setActiveTrackerId] = useState(null);
+  const [trackerSettingsDraft, setTrackerSettingsDraft] = useState(null);
   const mobileHiddenWidgetIds = [];
 
   useAppBackLayer("home-widget-picker", widgetPickerOpen, () => setWidgetPickerOpen(false), 130);
   useAppBackLayer("home-edit-mode", homeEditMode, () => setHomeEditMode(false), 30);
 
   const removeWidget = (id) => {
+    if (isPersonalTrackerWidgetId(id)) {
+      const trackerId = personalTrackerIdFromWidget(id);
+      setPersonalTrackers(prev => prev.filter(tracker => tracker.id !== trackerId));
+    }
     setHomeWidgets(prev => buildHomeWidgetsAfterRemoving(prev, id));
   };
 
   const addWidget = (id) => {
+    if (id === PERSONAL_TRACKER_WIDGET_ID) {
+      setWidgetPickerOpen(false);
+      setTrackerSettingsDraft({ isNew: true, tracker: createPersonalTrackerDraft({ startDate: selectedDateKey }) });
+      return;
+    }
     setHomeWidgets(prev => buildHomeWidgetsAfterAdding(prev, id));
+  };
+
+  const saveTrackerSettings = (tracker) => {
+    const normalized = normalizePersonalTracker(tracker);
+    setPersonalTrackers(prev => {
+      const exists = prev.some(item => item.id === normalized.id);
+      return exists
+        ? prev.map(item => item.id === normalized.id ? normalizePersonalTracker({ ...normalized, entries: item.entries || normalized.entries }) : item)
+        : [...prev, normalized].slice(0, PERSONAL_TRACKERS_LIMIT);
+    });
+    if (trackerSettingsDraft?.isNew) {
+      setHomeWidgets(prev => buildHomeWidgetsAfterAdding(prev, personalTrackerWidgetId(normalized.id)));
+    }
+  };
+
+  const deletePersonalTracker = (trackerId) => {
+    setPersonalTrackers(prev => prev.filter(tracker => tracker.id !== trackerId));
+    setHomeWidgets(prev => prev.filter(id => id !== personalTrackerWidgetId(trackerId)));
+    if (activeTrackerId === trackerId) setActiveTrackerId(null);
+  };
+
+  const savePersonalTrackerEntry = (trackerId, dateKey, patch) => {
+    setPersonalTrackers(prev => upsertPersonalTrackerEntry(prev, trackerId, dateKey, patch));
   };
 
   const moveWidgetToIndex = (dragId, targetId, insertAfter = false) => {
@@ -4713,6 +5282,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   };
 
   const widgetSpan = (id) => {
+    if (isPersonalTrackerWidgetId(id)) return "";
     const span = homeWidgetCatalog.find(w => w.id === id)?.span;
     if (span === "full") return "sm:col-span-2 xl:col-span-4";
     if (span === "large") return "sm:col-span-2 xl:col-span-2";
@@ -4720,6 +5290,19 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   };
 
   const renderWidget = (id) => {
+    if (isPersonalTrackerWidgetId(id)) {
+      const tracker = personalTrackers.find(item => item.id === personalTrackerIdFromWidget(id));
+      if (!tracker) return null;
+      return <PersonalTrackerCard
+        tracker={tracker}
+        dateKey={selectedDateKey}
+        onOpen={() => setActiveTrackerId(tracker.id)}
+        onQuickAdd={(amount) => {
+          const entry = getPersonalTrackerEntry(tracker, selectedDateKey);
+          savePersonalTrackerEntry(tracker.id, selectedDateKey, { ...entry, value: profileNonNegativeNumber(entry.value, 0) + amount });
+        }}
+      />;
+    }
     switch (id) {
       case "metricWeight":
         return <MetricWidgetCard title="Вес" value={formatOptionalMetric(selectedMeasurements?.weight, "кг")} delta={weightDelta == null ? "нет данных" : `${weightDelta > 0 ? "+" : ""}${weightDelta} кг от старта`} progress={bodyProgress} icon={Scale} onClick={() => setWeightSheetOpen(true)}/>;
@@ -4925,11 +5508,33 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         <Button onClick={() => setWidgetPickerOpen(true)} className="mt-4 bg-white/8">Добавить виджет</Button>
       </Card>}
     </MasonryGrid>
-    {widgetPickerOpen && <HomeWidgetSettingsModal enabledWidgets={homeWidgets} onAdd={addWidget} onClose={() => setWidgetPickerOpen(false)}/>} 
+    {widgetPickerOpen && <HomeWidgetSettingsModal enabledWidgets={homeWidgets} personalTrackerCount={personalTrackers.length} onAdd={addWidget} onClose={() => setWidgetPickerOpen(false)}/>} 
     {weightSheetOpen && <WeightEditorSheet dateKey={selectedDateKey} measurements={selectedMeasurements} profile={profile} saving={profileSaving} onClose={() => setWeightSheetOpen(false)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => { setWeightSheetOpen(false); openAnalyticsFromHome("weight"); }}/>}
     {waterSheetOpen && <WaterEditorSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setWaterSheetOpen(false)} onSave={onSaveHealthLog} onOpenAnalytics={() => { setWaterSheetOpen(false); openAnalyticsFromHome("water"); }}/>}
     {sleepSheetOpen && <SleepReportSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setSleepSheetOpen(false)} onSave={onSaveHealthLog} onOpenAnalytics={() => { setSleepSheetOpen(false); openAnalyticsFromHome("sleep"); }}/>}
     {stepsSheetOpen && <StepsEditorSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setStepsSheetOpen(false)} onSave={onSaveHealthLog} onOpenAnalytics={() => { setStepsSheetOpen(false); openAnalyticsFromHome("steps"); }}/>}
+    {activeTrackerId && personalTrackers.find(tracker => tracker.id === activeTrackerId) && <PersonalTrackerEntrySheet
+      tracker={personalTrackers.find(tracker => tracker.id === activeTrackerId)}
+      dateKey={selectedDateKey}
+      onClose={() => setActiveTrackerId(null)}
+      onSaveEntry={savePersonalTrackerEntry}
+      onOpenSettings={() => {
+        const tracker = personalTrackers.find(item => item.id === activeTrackerId);
+        setActiveTrackerId(null);
+        setTrackerSettingsDraft({ isNew: false, tracker });
+      }}
+      onOpenAnalytics={() => {
+        setActiveTrackerId(null);
+        setActive("analytics");
+      }}
+    />}
+    {trackerSettingsDraft && <PersonalTrackerSettingsSheet
+      tracker={trackerSettingsDraft.tracker}
+      isNew={trackerSettingsDraft.isNew}
+      onSave={saveTrackerSettings}
+      onDelete={deletePersonalTracker}
+      onClose={() => setTrackerSettingsDraft(null)}
+    />}
     <InlineDateDataCard
       context="home"
       dateKey={selectedDateKey}
@@ -14735,8 +15340,9 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
   </div>;
 }
 
-function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements, nutritionDay, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], healthSaving = false, healthRefreshing = false, profileSaving = false, selectedDateKey = formatDateKey(new Date()), setSelectedDateKey = () => {}, telegramInitData = "", profileStatus = "local", analyticsIntent = null, onSaveHealthLog, onSaveWeightMeasurement, onSaveAnalyticsCardSettings, onOpenNutrition, onOpenProgress }) {
+function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements, nutritionDay, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], personalTrackers = [], healthSaving = false, healthRefreshing = false, profileSaving = false, selectedDateKey = formatDateKey(new Date()), setSelectedDateKey = () => {}, telegramInitData = "", profileStatus = "local", analyticsIntent = null, onSaveHealthLog, onSaveWeightMeasurement, onSaveAnalyticsCardSettings, onOpenNutrition, onOpenProgress }) {
   const [detail, setDetail] = useState(null);
+  const [trackerDetail, setTrackerDetail] = useState(null);
   const [editorType, setEditorType] = useState(null);
   const [editorMetric, setEditorMetric] = useState(null);
   const [analyticsPeriod, setAnalyticsPeriod] = useState("day");
@@ -15056,6 +15662,26 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     weekSummary: { value: dataCounts.workouts ? `${periodStats.workoutsCount}` : emptyAnalyticsValue, sub: dataCounts.workouts ? `тренировок ${periodName}` : emptyAnalyticsSub, detail: null },
   };
 
+  const renderPersonalTrackerAnalyticsCard = (tracker) => {
+    const normalized = normalizePersonalTracker(tracker);
+    const stats = getPersonalTrackerPeriodStats(normalized, analyticsPeriod, selectedDateKey);
+    const config = getPersonalTrackerTypeConfig(normalized.type);
+    const accent = getPersonalTrackerAccent(normalized);
+    const Icon = config.icon || Target;
+    const entry = getPersonalTrackerEntry(normalized, selectedDateKey);
+    const progress = getPersonalTrackerProgress(normalized, entry, selectedDateKey);
+    const value = normalized.type === "habit" || normalized.type === "abstinence"
+      ? `${getPersonalTrackerStreakStats(normalized, selectedDateKey).streak} дн`
+      : stats.label;
+    return <Card key={`tracker-analytics-${normalized.id}`} onClick={() => setTrackerDetail(normalized)} className="cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5">
+      <Icon className={accent.text}/>
+      <p className="mt-5 text-sm text-zinc-500">{config.label}</p>
+      <div className="mt-2 break-words text-4xl">{value}</div>
+      <p className="mt-3 text-sm text-zinc-400">{normalized.title} · {stats.sub}</p>
+      <div className="mt-4"><Progress value={progress}/></div>
+    </Card>;
+  };
+
   const AchievementVisual = ({ item }) => <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-white/[0.05] text-2xl">
     {item.imagePath && <img
       src={item.imagePath}
@@ -15211,8 +15837,10 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     </div>
     <PageGrid>
       {visibleCardIds.map(renderAnalyticsCard)}
+      {personalTrackers.map(renderPersonalTrackerAnalyticsCard)}
     </PageGrid>
     {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} nutritionDays={analyticsData.nutrition_days} workouts={workouts} selectedDateKey={selectedDateKey} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onClose={() => setDetail(null)} onOpenEditor={detail.type === "training_load" || analyticsPeriod !== "day" ? null : openEditorForDetail}/>}
+    {trackerDetail && <PersonalTrackerAnalyticsSheet tracker={trackerDetail} selectedDateKey={selectedDateKey} onClose={() => setTrackerDetail(null)}/>}
     {editorType === "weight" && <WeightEditorSheet dateKey={selectedDateKey} measurements={latestMeasurement} profile={profile} saving={profileSaving} onClose={() => setEditorType(null)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => setEditorType(null)}/>}
     {editorType === "measurement" && <MeasurementEditorSheet dateKey={selectedDateKey} metricKey={editorMetric || "waist_cm"} measurements={latestMeasurement} profile={profile} saving={profileSaving} onClose={() => setEditorType(null)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => setEditorType(null)}/>}
     {editorType === "water" && <WaterEditorSheet dateKey={selectedDateKey} healthLog={currentHealthLog} saving={healthSaving} onClose={() => setEditorType(null)} onSave={onSaveHealthLog} onOpenAnalytics={() => setEditorType(null)}/>}
@@ -16238,13 +16866,15 @@ function OnlyPumpPlatform() {
       const parsed = JSON.parse(saved);
       if (!Array.isArray(parsed)) return defaultHomeWidgets;
       const validIds = homeWidgetCatalog.map(w => w.id);
-      const cleaned = parsed.filter(id => validIds.includes(id));
+      const cleaned = parsed.filter(id => validIds.includes(id) || isPersonalTrackerWidgetId(id));
       const missingDefaultWidgets = defaultHomeWidgets.filter(id => !cleaned.includes(id));
       return enforceHomeWidgetRules([...missingDefaultWidgets, ...cleaned]);
     } catch {
       return enforceHomeWidgetRules(defaultHomeWidgets);
     }
   });
+  const [personalTrackers, setPersonalTrackers] = useState(() => readCachedPersonalTrackersForProfile(profile || DEFAULT_PROFILE));
+  const [personalTrackersOwnerKey, setPersonalTrackersOwnerKey] = useState(() => getPersonalTrackerCacheKey(profile || DEFAULT_PROFILE));
 
   const activeTheme = useMemo(
     () => profileWantsLightTheme(profile || DEFAULT_PROFILE, new Date(themeTick)) ? "light" : "dark",
@@ -16849,18 +17479,30 @@ function OnlyPumpPlatform() {
     localStorage.setItem("onlypump-home-widgets", JSON.stringify(homeWidgets));
   }, [homeWidgets]);
 
+  useEffect(() => {
+    const key = getPersonalTrackerCacheKey(profile || DEFAULT_PROFILE);
+    setPersonalTrackersOwnerKey(key);
+    setPersonalTrackers(readCachedPersonalTrackersForProfile(profile || DEFAULT_PROFILE));
+  }, [profile?.id, profile?.telegram_id]);
+
+  useEffect(() => {
+    const key = getPersonalTrackerCacheKey(profile || DEFAULT_PROFILE);
+    if (personalTrackersOwnerKey !== key) return;
+    writeCachedPersonalTrackersForProfile(profile || DEFAULT_PROFILE, personalTrackers);
+  }, [personalTrackers, personalTrackersOwnerKey, profile?.id, profile?.telegram_id]);
+
   const page = useMemo(() => ({
-    home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionDay={nutritionDay} nutritionMarkedDateKeys={nutritionMarkedDateKeys} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} profile={profile} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} profileSaving={profileSaving} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onOpenAnalytics={openAnalyticsType}/>,
+    home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionDay={nutritionDay} nutritionMarkedDateKeys={nutritionMarkedDateKeys} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} personalTrackers={personalTrackers} setPersonalTrackers={setPersonalTrackers} profile={profile} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} profileSaving={profileSaving} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onOpenAnalytics={openAnalyticsType}/>,
     workouts: <WorkoutsPage workouts={workouts} setWorkouts={setWorkouts} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} profile={profile} telegramInitData={telegramInitData}/>,
     nutrition: <NutritionPage nutritionDay={nutritionDay} setNutritionDay={setNutritionDay} nutritionGoal={nutritionGoal} setNutritionGoal={setNutritionGoal} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} markedDateKeys={nutritionMarkedDateKeys} profile={profile} telegramInitData={telegramInitData} onNutritionAction={handleNutritionAction} nutritionLoading={nutritionRefreshing}/>,
     calculators: <CalculatorsPage/>,
     education: <EducationPage/>,
     lectures: <LecturesPage lectureItems={lectureItems} setLectureItems={setLectureItems}/>,
     progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} onProgressProfileSaved={handleProgressProfileSaved}/>,
-    analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} nutritionDay={nutritionDay} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} healthRefreshing={healthRefreshing} profileSaving={profileSaving} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} analyticsIntent={analyticsIntent} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onSaveAnalyticsCardSettings={handleSaveAnalyticsCardSettings} onOpenNutrition={() => setActive("nutrition")} onOpenProgress={() => setActive("progress")}/>,
+    analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} nutritionDay={nutritionDay} healthLog={healthLog} healthLogs={healthLogs} personalTrackers={personalTrackers} healthSaving={healthSaving} healthRefreshing={healthRefreshing} profileSaving={profileSaving} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} analyticsIntent={analyticsIntent} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onSaveAnalyticsCardSettings={handleSaveAnalyticsCardSettings} onOpenNutrition={() => setActive("nutrition")} onOpenProgress={() => setActive("progress")}/>,
     community: <CommunityPage/>,
     profile: <ProfilePage profile={profile} profileStatus={profileStatus} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings}/>,
-  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, handleNutritionAction, handleSaveProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog]);
+  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, personalTrackers, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, handleNutritionAction, handleSaveProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog]);
 
   if (appLoading || profileLoading) {
     return <LoadingScreen theme={activeTheme}/>;
