@@ -1622,8 +1622,8 @@ const PERSONAL_TRACKERS_LIMIT = 10;
 const personalTrackerTypeConfigs = {
   liquid: { label: "Трекер жидкости", shortLabel: "Жидкость", icon: Droplets, accent: "sky", unit: "мл", defaultTitle: "Кофе", defaultTarget: 500, defaultPortions: [100, 200], modeLabel: "цели" },
   food: { label: "Трекер еды", shortLabel: "Еда", icon: Apple, accent: "red", unit: "г", defaultTitle: "Сладкое", defaultTarget: 100, defaultPortions: [25, 50], modeLabel: "цели" },
-  habit: { label: "Трекер привычки", shortLabel: "Привычка", icon: CheckCircle2, accent: "green", unit: "дней", defaultTitle: "Привычка", defaultTarget: 30, defaultPortions: [], modeLabel: "срока" },
-  abstinence: { label: "Трекер отказа", shortLabel: "Без", icon: ShieldCheck, accent: "violet", unit: "дней", defaultTitle: "Без сахара", defaultTarget: 30, defaultPortions: [], modeLabel: "срока" },
+  habit: { label: "Трекер привычки", shortLabel: "Привычка", icon: CheckCircle2, accent: "green", unit: "дней", defaultTitle: "Привычка", defaultTarget: 100, defaultPortions: [], modeLabel: "срока" },
+  abstinence: { label: "Трекер отказа", shortLabel: "Без", icon: ShieldCheck, accent: "violet", unit: "дней", defaultTitle: "Без сахара", defaultTarget: 100, defaultPortions: [], modeLabel: "срока" },
 };
 
 const personalTrackerAccents = {
@@ -1712,11 +1712,12 @@ const upsertPersonalTrackerEntry = (trackers = [], trackerId, dateKey, entryPatc
   if (tracker.id !== trackerId) return tracker;
   const normalized = normalizePersonalTracker(tracker);
   const current = getPersonalTrackerEntry(normalized, dateKey);
+  const nextPatch = typeof entryPatch === "function" ? entryPatch(current, normalized) : entryPatch;
   return normalizePersonalTracker({
     ...normalized,
     entries: {
       ...normalized.entries,
-      [dateKey]: normalizePersonalTrackerEntry({ ...current, ...entryPatch }),
+      [dateKey]: normalizePersonalTrackerEntry({ ...current, ...nextPatch }),
     },
   });
 });
@@ -1747,10 +1748,7 @@ const getPersonalTrackerStreakStats = (tracker = {}, selectedDateKey = formatDat
     streak += 1;
     cursor = addLocalDaysToDate(cursor, -1);
   }
-  const completed = Object.entries(normalized.entries || {}).filter(([dateKey, entry]) => {
-    if (!parseProfileBoolean(entry.done, false)) return false;
-    return dateKey >= normalized.startDate;
-  }).length;
+  const completed = Object.values(normalized.entries || {}).filter(entry => parseProfileBoolean(entry.done, false)).length;
   const remaining = Math.max(0, normalized.durationDays - completed);
   return { streak, completed, elapsed, remaining };
 };
@@ -4807,6 +4805,7 @@ function PersonalTrackerSettingsSheet({ tracker, isNew = false, onSave, onDelete
     setUnit(nextConfig.unit);
     setPortionA(String(nextConfig.defaultPortions?.[0] || ""));
     setPortionB(String(nextConfig.defaultPortions?.[1] || ""));
+    setDurationDays(String(nextConfig.defaultTarget));
     if (nextType === "habit" || nextType === "abstinence") setMode("goal");
   };
 
@@ -4929,7 +4928,7 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
   }, [focusedDate, normalized.id]);
 
   const persistValue = (nextValue = value, extra = {}) => {
-    onSaveEntry(normalized.id, focusedDate, { ...entry, value: Math.max(0, nextValue), note: noteDraft, ...extra });
+    onSaveEntry(normalized.id, focusedDate, { value: Math.max(0, nextValue), note: noteDraft, ...extra });
   };
 
   const saveAndClose = () => {
@@ -4950,7 +4949,7 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
   };
 
   const toggleFocusedDay = () => {
-    onSaveEntry(normalized.id, focusedDate, { ...entry, done: !entry.done, note: noteDraft });
+    onSaveEntry(normalized.id, focusedDate, current => ({ done: !current.done, note: noteDraft }));
   };
 
   const startCalendarSwipe = (event) => {
@@ -5044,7 +5043,7 @@ function PersonalTrackerEntrySheet({ tracker, dateKey, onClose, onSaveEntry, onO
 
       <label className="mt-5 block rounded-2xl border border-white/10 bg-white/[0.04] p-4">
         <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Заметка дня</span>
-        <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onBlur={() => onSaveEntry(normalized.id, focusedDate, { ...entry, note: noteDraft })} rows="3" className="mt-3 w-full resize-none bg-transparent text-sm outline-none" placeholder="Что важно запомнить?"/>
+        <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onBlur={() => onSaveEntry(normalized.id, focusedDate, { note: noteDraft })} rows="3" className="mt-3 w-full resize-none bg-transparent text-sm outline-none" placeholder="Что важно запомнить?"/>
       </label>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
