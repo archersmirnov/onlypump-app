@@ -1027,14 +1027,7 @@ function formatInvitePeriodLabel(days) {
   if (!Number.isFinite(totalDays) || totalDays <= 0) return "Бессрочно";
   const months = Math.floor(Math.round(totalDays) / 30);
   const restDays = Math.round(totalDays) % 30;
-  return `${String(months).padStart(2, "0")}:${String(restDays).padStart(2, "0")}`;
-}
-
-function formatInviteDraftPeriodLabel(months, days) {
-  const safeMonths = Math.max(0, Number(months) || 0);
-  const safeDays = Math.max(0, Number(days) || 0);
-  if (safeMonths === 0 && safeDays === 0) return "00:01";
-  return `${String(safeMonths).padStart(2, "0")}:${String(safeDays).padStart(2, "0")}`;
+  return formatInviteHumanPeriod(months, restDays);
 }
 
 function pluralRu(value, forms) {
@@ -16718,17 +16711,36 @@ function getManagedUserTitle(user = {}) {
 
 function LoopWheelColumn({ label, value, options, onChange, suffix }) {
   const touchStartRef = useRef(null);
+  const wheelLockRef = useRef(false);
   const normalizeIndex = (index) => ((index % options.length) + options.length) % options.length;
   const currentIndex = Math.max(0, options.indexOf(value));
   const move = (delta) => onChange?.(options[normalizeIndex(currentIndex + delta)]);
   const itemAt = (delta) => options[normalizeIndex(currentIndex + delta)];
   const valueLabel = (item) => String(item).padStart(2, "0");
-  const handleWheel = (event) => {
+  const stopWheelScroll = (event) => {
     event.preventDefault();
+    event.stopPropagation();
+  };
+  const preventOuterWheelScroll = (event) => {
+    event.preventDefault();
+  };
+  const handleWheel = (event) => {
+    stopWheelScroll(event);
     if (Math.abs(event.deltaY) < 4) return;
+    if (wheelLockRef.current) return;
+    wheelLockRef.current = true;
+    window.setTimeout(() => {
+      wheelLockRef.current = false;
+    }, 90);
     move(event.deltaY > 0 ? 1 : -1);
   };
+  const stopTouchScroll = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
   const handleTouchEnd = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
     const start = touchStartRef.current;
     touchStartRef.current = null;
     if (start === null) return;
@@ -16738,13 +16750,21 @@ function LoopWheelColumn({ label, value, options, onChange, suffix }) {
     if (Math.abs(delta) < 24) return;
     move(delta < 0 ? 1 : -1);
   };
-  return <div className="min-w-0 rounded-[28px] border border-white/10 bg-black/28 p-3" data-no-sheet-drag="true">
+  return <div
+    onWheelCapture={preventOuterWheelScroll}
+    onTouchMoveCapture={stopTouchScroll}
+    className="min-w-0 touch-none overscroll-contain rounded-[28px] border border-white/10 bg-black/28 p-3"
+    style={{ touchAction: "none", overscrollBehavior: "contain" }}
+    data-no-sheet-drag="true"
+  >
     <p className="mb-2 text-center text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{label}</p>
     <div
       onWheel={handleWheel}
-      onTouchStart={(event) => { touchStartRef.current = event.touches?.[0]?.clientY ?? null; }}
+      onTouchStart={(event) => { event.stopPropagation(); touchStartRef.current = event.touches?.[0]?.clientY ?? null; }}
+      onTouchMove={stopTouchScroll}
       onTouchEnd={handleTouchEnd}
-      className="relative grid h-[168px] grid-rows-3 overflow-hidden rounded-[22px]"
+      className="relative grid h-[168px] touch-none grid-rows-3 overflow-hidden rounded-[22px]"
+      style={{ touchAction: "none", overscrollBehavior: "contain" }}
     >
       <div className="pointer-events-none absolute left-2 right-2 top-1/2 z-0 h-14 -translate-y-1/2 rounded-2xl bg-red-500 shadow-lg shadow-red-500/20"/>
       {[-1, 0, 1].map((delta) => {
@@ -16804,7 +16824,7 @@ function InvitePeriodPickerSheet({ value = 30, onSave, onClose }) {
         <LoopWheelColumn label="дни" value={days} options={dayOptions} onChange={chooseDay} suffix="дн"/>
         <button type="button" onClick={() => setPermanent(true)} className={`rounded-[28px] px-3 text-sm font-black transition ${permanent ? "bg-red-500 text-black shadow-lg shadow-red-500/20" : "border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]"}`}>Бессрочно</button>
       </div>
-      <p className="mt-4 text-center text-xs font-bold text-zinc-500">{permanent ? "Срок без ограничения" : `Период ${formatInviteDraftPeriodLabel(months, days)}`}</p>
+      <p className="mt-4 text-center text-xs font-bold text-zinc-500">{permanent ? "Срок без ограничения" : `Период: ${formatInviteHumanPeriod(months, days)}`}</p>
       <Button onClick={save} className="mt-4 w-full bg-gradient-to-r from-red-700 to-red-500 text-black">Выбрать: {formatInviteHumanPeriod(months, days, permanent)}</Button>
     </BottomSheetPanel>
   </div>;
