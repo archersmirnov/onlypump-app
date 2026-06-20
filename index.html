@@ -1037,10 +1037,38 @@ function formatInviteDraftPeriodLabel(months, days) {
   return `${String(safeMonths).padStart(2, "0")}:${String(safeDays).padStart(2, "0")}`;
 }
 
+function pluralRu(value, forms) {
+  const absolute = Math.abs(Number(value) || 0);
+  const lastTwo = absolute % 100;
+  const last = absolute % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return forms[2];
+  if (last === 1) return forms[0];
+  if (last >= 2 && last <= 4) return forms[1];
+  return forms[2];
+}
+
+function formatInviteHumanPeriod(months, days, permanent = false) {
+  if (permanent) return "бессрочно";
+  const safeMonths = Math.max(0, Number(months) || 0);
+  const safeDays = Math.max(0, Number(days) || 0);
+  if (safeMonths === 0 && safeDays === 0) return "1 день";
+  const parts = [];
+  if (safeMonths) parts.push(`${safeMonths} ${pluralRu(safeMonths, ["месяц", "месяца", "месяцев"])}`);
+  if (safeDays) parts.push(`${safeDays} ${pluralRu(safeDays, ["день", "дня", "дней"])}`);
+  return parts.join(" и ");
+}
+
 function formatAccessUntil(value) {
   if (!value) return "бессрочно";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "бессрочно";
+  return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatInviteActivationDate(value) {
+  if (!value) return "дата неизвестна";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "дата неизвестна";
   return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" });
 }
 
@@ -16688,13 +16716,61 @@ function getManagedUserTitle(user = {}) {
   return user.display_name || user.telegram_username || user.telegram_id || "Пользователь";
 }
 
+function LoopWheelColumn({ label, value, options, onChange, suffix }) {
+  const touchStartRef = useRef(null);
+  const normalizeIndex = (index) => ((index % options.length) + options.length) % options.length;
+  const currentIndex = Math.max(0, options.indexOf(value));
+  const move = (delta) => onChange?.(options[normalizeIndex(currentIndex + delta)]);
+  const itemAt = (delta) => options[normalizeIndex(currentIndex + delta)];
+  const valueLabel = (item) => String(item).padStart(2, "0");
+  const handleWheel = (event) => {
+    event.preventDefault();
+    if (Math.abs(event.deltaY) < 4) return;
+    move(event.deltaY > 0 ? 1 : -1);
+  };
+  const handleTouchEnd = (event) => {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (start === null) return;
+    const end = event.changedTouches?.[0]?.clientY;
+    if (!Number.isFinite(end)) return;
+    const delta = end - start;
+    if (Math.abs(delta) < 24) return;
+    move(delta < 0 ? 1 : -1);
+  };
+  return <div className="min-w-0 rounded-[28px] border border-white/10 bg-black/28 p-3" data-no-sheet-drag="true">
+    <p className="mb-2 text-center text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{label}</p>
+    <div
+      onWheel={handleWheel}
+      onTouchStart={(event) => { touchStartRef.current = event.touches?.[0]?.clientY ?? null; }}
+      onTouchEnd={handleTouchEnd}
+      className="relative grid h-[168px] grid-rows-3 overflow-hidden rounded-[22px]"
+    >
+      <div className="pointer-events-none absolute left-2 right-2 top-1/2 z-0 h-14 -translate-y-1/2 rounded-2xl bg-red-500 shadow-lg shadow-red-500/20"/>
+      {[-1, 0, 1].map((delta) => {
+        const item = itemAt(delta);
+        const active = delta === 0;
+        return <button
+          key={`${label}-${delta}-${item}`}
+          type="button"
+          onClick={() => active ? move(1) : move(delta)}
+          className={`relative z-10 flex flex-col items-center justify-center rounded-2xl text-center transition ${active ? "text-black" : "text-zinc-500 hover:text-zinc-200"}`}
+        >
+          <span className={`${active ? "text-3xl" : "text-xl"} font-black leading-none tabular-nums`}>{valueLabel(item)}</span>
+          <span className={`${active ? "text-[10px] text-black/65" : "text-[9px] text-zinc-600"} mt-1 font-black uppercase tracking-[0.16em]`}>{suffix}</span>
+        </button>;
+      })}
+    </div>
+  </div>;
+}
+
 function InvitePeriodPickerSheet({ value = 30, onSave, onClose }) {
   const initialTotal = Number.isFinite(Number(value)) && Number(value) > 0 ? Math.round(Number(value)) : 30;
   const [permanent, setPermanent] = useState(value === null);
   const [months, setMonths] = useState(Math.max(0, Math.min(24, Math.floor(initialTotal / 30))));
-  const [days, setDays] = useState(Math.max(0, Math.min(29, initialTotal % 30)));
+  const [days, setDays] = useState(Math.max(0, Math.min(30, initialTotal % 30)));
   const monthOptions = useMemo(() => Array.from({ length: 25 }, (_, index) => index), []);
-  const dayOptions = useMemo(() => Array.from({ length: 30 }, (_, index) => index), []);
+  const dayOptions = useMemo(() => Array.from({ length: 31 }, (_, index) => index), []);
   const chooseMonth = (value) => {
     setMonths(value);
     setPermanent(false);
@@ -16723,18 +16799,13 @@ function InvitePeriodPickerSheet({ value = 30, onSave, onClose }) {
         </div>
         <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
       </div>
-      <div className="mt-6 grid grid-cols-[1fr_1fr_110px] gap-3" data-no-sheet-drag="true">
-        <div className="h-72 overflow-y-auto rounded-[24px] bg-black/28 p-2 onlypump-scrollbar-none">
-          <p className="sticky top-0 z-10 bg-zinc-950/90 py-2 text-center text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">мм</p>
-          {monthOptions.map(option => <button key={option} type="button" onClick={() => chooseMonth(option)} className={`block w-full rounded-2xl px-3 py-4 text-center text-sm font-black transition ${!permanent && months === option ? "bg-red-500 text-black" : "text-zinc-300 hover:bg-white/[0.08]"}`}>{String(option).padStart(2, "0")}</button>)}
-        </div>
-        <div className="h-72 overflow-y-auto rounded-[24px] bg-black/28 p-2 onlypump-scrollbar-none">
-          <p className="sticky top-0 z-10 bg-zinc-950/90 py-2 text-center text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">дд</p>
-          {dayOptions.map(option => <button key={option} type="button" onClick={() => chooseDay(option)} className={`block w-full rounded-2xl px-3 py-4 text-center text-sm font-black transition ${!permanent && days === option ? "bg-red-500 text-black" : "text-zinc-300 hover:bg-white/[0.08]"}`}>{String(option).padStart(2, "0")}</button>)}
-        </div>
-        <button type="button" onClick={() => setPermanent(true)} className={`h-72 rounded-[24px] px-3 text-sm font-black transition ${permanent ? "bg-red-500 text-black" : "bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]"}`}>Бессрочно</button>
+      <div className="mt-6 grid grid-cols-[1fr_1fr_104px] gap-3" data-no-sheet-drag="true">
+        <LoopWheelColumn label="месяцы" value={months} options={monthOptions} onChange={chooseMonth} suffix="мес"/>
+        <LoopWheelColumn label="дни" value={days} options={dayOptions} onChange={chooseDay} suffix="дн"/>
+        <button type="button" onClick={() => setPermanent(true)} className={`rounded-[28px] px-3 text-sm font-black transition ${permanent ? "bg-red-500 text-black shadow-lg shadow-red-500/20" : "border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]"}`}>Бессрочно</button>
       </div>
-      <Button onClick={save} className="mt-5 w-full bg-gradient-to-r from-red-700 to-red-500 text-black">Выбрать {permanent ? "бессрочно" : formatInviteDraftPeriodLabel(months, days)}</Button>
+      <p className="mt-4 text-center text-xs font-bold text-zinc-500">{permanent ? "Срок без ограничения" : `Период ${formatInviteDraftPeriodLabel(months, days)}`}</p>
+      <Button onClick={save} className="mt-4 w-full bg-gradient-to-r from-red-700 to-red-500 text-black">Выбрать: {formatInviteHumanPeriod(months, days, permanent)}</Button>
     </BottomSheetPanel>
   </div>;
 }
@@ -16795,6 +16866,7 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
   const [inviteRole, setInviteRole] = useState("user");
   const [inviteDays, setInviteDays] = useState(30);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [expandedInviteId, setExpandedInviteId] = useState(null);
   const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
   const canManageUsers = Boolean(panel.permissions?.can_manage_users);
   const canCreateInvites = Boolean(panel.permissions?.can_create_invites);
@@ -16870,6 +16942,22 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
     } catch (revokeError) {
       console.error("profile invite revoke error:", revokeError);
       setError("Не удалось отключить ссылку.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteInvite = async (invite) => {
+    if (!window.confirm(`Удалить ссылку "${invite.title || invite.code}"? Уже активировавшиеся пользователи останутся в списке.`)) return;
+    setSaving(true);
+    setError("");
+    try {
+      await callOnlyPumpProfileApi(telegramInitData, "delete_invite_link", { invite_id: invite.id });
+      if (expandedInviteId === invite.id) setExpandedInviteId(null);
+      await loadPanel();
+    } catch (deleteError) {
+      console.error("profile invite delete error:", deleteError);
+      setError("Не удалось удалить ссылку.");
     } finally {
       setSaving(false);
     }
@@ -16951,19 +17039,39 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
             <Button onClick={createInvite} disabled={saving} className="bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">Создать</Button>
           </div>
           <div className="mt-4 space-y-2">
-            {panel.invites.length ? panel.invites.map(invite => <div key={invite.id} className="rounded-2xl bg-white/[0.035] p-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-	                  <p className="break-words text-sm font-black">{invite.title || invite.code}</p>
-	                  <p className="mt-1 break-all text-xs text-zinc-500">{invite.invite_url || invite.code}</p>
-	                  <p className="mt-1 text-xs text-zinc-600">роль: {MANAGED_ROLE_OPTIONS.find(option => option.id === normalizeAssignableProfileRole(invite.issued_role))?.label || "пользователь"} · срок: {formatInvitePeriodLabel(invite.access_days)} · использовано {invite.uses_count || 0}</p>
+	            {panel.invites.length ? panel.invites.map(invite => {
+                const roleLabel = MANAGED_ROLE_OPTIONS.find(option => option.id === normalizeAssignableProfileRole(invite.issued_role))?.label || "пользователь";
+                const activations = Array.isArray(invite.activations) ? invite.activations : [];
+                const expanded = expandedInviteId === invite.id;
+                return <div key={invite.id} className="rounded-2xl bg-white/[0.035] p-3">
+	              <div className="flex flex-wrap items-center justify-between gap-3">
+	                <div className="min-w-0">
+		                  <p className="break-words text-sm font-black">{invite.title || invite.code}</p>
+		                  <p className="mt-1 break-all text-xs text-zinc-500">{invite.invite_url || invite.code}</p>
+		                  <p className="mt-1 text-xs text-zinc-600">роль: {roleLabel} · срок: {formatInvitePeriodLabel(invite.access_days)} · статус: {invite.is_active ? "активна" : "отключена"}</p>
+                      <p className="mt-1 text-xs text-zinc-600">активаций: {invite.uses_count || 0} · пользователей: {invite.activation_count ?? activations.length}</p>
+		                </div>
+	                <div className="flex flex-wrap gap-2">
+	                  <button type="button" onClick={() => copyInvite(invite)} className="rounded-full bg-white/8 px-3 py-2 text-xs font-black">Копировать</button>
+                    <button type="button" onClick={() => setExpandedInviteId(expanded ? null : invite.id)} className="rounded-full bg-white/8 px-3 py-2 text-xs font-black">{expanded ? "Скрыть" : "Кто активировал"}</button>
+	                  {invite.is_active && <button type="button" onClick={() => revokeInvite(invite)} disabled={saving} className="rounded-full bg-red-500/10 px-3 py-2 text-xs font-black text-red-300 disabled:opacity-50">Отключить</button>}
+                    <button type="button" onClick={() => deleteInvite(invite)} disabled={saving} className="rounded-full bg-red-500/10 px-3 py-2 text-xs font-black text-red-300 disabled:opacity-50">Удалить</button>
 	                </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => copyInvite(invite)} className="rounded-full bg-white/8 px-3 py-2 text-xs font-black">Копировать</button>
-                  {invite.is_active && <button type="button" onClick={() => revokeInvite(invite)} disabled={saving} className="rounded-full bg-red-500/10 px-3 py-2 text-xs font-black text-red-300 disabled:opacity-50">Отключить</button>}
-                </div>
-              </div>
-            </div>) : <p className="rounded-2xl bg-white/[0.035] p-4 text-sm text-zinc-500">Инвайтов пока нет.</p>}
+	              </div>
+                {expanded && <div className="mt-3 rounded-2xl bg-black/20 p-3">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Активировали эту ссылку</p>
+                  <div className="mt-3 space-y-2">
+                    {activations.length ? activations.map(user => <button key={user.id} type="button" onClick={() => setSelectedUser(user)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-3 text-left transition hover:bg-white/[0.08]">
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-black">{getManagedUserTitle(user)}</span>
+                        <span className="mt-1 block truncate text-xs text-zinc-500">{user.telegram_username ? `@${user.telegram_username}` : `ID ${user.telegram_id || "—"}`} · {getProfileRoleLabels(user)}</span>
+                      </span>
+	                      <span className="shrink-0 text-xs font-semibold text-zinc-600">{formatInviteActivationDate(user.access_granted_at)}</span>
+                    </button>) : <p className="rounded-2xl bg-white/[0.035] p-3 text-sm text-zinc-500">Пока никто не активировал.</p>}
+                  </div>
+                </div>}
+	            </div>;
+              }) : <p className="rounded-2xl bg-white/[0.035] p-4 text-sm text-zinc-500">Инвайтов пока нет.</p>}
           </div>
         </Card>}
 
