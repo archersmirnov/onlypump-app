@@ -16710,13 +16710,36 @@ function getManagedUserTitle(user = {}) {
 }
 
 function LoopWheelColumn({ label, value, options, onChange, suffix }) {
-  const touchStartRef = useRef(null);
+  const itemHeight = 56;
+  const touchStateRef = useRef({ startY: 0, offset: 0, dragging: false });
+  const animatingRef = useRef(false);
   const wheelLockRef = useRef(false);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [animating, setAnimating] = useState(false);
   const normalizeIndex = (index) => ((index % options.length) + options.length) % options.length;
   const currentIndex = Math.max(0, options.indexOf(value));
-  const move = (delta) => onChange?.(options[normalizeIndex(currentIndex + delta)]);
   const itemAt = (delta) => options[normalizeIndex(currentIndex + delta)];
   const valueLabel = (item) => String(item).padStart(2, "0");
+  const clampOffset = (offset) => Math.max(-itemHeight, Math.min(itemHeight, offset));
+  const commitMove = (delta) => {
+    if (!delta || animatingRef.current) return;
+    animatingRef.current = true;
+    setAnimating(true);
+    setDragOffset(-delta * itemHeight);
+    window.setTimeout(() => {
+      onChange?.(options[normalizeIndex(currentIndex + delta)]);
+      setAnimating(false);
+      setDragOffset(0);
+      window.setTimeout(() => {
+        animatingRef.current = false;
+      }, 20);
+    }, 150);
+  };
+  const snapBack = () => {
+    setAnimating(true);
+    setDragOffset(0);
+    window.setTimeout(() => setAnimating(false), 150);
+  };
   const stopWheelScroll = (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -16731,28 +16754,52 @@ function LoopWheelColumn({ label, value, options, onChange, suffix }) {
     wheelLockRef.current = true;
     window.setTimeout(() => {
       wheelLockRef.current = false;
-    }, 90);
-    move(event.deltaY > 0 ? 1 : -1);
+    }, 170);
+    commitMove(event.deltaY > 0 ? 1 : -1);
   };
   const stopTouchScroll = (event) => {
     event.preventDefault();
     event.stopPropagation();
   };
+  const preventOuterTouchScroll = (event) => {
+    event.preventDefault();
+  };
+  const handleTouchStart = (event) => {
+    event.stopPropagation();
+    const y = event.touches?.[0]?.clientY;
+    touchStateRef.current = { startY: Number.isFinite(y) ? y : 0, offset: 0, dragging: true };
+    setAnimating(false);
+  };
+  const handleTouchMove = (event) => {
+    stopTouchScroll(event);
+    const state = touchStateRef.current;
+    if (!state.dragging) return;
+    const y = event.touches?.[0]?.clientY;
+    if (!Number.isFinite(y)) return;
+    const offset = clampOffset(y - state.startY);
+    touchStateRef.current = { ...state, offset };
+    setDragOffset(offset);
+  };
   const handleTouchEnd = (event) => {
     event.preventDefault();
     event.stopPropagation();
-    const start = touchStartRef.current;
-    touchStartRef.current = null;
-    if (start === null) return;
-    const end = event.changedTouches?.[0]?.clientY;
-    if (!Number.isFinite(end)) return;
-    const delta = end - start;
-    if (Math.abs(delta) < 24) return;
-    move(delta < 0 ? 1 : -1);
+    const state = touchStateRef.current;
+    touchStateRef.current = { startY: 0, offset: 0, dragging: false };
+    if (!state.dragging) return;
+    if (state.offset <= -itemHeight * 0.42) {
+      commitMove(1);
+      return;
+    }
+    if (state.offset >= itemHeight * 0.42) {
+      commitMove(-1);
+      return;
+    }
+    snapBack();
   };
+  const visibleItems = [-2, -1, 0, 1, 2];
   return <div
     onWheelCapture={preventOuterWheelScroll}
-    onTouchMoveCapture={stopTouchScroll}
+    onTouchMoveCapture={preventOuterTouchScroll}
     className="min-w-0 touch-none overscroll-contain rounded-[28px] border border-white/10 bg-black/28 p-3"
     style={{ touchAction: "none", overscrollBehavior: "contain" }}
     data-no-sheet-drag="true"
@@ -16760,26 +16807,35 @@ function LoopWheelColumn({ label, value, options, onChange, suffix }) {
     <p className="mb-2 text-center text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{label}</p>
     <div
       onWheel={handleWheel}
-      onTouchStart={(event) => { event.stopPropagation(); touchStartRef.current = event.touches?.[0]?.clientY ?? null; }}
-      onTouchMove={stopTouchScroll}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      className="relative grid h-[168px] touch-none grid-rows-3 overflow-hidden rounded-[22px]"
+      onTouchCancel={handleTouchEnd}
+      className="relative h-[168px] touch-none overflow-hidden rounded-[22px]"
       style={{ touchAction: "none", overscrollBehavior: "contain" }}
     >
       <div className="pointer-events-none absolute left-2 right-2 top-1/2 z-0 h-14 -translate-y-1/2 rounded-2xl bg-red-500 shadow-lg shadow-red-500/20"/>
-      {[-1, 0, 1].map((delta) => {
-        const item = itemAt(delta);
-        const active = delta === 0;
-        return <button
-          key={`${label}-${delta}-${item}`}
-          type="button"
-          onClick={() => active ? move(1) : move(delta)}
-          className={`relative z-10 flex flex-col items-center justify-center rounded-2xl text-center transition ${active ? "text-black" : "text-zinc-500 hover:text-zinc-200"}`}
-        >
-          <span className={`${active ? "text-3xl" : "text-xl"} font-black leading-none tabular-nums`}>{valueLabel(item)}</span>
-          <span className={`${active ? "text-[10px] text-black/65" : "text-[9px] text-zinc-600"} mt-1 font-black uppercase tracking-[0.16em]`}>{suffix}</span>
-        </button>;
-      })}
+      <div
+        className="absolute inset-x-0 z-10 flex flex-col"
+        style={{
+          transform: `translateY(${dragOffset - itemHeight}px)`,
+          transition: animating ? "transform 150ms cubic-bezier(.2,.8,.2,1)" : "none",
+        }}
+      >
+        {visibleItems.map((delta) => {
+          const item = itemAt(delta);
+          const active = delta === 0;
+          return <button
+            key={`${label}-${delta}-${item}`}
+            type="button"
+            onClick={() => active ? commitMove(1) : commitMove(delta)}
+            className={`flex h-14 flex-col items-center justify-center rounded-2xl text-center transition ${active ? "text-black" : "text-zinc-500 hover:text-zinc-200"}`}
+          >
+            <span className={`${active ? "text-3xl" : "text-xl"} font-black leading-none tabular-nums`}>{valueLabel(item)}</span>
+            <span className={`${active ? "text-[10px] text-black/65" : "text-[9px] text-zinc-600"} mt-1 font-black uppercase tracking-[0.16em]`}>{suffix}</span>
+          </button>;
+        })}
+      </div>
     </div>
   </div>;
 }
