@@ -1428,7 +1428,7 @@ function BackLayer({ id, onBack, priority = 100 }) {
 }
 
 function isSheetDragIgnored(target) {
-  return Boolean(target?.closest?.('input, textarea, select, button, [contenteditable="true"], [data-no-sheet-drag="true"]'));
+  return Boolean(target?.closest?.('input, textarea, select, button, [contenteditable="true"], [data-no-sheet-drag="true"], [data-calendar-swipe="true"]'));
 }
 
 function closestScrollableParent(target, boundary) {
@@ -14500,10 +14500,11 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
       startX: event.clientX,
       startY: event.clientY,
       swiping: false,
-      captured: false,
+      captured: true,
     };
     suppressChartClickRef.current = false;
     setDragX(0);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
   const moveChartDrag = (event) => {
@@ -14517,6 +14518,9 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
     if (!drag.swiping) {
       if (absX < 12 && absY < 12) return;
       if (absY > 12 && absY > absX * 0.9) {
+        if (drag.captured) {
+          try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+        }
         dragRef.current = null;
         setDragX(0);
         return;
@@ -14524,10 +14528,6 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
       if (absX < 20 || absX < absY * 1.55) return;
       drag.swiping = true;
       suppressChartClickRef.current = true;
-      if (!drag.captured) {
-        event.currentTarget.setPointerCapture?.(event.pointerId);
-        drag.captured = true;
-      }
     }
 
     event.preventDefault();
