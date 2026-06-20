@@ -364,6 +364,17 @@
       border-color: rgba(17, 24, 39, 0.14) !important;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
     }
+    .theme-light .onlypump-program-settings-sheet input,
+    .theme-light .onlypump-program-settings-sheet select {
+      border: 1px solid rgba(15, 23, 42, 0.16) !important;
+      background-color: rgba(249, 250, 251, 0.98) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.78);
+    }
+    .theme-light .onlypump-program-settings-sheet input:focus,
+    .theme-light .onlypump-program-settings-sheet select:focus {
+      border-color: rgba(239, 68, 68, 0.55) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.78), 0 0 0 1px rgba(239, 68, 68, 0.18);
+    }
     .theme-light input::placeholder,
     .theme-light textarea::placeholder {
       color: var(--onlypump-faint) !important;
@@ -10050,7 +10061,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
   const WorkoutCard = ({ workout }) => {
     const pointerTimerRef = useRef(null);
-    const swipeRef = useRef({ startX: 0, startY: 0, startOffset: 0, dragging: false, swiping: false, didDrag: false, verticalScrolling: false });
+    const swipeRef = useRef({ pointerId: null, startX: 0, startY: 0, startOffset: 0, dragging: false, swiping: false, didDrag: false, verticalScrolling: false, captured: false });
     const latestOffsetRef = useRef(0);
     const actionTapRef = useRef({ action: "", time: 0 });
     const actionPressRef = useRef({ action: "", pointerId: null, startX: 0, startY: 0 });
@@ -10126,43 +10137,51 @@ const toggleExerciseMeasurementSetting = (field) => {
     };
 
     const handleCardPointerDown = (event) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
       if (event.target?.closest?.('[data-workout-swipe-action="true"]')) return;
       if (swipedWorkoutId && swipedWorkoutId !== workout.id) setSwipedWorkoutId(null);
+      cancelLongPress();
       swipeRef.current.startX = event.clientX;
       swipeRef.current.startY = event.clientY;
       swipeRef.current.startOffset = latestOffsetRef.current;
+      swipeRef.current.pointerId = event.pointerId;
       swipeRef.current.dragging = true;
       swipeRef.current.swiping = false;
       swipeRef.current.didDrag = false;
       swipeRef.current.verticalScrolling = false;
+      swipeRef.current.captured = false;
       startLongPress();
-      event.currentTarget.setPointerCapture?.(event.pointerId);
     };
 
     const handleCardPointerMove = (event) => {
       const state = swipeRef.current;
-      if (!state.dragging) return;
+      if (!state.dragging || state.pointerId !== event.pointerId) return;
       const dx = event.clientX - state.startX;
       const dy = event.clientY - state.startY;
       const absX = Math.abs(dx);
       const absY = Math.abs(dy);
       if (!state.swiping) {
-        if (absX < 14 && absY < 14) return;
-        if (absY > 10 && absY > absX + 4) {
+        if (absX < 18 && absY < 18) return;
+        const verticalIntent = absY > 12 && absY > absX * 0.8;
+        if (verticalIntent) {
           cancelLongPress();
           state.dragging = false;
           state.verticalScrolling = true;
-          try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+          state.pointerId = null;
           return;
         }
-        const horizontalIntent = absX > 18 && absX > absY * 1.45;
-        const allowedDirection = dx < -18 || (state.startOffset < 0 && dx > 18);
+        const horizontalIntent = absX > 28 && absX > absY * 2.2 && absY < 28;
+        const allowedDirection = dx < -28 || (state.startOffset < 0 && dx > 28);
         if (!horizontalIntent || !allowedDirection) return;
       }
       if (state.swiping || absX > absY * 1.35) {
         cancelLongPress();
         state.swiping = true;
         state.didDrag = true;
+        if (!state.captured) {
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+          state.captured = true;
+        }
         event.preventDefault();
         const nextOffset = state.startOffset + dx;
         setWorkoutCardOffset(nextOffset);
@@ -10172,19 +10191,26 @@ const toggleExerciseMeasurementSetting = (field) => {
     const handleCardPointerUp = (event) => {
       const state = swipeRef.current;
       cancelLongPress();
+      if (state.pointerId != null && state.pointerId !== event.pointerId) return;
       if (state.verticalScrolling) {
         state.verticalScrolling = false;
+        state.pointerId = null;
         return;
       }
       if (!state.dragging) return;
       state.dragging = false;
-      try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+      if (state.captured) {
+        try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+      }
       const dx = event.clientX - state.startX;
-      const shouldOpen = latestOffsetRef.current < -96 || dx < -92;
+      const absY = Math.abs(event.clientY - state.startY);
+      const shouldOpen = state.swiping && absY < 36 && (latestOffsetRef.current < -96 || dx < -92);
       setSwipedWorkoutId(shouldOpen ? workout.id : null);
       setWorkoutCardOffset(shouldOpen ? -148 : 0);
       setTimeout(() => { swipeRef.current.didDrag = false; }, 180);
       state.swiping = false;
+      state.pointerId = null;
+      state.captured = false;
     };
 
     const handleCardClick = (event) => {
@@ -11514,7 +11540,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	      const bounds = getProgramDurationBounds(program);
 	      const exerciseSettings = draft.exerciseSettings || {};
 	      return <div onClick={() => !programSaving && setProgramSettingsSheet(null)} className="onlypump-modal-layer fixed inset-0 z-[152] flex items-end bg-black/55 p-3 backdrop-blur-sm">
-	        <BottomSheetPanel onClose={() => !programSaving && setProgramSettingsSheet(null)} onClick={(e) => e.stopPropagation()} className="mx-auto flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-[430px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+	        <BottomSheetPanel onClose={() => !programSaving && setProgramSettingsSheet(null)} onClick={(e) => e.stopPropagation()} className="onlypump-program-settings-sheet mx-auto flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-[430px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
 	          <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
 	          <div className="flex items-start justify-between gap-3">
 	            <button disabled={programSaving} onClick={() => setProgramSettingsSheet(null)} className="mt-1 shrink-0 text-sm font-black text-zinc-400 disabled:opacity-40">Отмена</button>
