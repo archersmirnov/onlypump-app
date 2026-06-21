@@ -4839,6 +4839,8 @@ function PumpXpDetailSheet({ pumpXp, onClose }) {
   const summary = pumpXp || emptyPumpXpSummary();
   const current = summary.level.current;
   const next = summary.level.next;
+  const [bonusesOpen, setBonusesOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[235] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <BottomSheetPanel onClose={onClose} priority={235} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-3xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem] sm:p-6">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
@@ -4880,6 +4882,21 @@ function PumpXpDetailSheet({ pumpXp, onClose }) {
         </div>
       </div>
 
+      <div className="mt-6 rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
+        <h3 className="font-black">Уровни PUMP XP</h3>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {PUMP_XP_LEVELS.map(level => {
+            const active = level.level === current.level;
+            const completed = summary.totalXp >= level.xp;
+            return <div key={level.level} className={`rounded-2xl border p-3 ${active ? "border-red-500/50 bg-red-500/15" : completed ? "border-white/10 bg-white/[0.06]" : "border-white/10 bg-black/20"}`}>
+              <p className={`text-[10px] font-black uppercase tracking-[0.14em] ${active ? "text-red-300" : "text-zinc-500"}`}>Lvl {level.level}</p>
+              <b className="mt-1 block text-sm leading-tight">{level.title}</b>
+              <p className="mt-2 text-xs text-zinc-500">{level.xp.toLocaleString("ru-RU")} XP</p>
+            </div>;
+          })}
+        </div>
+      </div>
+
       {(summary.daily.length > 0 || summary.bonuses.length > 0) && <div className="mt-6 grid gap-3 md:grid-cols-2">
         {summary.daily.length > 0 && <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
           <h3 className="font-black">Последние начисления</h3>
@@ -4891,26 +4908,32 @@ function PumpXpDetailSheet({ pumpXp, onClose }) {
           </div>
         </div>}
         {summary.bonuses.length > 0 && <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
-          <h3 className="font-black">Бонусы</h3>
-          <div className="mt-3 space-y-2">
+          <button type="button" onClick={() => setBonusesOpen(prev => !prev)} className="flex w-full items-center justify-between gap-3 text-left">
+            <h3 className="font-black">Бонусы</h3>
+            <span className="rounded-full bg-white/8 px-3 py-1 text-xs font-black text-zinc-400">{bonusesOpen ? "Свернуть" : "Открыть"}</span>
+          </button>
+          {bonusesOpen && <div className="mt-3 space-y-2">
             {summary.bonuses.slice(0, 6).map((item, index) => <div key={`${item.title}-${index}`} className="flex justify-between gap-3 rounded-2xl bg-black/20 p-3 text-sm">
               <span className="font-black">{item.title}</span>
               <span className="font-black text-red-300">+{item.xp}</span>
             </div>)}
-          </div>
+          </div>}
         </div>}
       </div>}
 
-      <div className="mt-6">
-        <h3 className="text-lg font-black">Система баллов</h3>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
+      <div className="mt-6 rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
+        <button type="button" onClick={() => setRulesOpen(prev => !prev)} className="flex w-full items-center justify-between gap-3 text-left">
+          <h3 className="text-lg font-black">Система баллов</h3>
+          <span className="rounded-full bg-white/8 px-3 py-1 text-xs font-black text-zinc-400">{rulesOpen ? "Свернуть" : "Открыть"}</span>
+        </button>
+        {rulesOpen && <div className="mt-3 grid gap-3 md:grid-cols-2">
           {summary.rules.map(group => <div key={group.title} className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
             <h4 className="font-black">{group.title}</h4>
             <div className="mt-3 space-y-2">
               {group.items.map(item => <p key={item} className="text-sm text-zinc-400">{item}</p>)}
             </div>
           </div>)}
-        </div>
+        </div>}
       </div>
     </BottomSheetPanel>
   </div>;
@@ -6373,20 +6396,22 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         historyByDate={homeHistoryByDate}
       />
     </div>
-    <div className="mt-4 flex flex-wrap justify-end gap-2">
-      {homeEditMode && <button onClick={() => setWidgetPickerOpen(true)} className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-white transition hover:bg-white/15">
-        <Plus size={16}/>
-        Добавить виджет
-      </button>}
-      <button onClick={() => setHomeEditMode(prev => !prev)} className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition ${homeEditMode ? "bg-red-500 text-black" : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"}`}>
-        <Grid3X3 size={16}/>
-        {homeEditMode ? "Готово" : "Настроить вид"}
-      </button>
-    </div>
-    <div className="relative mt-7 sm:mt-4">
-      <button type="button" onClick={onOpenPumpXpDetails} className="absolute left-2 top-0 z-30 -translate-y-1/2 rounded-full border border-red-400/30 bg-red-500 px-3 py-1.5 text-xs font-black text-black shadow-xl shadow-red-500/25 sm:hidden">
+    <div className="mt-4 flex items-center justify-between gap-2">
+      <button type="button" onClick={onOpenPumpXpDetails} className="rounded-full border border-red-400/30 bg-red-500 px-3 py-1.5 text-xs font-black text-black shadow-xl shadow-red-500/25 sm:hidden">
         Lvl {pumpXp.level.current.level}
       </button>
+      <div className="ml-auto flex flex-wrap justify-end gap-2">
+        {homeEditMode && <button onClick={() => setWidgetPickerOpen(true)} className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-white transition hover:bg-white/15">
+          <Plus size={16}/>
+          Добавить виджет
+        </button>}
+        <button onClick={() => setHomeEditMode(prev => !prev)} className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition ${homeEditMode ? "bg-red-500 text-black" : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"}`}>
+          <Grid3X3 size={16}/>
+          {homeEditMode ? "Готово" : "Настроить вид"}
+        </button>
+      </div>
+    </div>
+    <div className="relative mt-4">
       <MasonryGrid className="grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-4 2xl:grid-cols-7">
         {homeWidgets.map(id => renderEditableWidget(id))}
         {homeWidgets.length === 0 && <Card className="col-span-full p-8 text-center">
