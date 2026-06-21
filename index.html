@@ -2339,6 +2339,7 @@ const normalizeExerciseNameKey = (value = "") => String(value || "")
   .replace(/ё/g, "е")
   .replace(/[\s\u00a0]+/g, " ")
   .trim();
+const formatBuiltInExerciseName = (value = "") => String(value || "").trim().toLocaleLowerCase("ru-RU");
 
 const normalizeMuscleGroupLabel = (value = "") => {
   const raw = String(value || "").replace(/[–—]/g, "").trim();
@@ -2407,6 +2408,7 @@ const onlypumpBuiltInExerciseDescriptions = Object.freeze({
   "ПРОТЯЖКА": "* Слегка наклони корпус * Лопатки слегка собраны, движутся естественно * ﻿﻿Сфокусируйся на подъеме локтей в стороны и вверх, а не снаряда﻿ * ﻿﻿Веди локти слегка перед собой, не заводя за спину",
   "ПУЛОВЕР С ВЕРХНЕГО БЛОКА": "* Смести таз слегка назад * ﻿﻿Корпус наклони под 45°-60°, колени под согни * ﻿﻿Спину зафицисируй в нейтральном положении * ﻿﻿Дай возможность естественного движения лопаткам  * Напряги выпрямленные руки, и по мере подъема отягощения дай им слегка согнуться  * ﻿﻿Фокусируйся на движении локтей к тазу﻿ * ﻿﻿Фиксируйся в сокращенном положении прижимая бицепсы к ребрам",
   "ПОДЪЕМ ШТАНГИ НА БИЦЕПС": "Плечи опущены. Локти слегка выведены вперед, хват на ширине плеч. На выдохе подъем. На вдох медленно опускаем.",
+  "РАЗГИБАНИЯ В КРОССОВЕРЕ ИЗ ЗА ГОЛОВЫ": "Стопы на ширине таза, плечо вертикально. Задача добиться максимально растянутой позиции и мощно выпрямить руку",
   "РАЗГИБАНИЯ ГОЛЕНИ": "\"Основной момент: ось вращения тренажёра должна совпадать с осями вращения коленных суставов, располагаем для этого должным образом спинку. При наличии регулировки нижнего валика - располагаем чуть выше голеностопа. Основной рычаг опускаем в нижнее положение, чтобы достичь максимальной амплитуды. Приводим и опускаем лопатки, держимся за рукоятки. Вдох, и на выдохе выполняем разгибания коленных суставов, толкаем голенями в валик. Фиксация в верхнем положении.\nМедленно опускаем на вдохе.\"",
   "РАЗГИБАНИЯ ПРЕДПЛЕЧИЙ": "Наклони корпус слегка. Приведи и опусти лопатки. Разгибай локти и прижимай их к корпусу.",
   "РАЗГИБАНИЯ ПРЕДПЛЕЧИЙ (КОСИЧКА)": "Наклони корпус слегка. Приведи и опусти лопатки. Разгибай локоть и прижимай к корпусу",
@@ -2434,20 +2436,28 @@ const onlypumpBuiltInExerciseDescriptions = Object.freeze({
   "ЯГОДИЧНЫЙ МОСТ В СМИТЕ": "* Голову в зафиксируй, взгляд по направлению грудной клетки * ﻿﻿Ноги на ширине между тазом и плечами * ﻿﻿Низ лопаток на краю лавки * ﻿﻿Голени перпендикулярны полу * ﻿﻿Весь позвоночник стабилен и в нейтральном положении * ﻿﻿Останавливай таз когда в нижней точке, когда колени начинают движение к туловищу * ﻿﻿Не допускай чрезмерного прогиба в пояснице * ﻿﻿В верхней точке фиксируй корпус в линию с бедрами * Держи пресс напряженным",
   "ЯГОДИЧНЫЙ МОСТ В ТРЕНАЖЕРЕ": "Толкающее движение на выдохе. Давление во всю стопу.  Колени направлены наружу. Концентрация на ягодичных мышцах.",
   "ЯГОДИЧНЫЙ МОСТ НА ОДНОЙ": "* Голову в зафиксируй, взгляд по направлению грудной клетки  * Свободная нога на весу * ﻿﻿Нижний край лопаток уложи на край скамьи * ﻿﻿Держи голень вертикально * ﻿﻿Сохраняй нейтральное положение спины * ﻿﻿Завершай опускание таза, когда голень начинает движение на тебя * ﻿﻿Не допускай усиления прогиба в поясничном отделе * ﻿﻿Фиксируйся в единую линию в верхней точке",
+  "GHR ГИПЕРЭЕКСТЕНЗИЯ": "Работа ягодицами и задней поверхностью бедер.\nПресс в тонусе, голень натянута.\nТолкай таз в подушку.",
   "ЖИМ БРУСЬЕВ": "Корпус скругляем и переносим вес на плечи и грудь. Жмем будто перед собой",
   "ПРИСЕД СИДЯ В ГАККЕ": "1. Устойчиво упри стопы в платформу 2. ﻿﻿﻿Стопы поставь на ширину таза 3. ﻿﻿﻿Сохраняй нейтральное положение позвоночника 4. ﻿﻿﻿Равномерно распределяя опору на всю стопу, начиная с центра 5. ﻿﻿﻿Направляй усилие на давление стопами в платформу 6. Нижняя точка - когда таз все еще устойчиво прижат",
   "ПРИСЕД ПЛИЕ С ГАНТЕЛЕЙ": "Стопы в 1,5 раза шире плеч, носки равернуты слегка стороны, лопатки опущениы, широчайшие мышцы спины и пресс в тонусе, спина прямая. Гантель на вытянутых и расслабленных  руках (вертикально или горизонтально) Вдох-пресс. На задержке дыхания толкаем колени наружу, таз смещаем слегка назад, садимся до паралели бедра с полом. Встаем продавливая и пол стопами.",
   "ЖИМ СИДЯ В СМИТЕ": "1. Вынеси локти вперед, и даже при опускании не уводи назад 2. ﻿﻿﻿Толкай локти на верх, чтобы дать движение штанге 3. Напрягай пресс и не допускай излишнего прогиба в пояснице 4. Устойчиво упирайся в стопы"
 });
+const normalizeExerciseDescriptionKey = (value = "") => normalizeExerciseNameKey(value).replace(/[^0-9a-zа-я]+/gi, "");
+const onlypumpBuiltInExerciseDescriptionsByKey = Object.freeze(Object.fromEntries(Object.entries(onlypumpBuiltInExerciseDescriptions).map(([name, description]) => [normalizeExerciseDescriptionKey(name), description])));
+const onlypumpBuiltInExerciseDescriptionAliases = Object.freeze({
+  "GHR ГИПЕРЭКСТЕНЗИЯ": onlypumpBuiltInExerciseDescriptions["GHR ГИПЕРЭЕКСТЕНЗИЯ"] || "",
+});
+const getOnlypumpBuiltInExerciseDescription = (name = "") => onlypumpBuiltInExerciseDescriptions[String(name || "").trim()] || onlypumpBuiltInExerciseDescriptionAliases[String(name || "").trim()] || onlypumpBuiltInExerciseDescriptionsByKey[normalizeExerciseDescriptionKey(name)] || "";
 
 const parseOnlypumpBuiltInExerciseRows = (source = "") => source.trim().split(/\n+/).map((line, index) => {
   const [name, primary, secondary = ""] = line.split("\t");
+  const rawName = String(name || "").trim();
   const primaryMuscle = normalizeMuscleGroupLabel(primary);
   const secondaryMuscles = parseOnlypumpMuscleList(secondary).filter(group => group && group !== primaryMuscle);
-  const description = onlypumpBuiltInExerciseDescriptions[String(name || "").trim()] || "";
+  const description = getOnlypumpBuiltInExerciseDescription(rawName);
   return {
     id: `system-strength-${index + 1}`,
-    name: String(name || "").trim(),
+    name: formatBuiltInExerciseName(rawName),
     muscleGroup: primaryMuscle || "Другое",
     primaryMuscles: primaryMuscle ? [primaryMuscle] : [],
     secondaryMuscles,
@@ -3557,7 +3567,7 @@ const mapWorkoutExerciseFromApi = (row = {}, index = 0) => {
     id: `exercise-supabase-${row.id || index}`,
     supabaseId: row.id || null,
     order: safeWorkoutModelNumber(row.exercise_order ?? row.order, index + 1),
-    name: exerciseName,
+    name: systemSource?.name || exerciseName,
     muscleGroup: row.muscle_group || row.muscleGroup || systemSource?.muscleGroup || "Другое",
     blockType: row.blockType || "обычное",
     restSeconds: safeWorkoutModelNumber(row.rest_between_seconds ?? row.restSeconds, 120),
@@ -6980,7 +6990,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       secondaryMuscles: source.secondaryMuscles || source.secondary_muscles || systemSource?.secondaryMuscles || [],
     });
     return {
-      name: source.name || source.exercise_name || "Упражнение",
+      name: systemSource?.name || source.name || source.exercise_name || "Упражнение",
       muscleGroup: source.muscleGroup || source.muscle_group || source.group || "Другое",
       group: source.group || source.muscleGroup || source.muscle_group || "Другое",
       isCustom: Boolean(source.isCustom ?? source.is_custom),
@@ -8222,7 +8232,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return {
       id: rawId || `custom-${row.exercise_name || row.name}`,
       sourceExerciseId,
-      name: row.exercise_name || row.name || "Упражнение",
+      name: systemSource?.name || row.exercise_name || row.name || "Упражнение",
       group: row.group || primary,
       muscleGroup: row.muscle_group || row.muscleGroup || primary,
       isCustom: Boolean(row.is_custom ?? row.isCustom ?? true),
@@ -9423,7 +9433,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       id: `exercise-supabase-${row.id || index}`,
       supabaseId: row.id || null,
       order: safeWorkoutNumber(row.exercise_order ?? row.order, index + 1),
-      name: exerciseName,
+      name: systemSource?.name || exerciseName,
       muscleGroup: row.muscle_group || row.muscleGroup || systemSource?.muscleGroup || "Другое",
       blockType: "обычное",
       restSeconds: safeWorkoutNumber(row.rest_between_seconds ?? row.restSeconds, 120),
