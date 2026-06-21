@@ -1101,6 +1101,31 @@ function formatProfileSubscriptionLabel(profile = {}) {
   return date.getTime() <= Date.now() ? `Истекла ${formatted}` : `Активна до ${formatted}`;
 }
 
+function preserveOnlyPumpScrollPosition(callback) {
+  const elements = Array.from(document.querySelectorAll(".onlypump-main-scroll, .onlypump-workout-scroll, .onlypump-bottom-sheet, [data-preserve-scroll]"));
+  const positions = elements.map(element => ({
+    element,
+    scrollTop: element.scrollTop,
+    scrollLeft: element.scrollLeft,
+  }));
+  const activeElement = document.activeElement;
+  if (activeElement && typeof activeElement.blur === "function" && activeElement.matches?.("button, input, textarea, select")) {
+    activeElement.blur();
+  }
+  callback?.();
+  const restore = () => {
+    positions.forEach(({ element, scrollTop, scrollLeft }) => {
+      if (!element.isConnected) return;
+      element.scrollTop = scrollTop;
+      element.scrollLeft = scrollLeft;
+    });
+  };
+  window.requestAnimationFrame(() => {
+    restore();
+    window.requestAnimationFrame(restore);
+  });
+}
+
 function formatInviteActivationDate(value) {
   if (!value) return "дата неизвестна";
   const date = new Date(value);
@@ -10392,7 +10417,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     const normalizeScrollPosition = (option) => {
       if (!option || options.length <= 1) return;
       const centeredIndex = centerRepeat * options.length + option.baseIndex;
-      window.setTimeout(() => scrollToIndex(centeredIndex, "auto"), 130);
+      window.setTimeout(() => scrollToIndex(centeredIndex, "auto"), 220);
     };
 
     const commitCenteredOption = (behavior = "smooth") => {
@@ -10405,7 +10430,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
     const handleScroll = () => {
       window.clearTimeout(settleTimerRef.current);
-      settleTimerRef.current = window.setTimeout(() => commitCenteredOption("smooth"), 110);
+      settleTimerRef.current = window.setTimeout(() => commitCenteredOption("smooth"), 180);
     };
 
     useEffect(() => {
@@ -10422,6 +10447,10 @@ const toggleExerciseMeasurementSetting = (field) => {
         ref={scrollRef}
         data-no-sheet-drag="true"
         className="onlypump-wheel-scroll relative rounded-2xl"
+        onWheelCapture={(event) => event.stopPropagation()}
+        onTouchStartCapture={(event) => event.stopPropagation()}
+        onTouchMoveCapture={(event) => event.stopPropagation()}
+        onPointerDownCapture={(event) => event.stopPropagation()}
         onScroll={handleScroll}
         style={{ "--onlypump-wheel-item-height": `${itemHeight}px`, height: `${itemHeight * 3}px`, paddingTop: `${itemHeight}px`, paddingBottom: `${itemHeight}px` }}
       >
@@ -16823,34 +16852,40 @@ function getManagedUserTitle(user = {}) {
 
 function LoopWheelColumn({ label, value, options, onChange, suffix }) {
   const itemHeight = 56;
-  const touchStateRef = useRef({ startY: 0, offset: 0, dragging: false });
+  const maxStep = Math.min(4, Math.max(1, options.length - 1));
+  const touchStateRef = useRef({ startY: 0, lastY: 0, lastTime: 0, velocity: 0, offset: 0, dragging: false });
   const animatingRef = useRef(false);
   const wheelLockRef = useRef(false);
   const [dragOffset, setDragOffset] = useState(0);
   const [animating, setAnimating] = useState(false);
+  if (!options.length) return null;
   const normalizeIndex = (index) => ((index % options.length) + options.length) % options.length;
   const currentIndex = Math.max(0, options.indexOf(value));
   const itemAt = (delta) => options[normalizeIndex(currentIndex + delta)];
   const valueLabel = (item) => String(item).padStart(2, "0");
-  const clampOffset = (offset) => Math.max(-itemHeight, Math.min(itemHeight, offset));
+  const visibleItems = Array.from({ length: maxStep * 2 + 1 }, (_, index) => index - maxStep);
+  const baseOffset = -((visibleItems.length - 3) / 2) * itemHeight;
+  const clampOffset = (offset) => Math.max(-itemHeight * maxStep, Math.min(itemHeight * maxStep, offset));
   const commitMove = (delta) => {
-    if (!delta || animatingRef.current) return;
+    const safeDelta = Math.max(-maxStep, Math.min(maxStep, Math.round(delta)));
+    if (!safeDelta || animatingRef.current || !options.length) return;
+    const duration = Math.min(220, 115 + Math.abs(safeDelta) * 26);
     animatingRef.current = true;
     setAnimating(true);
-    setDragOffset(-delta * itemHeight);
+    setDragOffset(-safeDelta * itemHeight);
     window.setTimeout(() => {
-      onChange?.(options[normalizeIndex(currentIndex + delta)]);
+      onChange?.(options[normalizeIndex(currentIndex + safeDelta)]);
       setAnimating(false);
       setDragOffset(0);
       window.setTimeout(() => {
         animatingRef.current = false;
       }, 20);
-    }, 150);
+    }, duration);
   };
   const snapBack = () => {
     setAnimating(true);
     setDragOffset(0);
-    window.setTimeout(() => setAnimating(false), 150);
+    window.setTimeout(() => setAnimating(false), 135);
   };
   const stopWheelScroll = (event) => {
     event.preventDefault();
@@ -16866,8 +16901,9 @@ function LoopWheelColumn({ label, value, options, onChange, suffix }) {
     wheelLockRef.current = true;
     window.setTimeout(() => {
       wheelLockRef.current = false;
-    }, 170);
-    commitMove(event.deltaY > 0 ? 1 : -1);
+    }, 95);
+    const wheelDelta = Math.max(-maxStep, Math.min(maxStep, Math.round(event.deltaY / 80) || (event.deltaY > 0 ? 1 : -1)));
+    commitMove(wheelDelta);
   };
   const stopTouchScroll = (event) => {
     event.preventDefault();
@@ -16879,7 +16915,8 @@ function LoopWheelColumn({ label, value, options, onChange, suffix }) {
   const handleTouchStart = (event) => {
     event.stopPropagation();
     const y = event.touches?.[0]?.clientY;
-    touchStateRef.current = { startY: Number.isFinite(y) ? y : 0, offset: 0, dragging: true };
+    const now = Date.now();
+    touchStateRef.current = { startY: Number.isFinite(y) ? y : 0, lastY: Number.isFinite(y) ? y : 0, lastTime: now, velocity: 0, offset: 0, dragging: true };
     setAnimating(false);
   };
   const handleTouchMove = (event) => {
@@ -16888,27 +16925,26 @@ function LoopWheelColumn({ label, value, options, onChange, suffix }) {
     if (!state.dragging) return;
     const y = event.touches?.[0]?.clientY;
     if (!Number.isFinite(y)) return;
+    const now = Date.now();
+    const dt = Math.max(16, now - (state.lastTime || now));
+    const velocity = (y - (state.lastY || y)) / dt;
     const offset = clampOffset(y - state.startY);
-    touchStateRef.current = { ...state, offset };
+    touchStateRef.current = { ...state, lastY: y, lastTime: now, velocity, offset };
     setDragOffset(offset);
   };
   const handleTouchEnd = (event) => {
     event.preventDefault();
     event.stopPropagation();
     const state = touchStateRef.current;
-    touchStateRef.current = { startY: 0, offset: 0, dragging: false };
+    touchStateRef.current = { startY: 0, lastY: 0, lastTime: 0, velocity: 0, offset: 0, dragging: false };
     if (!state.dragging) return;
-    if (state.offset <= -itemHeight * 0.42) {
-      commitMove(1);
-      return;
-    }
-    if (state.offset >= itemHeight * 0.42) {
-      commitMove(-1);
+    const projectedOffset = clampOffset(state.offset + (state.velocity || 0) * 180);
+    if (Math.abs(projectedOffset) >= itemHeight * 0.24) {
+      commitMove(Math.max(-maxStep, Math.min(maxStep, Math.round(-projectedOffset / itemHeight) || (projectedOffset < 0 ? 1 : -1))));
       return;
     }
     snapBack();
   };
-  const visibleItems = [-2, -1, 0, 1, 2];
   return <div
     onWheelCapture={preventOuterWheelScroll}
     onTouchMoveCapture={preventOuterTouchScroll}
@@ -16930,8 +16966,8 @@ function LoopWheelColumn({ label, value, options, onChange, suffix }) {
       <div
         className="absolute inset-x-0 z-10 flex flex-col"
         style={{
-          transform: `translateY(${dragOffset - itemHeight}px)`,
-          transition: animating ? "transform 150ms cubic-bezier(.2,.8,.2,1)" : "none",
+          transform: `translateY(${dragOffset + baseOffset}px)`,
+          transition: animating ? "transform 150ms cubic-bezier(.16,.9,.22,1)" : "none",
         }}
       >
         {visibleItems.map((delta) => {
@@ -16999,9 +17035,19 @@ function InvitePeriodPickerSheet({ value = 30, onSave, onClose }) {
 }
 
 function InviteLimitPickerSheet({ value = 100, onSave, onClose }) {
+  const initialUnlimited = value === null || Number(value) <= 0;
   const initialLimit = Math.max(1, Math.min(100, Math.round(Number(value) || 100)));
+  const [unlimited, setUnlimited] = useState(initialUnlimited);
   const [limit, setLimit] = useState(initialLimit);
   const limitOptions = useMemo(() => Array.from({ length: 100 }, (_, index) => index + 1), []);
+  const chooseLimit = (nextLimit) => {
+    setLimit(nextLimit);
+    setUnlimited(false);
+  };
+  const save = () => {
+    onSave?.(unlimited ? null : limit);
+    onClose();
+  };
   return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[220] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <BottomSheetPanel onClose={onClose} priority={220} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-sm overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
@@ -17013,10 +17059,11 @@ function InviteLimitPickerSheet({ value = 100, onSave, onClose }) {
         </div>
         <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
       </div>
-      <div className="mx-auto mt-6 max-w-[170px]" data-no-sheet-drag="true">
-        <LoopWheelColumn label="активации" value={limit} options={limitOptions} onChange={setLimit} suffix="раз"/>
+      <div className="mt-6 grid grid-cols-[1fr_118px] gap-3" data-no-sheet-drag="true">
+        <LoopWheelColumn label="активации" value={limit} options={limitOptions} onChange={chooseLimit} suffix="раз"/>
+        <button type="button" onClick={() => setUnlimited(true)} className={`rounded-[28px] px-3 text-sm font-black transition ${unlimited ? "bg-red-500 text-black shadow-lg shadow-red-500/20" : "border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]"}`}>Без лимита</button>
       </div>
-      <Button onClick={() => { onSave?.(limit); onClose(); }} className="mt-5 w-full bg-gradient-to-r from-red-700 to-red-500 text-black">Выбрать: {formatInviteLimitLabel(limit)}</Button>
+      <Button onClick={save} className="mt-5 w-full bg-gradient-to-r from-red-700 to-red-500 text-black">Выбрать: {unlimited ? "Без лимита" : formatInviteLimitLabel(limit)}</Button>
     </BottomSheetPanel>
   </div>;
 }
@@ -17235,6 +17282,18 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
   const limitLabel = formatInviteLimitLabel(inviteMaxUses);
   const pendingUsersCount = panel.users.filter(user => normalizeAccessStatus(user.access_status) === "pending").length;
   const activeInviteCount = panel.invites.filter(invite => parseProfileBoolean(invite.is_active, true)).length;
+  const openManagedUserWindow = useCallback((user) => {
+    preserveOnlyPumpScrollPosition(() => setSelectedUser(user));
+  }, []);
+  const closeManagedUserWindow = useCallback(() => {
+    preserveOnlyPumpScrollPosition(() => setSelectedUser(null));
+  }, []);
+  const openAccessPanelWindow = useCallback((view) => {
+    preserveOnlyPumpScrollPosition(() => setAccessPanelView(view));
+  }, []);
+  const closeAccessPanelWindow = useCallback(() => {
+    preserveOnlyPumpScrollPosition(() => setAccessPanelView(null));
+  }, []);
 
   const loadPanel = useCallback(async () => {
     if (!telegramInitData) {
@@ -17349,7 +17408,7 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
         operation,
       });
       await loadPanel();
-      setSelectedUser(operation === "delete" ? null : (result.profile || user));
+      preserveOnlyPumpScrollPosition(() => setSelectedUser(operation === "delete" ? null : (result.profile || user)));
     } catch (accessError) {
       console.error("profile access update error:", accessError);
       setError("Не удалось изменить доступ пользователя.");
@@ -17371,7 +17430,7 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
         role,
       });
       await loadPanel();
-      setSelectedUser(result.profile || { ...user, member_role: role });
+      preserveOnlyPumpScrollPosition(() => setSelectedUser(result.profile || { ...user, member_role: role }));
     } catch (roleError) {
       console.error("profile role update error:", roleError);
       setError("Не удалось изменить роль пользователя.");
@@ -17419,14 +17478,14 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
           <Button onClick={createInvite} disabled={saving} className="mt-4 w-full bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Создаю..." : "Создать ссылку"}</Button>
         </Card>}
 
-        {canCreateInvites && <button type="button" onClick={() => setAccessPanelView("invites")} className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/75 p-4 text-left shadow-2xl shadow-black/40 backdrop-blur transition hover:bg-white/[0.06]">
+        {canCreateInvites && <button type="button" onClick={() => openAccessPanelWindow("invites")} className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/75 p-4 text-left shadow-2xl shadow-black/40 backdrop-blur transition hover:bg-white/[0.06]">
           <Share2 className="text-red-500"/>
           <h3 className="mt-4 text-lg font-black">Выданные ссылки</h3>
           <p className="mt-2 text-sm text-zinc-500">{panel.invites.length} всего · {activeInviteCount} активных</p>
           <p className="mt-1 text-xs text-zinc-600">Поиск, сортировка, активации и удаление ссылок.</p>
         </button>}
 
-        {canManageUsers && <button type="button" onClick={() => setAccessPanelView("users")} className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/75 p-4 text-left shadow-2xl shadow-black/40 backdrop-blur transition hover:bg-white/[0.06]">
+        {canManageUsers && <button type="button" onClick={() => openAccessPanelWindow("users")} className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/75 p-4 text-left shadow-2xl shadow-black/40 backdrop-blur transition hover:bg-white/[0.06]">
           <Users className="text-red-500"/>
           <h3 className="mt-4 text-lg font-black">Пользователи</h3>
           <p className="mt-2 text-sm text-zinc-500">{panel.users.length} всего · {pendingUsersCount} ожидают доступа</p>
@@ -17456,9 +17515,9 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
       {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
       {periodPickerOpen && <InvitePeriodPickerSheet value={inviteDays} onSave={setInviteDays} onClose={() => setPeriodPickerOpen(false)}/>}
       {limitPickerOpen && <InviteLimitPickerSheet value={inviteMaxUses} onSave={setInviteMaxUses} onClose={() => setLimitPickerOpen(false)}/>}
-      {accessPanelView === "users" && <ManagedUsersListSheet users={panel.users} currentProfile={profile} saving={saving} onClose={() => setAccessPanelView(null)} onSelectUser={setSelectedUser}/>}
-      {accessPanelView === "invites" && <ManagedInvitesListSheet invites={panel.invites} saving={saving} copiedInviteId={copiedInviteId} onClose={() => setAccessPanelView(null)} onCopy={copyInvite} onRevoke={revokeInvite} onDelete={deleteInvite} onSelectUser={setSelectedUser}/>}
-      {selectedUser && <ManagedUserRoleSheet user={selectedUser} currentProfile={profile} saving={saving} onClose={() => setSelectedUser(null)} onRoleChange={updateUserRole} onAccessChange={updateUserAccess}/>}
+      {accessPanelView === "users" && <ManagedUsersListSheet users={panel.users} currentProfile={profile} saving={saving} onClose={closeAccessPanelWindow} onSelectUser={openManagedUserWindow}/>}
+      {accessPanelView === "invites" && <ManagedInvitesListSheet invites={panel.invites} saving={saving} copiedInviteId={copiedInviteId} onClose={closeAccessPanelWindow} onCopy={copyInvite} onRevoke={revokeInvite} onDelete={deleteInvite} onSelectUser={openManagedUserWindow}/>}
+      {selectedUser && <ManagedUserRoleSheet user={selectedUser} currentProfile={profile} saving={saving} onClose={closeManagedUserWindow} onRoleChange={updateUserRole} onAccessChange={updateUserAccess}/>}
     </BottomSheetPanel>
   </div>;
 
