@@ -1051,11 +1051,54 @@ function formatInviteHumanPeriod(months, days, permanent = false) {
   return parts.join(" и ");
 }
 
+function formatInviteLimitLabel(value) {
+  const limit = Number(value);
+  if (!Number.isFinite(limit) || limit <= 0) return "Безлимитно";
+  return `${Math.round(limit)} ${pluralRu(limit, ["активация", "активации", "активаций"])}`;
+}
+
+function getInviteActivationCount(invite = {}) {
+  const count = Number(invite.uses_count ?? invite.activation_count ?? 0);
+  return Number.isFinite(count) && count > 0 ? Math.round(count) : 0;
+}
+
+function getInviteLimitCount(invite = {}) {
+  const limit = Number(invite.max_uses);
+  return Number.isFinite(limit) && limit > 0 ? Math.round(limit) : null;
+}
+
+function getInviteStatusLabel(invite = {}) {
+  if (!parseProfileBoolean(invite.is_active, true)) return "Отключена";
+  const limit = getInviteLimitCount(invite);
+  const activations = getInviteActivationCount(invite);
+  if (!limit) return "Безлимитно";
+  return activations > 0 ? "Активирована" : "Не активирована";
+}
+
+function getAccessStatusLabel(status) {
+  const normalized = normalizeAccessStatus(status);
+  if (normalized === "allowed") return "доступ есть";
+  if (normalized === "blocked") return "заблокирован";
+  return "ожидает доступа";
+}
+
 function formatAccessUntil(value) {
   if (!value) return "бессрочно";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "бессрочно";
   return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatProfileSubscriptionLabel(profile = {}) {
+  const status = normalizeAccessStatus(profile?.access_status);
+  if (status === "blocked") return "Заблокирована";
+  if (status === "pending") return "Ожидает доступа";
+  const expiresAt = profile?.access_expires_at;
+  if (!expiresAt) return "Бессрочная";
+  const date = new Date(expiresAt);
+  if (Number.isNaN(date.getTime())) return "Бессрочная";
+  const formatted = date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+  return date.getTime() <= Date.now() ? `Истекла ${formatted}` : `Активна до ${formatted}`;
 }
 
 function formatInviteActivationDate(value) {
@@ -1456,6 +1499,7 @@ const profileDraftFromProfile = (profile = DEFAULT_PROFILE) => ({
   protein_target: profile.protein_target || "",
   fat_target: profile.fat_target || "",
   carbs_target: profile.carbs_target || "",
+  default_weight_unit: normalizeWeightUnit(profile.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
   nutrition_targets_error: "",
 });
 
@@ -1497,6 +1541,7 @@ const profilePayloadFromDraft = (draft = {}, currentDate = formatDateKey(new Dat
     deficit_percent: normalizeDeficitPercent(draft.deficit_percent ?? draft.goal_intensity_percent),
     goal_intensity_percent: normalizeGoalIntensityPercent(draft.goal_type, draft.goal_intensity_percent ?? draft.deficit_percent),
     target_weight_kg: profileNumber(draft.target_weight_kg),
+    default_weight_unit: normalizeWeightUnit(draft.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
     ...targets,
     measurement_date: currentDate,
     current_date: currentDate,
@@ -16698,6 +16743,73 @@ function ThemeSettingsSheet({ profile = DEFAULT_PROFILE, saving = false, onClose
   </div>;
 }
 
+function SettingsThinkingModal({ onClose }) {
+  const [mascotFailed, setMascotFailed] = useState(false);
+  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[205] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+    <div onClick={(event) => event.stopPropagation()} className="w-full max-w-sm rounded-[2rem] border border-white/10 bg-zinc-950/96 p-6 text-center shadow-2xl shadow-black/70 backdrop-blur-2xl">
+      <button type="button" onClick={onClose} className="ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      {!mascotFailed ? <img
+        src="./assets/mascot/loader-think.gif"
+        alt="ONLYPUMP thinking mascot"
+        className="mx-auto mt-1 h-auto w-[160px]"
+        onError={() => setMascotFailed(true)}
+      /> : <div className="mx-auto mt-1 flex h-[160px] w-[160px] items-center justify-center rounded-full bg-red-500/15 text-3xl font-black text-red-500 ring-1 ring-red-500/30">OP</div>}
+      <p className="mt-5 text-lg font-black leading-7">Думаю, как здесь все расположить</p>
+    </div>
+  </div>;
+}
+
+function UnitSystemSheet({ profile = DEFAULT_PROFILE, saving = false, onClose, onSave }) {
+  const [unit, setUnit] = useState(() => normalizeWeightUnit(profile?.default_weight_unit || DEFAULT_PROFILE.default_weight_unit));
+  const [error, setError] = useState("");
+  const submit = async () => {
+    setError("");
+    const payload = profilePayloadFromDraft({
+      ...profileDraftFromProfile(profile || DEFAULT_PROFILE),
+      default_weight_unit: unit,
+    });
+    const ok = await onSave?.(payload);
+    if (ok === false) {
+      setError("Не удалось сохранить единицы измерения. Попробуй еще раз.");
+      return;
+    }
+    onClose();
+  };
+  const options = [
+    { id: "kg", title: "Метрическая", subtitle: "Килограммы" },
+    { id: "lb", title: "Британская", subtitle: "Фунты" },
+  ];
+  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[205] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} priority={205} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-4">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отменить</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs uppercase tracking-wider text-red-500">Настройки</p>
+          <h2 className="mt-2 text-2xl font-black">Единицы измерения</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+      <div className="mt-6 space-y-3">
+        {options.map(option => <button
+          key={option.id}
+          type="button"
+          onClick={() => setUnit(option.id)}
+          className={`flex w-full items-center justify-between gap-4 rounded-2xl border px-4 py-4 text-left transition ${unit === option.id ? "border-red-500/50 bg-red-500/10" : "border-white/10 bg-white/[0.04] hover:bg-white/[0.08]"}`}
+        >
+          <span>
+            <span className="block text-base font-black">{option.title}</span>
+            <span className="mt-1 block text-sm text-zinc-500">{option.subtitle}</span>
+          </span>
+          <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${unit === option.id ? "border-red-500 bg-red-500 text-black" : "border-white/15 text-transparent"}`}>✓</span>
+        </button>)}
+      </div>
+      {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+      <Button onClick={submit} disabled={saving} className="mt-5 w-full bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+    </BottomSheetPanel>
+  </div>;
+}
+
 const MANAGED_ROLE_OPTIONS = [
   { id: "admin", label: "админ" },
   { id: "trainer", label: "тренер" },
@@ -16886,13 +16998,38 @@ function InvitePeriodPickerSheet({ value = 30, onSave, onClose }) {
   </div>;
 }
 
+function InviteLimitPickerSheet({ value = 100, onSave, onClose }) {
+  const initialLimit = Math.max(1, Math.min(100, Math.round(Number(value) || 100)));
+  const [limit, setLimit] = useState(initialLimit);
+  const limitOptions = useMemo(() => Array.from({ length: 100 }, (_, index) => index + 1), []);
+  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[220] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} priority={220} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-sm overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отменить</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Инвайт</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Лимит активаций</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+      <div className="mx-auto mt-6 max-w-[170px]" data-no-sheet-drag="true">
+        <LoopWheelColumn label="активации" value={limit} options={limitOptions} onChange={setLimit} suffix="раз"/>
+      </div>
+      <Button onClick={() => { onSave?.(limit); onClose(); }} className="mt-5 w-full bg-gradient-to-r from-red-700 to-red-500 text-black">Выбрать: {formatInviteLimitLabel(limit)}</Button>
+    </BottomSheetPanel>
+  </div>;
+}
+
 function ManagedUserRoleSheet({ user, currentProfile, saving, onClose, onRoleChange, onAccessChange }) {
   const protectedUser = isProtectedManagedProfile(user, currentProfile);
   const selectedRole = normalizeProfileMemberRole(user);
   const userName = getManagedUserTitle(user);
-  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[230] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-    <BottomSheetPanel onClose={onClose} priority={230} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
-      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+  const availableRoles = profileHasRole(currentProfile, "owner")
+    ? MANAGED_ROLE_OPTIONS
+    : MANAGED_ROLE_OPTIONS.filter(option => option.id === "user" || option.id === "trainer");
+  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[230] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+    <div onClick={(event) => event.stopPropagation()} className="w-full max-w-md overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
       <div className="flex items-start justify-between gap-3">
         <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отменить</button>
         <div className="min-w-0 text-center">
@@ -16906,7 +17043,7 @@ function ManagedUserRoleSheet({ user, currentProfile, saving, onClose, onRoleCha
       <div className="mt-6 rounded-[24px] bg-white/[0.035] p-4">
         <p className="text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Назначить роль</p>
         <div className="mt-3 grid grid-cols-2 gap-2">
-          {MANAGED_ROLE_OPTIONS.map(option => <button
+          {availableRoles.map(option => <button
             key={option.id}
             type="button"
             onClick={() => onRoleChange?.(user, option.id)}
@@ -16929,6 +17066,150 @@ function ManagedUserRoleSheet({ user, currentProfile, saving, onClose, onRoleCha
           <button type="button" onClick={() => onAccessChange?.(user, "delete")} disabled={saving || protectedUser} className="rounded-2xl bg-red-500/10 px-4 py-3 text-sm font-black text-red-300 disabled:cursor-not-allowed disabled:opacity-45">Удалить</button>
         </div>
       </div>
+    </div>
+  </div>;
+}
+
+function ManagedUsersListSheet({ users = [], currentProfile = DEFAULT_PROFILE, saving = false, onClose, onSelectUser }) {
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredUsers = useMemo(() => {
+    return users.filter(user => {
+      if (!normalizedQuery) return true;
+      return [
+        getManagedUserTitle(user),
+        user.telegram_username,
+        user.telegram_id,
+        getProfileRoleLabels(user),
+        getAccessStatusLabel(user.access_status),
+      ].some(value => String(value || "").toLowerCase().includes(normalizedQuery));
+    }).sort((a, b) => {
+      const statusRank = { pending: 0, allowed: 1, blocked: 2 };
+      const statusDelta = (statusRank[normalizeAccessStatus(a.access_status)] ?? 9) - (statusRank[normalizeAccessStatus(b.access_status)] ?? 9);
+      if (statusDelta) return statusDelta;
+      return getManagedUserTitle(a).localeCompare(getManagedUserTitle(b), "ru");
+    });
+  }, [users, normalizedQuery]);
+  const pendingCount = users.filter(user => normalizeAccessStatus(user.access_status) === "pending").length;
+  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[220] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} priority={220} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-3xl overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Назад</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Личный кабинет</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Пользователи</h2>
+          <p className="mt-1 text-xs text-zinc-500">{users.length} всего · {pendingCount} ожидают доступа</p>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Поиск по имени, username, роли или статусу" className="mt-5 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none transition focus:border-red-500/60"/>
+      <div className="mt-4 max-h-[62vh] space-y-2 overflow-y-auto pr-1 onlypump-scrollbar-none" data-no-sheet-drag="true">
+        {filteredUsers.length ? filteredUsers.map(user => {
+          const protectedUser = isProtectedManagedProfile(user, currentProfile);
+          const pending = normalizeAccessStatus(user.access_status) === "pending";
+          return <button key={user.id} type="button" onClick={() => onSelectUser?.(user)} disabled={saving} className="block w-full rounded-2xl bg-white/[0.035] p-3 text-left transition hover:bg-white/[0.06] disabled:opacity-60">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="min-w-0">
+                <span className="block break-words text-sm font-black">{getManagedUserTitle(user)}</span>
+                <span className="mt-1 block text-xs text-zinc-500">{user.telegram_username ? `@${user.telegram_username}` : `ID ${user.telegram_id || "—"}`} · {getProfileRoleLabels(user)}</span>
+                <span className="mt-1 block text-xs text-zinc-600">{getAccessStatusLabel(user.access_status)} · доступ до {formatAccessUntil(user.access_expires_at)}</span>
+              </span>
+              <span className={`rounded-full px-3 py-2 text-xs font-black ${protectedUser ? "bg-red-500/10 text-red-300" : pending ? "bg-amber-500/10 text-amber-300" : "bg-white/8 text-zinc-300"}`}>{protectedUser ? "защищён" : pending ? "ожидает" : "открыть"}</span>
+            </div>
+          </button>;
+        }) : <p className="rounded-2xl bg-white/[0.035] p-4 text-sm text-zinc-500">Ничего не найдено.</p>}
+      </div>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function ManagedInvitesListSheet({ invites = [], saving = false, copiedInviteId = null, onClose, onCopy, onRevoke, onDelete, onSelectUser }) {
+  const [query, setQuery] = useState("");
+  const [sortBy, setSortBy] = useState("created");
+  const normalizedQuery = query.trim().toLowerCase();
+  const inviteUserLabel = (invite) => invite.created_by_profile?.display_name || invite.created_by_profile?.telegram_username || "—";
+  const filteredInvites = useMemo(() => {
+    const rows = invites.filter(invite => {
+      if (!normalizedQuery) return true;
+      const activations = Array.isArray(invite.activations) ? invite.activations : [];
+      return [
+        invite.title,
+        invite.code,
+        invite.invite_url,
+        inviteUserLabel(invite),
+        getInviteStatusLabel(invite),
+        formatInviteLimitLabel(invite.max_uses),
+        ...activations.map(user => `${getManagedUserTitle(user)} ${user.telegram_username || ""}`),
+      ].some(value => String(value || "").toLowerCase().includes(normalizedQuery));
+    });
+    return rows.sort((a, b) => {
+      if (sortBy === "title") return String(a.title || a.code || "").localeCompare(String(b.title || b.code || ""), "ru");
+      if (sortBy === "user") return inviteUserLabel(a).localeCompare(inviteUserLabel(b), "ru");
+      if (sortBy === "status") return getInviteStatusLabel(a).localeCompare(getInviteStatusLabel(b), "ru");
+      if (sortBy === "activations") return getInviteActivationCount(b) - getInviteActivationCount(a);
+      return new Date(String(b.created_at || 0)).getTime() - new Date(String(a.created_at || 0)).getTime();
+    });
+  }, [invites, normalizedQuery, sortBy]);
+  const sortOptions = [
+    { id: "created", label: "новые" },
+    { id: "title", label: "название" },
+    { id: "user", label: "пользователь" },
+    { id: "status", label: "статус" },
+    { id: "activations", label: "активации" },
+  ];
+  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[220] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} priority={220} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-4xl overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Назад</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Личный кабинет</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Инвайт-ссылки</h2>
+          <p className="mt-1 text-xs text-zinc-500">{invites.length} всего</p>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Поиск по названию, пользователю, статусу или активации" className="mt-5 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none transition focus:border-red-500/60"/>
+      <div className="mt-3 flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
+        {sortOptions.map(option => <button key={option.id} type="button" onClick={() => setSortBy(option.id)} className={`shrink-0 rounded-full px-3 py-2 text-xs font-black transition ${sortBy === option.id ? "bg-red-500 text-black" : "bg-white/8 text-zinc-300 hover:bg-white/12"}`}>{option.label}</button>)}
+      </div>
+      <div className="mt-4 max-h-[62vh] space-y-2 overflow-y-auto pr-1 onlypump-scrollbar-none" data-no-sheet-drag="true">
+        {filteredInvites.length ? filteredInvites.map(invite => {
+          const roleLabel = MANAGED_ROLE_OPTIONS.find(option => option.id === normalizeAssignableProfileRole(invite.issued_role))?.label || "пользователь";
+          const activations = Array.isArray(invite.activations) ? invite.activations : [];
+          const activationCount = getInviteActivationCount(invite);
+          const limit = getInviteLimitCount(invite);
+          const copied = copiedInviteId === invite.id;
+          return <div key={invite.id} className="rounded-2xl bg-white/[0.035] p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="break-words text-sm font-black">{invite.title || invite.code}</p>
+                <p className="mt-1 break-all text-xs text-zinc-500">{invite.invite_url || invite.code}</p>
+                <p className="mt-1 text-xs text-zinc-600">роль: {roleLabel} · срок: {formatInvitePeriodLabel(invite.access_days)} · пользователь: {inviteUserLabel(invite)}</p>
+                <p className="mt-1 text-xs text-zinc-600">статус: {getInviteStatusLabel(invite)} · активации: {activationCount}/{limit || "∞"}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => onCopy?.(invite)} className={`rounded-full px-3 py-2 text-xs font-black transition active:scale-95 ${copied ? "bg-red-500 text-black shadow-lg shadow-red-500/25" : "bg-white/8 text-zinc-100 hover:bg-white/12"}`}>{copied ? "Скопировано" : "Копировать"}</button>
+                {invite.is_active && <button type="button" onClick={() => onRevoke?.(invite)} disabled={saving} className="rounded-full bg-red-500/10 px-3 py-2 text-xs font-black text-red-300 transition active:scale-95 disabled:opacity-50">Отключить</button>}
+                <button type="button" onClick={() => onDelete?.(invite)} disabled={saving} className="rounded-full bg-red-500/10 px-3 py-2 text-xs font-black text-red-300 transition active:scale-95 disabled:opacity-50">Удалить</button>
+              </div>
+            </div>
+            <div className="mt-3 rounded-2xl bg-black/20 p-3">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Активировали эту ссылку</p>
+              <div className="mt-3 space-y-2">
+                {activations.length ? activations.map(user => <button key={user.id} type="button" onClick={() => onSelectUser?.(user)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-3 text-left transition hover:bg-white/[0.08]">
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-black">{getManagedUserTitle(user)}</span>
+                    <span className="mt-1 block truncate text-xs text-zinc-500">{user.telegram_username ? `@${user.telegram_username}` : `ID ${user.telegram_id || "—"}`} · {getProfileRoleLabels(user)}</span>
+                  </span>
+                  <span className="shrink-0 text-xs font-semibold text-zinc-600">{formatInviteActivationDate(user.access_granted_at)}</span>
+                </button>) : <p className="rounded-2xl bg-white/[0.035] p-3 text-sm text-zinc-500">Пока никто не активировал.</p>}
+              </div>
+            </div>
+          </div>;
+        }) : <p className="rounded-2xl bg-white/[0.035] p-4 text-sm text-zinc-500">Ничего не найдено.</p>}
+      </div>
     </BottomSheetPanel>
   </div>;
 }
@@ -16941,13 +17222,19 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
   const [inviteTitle, setInviteTitle] = useState("");
   const [inviteRole, setInviteRole] = useState("user");
   const [inviteDays, setInviteDays] = useState(30);
+  const [inviteMaxUses, setInviteMaxUses] = useState(100);
   const [selectedUser, setSelectedUser] = useState(null);
-  const [expandedInviteId, setExpandedInviteId] = useState(null);
   const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
+  const [limitPickerOpen, setLimitPickerOpen] = useState(false);
+  const [accessPanelView, setAccessPanelView] = useState(null);
+  const [copiedInviteId, setCopiedInviteId] = useState(null);
   const canManageUsers = Boolean(panel.permissions?.can_manage_users);
   const canCreateInvites = Boolean(panel.permissions?.can_create_invites);
   const canViewStudents = Boolean(panel.permissions?.can_view_students);
   const periodLabel = formatInvitePeriodLabel(inviteDays);
+  const limitLabel = formatInviteLimitLabel(inviteMaxUses);
+  const pendingUsersCount = panel.users.filter(user => normalizeAccessStatus(user.access_status) === "pending").length;
+  const activeInviteCount = panel.invites.filter(invite => parseProfileBoolean(invite.is_active, true)).length;
 
   const loadPanel = useCallback(async () => {
     if (!telegramInitData) {
@@ -16983,8 +17270,16 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
     try {
       await navigator.clipboard?.writeText(value);
       setError("Ссылка скопирована.");
+      setCopiedInviteId(invite.id);
+      window.setTimeout(() => {
+        setCopiedInviteId(current => current === invite.id ? null : current);
+      }, 1400);
     } catch (_error) {
       setError(`Код инвайта: ${invite.code}`);
+      setCopiedInviteId(invite.id);
+      window.setTimeout(() => {
+        setCopiedInviteId(current => current === invite.id ? null : current);
+      }, 1400);
     }
   };
 
@@ -16996,10 +17291,12 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
         title: inviteTitle,
         access_days: inviteDays,
         issued_role: inviteRole,
+        max_uses: inviteMaxUses,
       });
       setInviteTitle("");
       setInviteRole("user");
       setInviteDays(30);
+      setInviteMaxUses(100);
       await loadPanel();
     } catch (createError) {
       console.error("profile invite create error:", createError);
@@ -17029,7 +17326,6 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
     setError("");
     try {
       await callOnlyPumpProfileApi(telegramInitData, "delete_invite_link", { invite_id: invite.id });
-      if (expandedInviteId === invite.id) setExpandedInviteId(null);
       await loadPanel();
     } catch (deleteError) {
       console.error("profile invite delete error:", deleteError);
@@ -17101,77 +17397,41 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
         {canCreateInvites && <Card className="p-4 lg:col-span-2">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-lg font-black">Инвайт-ссылки</h3>
-              <p className="mt-1 text-sm text-zinc-500">Поля ссылки: название, выдаваемая роль и срок доступа.</p>
+              <h3 className="text-lg font-black">Новая инвайт-ссылка</h3>
+              <p className="mt-1 text-sm text-zinc-500">Название, роль, срок доступа и лимит активаций.</p>
             </div>
             <ShieldCheck className="shrink-0 text-red-500"/>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_150px_130px_auto]">
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_170px]">
             <input value={inviteTitle} onChange={(event) => setInviteTitle(event.target.value)} placeholder="Название ссылки" className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none"/>
             <select value={inviteRole} onChange={(event) => setInviteRole(normalizeAssignableProfileRole(event.target.value))} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-black outline-none">
               {MANAGED_ROLE_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
             </select>
-            <button type="button" onClick={() => setPeriodPickerOpen(true)} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-black">{periodLabel}</button>
-            <Button onClick={createInvite} disabled={saving} className="bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">Создать</Button>
           </div>
-          <div className="mt-4 space-y-2">
-	            {panel.invites.length ? panel.invites.map(invite => {
-                const roleLabel = MANAGED_ROLE_OPTIONS.find(option => option.id === normalizeAssignableProfileRole(invite.issued_role))?.label || "пользователь";
-                const activations = Array.isArray(invite.activations) ? invite.activations : [];
-                const expanded = expandedInviteId === invite.id;
-                return <div key={invite.id} className="rounded-2xl bg-white/[0.035] p-3">
-	              <div className="flex flex-wrap items-center justify-between gap-3">
-	                <div className="min-w-0">
-		                  <p className="break-words text-sm font-black">{invite.title || invite.code}</p>
-		                  <p className="mt-1 break-all text-xs text-zinc-500">{invite.invite_url || invite.code}</p>
-		                  <p className="mt-1 text-xs text-zinc-600">роль: {roleLabel} · срок: {formatInvitePeriodLabel(invite.access_days)} · статус: {invite.is_active ? "активна" : "отключена"}</p>
-                      <p className="mt-1 text-xs text-zinc-600">активаций: {invite.uses_count || 0} · пользователей: {invite.activation_count ?? activations.length}</p>
-		                </div>
-	                <div className="flex flex-wrap gap-2">
-	                  <button type="button" onClick={() => copyInvite(invite)} className="rounded-full bg-white/8 px-3 py-2 text-xs font-black">Копировать</button>
-                    <button type="button" onClick={() => setExpandedInviteId(expanded ? null : invite.id)} className="rounded-full bg-white/8 px-3 py-2 text-xs font-black">{expanded ? "Скрыть" : "Кто активировал"}</button>
-	                  {invite.is_active && <button type="button" onClick={() => revokeInvite(invite)} disabled={saving} className="rounded-full bg-red-500/10 px-3 py-2 text-xs font-black text-red-300 disabled:opacity-50">Отключить</button>}
-                    <button type="button" onClick={() => deleteInvite(invite)} disabled={saving} className="rounded-full bg-red-500/10 px-3 py-2 text-xs font-black text-red-300 disabled:opacity-50">Удалить</button>
-	                </div>
-	              </div>
-                {expanded && <div className="mt-3 rounded-2xl bg-black/20 p-3">
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Активировали эту ссылку</p>
-                  <div className="mt-3 space-y-2">
-                    {activations.length ? activations.map(user => <button key={user.id} type="button" onClick={() => setSelectedUser(user)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-3 text-left transition hover:bg-white/[0.08]">
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-black">{getManagedUserTitle(user)}</span>
-                        <span className="mt-1 block truncate text-xs text-zinc-500">{user.telegram_username ? `@${user.telegram_username}` : `ID ${user.telegram_id || "—"}`} · {getProfileRoleLabels(user)}</span>
-                      </span>
-	                      <span className="shrink-0 text-xs font-semibold text-zinc-600">{formatInviteActivationDate(user.access_granted_at)}</span>
-                    </button>) : <p className="rounded-2xl bg-white/[0.035] p-3 text-sm text-zinc-500">Пока никто не активировал.</p>}
-                  </div>
-                </div>}
-	            </div>;
-              }) : <p className="rounded-2xl bg-white/[0.035] p-4 text-sm text-zinc-500">Инвайтов пока нет.</p>}
-          </div>
+          <button type="button" onClick={() => setPeriodPickerOpen(true)} className="mt-3 flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left transition hover:bg-white/[0.08]">
+            <span className="text-sm font-black text-zinc-500">Срок</span>
+            <span className="text-sm font-black">{periodLabel}</span>
+          </button>
+          <button type="button" onClick={() => setLimitPickerOpen(true)} className="mt-3 flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left transition hover:bg-white/[0.08]">
+            <span className="text-sm font-black text-zinc-500">Лимит</span>
+            <span className="text-sm font-black">{limitLabel}</span>
+          </button>
+          <Button onClick={createInvite} disabled={saving} className="mt-4 w-full bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Создаю..." : "Создать ссылку"}</Button>
         </Card>}
 
-        {canManageUsers && <Card className="p-4 lg:col-span-2">
-          <div className="flex items-center justify-between gap-4">
-            <h3 className="text-lg font-black">Пользователи</h3>
-            <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-zinc-400">{panel.users.length}</span>
-	          </div>
-	          <div className="mt-4 space-y-2">
-	            {panel.users.map(user => {
-                const protectedUser = isProtectedManagedProfile(user, profile);
-                return <button key={user.id} type="button" onClick={() => setSelectedUser(user)} className="block w-full rounded-2xl bg-white/[0.035] p-3 text-left transition hover:bg-white/[0.06]">
-	              <div className="flex flex-wrap items-center justify-between gap-3">
-	                <div className="min-w-0">
-	                  <p className="break-words text-sm font-black">{getManagedUserTitle(user)}</p>
-	                  <p className="mt-1 text-xs text-zinc-500">{user.telegram_username ? `@${user.telegram_username}` : `ID ${user.telegram_id || "—"}`} · {getProfileRoleLabels(user)}</p>
-	                  <p className="mt-1 text-xs text-zinc-600">статус: {user.access_status} · доступ до {formatAccessUntil(user.access_expires_at)}</p>
-	                </div>
-	                <span className={`rounded-full px-3 py-2 text-xs font-black ${protectedUser ? "bg-red-500/10 text-red-300" : "bg-white/8 text-zinc-300"}`}>{protectedUser ? "защищён" : "открыть"}</span>
-	              </div>
-	            </button>;
-              })}
-	          </div>
-	        </Card>}
+        {canCreateInvites && <button type="button" onClick={() => setAccessPanelView("invites")} className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/75 p-4 text-left shadow-2xl shadow-black/40 backdrop-blur transition hover:bg-white/[0.06]">
+          <Share2 className="text-red-500"/>
+          <h3 className="mt-4 text-lg font-black">Выданные ссылки</h3>
+          <p className="mt-2 text-sm text-zinc-500">{panel.invites.length} всего · {activeInviteCount} активных</p>
+          <p className="mt-1 text-xs text-zinc-600">Поиск, сортировка, активации и удаление ссылок.</p>
+        </button>}
+
+        {canManageUsers && <button type="button" onClick={() => setAccessPanelView("users")} className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/75 p-4 text-left shadow-2xl shadow-black/40 backdrop-blur transition hover:bg-white/[0.06]">
+          <Users className="text-red-500"/>
+          <h3 className="mt-4 text-lg font-black">Пользователи</h3>
+          <p className="mt-2 text-sm text-zinc-500">{panel.users.length} всего · {pendingUsersCount} ожидают доступа</p>
+          <p className="mt-1 text-xs text-zinc-600">Поиск, ручное одобрение, роли и доступ.</p>
+        </button>}
 
         {canViewStudents && <Card className="p-4 lg:col-span-2">
           <div className="flex items-center justify-between gap-4">
@@ -17180,7 +17440,7 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {panel.students.length ? panel.students.map(student => <div key={student.id} className="rounded-2xl bg-white/[0.035] p-4">
-	              <p className="break-words text-sm font-black">{getManagedUserTitle(student)}</p>
+              <p className="break-words text-sm font-black">{getManagedUserTitle(student)}</p>
               <p className="mt-1 text-xs text-zinc-500">{student.telegram_username ? `@${student.telegram_username}` : `ID ${student.telegram_id || "—"}`}</p>
               <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
                 <div className="rounded-xl bg-white/[0.04] p-3"><b className="block text-lg">{student.analytics_30d?.completed_workouts_count || 0}</b><span className="text-zinc-500">тренировок</span></div>
@@ -17193,11 +17453,15 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
         </Card>}
       </div>}
 
-	      {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
-	      {periodPickerOpen && <InvitePeriodPickerSheet value={inviteDays} onSave={setInviteDays} onClose={() => setPeriodPickerOpen(false)}/>}
-        {selectedUser && <ManagedUserRoleSheet user={selectedUser} currentProfile={profile} saving={saving} onClose={() => setSelectedUser(null)} onRoleChange={updateUserRole} onAccessChange={updateUserAccess}/>}
-	    </BottomSheetPanel>
-	  </div>;
+      {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+      {periodPickerOpen && <InvitePeriodPickerSheet value={inviteDays} onSave={setInviteDays} onClose={() => setPeriodPickerOpen(false)}/>}
+      {limitPickerOpen && <InviteLimitPickerSheet value={inviteMaxUses} onSave={setInviteMaxUses} onClose={() => setLimitPickerOpen(false)}/>}
+      {accessPanelView === "users" && <ManagedUsersListSheet users={panel.users} currentProfile={profile} saving={saving} onClose={() => setAccessPanelView(null)} onSelectUser={setSelectedUser}/>}
+      {accessPanelView === "invites" && <ManagedInvitesListSheet invites={panel.invites} saving={saving} copiedInviteId={copiedInviteId} onClose={() => setAccessPanelView(null)} onCopy={copyInvite} onRevoke={revokeInvite} onDelete={deleteInvite} onSelectUser={setSelectedUser}/>}
+      {selectedUser && <ManagedUserRoleSheet user={selectedUser} currentProfile={profile} saving={saving} onClose={() => setSelectedUser(null)} onRoleChange={updateUserRole} onAccessChange={updateUserAccess}/>}
+    </BottomSheetPanel>
+  </div>;
+
 }
 
 function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onSaveProfile, profileSaving = false, onSaveThemeSettings, themeSaving = false, onResetProfile }) {
@@ -17207,6 +17471,8 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
   const calculatedAge = calculateProfileAge(profile?.birth_date);
   const [editOpen, setEditOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
+  const [settingsThinkingOpen, setSettingsThinkingOpen] = useState(false);
+  const [unitSettingsOpen, setUnitSettingsOpen] = useState(false);
   const [accessPanelOpen, setAccessPanelOpen] = useState(false);
   const [themeError, setThemeError] = useState("");
   const [resetError, setResetError] = useState("");
@@ -17225,6 +17491,8 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
   const profileNutritionLabel = hasNutritionTargets
     ? `${profile.calories_target} / ${profile.protein_target} / ${profile.fat_target} / ${profile.carbs_target}`
     : "заполните профиль";
+  const subscriptionLabel = formatProfileSubscriptionLabel(profile);
+  const unitSystemLabel = normalizeWeightUnit(profile?.default_weight_unit || DEFAULT_PROFILE.default_weight_unit) === "lb" ? "Британская" : "Метрическая";
 
   const toggleLightTheme = async (enabled) => {
     setThemeError("");
@@ -17246,10 +17514,19 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
   return <div className="profile-screen"><Header title="Личный кабинет" subtitle="Профиль, тариф, подписка, настройки, доступы и история платежей."/><PageGrid>
     <Card className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p><p className="mt-3 rounded-full bg-white/8 px-3 py-1 text-xs font-black text-zinc-300">{getProfileRoleLabels(profile)}</p></Card>
     <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? formatAgeRu(calculatedAge) : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profileWeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profileHeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profileActivityLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">КБЖУ</span><span>{profileNutritionLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profile.manual_nutrition_targets_enabled ? "ручной" : "авто"}{profile.high_protein_enabled ? " · белок+" : ""}{profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><Button onClick={() => setEditOpen(true)} className="mt-5 w-full bg-white/8">Редактировать</Button></Card>
-    <Card className="p-5"><CreditCard className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Подписка</h2><p className="mt-2 text-zinc-400">Активна до {new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</p><Button className="mt-5 w-full bg-white/8">Управлять</Button></Card>
+    <Card className="p-5"><CreditCard className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Подписка</h2><p className="mt-2 text-zinc-400">{subscriptionLabel}</p><Button className="mt-5 w-full bg-white/8">Управлять</Button></Card>
     <Card className="p-5"><ShieldCheck className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Доступы</h2><p className="mt-2 text-zinc-400">Все модули открыты</p><div className="mt-5 flex gap-2 text-xs text-zinc-500"><Lock size={14}/> 1PM bonus locked</div></Card>
     {canOpenAccessPanel && <Card className="p-5 xl:col-span-2"><Users className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Пользователи и ученики</h2><p className="mt-2 text-zinc-400">{profileHasRole(profile, "owner") ? "Инвайт-ссылки, пользователи и ученики." : profileHasRole(profile, "admin") ? "Блокировка, разблокировка и удаление пользователей." : "Аналитика твоих учеников."}</p><Button onClick={() => setAccessPanelOpen(true)} className="mt-5 w-full bg-white/8">Открыть управление</Button></Card>}
-	    <Card className="p-5 xl:col-span-2"><Settings className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Настройки</h2>{["Уведомления", "Единицы измерения", "Интеграции", "Безопасность"].map(x=><div key={x} className="mt-3 rounded-lg bg-white/[0.03] p-3 text-sm">{x}</div>)}
+	    <Card className="p-5 xl:col-span-2"><Settings className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Настройки</h2>
+	      {[
+	        { label: "Уведомления", value: "скоро", onClick: () => setSettingsThinkingOpen(true) },
+	        { label: "Единицы измерения", value: unitSystemLabel, onClick: () => setUnitSettingsOpen(true) },
+	        { label: "Интеграции", value: "скоро", onClick: () => setSettingsThinkingOpen(true) },
+	        { label: "Безопасность", value: "скоро", onClick: () => setSettingsThinkingOpen(true) },
+	      ].map(item => <button key={item.label} type="button" onClick={item.onClick} className="mt-3 flex w-full items-center justify-between gap-3 rounded-lg bg-white/[0.03] p-3 text-left text-sm transition active:scale-[0.99] hover:bg-white/[0.06]">
+	        <span>{item.label}</span>
+	        <span className="text-xs font-bold text-zinc-500">{item.value}</span>
+	      </button>)}
 	      <div className="mt-5 border-t border-white/10 pt-5">
 	        <ProfileToggle label="Светлая тема" description={`Режим: ${lightThemeEnabled ? lightThemeSchedule : "выключена"}`} checked={lightThemeEnabled} onChange={toggleLightTheme}/>
 	        <Button onClick={() => setThemeOpen(true)} className="mt-3 w-full bg-white/8">Настроить темы</Button>
@@ -17263,6 +17540,8 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
 	    </Card>
     {editOpen && <ProfileEditSheet profile={profile} saving={profileSaving} onClose={() => setEditOpen(false)} onSave={onSaveProfile}/>}
     {themeOpen && <ThemeSettingsSheet profile={profile} saving={themeSaving} onClose={() => setThemeOpen(false)} onSave={onSaveThemeSettings}/>}
+    {settingsThinkingOpen && <SettingsThinkingModal onClose={() => setSettingsThinkingOpen(false)}/>}
+    {unitSettingsOpen && <UnitSystemSheet profile={profile} saving={profileSaving} onClose={() => setUnitSettingsOpen(false)} onSave={onSaveProfile}/>}
     {accessPanelOpen && <ProfileAccessPanelSheet profile={profile} telegramInitData={telegramInitData} onClose={() => setAccessPanelOpen(false)}/>}
   </PageGrid></div>;
 }
