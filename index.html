@@ -2339,7 +2339,13 @@ const normalizeExerciseNameKey = (value = "") => String(value || "")
   .replace(/ё/g, "е")
   .replace(/[\s\u00a0]+/g, " ")
   .trim();
-const formatBuiltInExerciseName = (value = "") => String(value || "").trim().toLocaleLowerCase("ru-RU");
+const formatBuiltInExerciseName = (value = "") => {
+  const normalized = String(value || "").trim().replace(/\s+/g, " ").toLocaleLowerCase("ru-RU");
+  if (!normalized) return "";
+  return normalized
+    .replace(/^./, char => char.toLocaleUpperCase("ru-RU"))
+    .replace(/^Ghr\b/, "GHR");
+};
 
 const normalizeMuscleGroupLabel = (value = "") => {
   const raw = String(value || "").replace(/[–—]/g, "").trim();
