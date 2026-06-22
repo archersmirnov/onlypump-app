@@ -10819,15 +10819,29 @@ const toggleExerciseMeasurementSetting = (field) => {
 
   const getExerciseGuideContent = (exercise = {}) => {
     const source = findSystemExerciseByName(exercise.name) || {};
+    const sourceSettings = normalizeExerciseMeasurementSettings(source);
+    const exerciseSettings = normalizeExerciseMeasurementSettings(exercise);
+    const resolvedPrimaryMuscles = exerciseSettings.primaryMuscles.length ? exerciseSettings.primaryMuscles : sourceSettings.primaryMuscles;
+    const resolvedSecondaryMuscles = exerciseSettings.secondaryMuscles.length ? exerciseSettings.secondaryMuscles : sourceSettings.secondaryMuscles;
+    const resolvedMuscleSource = {
+      ...source,
+      ...exercise,
+      muscleGroup: exercise.muscleGroup || exercise.muscle_group || source.muscleGroup || source.muscle_group,
+      primaryMuscles: resolvedPrimaryMuscles,
+      secondaryMuscles: resolvedSecondaryMuscles,
+    };
+    const muscleWorkImageKey = exercise.muscleWorkImageKey || exercise.muscle_work_image_key || source.muscleWorkImageKey || getOnlypumpMuscleWorkImageKey(resolvedMuscleSource);
     return {
       ...source,
       ...exercise,
+      primaryMuscles: resolvedPrimaryMuscles,
+      secondaryMuscles: resolvedSecondaryMuscles,
       description: exercise.description || exercise.instruction || exercise.notes || exercise.note || source.description || source.instruction || "",
       instruction: exercise.instruction || exercise.description || exercise.notes || exercise.note || source.instruction || source.description || "",
       techniqueDescription: exercise.techniqueDescription || exercise.technique_description || exercise.description || exercise.notes || exercise.note || source.techniqueDescription || source.description || "",
       exerciseImageUrl: getExerciseImageUrlFromSource(exercise, source),
-      muscleWorkImageKey: exercise.muscleWorkImageKey || exercise.muscle_work_image_key || source.muscleWorkImageKey || getOnlypumpMuscleWorkImageKey({ ...source, ...exercise }),
-      muscleWorkImageUrl: getOnlypumpMuscleWorkImageUrlForProfile({ ...source, ...exercise }, profile) || getMuscleWorkImageUrlFromSource(exercise, source),
+      muscleWorkImageKey,
+      muscleWorkImageUrl: getOnlypumpMuscleWorkImageUrlForProfile({ ...resolvedMuscleSource, muscleWorkImageKey }, profile) || getMuscleWorkImageUrlFromSource(exercise, source),
       muscleWorkVideoUrl: exercise.muscleWorkVideoUrl || exercise.muscle_work_video_url || source.muscleWorkVideoUrl || "",
       techniqueVideoUrl: exercise.techniqueVideoUrl || exercise.technique_video_url || source.techniqueVideoUrl || "",
     };
@@ -14377,6 +14391,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       const description = exercise.description || exercise.instruction || "Описание для этого упражнения будет добавлено позже.";
       const instruction = exercise.instruction || exercise.description || description;
       const techniqueDescription = exercise.techniqueDescription || exercise.description || description;
+      const muscleWorkImageUrl = getOnlypumpMuscleWorkImageUrlForProfile(exercise, profile) || exercise.muscleWorkImageUrl || "";
       const guideTabs = [
         ["description", "Описание"],
         ["video", "Видео"],
@@ -14431,7 +14446,7 @@ const toggleExerciseMeasurementSetting = (field) => {
                 {synergists.map((muscle, index) => <span key={`${muscle}-${index}`} className="rounded-full bg-white/[0.06] px-3 py-1.5 text-xs font-bold text-zinc-400">Синергист {index + 1}: {muscle}</span>)}
               </div>
               <div className="flex aspect-video items-center justify-center overflow-hidden rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
-                <ExerciseMediaImage src={exercise.muscleWorkImageUrl} alt={`${exercise.name || "Упражнение"}: рабочие мышцы`} fallback="Здесь будет картинка рабочих мышечных групп" />
+                <ExerciseMediaImage src={muscleWorkImageUrl} alt={`${exercise.name || "Упражнение"}: рабочие мышцы`} fallback="Здесь будет картинка рабочих мышечных групп" />
               </div>
               <div className="flex aspect-video items-center justify-center rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
                 {renderExerciseVideoMedia(exercise.muscleWorkVideoUrl, "Здесь будет ролик с работой мышц", `${exercise.name || "Упражнение"}: работа мышц`)}
@@ -14452,6 +14467,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       const primary = settings.primaryMuscles[0] || exercise.muscleGroup || "Другое";
       const synergists = (settings.secondaryMuscles || []).slice(0, 2);
       const instruction = exercise.instruction || exercise.description || "Описание для этого упражнения будет добавлено позже.";
+      const muscleWorkImageUrl = getOnlypumpMuscleWorkImageUrlForProfile(exercise, profile) || exercise.muscleWorkImageUrl || "";
       return <div onClick={() => setExerciseInfoSheet(null)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/45 p-4 backdrop-blur-sm">
         <BottomSheetPanel onClose={() => setExerciseInfoSheet(null)} onClick={(e) => e.stopPropagation()} className="mx-auto flex max-h-[84vh] w-full max-w-[430px] flex-col rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
           <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
@@ -14473,7 +14489,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             </div>
             <div className="grid grid-cols-1 gap-3">
               <div className="flex aspect-video items-center justify-center rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
-                <ExerciseMediaImage src={exercise.muscleWorkImageUrl} alt={`${exercise.name || "Упражнение"}: рабочие мышцы`} />
+                <ExerciseMediaImage src={muscleWorkImageUrl} alt={`${exercise.name || "Упражнение"}: рабочие мышцы`} />
               </div>
               <div className="flex aspect-video items-center justify-center rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
                 {renderExerciseVideoMedia(exercise.muscleWorkVideoUrl, "Здесь будет ролик с работой мышц", `${exercise.name || "Упражнение"}: работа мышц`)}
