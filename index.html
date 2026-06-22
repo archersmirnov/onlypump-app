@@ -2648,6 +2648,111 @@ const getOnlypumpBuiltInExerciseVideoUrl = (name = "", items, index) => {
 };
 const getOnlypumpBuiltInExerciseTechniqueVideoUrl = (name = "") => getOnlypumpBuiltInExerciseVideoUrl(name, onlypumpBuiltInExerciseTechniqueVideoUrls, onlypumpBuiltInExerciseTechniqueVideoUrlsByKey);
 const getOnlypumpBuiltInExerciseMuscleWorkVideoUrl = (name = "") => getOnlypumpBuiltInExerciseVideoUrl(name, onlypumpBuiltInExerciseMuscleWorkVideoUrls, onlypumpBuiltInExerciseMuscleWorkVideoUrlsByKey);
+const ONLYPUMP_EXERCISE_MUSCLE_IMAGE_BASE_URL = "assets/exercises/muscles/";
+const onlypumpBuiltInExerciseMuscleWorkImageFiles = Object.freeze({
+  "АВСТРАЛИЙСКИЕ ПОДТЯГИВАНИЯ (СВЕРХУ)": "avstraliyskie-podtyagivaniya-sverkhu.png",
+  "АВСТРАЛИЙСКИЕ ПОДТЯГИВАНИЯ (СНИЗУ)": "avstraliyskie-podtyagivaniya-snizu.png",
+  "БОЛГАРСКИЙ ПРИСЕД ПБ": "bolgarskiy-prised-pb.png",
+  "БОЛГАРСКИЙ ПРИСЕД ЯГ": "bolgarskiy-prised-yag.png",
+  "ВЕРТИКАЛЬНАЯ ТЯГА": "vertikalnaya-tyaga.png",
+  "ВЕРТИКАЛЬНАЯ ТЯГА ПО ОДНОЙ": "vertikalnaya-tyaga-po-odnoy.png",
+  "ГАКК ПРИСЕД/ПРИСЕД В СМИТЕ": "gakk-prised-prised-v-smite.png",
+  "ГИПЕРЭКСТЕНЗИЯ": "giperekstenziya.png",
+  "ГОБЛЕТ ПРИСЕД": "goblet-prised.png",
+  "ГОРИЗОНТАЛЬНАЯ ТЯГА": "gorizontalnaya-tyaga.png",
+  "ГОРИЗОНТАЛЬНАЯ ТЯГА В ХАМЕРЕ ПО ОДНОЙ": "gorizontalnaya-tyaga-v-khamere-po-odnoy.png",
+  "ГОРИЗОНТАЛЬНАЯ ШИРОКАЯ ТЯГА": "gorizontalnaya-shirokaya-tyaga.png",
+  "ГОРИЗОНТАЛЬНЫЕ ПРИВЕДЕНИЯ": "gorizontalnye-privedeniya.png",
+  "ЖИМ В БЛОКЕ": "zhim-v-bloke.png",
+  "ЖИМ В ТРЕНАЖЕРЕ СИДЯ": "zhim-v-trenazhere-sidya.png",
+  "ЖИМ ГАНТЕЛЕЙ ЛЕЖА": "zhim-ganteley-lezha.png",
+  "ЖИМ ГАНТЕЛЕЙ НА НАКЛОННОЙ": "zhim-ganteley-na-naklonnoy.png",
+  "ЖИМ ГАНТЕЛЕЙ СИДЯ": "zhim-ganteley-sidya.png",
+  "ЖИМ ЛЕЖА": "zhim-lezha.png",
+  "ЖИМ ШТАНГИ ЛЕЖА НА НАКЛОННОЙ": "zhim-shtangi-lezha-na-naklonnoy.png",
+  "ЖИМ НОГАМИ": "zhim-nogami.png",
+  "ЖИМ НОГАМИ СИДЯ": "zhim-nogami-sidya.png",
+  "ЖИМ СИДЯ ОДНОЙ НОГОЙ": "zhim-sidya-odnoy-nogoy.png",
+  "ЗАШАГИВАНИЯ НА ТУМБУ": "zashagivaniya-na-tumbu.png",
+  "КИК-БЕК": "kik-bek.png",
+  "КИК-БЕК СТОЯ": "kik-bek-stoya.png",
+  "МОЛИТВА": "molitva.png",
+  "МОЛОТКИ": "molotki.png",
+  "ОБРАТНЫЙ ЖИМ НОГОЙ В ТРЕНАЖЕРЕ": "obratnyy-zhim-nogoy-v-trenazhere.png",
+  "ОТВЕДЕНИЯ БЕДЕР СИДЯ": "otvedeniya-beder-sidya.png",
+  "ОТВЕДЕНИЯ БЕДРА С НИЖНЕГО БЛОКА": "otvedeniya-bedra-s-nizhnego-bloka.png",
+  "ОТВЕДЕНИЯ В БЛОКЕ": "otvedeniya-v-bloke.png",
+  "ОТВЕДЕНИЯ ГОРИЗОНТАЛЬНЫЕ": "otvedeniya-gorizontalnye.png",
+  "ОТВЕДЕНИЯ ПЛЕЧЕЙ ЧЕРЕЗ СТОРОНЫ": "otvedeniya-plechey-cherez-storony.png",
+  "ОТВЕДЕНИЯ ПО ОДНОЙ В КРОССОВЕРЕ": "otvedeniya-po-odnoy-v-krossovere.png",
+  "ОТВЕДЕНИЯ С ГАНТЕЛЯМИ НА ЗД": "otvedeniya-s-gantelyami-na-zd.png",
+  "ОТЖИМАНИЯ НА БРУСЬЯХ": "otzhimaniya-na-brusyakh.png",
+  "ПЕРЕКРЕСТНЫЕ ОТВЕДЕНИЯ В КРОССОВЕРЕ НА ЗД": "perekrestnye-otvedeniya-v-krossovere-na-zd.png",
+  "ПЕРЕКРЕСТНЫЕ ОТВЕДЕНИЯ В КРОССОВЕРЕ НА СД": "perekrestnye-otvedeniya-v-krossovere-na-sd.png",
+  "ПОДТЯГИВАНИЯ": "podtyagivaniya.png",
+  "ПОДЪЕМ ГАНТЕЛЕЙ НА БИЦЕПС": "podem-ganteley-na-bitseps.png",
+  "ПОДЪЕМ НА НОСКИ С ГАНТЕЛЬЮ": "podem-na-noski-s-gantelyu.png",
+  "ПОДЪЕМ НА НОСКИ СИДЯ": "podem-na-noski-sidya.png",
+  "ПОДЪЕМ НА НОСКИ СТОЯ": "podem-na-noski-stoya.png",
+  "ПОДЪЕМ НОГ": "podem-nog.png",
+  "ПРИВЕДЕНИЯ В КРОССОВЕРЕ": "privedeniya-v-krossovere.png",
+  "ПРИСЕД В ГАККЕ": "prised-v-gakke.png",
+  "ПРИСЕД МАЯТНИК": "prised-mayatnik.png",
+  "ПРИСЕД СО ШТАНГОЙ": "prised-so-shtangoy.png",
+  "ПРИСЕД СО ШТАНГОЙ НА ГРУДИ": "prised-so-shtangoy-na-grudi.png",
+  "ПРИСЕД СО ШТАНГОЙ НА СПИНЕ": "prised-so-shtangoy-na-spine.png",
+  "ПРОТЯЖКА": "protyazhka.png",
+  "ПУЛОВЕР С ВЕРХНЕГО БЛОКА": "pulover-s-verkhnego-bloka.png",
+  "ПОДЪЕМ ШТАНГИ НА БИЦЕПС": "podem-shtangi-na-bitseps.png",
+  "РАЗГИБАНИЯ В КРОССОВЕРЕ ИЗ-ЗА ГОЛОВЫ": "razgibaniya-v-krossovere-iz-za-golovy.png",
+  "РАЗГИБАНИЯ ГОЛЕНИ": "razgibaniya-goleni.png",
+  "РАЗГИБАНИЯ ПРЕДПЛЕЧИЙ": "razgibaniya-predplechiy.png",
+  "РАЗГИБАНИЯ ПРЕДПЛЕЧИЙ (КОСИЧКА)": "razgibaniya-predplechiy-kosichka.png",
+  "РАЗГИБАНИЯ ПРЕДПЛЕЧИЙ (ПО ОДНОЙ)": "razgibaniya-predplechiy-po-odnoy.png",
+  "РУМЫНСКАЯ ТЯГА": "rumynskaya-tyaga.png",
+  "СГИБАНИЯ ГОЛЕНИ ЛЕЖА": "sgibaniya-goleni-lezha.png",
+  "СГИБАНИЯ ГОЛЕНИ СИДЯ": "sgibaniya-goleni-sidya.png",
+  "СГИБАНИЯ ГОЛЕНИ СТОЯ": "sgibaniya-goleni-stoya.png",
+  "СГИБАНИЯ НА БИЦ В ТРЕНАЖЕРЕ": "sgibaniya-na-bits-v-trenazhere.png",
+  "СГИБАНИЯ НА СКАМЬЕ СКОТА": "sgibaniya-na-skame-skota.png",
+  "СГИБАНИЯ С ГАНТЕЛЯМИ ЛЕЖА НА СКАМЬЕ": "sgibaniya-s-gantelyami-lezha-na-skame.png",
+  "СГИБАНИЯ С ГАНТЕЛЯМИ ЛЕЖА С УПОРОМ": "sgibaniya-s-gantelyami-lezha-s-uporom.png",
+  "СГИБАНИЯ С НИЖНЕГО БЛОКА": "sgibaniya-s-nizhnego-bloka.png",
+  "СГИБАНИЯ С УПОРОМ В СКАМЬЮ": "sgibaniya-s-uporom-v-skamyu.png",
+  "СКРУЧИВАНИЯ ЛЕЖА": "skruchivaniya-lezha.png",
+  "СТАНОВАЯ НА ПРЯМЫХ НОГАХ": "stanovaya-na-pryamykh-nogakh.png",
+  "СТАНОВАЯ ТЯГА": "stanovaya-tyaga.png",
+  "Т-ТЯГА": "t-tyaga.png",
+  "Т-ТЯГА С УПОРОМ": "t-tyaga-s-uporom.png",
+  "ТЯГА ГАНТЕЛИ В НАКЛОНЕ": "tyaga-ganteli-v-naklone.png",
+  "ТЯГА ШТАНГИ В НАКЛОНЕ": "tyaga-shtangi-v-naklone.png",
+  "ФРАНЦУЗСКИЙ ЖИМ": "frantsuzskiy-zhim.png",
+  "ФРАНЦУЗСКИЙ ЖИМ В КРОССОВЕРЕ СТОЯ": "frantsuzskiy-zhim-v-krossovere-stoya.png",
+  "ФРОНТАЛЬНАЯ ТЯГА": "frontalnaya-tyaga.png",
+  "ФРОНТАЛЬНАЯ ТЯГА ПО ОДНОЙ": "frontalnaya-tyaga-po-odnoy.png",
+  "ЯГОДИЧНЫЙ МОСТ": "yagodichnyy-most.png",
+  "ЯГОДИЧНЫЙ МОСТ В СМИТЕ": "yagodichnyy-most-v-smite.png",
+  "ЯГОДИЧНЫЙ МОСТ В ТРЕНАЖЕРЕ": "yagodichnyy-most-v-trenazhere.png",
+  "ЯГОДИЧНЫЙ МОСТ НА ОДНОЙ": "yagodichnyy-most-na-odnoy.png",
+  "GHR ГИПЕРЭКСТЕНЗИЯ": "ghr-giperekstenziya.png",
+  "ЖИМ БРУСЬЕВ": "zhim-brusev.png",
+  "ПРИСЕД СИДЯ В ГАККЕ": "prised-sidya-v-gakke.png",
+  "ПРИСЕД ПЛИЕ С ГАНТЕЛЕЙ": "prised-plie-s-ganteley.png",
+  "ЖИМ СИДЯ В СМИТЕ": "zhim-sidya-v-smite.png",
+});
+const onlypumpBuiltInExerciseMuscleWorkImageFileAliases = Object.freeze({
+  "GHR ГИПЕРЭЕКСТЕНЗИЯ": "GHR ГИПЕРЭКСТЕНЗИЯ",
+});
+const onlypumpBuiltInExerciseMuscleWorkImageFilesByKey = Object.freeze(Object.fromEntries(Object.entries(onlypumpBuiltInExerciseMuscleWorkImageFiles).map(([name, file]) => [normalizeExerciseDescriptionKey(name), file])));
+const getOnlypumpBuiltInExerciseMuscleWorkImageFile = (name = "") => {
+  const rawName = String(name || "").trim();
+  const aliasName = onlypumpBuiltInExerciseMuscleWorkImageFileAliases[rawName] || rawName;
+  return onlypumpBuiltInExerciseMuscleWorkImageFiles[rawName] || onlypumpBuiltInExerciseMuscleWorkImageFiles[aliasName] || onlypumpBuiltInExerciseMuscleWorkImageFilesByKey[normalizeExerciseDescriptionKey(rawName)] || onlypumpBuiltInExerciseMuscleWorkImageFilesByKey[normalizeExerciseDescriptionKey(aliasName)] || "";
+};
+const getOnlypumpBuiltInExerciseMuscleWorkImageUrl = (name = "") => {
+  const fileName = getOnlypumpBuiltInExerciseMuscleWorkImageFile(name);
+  return fileName ? ONLYPUMP_EXERCISE_MUSCLE_IMAGE_BASE_URL + fileName : "";
+};
 const getOnlypumpYouTubeEmbedUrl = (url = "") => {
   const rawUrl = String(url || "").trim();
   if (!rawUrl) return "";
@@ -2665,6 +2770,13 @@ const getOnlypumpYouTubeEmbedUrl = (url = "") => {
   } catch (error) {
     return "";
   }
+};
+
+const ExerciseMediaImage = ({ src, alt = "Рабочие мышцы", fallback = "Здесь будет фото рабочих мышечных групп" }) => {
+  const [hasError, setHasError] = React.useState(false);
+  const imageUrl = String(src || "").trim();
+  if (!imageUrl || hasError) return <>{fallback}</>;
+  return <img src={imageUrl} alt={alt} onError={() => setHasError(true)} className="h-full w-full rounded-[24px] object-cover" />;
 };
 
 const parseOnlypumpBuiltInExerciseRows = (source = "") => source.trim().split(/\n+/).map((line, index) => {
@@ -2867,7 +2979,7 @@ const systemStrengthExerciseLibraryItems = onlypumpStrengthExerciseSeedRows.map(
   description: item.description || "",
   instruction: item.instruction || item.description || "",
   techniqueDescription: item.description || "",
-  muscleWorkImageUrl: "",
+  muscleWorkImageUrl: getOnlypumpBuiltInExerciseMuscleWorkImageUrl(item.name),
   muscleWorkVideoUrl: getOnlypumpBuiltInExerciseMuscleWorkVideoUrl(item.name),
   techniqueVideoUrl: getOnlypumpBuiltInExerciseTechniqueVideoUrl(item.name),
   measurementMode: "weight_reps",
@@ -14116,7 +14228,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             </div>
             <div className="grid grid-cols-1 gap-3">
               <div className="flex aspect-video items-center justify-center rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
-                {exercise.muscleWorkImageUrl ? <img src={exercise.muscleWorkImageUrl} alt="Рабочие мышцы" className="h-full w-full rounded-[24px] object-cover" /> : "Здесь будет фото рабочих мышечных групп"}
+                <ExerciseMediaImage src={exercise.muscleWorkImageUrl} alt={`${exercise.name || "Упражнение"}: рабочие мышцы`} />
               </div>
               <div className="flex aspect-video items-center justify-center rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
                 {renderExerciseVideoMedia(exercise.muscleWorkVideoUrl, "Здесь будет ролик с работой мышц", `${exercise.name || "Упражнение"}: работа мышц`)}
