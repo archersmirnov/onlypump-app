@@ -2455,6 +2455,218 @@ const onlypumpBuiltInExerciseDescriptionAliases = Object.freeze({
 });
 const getOnlypumpBuiltInExerciseDescription = (name = "") => onlypumpBuiltInExerciseDescriptions[String(name || "").trim()] || onlypumpBuiltInExerciseDescriptionAliases[String(name || "").trim()] || onlypumpBuiltInExerciseDescriptionsByKey[normalizeExerciseDescriptionKey(name)] || "";
 
+const onlypumpBuiltInExerciseTechniqueVideoUrls = Object.freeze({
+  "БОЛГАРСКИЙ ПРИСЕД ПБ": "https://youtube.com/shorts/-7sTrk8SDqw?feature=share",
+  "БОЛГАРСКИЙ ПРИСЕД ЯГ": "https://youtube.com/shorts/uYoq-yLZRxI?si=hB5L2zLede1vwbj2",
+  "ВЕРТИКАЛЬНАЯ ТЯГА": "https://youtube.com/shorts/uYoq-yLZRxI?si=hB5L2zLede1vwbj2",
+  "ВЕРТИКАЛЬНАЯ ТЯГА ПО ОДНОЙ": "https://youtube.com/shorts/bGtIVBFb1oU?si=t6U97Zz1yy0FOO7b",
+  "ГАКК ПРИСЕД/ПРИСЕД В СМИТЕ": "https://youtube.com/shorts/S570bT_Gh2A?si=r6KvnNSZ81_nOhkU",
+  "ГИПЕРЭКСТЕНЗИЯ": "https://youtube.com/shorts/qhI0-SXy4Q4?si=e-QPyC7ZG8coI7vX",
+  "ГОБЛЕТ ПРИСЕД": "https://youtube.com/shorts/aRgGDL9drG0?si=KWAXrtpq26GAk8nv",
+  "ГОРИЗОНТАЛЬНАЯ ТЯГА": "https://youtube.com/shorts/Or2WqQPVSBQ?si=cgq85QGRansPFOOU",
+  "ГОРИЗОНТАЛЬНАЯ ТЯГА В ХАМЕРЕ ПО ОДНОЙ": "https://youtube.com/shorts/VNdZkra2YcY?si=mwwn69otmFZJwKOk",
+  "ГОРИЗОНТАЛЬНАЯ ШИРОКАЯ ТЯГА": "https://youtube.com/shorts/3gf3X22FLbI?si=ubsZh-YuCmhgAVH1",
+  "ГОРИЗОНТАЛЬНЫЕ ПРИВЕДЕНИЯ": "https://youtube.com/shorts/Zi7F7woNbOQ?feature=share",
+  "ЖИМ В БЛОКЕ": "https://youtube.com/shorts/4tbFazX7kCw?feature=share",
+  "ЖИМ В ТРЕНАЖЕРЕ СИДЯ": "https://youtube.com/shorts/4bzNuQDFaxM?si=w2PJWEi5tV83vlhv",
+  "ЖИМ ГАНТЕЛЕЙ ЛЕЖА": "https://youtube.com/shorts/l4ye7CkpuB4?feature=share",
+  "ЖИМ ГАНТЕЛЕЙ НА НАКЛОННОЙ": "https://youtube.com/shorts/lqGohp1pBcs?feature=share",
+  "ЖИМ ГАНТЕЛЕЙ СИДЯ": "https://youtube.com/shorts/9kFu_UJSZtI?feature=share",
+  "ЖИМ ЛЕЖА": "https://youtube.com/shorts/vDfrH-28ekY?feature=share",
+  "ЖИМ ШТАНГИ ЛЕЖА НА НАКЛОННОЙ": "https://youtube.com/shorts/ujx9s1Nn4nw?si=u_0vPV7GJCg4gJu3",
+  "ЖИМ НОГАМИ": "https://youtube.com/shorts/9wkB1c7If9Y?si=lARI9I5rIzdHIMk_",
+  "ЖИМ НОГАМИ СИДЯ": "https://youtube.com/shorts/gpUV4_VAEYE?feature=share",
+  "ЖИМ СИДЯ ОДНОЙ НОГОЙ": "https://youtube.com/shorts/xeXhMYzCRbc?feature=share",
+  "ЗАШАГИВАНИЯ НА ТУМБУ": "https://youtube.com/shorts/jRKbOyKHXBI?si=zGd7s1hzZ0QwzpvG",
+  "КИК-БЕК": "https://youtube.com/shorts/p14HuQ3Z9yU?si=2he0-gnIc8LmZbAi",
+  "КИК-БЕК СТОЯ": "https://youtube.com/shorts/Z9XxyC3wKCg?si=6GiLtTeKMBoxE9Ke",
+  "МОЛИТВА": "https://youtube.com/shorts/l_YCGt6ujSk?si=36jVkxc0WVRZbemw",
+  "МОЛОТКИ": "https://youtube.com/shorts/2cfOCqvTFes?si=jVwEsUrwZm7H_66t",
+  "ОБРАТНЫЙ ЖИМ НОГОЙ В ТРЕНАЖЕРЕ": "https://youtube.com/shorts/8qgHDn-bxBY?si=MVCD9_angq1pFdP6",
+  "ОТВЕДЕНИЯ БЕДЕР СИДЯ": "https://youtube.com/shorts/ShNFOKkE3FQ?si=ztnfSDEpPwOL7R40",
+  "ОТВЕДЕНИЯ БЕДРА С НИЖНЕГО БЛОКА": "https://youtube.com/shorts/DTYcDRWHW4k?si=HaTlxQwuLaDEfIae",
+  "ОТВЕДЕНИЯ В БЛОКЕ": "https://youtube.com/shorts/21lZZltnnQs?si=IlnBQHIpPwj4mAnd",
+  "ОТВЕДЕНИЯ ГОРИЗОНТАЛЬНЫЕ": "https://youtube.com/shorts/a_jO-ENBXaM?si=yHRUe0X1SGxC8uyl",
+  "ОТВЕДЕНИЯ ПЛЕЧЕЙ ЧЕРЕЗ СТОРОНЫ": "https://youtube.com/shorts/OgIeRrQEzM8?feature=share",
+  "ОТВЕДЕНИЯ ПО ОДНОЙ В КРОССОВЕРЕ": "https://youtube.com/shorts/xiwNb3e4aC0?si=t9267RQX_O4PDzpP",
+  "ОТВЕДЕНИЯ С ГАНТЕЛЯМИ НА ЗД": "https://youtube.com/shorts/q7dme0XBt30?si=XR9jpeYwXMskrP4u",
+  "ОТЖИМАНИЯ НА БРУСЬЯХ": "https://youtube.com/shorts/zvHpn0vfjUI?si=ibv4DLxrw5PVb_sK",
+  "ПЕРЕКРЕСТНЫЕ ОТВЕДЕНИЯ В КРОССОВЕРЕ НА ЗД": "https://youtube.com/shorts/WfI7uxlxVuc?si=fseGzFYYIkvp5vME",
+  "ПЕРЕКРЕСТНЫЕ ОТВЕДЕНИЯ В КРОССОВЕРЕ НА СД": "https://youtube.com/shorts/DsFW9Pj5PE8?si=Ceb70CiLPfcqqK_C",
+  "ПОДТЯГИВАНИЯ": "https://youtube.com/shorts/y2Oqj-1twRY?si=XS-niONFCj9lCNrG",
+  "ПОДЪЕМ ГАНТЕЛЕЙ НА БИЦЕПС": "https://youtube.com/shorts/2cfOCqvTFes?si=jVwEsUrwZm7H_66t",
+  "ПОДЪЕМ НА НОСКИ С ГАНТЕЛЬЮ": "https://youtube.com/shorts/r21WNHwdbOA?si=eaDB6eFx6e93JUm9",
+  "ПОДЪЕМ НА НОСКИ СИДЯ": "https://youtube.com/shorts/ab4_XRNiRdU?si=iTxpTo5NhfPQ1u2C",
+  "ПОДЪЕМ НА НОСКИ СТОЯ": "https://youtube.com/shorts/XIppXP7xW98?si=TJFgaioFH6dyouPP",
+  "ПОДЪЕМ НОГ": "https://youtube.com/shorts/WP2ac28xMjA?si=VsLjw4YAU8qCsysb",
+  "ПРИВЕДЕНИЯ В КРОССОВЕРЕ": "https://youtube.com/shorts/O9DC3uV9H4Y?feature=share",
+  "ПРИСЕД В ГАККЕ": "https://youtube.com/shorts/jqNcXlndMq4?si=Itkh4ngkyirUxWeQ",
+  "ПРИСЕД МАЯТНИК": "https://youtube.com/shorts/qXniJ_05z-Y?si=9MBUZ04C0Y30J7bW",
+  "ПРИСЕД СО ШТАНГОЙ": "https://youtube.com/shorts/nbyi_SwS49E?si=AsPgFzUv9oD4FCwz",
+  "ПРИСЕД СО ШТАНГОЙ НА ГРУДИ": "https://youtube.com/shorts/kwD8M4DeLkQ?si=PyD5cjwnwbONzTnG",
+  "ПРИСЕД СО ШТАНГОЙ НА СПИНЕ": "https://youtube.com/shorts/_mM0hkJXf1c?si=mz74D_J3EZyCmQXr",
+  "ПРОТЯЖКА": "https://youtube.com/shorts/LBB6gFAEJ1w?feature=share",
+  "ПУЛОВЕР С ВЕРХНЕГО БЛОКА": "https://youtube.com/shorts/_B0xiPI00CM?si=SAU4EmBFZgfIm6ol",
+  "ПОДЪЕМ ШТАНГИ НА БИЦЕПС": "https://youtube.com/shorts/4CTs5jcLlYA?si=IeCy7OrJf7z7kDz6",
+  "РАЗГИБАНИЯ В КРОССОВЕРЕ ИЗ ЗА ГОЛОВЫ": "https://youtube.com/shorts/RNsaEY8Fl30?si=UeR8hqtSRI0qsiQn",
+  "РАЗГИБАНИЯ ГОЛЕНИ": "https://youtube.com/shorts/g-GG7qj5lwI?si=zBSoAJbYMzwiF3JR",
+  "РАЗГИБАНИЯ ПРЕДПЛЕЧИЙ": "https://youtube.com/shorts/RaCO_QdwNDk?si=tsW24byOK_RIYL6H",
+  "РАЗГИБАНИЯ ПРЕДПЛЕЧИЙ (КОСИЧКА)": "https://youtube.com/shorts/RaCO_QdwNDk?si=tsW24byOK_RIYL6H",
+  "РАЗГИБАНИЯ ПРЕДПЛЕЧИЙ (ПО ОДНОЙ)": "https://youtube.com/shorts/RaCO_QdwNDk?si=tsW24byOK_RIYL6H",
+  "РУМЫНСКАЯ ТЯГА": "https://youtube.com/shorts/IpdpqT_QRnk?si=C2GL8Ixr5tpCzf1O",
+  "СГИБАНИЯ ГОЛЕНИ ЛЕЖА": "https://youtube.com/shorts/7ksX33S7t6Y?si=2hrm7o1XIlvYkv0p",
+  "СГИБАНИЯ ГОЛЕНИ СИДЯ": "https://youtube.com/shorts/DnGfUqSiU2Y?si=e4hxrbaf9ztAPUf7",
+  "СГИБАНИЯ ГОЛЕНИ СТОЯ": "https://youtube.com/shorts/Fc3gjrZDWNQ?si=NI0Axg6xVx6Z4QN_",
+  "СГИБАНИЯ НА БИЦ В ТРЕНАЖЕРЕ": "https://youtube.com/shorts/aCz-WhdiuR8?si=aLWMU2zK8_roRLP7",
+  "СГИБАНИЯ НА СКАМЬЕ СКОТА": "https://youtube.com/shorts/eUsqPNz64ow?si=UBK6sIxGbX-kG0kb",
+  "СГИБАНИЯ С ГАНТЕЛЯМИ ЛЕЖА НА СКАМЬЕ": "https://youtube.com/shorts/i7sGJDDpvv0?si=Py16C_wqpn7zqoKh",
+  "СГИБАНИЯ С ГАНТЕЛЯМИ ЛЕЖА С УПОРОМ": "https://youtube.com/shorts/sxKN7hMzrB0?si=A39XdzKbf_CrPafI",
+  "СГИБАНИЯ С НИЖНЕГО БЛОКА": "https://youtube.com/shorts/ssyAtQZlH5k?si=_zAnnseP7rL7vJUC",
+  "СГИБАНИЯ С УПОРОМ В СКАМЬЮ": "https://youtube.com/shorts/rmaYUpgcuHA?si=0LBDujlUt9oKzC67",
+  "СКРУЧИВАНИЯ ЛЕЖА": "https://youtube.com/shorts/zL15qLoqVMQ?si=h5btXxyzntRuf_rr",
+  "СТАНОВАЯ НА ПРЯМЫХ НОГАХ": "https://youtube.com/shorts/JzjdH5D35r4?si=3AczBrYoaQ9tu9OX",
+  "СТАНОВАЯ ТЯГА": "https://youtube.com/shorts/Nqi29Jv-wt0?si=mqsU188lpgIF-oml",
+  "Т-ТЯГА": "https://youtube.com/shorts/upjenHndKQs?si=FCGYdUz5f-sPwp9b",
+  "Т-ТЯГА С УПОРОМ": "https://youtube.com/shorts/UY60PXrjaJI?si=wslwRgG1lT8hFxRn",
+  "ТЯГА ГАНТЕЛИ В НАКЛОНЕ": "https://youtube.com/shorts/IgLS4TKMRw0?si=PebfE7Zr_7IQfwbi",
+  "ТЯГА ШТАНГИ В НАКЛОНЕ": "https://youtube.com/shorts/tvr6S9mFOY0?si=JEewg-RCI5FwmjO8",
+  "ФРАНЦУЗСКИЙ ЖИМ": "https://youtube.com/shorts/9HrxzNDViDU?si=QCnZLyun07CQvar0",
+  "ФРАНЦУЗСКИЙ ЖИМ В КРОССОВЕРЕ СТОЯ": "https://youtube.com/shorts/eT2fCdArdKs?si=d9W2B7qHKYwHRAXj",
+  "ФРОНТАЛЬНАЯ ТЯГА": "https://youtube.com/shorts/UYrD249JcvQ?si=imDtdYvXpDwMwvj-",
+  "ФРОНТАЛЬНАЯ ТЯГА ПО ОДНОЙ": "https://youtube.com/shorts/UYrD249JcvQ?si=imDtdYvXpDwMwvj-",
+  "ЯГОДИЧНЫЙ МОСТ": "https://youtube.com/shorts/gPgUkOT6WnI?si=g4YSBTnxffxthQlO",
+  "ЯГОДИЧНЫЙ МОСТ В СМИТЕ": "https://youtube.com/shorts/z0i3zuIP5XI?si=e1Zu1aEZMLM7hIsI",
+  "ЯГОДИЧНЫЙ МОСТ В ТРЕНАЖЕРЕ": "https://youtube.com/shorts/Xkh1qPD7P0E?si=2gRF5E4Yd1-7W5Xf",
+  "ЯГОДИЧНЫЙ МОСТ НА ОДНОЙ": "https://youtube.com/shorts/5yYeKVoluZQ?si=h8GpRFchYLFw9Dx6",
+  "GHR ГИПЕРЭЕКСТЕНЗИЯ": "https://youtube.com/shorts/ybIF_SCY_hw?si=_ZByubugLO67C3Vv",
+  "ЖИМ БРУСЬЕВ": "https://youtube.com/shorts/RkZNTAYg_kw?si=rWZ04og9Q9BlTi2w",
+  "ПРИСЕД СИДЯ В ГАККЕ": "https://youtube.com/shorts/947YXlSRcHQ?si=xKDMe-0h-ZXyHOw8",
+  "ПРИСЕД ПЛИЕ С ГАНТЕЛЕЙ": "https://youtube.com/shorts/jFDHzLOCg0A?si=i2sBub77CFiw4Oo9",
+  "ЖИМ СИДЯ В СМИТЕ": "https://youtube.com/shorts/z1VGyKHGQd4?si=WmRTtSj6aAqfunOX",
+});
+
+const onlypumpBuiltInExerciseMuscleWorkVideoUrls = Object.freeze({
+  "БОЛГАРСКИЙ ПРИСЕД ПБ": "https://youtube.com/shorts/q0YFPyP7jf0?si=_8P730-cS9htDWZt",
+  "БОЛГАРСКИЙ ПРИСЕД ЯГ": "https://youtube.com/shorts/RquD_NUCJZE?si=w-ypXb5rVR1ggeDD",
+  "ВЕРТИКАЛЬНАЯ ТЯГА": "https://youtube.com/shorts/rfKRIIVR5O4?si=rHkQNjghUAThIQDz",
+  "ВЕРТИКАЛЬНАЯ ТЯГА ПО ОДНОЙ": "https://youtube.com/shorts/rfKRIIVR5O4?si=rHkQNjghUAThIQDz",
+  "ГАКК ПРИСЕД/ПРИСЕД В СМИТЕ": "https://youtube.com/shorts/q0YFPyP7jf0?si=_8P730-cS9htDWZt",
+  "ГИПЕРЭКСТЕНЗИЯ": "https://youtube.com/shorts/Y0LD-WwunYI?si=h05GUFZyySBW_XiN",
+  "ГОБЛЕТ ПРИСЕД": "https://youtube.com/shorts/v_hBzLG0BoQ?si=4Bh3ZUd3hzU2IyKS",
+  "ГОРИЗОНТАЛЬНАЯ ТЯГА": "https://youtube.com/shorts/0vj5ect0iEI?si=xtXp0-P_5_Z368i0",
+  "ГОРИЗОНТАЛЬНАЯ ТЯГА В ХАМЕРЕ ПО ОДНОЙ": "https://youtube.com/shorts/0vj5ect0iEI?si=xtXp0-P_5_Z368i0",
+  "ГОРИЗОНТАЛЬНАЯ ШИРОКАЯ ТЯГА": "https://youtube.com/shorts/DNquxVOtrb8?si=oBLN4UHmWG-Ym0yX",
+  "ГОРИЗОНТАЛЬНЫЕ ПРИВЕДЕНИЯ": "https://youtube.com/shorts/60tGFbnhovg?si=CnyUhFvXypcGWtiD",
+  "ЖИМ В БЛОКЕ": "https://youtube.com/shorts/JzRDXewOk4Y?si=ekQNj2dDvqcqKqJF",
+  "ЖИМ В ТРЕНАЖЕРЕ СИДЯ": "https://youtube.com/shorts/6ugGPyNepXQ?si=UKIf0Yh74Qeqy0Sh",
+  "ЖИМ ГАНТЕЛЕЙ ЛЕЖА": "https://youtube.com/shorts/JzRDXewOk4Y?si=ekQNj2dDvqcqKqJF",
+  "ЖИМ ГАНТЕЛЕЙ НА НАКЛОННОЙ": "https://youtube.com/shorts/JzRDXewOk4Y?si=ekQNj2dDvqcqKqJF",
+  "ЖИМ ГАНТЕЛЕЙ СИДЯ": "https://youtube.com/shorts/6ugGPyNepXQ?si=UKIf0Yh74Qeqy0Sh",
+  "ЖИМ ЛЕЖА": "https://youtube.com/shorts/JzRDXewOk4Y?si=ekQNj2dDvqcqKqJF",
+  "ЖИМ ШТАНГИ ЛЕЖА НА НАКЛОННОЙ": "https://youtube.com/shorts/JzRDXewOk4Y?si=ekQNj2dDvqcqKqJF",
+  "ЖИМ НОГАМИ": "https://youtube.com/shorts/q0YFPyP7jf0?si=_8P730-cS9htDWZt",
+  "ЖИМ НОГАМИ СИДЯ": "https://youtube.com/shorts/q0YFPyP7jf0?si=_8P730-cS9htDWZt",
+  "ЖИМ СИДЯ ОДНОЙ НОГОЙ": "https://youtube.com/shorts/RquD_NUCJZE?si=w-ypXb5rVR1ggeDD",
+  "ЗАШАГИВАНИЯ НА ТУМБУ": "https://youtube.com/shorts/RquD_NUCJZE?si=w-ypXb5rVR1ggeDD",
+  "КИК-БЕК": "https://youtube.com/shorts/hu7Z3nr1Bz0?si=0FtlxIUPFDMGtOyl",
+  "КИК-БЕК СТОЯ": "https://youtube.com/shorts/hu7Z3nr1Bz0?si=0FtlxIUPFDMGtOyl",
+  "МОЛИТВА": "https://youtube.com/shorts/h8pSbWH3UQQ?si=SDiwsFJQc02EwblW",
+  "МОЛОТКИ": "https://youtube.com/shorts/4AUre2zZ5so?si=3AXQUWMUlccbCbt_",
+  "ОБРАТНЫЙ ЖИМ НОГОЙ В ТРЕНАЖЕРЕ": "https://youtube.com/shorts/hu7Z3nr1Bz0?si=0FtlxIUPFDMGtOyl",
+  "ОТВЕДЕНИЯ БЕДЕР СИДЯ": "https://youtube.com/shorts/0XaZh1Jz0O4?si=wVztAsDjRRI9m7aI",
+  "ОТВЕДЕНИЯ БЕДРА С НИЖНЕГО БЛОКА": "https://youtube.com/shorts/0XaZh1Jz0O4?si=wVztAsDjRRI9m7aI",
+  "ОТВЕДЕНИЯ В БЛОКЕ": "https://youtube.com/shorts/4pZUXkdueY8?si=VyRMmkvbLKSSXdwZ",
+  "ОТВЕДЕНИЯ ГОРИЗОНТАЛЬНЫЕ": "https://youtube.com/shorts/htM0SSfBns4?si=Xsa5fP5EFmTuvRlq",
+  "ОТВЕДЕНИЯ ПЛЕЧЕЙ ЧЕРЕЗ СТОРОНЫ": "https://youtube.com/shorts/4pZUXkdueY8?si=VyRMmkvbLKSSXdwZ",
+  "ОТВЕДЕНИЯ ПО ОДНОЙ В КРОССОВЕРЕ": "https://youtube.com/shorts/4pZUXkdueY8?si=VyRMmkvbLKSSXdwZ",
+  "ОТВЕДЕНИЯ С ГАНТЕЛЯМИ НА ЗД": "https://youtube.com/shorts/DNquxVOtrb8?si=oBLN4UHmWG-Ym0yX",
+  "ОТЖИМАНИЯ НА БРУСЬЯХ": "https://youtube.com/shorts/JzRDXewOk4Y?si=ekQNj2dDvqcqKqJF",
+  "ПЕРЕКРЕСТНЫЕ ОТВЕДЕНИЯ В КРОССОВЕРЕ НА ЗД": "https://youtube.com/shorts/htM0SSfBns4?si=Xsa5fP5EFmTuvRlq",
+  "ПЕРЕКРЕСТНЫЕ ОТВЕДЕНИЯ В КРОССОВЕРЕ НА СД": "https://youtube.com/shorts/4pZUXkdueY8?si=VyRMmkvbLKSSXdwZ",
+  "ПОДТЯГИВАНИЯ": "https://youtube.com/shorts/rfKRIIVR5O4?si=rHkQNjghUAThIQDz",
+  "ПОДЪЕМ ГАНТЕЛЕЙ НА БИЦЕПС": "https://youtube.com/shorts/4AUre2zZ5so?si=3AXQUWMUlccbCbt_",
+  "ПОДЪЕМ НА НОСКИ С ГАНТЕЛЬЮ": "https://youtube.com/shorts/G6QlM1fNaQw?si=18XfqZj_huFhtQRj",
+  "ПОДЪЕМ НА НОСКИ СИДЯ": "https://youtube.com/shorts/bz4ba0yqbUw?si=wvJncZQUeYjtgISu",
+  "ПОДЪЕМ НА НОСКИ СТОЯ": "https://youtube.com/shorts/G6QlM1fNaQw?si=18XfqZj_huFhtQRj",
+  "ПОДЪЕМ НОГ": "https://youtube.com/shorts/h8pSbWH3UQQ?si=SDiwsFJQc02EwblW",
+  "ПРИВЕДЕНИЯ В КРОССОВЕРЕ": "https://youtube.com/shorts/60tGFbnhovg?si=CnyUhFvXypcGWtiD",
+  "ПРИСЕД В ГАККЕ": "https://youtube.com/shorts/v_hBzLG0BoQ?si=4Bh3ZUd3hzU2IyKS",
+  "ПРИСЕД МАЯТНИК": "https://youtube.com/shorts/v_hBzLG0BoQ?si=4Bh3ZUd3hzU2IyKS",
+  "ПРИСЕД СО ШТАНГОЙ": "https://youtube.com/shorts/q0YFPyP7jf0?si=_8P730-cS9htDWZt",
+  "ПРИСЕД СО ШТАНГОЙ НА ГРУДИ": "https://youtube.com/shorts/q0YFPyP7jf0?si=_8P730-cS9htDWZt",
+  "ПРИСЕД СО ШТАНГОЙ НА СПИНЕ": "https://youtube.com/shorts/RquD_NUCJZE?si=w-ypXb5rVR1ggeDD",
+  "ПРОТЯЖКА": "https://youtube.com/shorts/4pZUXkdueY8?si=VyRMmkvbLKSSXdwZ",
+  "ПУЛОВЕР С ВЕРХНЕГО БЛОКА": "https://youtube.com/shorts/_0nPzFGn23s?si=O3Ncw1y45Z2xmQSw",
+  "ПОДЪЕМ ШТАНГИ НА БИЦЕПС": "https://youtube.com/shorts/4AUre2zZ5so?si=3AXQUWMUlccbCbt_",
+  "РАЗГИБАНИЯ В КРОССОВЕРЕ ИЗ ЗА ГОЛОВЫ": "https://youtube.com/shorts/fCImRf210Zg?si=0Y1_IYz1GquiOdeF",
+  "РАЗГИБАНИЯ ГОЛЕНИ": "https://youtube.com/shorts/v_hBzLG0BoQ?si=4Bh3ZUd3hzU2IyKS",
+  "РАЗГИБАНИЯ ПРЕДПЛЕЧИЙ": "https://youtube.com/shorts/fCImRf210Zg?si=0Y1_IYz1GquiOdeF",
+  "РАЗГИБАНИЯ ПРЕДПЛЕЧИЙ (КОСИЧКА)": "https://youtube.com/shorts/fCImRf210Zg?si=0Y1_IYz1GquiOdeF",
+  "РАЗГИБАНИЯ ПРЕДПЛЕЧИЙ (ПО ОДНОЙ)": "https://youtube.com/shorts/fCImRf210Zg?si=0Y1_IYz1GquiOdeF",
+  "РУМЫНСКАЯ ТЯГА": "https://youtube.com/shorts/WUZvt6g9WPA?si=hiBNKRS9-CL5QuWD",
+  "СГИБАНИЯ ГОЛЕНИ ЛЕЖА": "https://youtube.com/shorts/wF7uv-XiGGM?si=RoF-keZFaIXToaYP",
+  "СГИБАНИЯ ГОЛЕНИ СИДЯ": "https://youtube.com/shorts/wF7uv-XiGGM?si=RoF-keZFaIXToaYP",
+  "СГИБАНИЯ ГОЛЕНИ СТОЯ": "https://youtube.com/shorts/wF7uv-XiGGM?si=RoF-keZFaIXToaYP",
+  "СГИБАНИЯ НА БИЦ В ТРЕНАЖЕРЕ": "https://youtube.com/shorts/4AUre2zZ5so?si=3AXQUWMUlccbCbt_",
+  "СГИБАНИЯ НА СКАМЬЕ СКОТА": "https://youtube.com/shorts/4AUre2zZ5so?si=3AXQUWMUlccbCbt_",
+  "СГИБАНИЯ С ГАНТЕЛЯМИ ЛЕЖА НА СКАМЬЕ": "https://youtube.com/shorts/4AUre2zZ5so?si=3AXQUWMUlccbCbt_",
+  "СГИБАНИЯ С ГАНТЕЛЯМИ ЛЕЖА С УПОРОМ": "https://youtube.com/shorts/4AUre2zZ5so?si=3AXQUWMUlccbCbt_",
+  "СГИБАНИЯ С НИЖНЕГО БЛОКА": "https://youtube.com/shorts/4AUre2zZ5so?si=3AXQUWMUlccbCbt_",
+  "СГИБАНИЯ С УПОРОМ В СКАМЬЮ": "https://youtube.com/shorts/4AUre2zZ5so?si=3AXQUWMUlccbCbt_",
+  "СКРУЧИВАНИЯ ЛЕЖА": "https://youtube.com/shorts/h8pSbWH3UQQ?si=SDiwsFJQc02EwblW",
+  "СТАНОВАЯ НА ПРЯМЫХ НОГАХ": "https://youtube.com/shorts/Y0LD-WwunYI?si=h05GUFZyySBW_XiN",
+  "СТАНОВАЯ ТЯГА": "https://youtube.com/shorts/RquD_NUCJZE?si=w-ypXb5rVR1ggeDD",
+  "Т-ТЯГА": "https://youtube.com/shorts/INSJicAoTD0?si=bRfij7OaYVfWyq2P",
+  "Т-ТЯГА С УПОРОМ": "https://youtube.com/shorts/INSJicAoTD0?si=bRfij7OaYVfWyq2P",
+  "ТЯГА ГАНТЕЛИ В НАКЛОНЕ": "https://youtube.com/shorts/INSJicAoTD0?si=bRfij7OaYVfWyq2P",
+  "ТЯГА ШТАНГИ В НАКЛОНЕ": "https://youtube.com/shorts/INSJicAoTD0?si=bRfij7OaYVfWyq2P",
+  "ФРАНЦУЗСКИЙ ЖИМ": "https://youtube.com/shorts/fCImRf210Zg?si=0Y1_IYz1GquiOdeF",
+  "ФРАНЦУЗСКИЙ ЖИМ В КРОССОВЕРЕ СТОЯ": "https://youtube.com/shorts/fCImRf210Zg?si=0Y1_IYz1GquiOdeF",
+  "ФРОНТАЛЬНАЯ ТЯГА": "https://youtube.com/shorts/_0nPzFGn23s?si=O3Ncw1y45Z2xmQSw",
+  "ФРОНТАЛЬНАЯ ТЯГА ПО ОДНОЙ": "https://youtube.com/shorts/_0nPzFGn23s?si=O3Ncw1y45Z2xmQSw",
+  "ЯГОДИЧНЫЙ МОСТ": "https://youtube.com/shorts/hu7Z3nr1Bz0?si=0FtlxIUPFDMGtOyl",
+  "ЯГОДИЧНЫЙ МОСТ В СМИТЕ": "https://youtube.com/shorts/hu7Z3nr1Bz0?si=0FtlxIUPFDMGtOyl",
+  "ЯГОДИЧНЫЙ МОСТ В ТРЕНАЖЕРЕ": "https://youtube.com/shorts/hu7Z3nr1Bz0?si=0FtlxIUPFDMGtOyl",
+  "ЯГОДИЧНЫЙ МОСТ НА ОДНОЙ": "https://youtube.com/shorts/hu7Z3nr1Bz0?si=0FtlxIUPFDMGtOyl",
+  "GHR ГИПЕРЭЕКСТЕНЗИЯ": "https://youtube.com/shorts/Y0LD-WwunYI?si=h05GUFZyySBW_XiN",
+  "ЖИМ БРУСЬЕВ": "https://youtube.com/shorts/JzRDXewOk4Y?si=ekQNj2dDvqcqKqJF",
+  "ПРИСЕД СИДЯ В ГАККЕ": "https://youtube.com/shorts/v_hBzLG0BoQ?si=I7OlxDCVH0NpDh9k",
+  "ПРИСЕД ПЛИЕ С ГАНТЕЛЕЙ": "https://youtube.com/shorts/RquD_NUCJZE?si=w-ypXb5rVR1ggeDD",
+  "ЖИМ СИДЯ В СМИТЕ": "https://youtube.com/shorts/6ugGPyNepXQ?si=UKIf0Yh74Qeqy0Sh",
+});
+
+const onlypumpBuiltInExerciseVideoUrlAliases = Object.freeze({
+  "GHR ГИПЕРЭКСТЕНЗИЯ": "GHR ГИПЕРЭЕКСТЕНЗИЯ",
+});
+const createOnlypumpExerciseVideoUrlIndex = (items) => Object.freeze(Object.fromEntries(Object.entries(items).map(([name, url]) => [normalizeExerciseDescriptionKey(name), url])));
+const onlypumpBuiltInExerciseTechniqueVideoUrlsByKey = createOnlypumpExerciseVideoUrlIndex(onlypumpBuiltInExerciseTechniqueVideoUrls);
+const onlypumpBuiltInExerciseMuscleWorkVideoUrlsByKey = createOnlypumpExerciseVideoUrlIndex(onlypumpBuiltInExerciseMuscleWorkVideoUrls);
+const getOnlypumpBuiltInExerciseVideoUrl = (name = "", items, index) => {
+  const rawName = String(name || "").trim();
+  const aliasName = onlypumpBuiltInExerciseVideoUrlAliases[rawName] || rawName;
+  return items[rawName] || items[aliasName] || index[normalizeExerciseDescriptionKey(rawName)] || index[normalizeExerciseDescriptionKey(aliasName)] || "";
+};
+const getOnlypumpBuiltInExerciseTechniqueVideoUrl = (name = "") => getOnlypumpBuiltInExerciseVideoUrl(name, onlypumpBuiltInExerciseTechniqueVideoUrls, onlypumpBuiltInExerciseTechniqueVideoUrlsByKey);
+const getOnlypumpBuiltInExerciseMuscleWorkVideoUrl = (name = "") => getOnlypumpBuiltInExerciseVideoUrl(name, onlypumpBuiltInExerciseMuscleWorkVideoUrls, onlypumpBuiltInExerciseMuscleWorkVideoUrlsByKey);
+const getOnlypumpYouTubeEmbedUrl = (url = "") => {
+  const rawUrl = String(url || "").trim();
+  if (!rawUrl) return "";
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.replace(/^www\./, "").replace(/^m\./, "");
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    let videoId = "";
+    if (host === "youtu.be") videoId = parts[0] || "";
+    if (host.endsWith("youtube.com")) {
+      if (parts[0] === "shorts" || parts[0] === "embed") videoId = parts[1] || "";
+      if (parts[0] === "watch") videoId = parsed.searchParams.get("v") || "";
+    }
+    return videoId ? `https://www.youtube.com/embed/${videoId}` : "";
+  } catch (error) {
+    return "";
+  }
+};
+
 const parseOnlypumpBuiltInExerciseRows = (source = "") => source.trim().split(/\n+/).map((line, index) => {
   const [name, primary, secondary = ""] = line.split("\t");
   const rawName = String(name || "").trim();
@@ -2656,8 +2868,8 @@ const systemStrengthExerciseLibraryItems = onlypumpStrengthExerciseSeedRows.map(
   instruction: item.instruction || item.description || "",
   techniqueDescription: item.description || "",
   muscleWorkImageUrl: "",
-  muscleWorkVideoUrl: "",
-  techniqueVideoUrl: "",
+  muscleWorkVideoUrl: getOnlypumpBuiltInExerciseMuscleWorkVideoUrl(item.name),
+  techniqueVideoUrl: getOnlypumpBuiltInExerciseTechniqueVideoUrl(item.name),
   measurementMode: "weight_reps",
   distanceUnit: "km",
   countsInMuscleStats: true,
@@ -10391,6 +10603,22 @@ const toggleExerciseMeasurementSetting = (field) => {
     setExerciseVideoSheet({ exercise: getExerciseGuideContent(exercise) });
   };
 
+  const renderExerciseVideoMedia = (url, fallback, title = "Видео упражнения") => {
+    const videoUrl = String(url || "").trim();
+    const youtubeEmbedUrl = getOnlypumpYouTubeEmbedUrl(videoUrl);
+    if (youtubeEmbedUrl) {
+      return <iframe
+        src={youtubeEmbedUrl}
+        title={title}
+        className="h-full w-full rounded-[24px]"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowFullScreen
+      />;
+    }
+    if (videoUrl) return <video src={videoUrl} controls className="h-full w-full rounded-[24px]" />;
+    return fallback;
+  };
+
   const buildLocalExerciseHistory = (exercise) => {
     if (!exercise) return [];
     return [...workouts]
@@ -13891,7 +14119,7 @@ const toggleExerciseMeasurementSetting = (field) => {
                 {exercise.muscleWorkImageUrl ? <img src={exercise.muscleWorkImageUrl} alt="Рабочие мышцы" className="h-full w-full rounded-[24px] object-cover" /> : "Здесь будет фото рабочих мышечных групп"}
               </div>
               <div className="flex aspect-video items-center justify-center rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
-                {exercise.muscleWorkVideoUrl ? <video src={exercise.muscleWorkVideoUrl} controls className="h-full w-full rounded-[24px]" /> : "Здесь будет ролик с работой мышц"}
+                {renderExerciseVideoMedia(exercise.muscleWorkVideoUrl, "Здесь будет ролик с работой мышц", `${exercise.name || "Упражнение"}: работа мышц`)}
               </div>
             </div>
           </div>
@@ -13914,7 +14142,7 @@ const toggleExerciseMeasurementSetting = (field) => {
           </div>
           <div className="onlypump-list-62 mt-5 space-y-4 overflow-y-auto onlypump-scrollbar-none">
             <div className="flex aspect-video items-center justify-center rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
-              {exercise.techniqueVideoUrl ? <video src={exercise.techniqueVideoUrl} controls className="h-full w-full rounded-[24px]" /> : <span className="flex flex-col items-center gap-3"><Play size={34} />Здесь будет видео техники</span>}
+              {renderExerciseVideoMedia(exercise.techniqueVideoUrl, <span className="flex flex-col items-center gap-3"><Play size={34} />Здесь будет видео техники</span>, `${exercise.name || "Упражнение"}: техника`)}
             </div>
             <div className="rounded-[24px] bg-white/[0.04] p-4">
               <h3 className="text-sm font-black uppercase tracking-[0.16em] text-zinc-500">Описание техники</h3>
