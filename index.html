@@ -2648,6 +2648,7 @@ const getOnlypumpBuiltInExerciseVideoUrl = (name = "", items, index) => {
 };
 const getOnlypumpBuiltInExerciseTechniqueVideoUrl = (name = "") => getOnlypumpBuiltInExerciseVideoUrl(name, onlypumpBuiltInExerciseTechniqueVideoUrls, onlypumpBuiltInExerciseTechniqueVideoUrlsByKey);
 const getOnlypumpBuiltInExerciseMuscleWorkVideoUrl = (name = "") => getOnlypumpBuiltInExerciseVideoUrl(name, onlypumpBuiltInExerciseMuscleWorkVideoUrls, onlypumpBuiltInExerciseMuscleWorkVideoUrlsByKey);
+const ONLYPUMP_EXERCISE_IMAGE_BASE_URL = "assets/exercises/";
 const ONLYPUMP_EXERCISE_MUSCLE_IMAGE_BASE_URL = "assets/exercises/muscles/";
 const onlypumpBuiltInExerciseMuscleWorkImageFiles = Object.freeze({
   "АВСТРАЛИЙСКИЕ ПОДТЯГИВАНИЯ (СВЕРХУ)": "avstraliyskie-podtyagivaniya-sverkhu.png",
@@ -2753,6 +2754,23 @@ const getOnlypumpBuiltInExerciseMuscleWorkImageUrl = (name = "") => {
   const fileName = getOnlypumpBuiltInExerciseMuscleWorkImageFile(name);
   return fileName ? ONLYPUMP_EXERCISE_MUSCLE_IMAGE_BASE_URL + fileName : "";
 };
+const getOnlypumpBuiltInExerciseImageUrl = (name = "") => {
+  const fileName = getOnlypumpBuiltInExerciseMuscleWorkImageFile(name);
+  return fileName ? ONLYPUMP_EXERCISE_IMAGE_BASE_URL + fileName : "";
+};
+const isOnlypumpExercisePhotoUrl = (url = "") => {
+  const value = String(url || "").trim();
+  return value.startsWith(ONLYPUMP_EXERCISE_IMAGE_BASE_URL) && !value.startsWith(ONLYPUMP_EXERCISE_MUSCLE_IMAGE_BASE_URL);
+};
+const getExerciseImageUrlFromSource = (source = {}, systemSource = {}) => {
+  const legacyMuscleImageUrl = source.muscleWorkImageUrl || source.muscle_work_image_url || "";
+  return source.exerciseImageUrl || source.exercise_image_url || (isOnlypumpExercisePhotoUrl(legacyMuscleImageUrl) ? legacyMuscleImageUrl : "") || systemSource?.exerciseImageUrl || "";
+};
+const getMuscleWorkImageUrlFromSource = (source = {}, systemSource = {}) => {
+  const candidate = source.muscleWorkImageUrl || source.muscle_work_image_url || "";
+  if (candidate && !isOnlypumpExercisePhotoUrl(candidate)) return candidate;
+  return systemSource?.muscleWorkImageUrl || "";
+};
 const getOnlypumpYouTubeEmbedUrl = (url = "") => {
   const rawUrl = String(url || "").trim();
   if (!rawUrl) return "";
@@ -2781,7 +2799,7 @@ const ExerciseMediaImage = ({ src, alt = "Рабочие мышцы", fallback =
 
 const ExerciseThumbnail = ({ exercise = {}, className = "" }) => {
   const [hasError, setHasError] = React.useState(false);
-  const imageUrl = String(exercise.muscleWorkImageUrl || exercise.muscle_work_image_url || "").trim();
+  const imageUrl = String(getExerciseImageUrlFromSource(exercise) || "").trim();
   const label = String(exercise.name || "У").trim().slice(0, 1).toUpperCase();
   return <span className={`flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] text-lg font-black text-zinc-500 ${className}`}>
     {imageUrl && !hasError
@@ -2990,6 +3008,7 @@ const systemStrengthExerciseLibraryItems = onlypumpStrengthExerciseSeedRows.map(
   description: item.description || "",
   instruction: item.instruction || item.description || "",
   techniqueDescription: item.description || "",
+  exerciseImageUrl: getOnlypumpBuiltInExerciseImageUrl(item.name),
   muscleWorkImageUrl: getOnlypumpBuiltInExerciseMuscleWorkImageUrl(item.name),
   muscleWorkVideoUrl: getOnlypumpBuiltInExerciseMuscleWorkVideoUrl(item.name),
   techniqueVideoUrl: getOnlypumpBuiltInExerciseTechniqueVideoUrl(item.name),
@@ -3015,6 +3034,7 @@ const systemExerciseLibraryItems = [
     description: "",
     instruction: "",
     techniqueDescription: "",
+    exerciseImageUrl: "",
     muscleWorkImageUrl: "",
     muscleWorkVideoUrl: "",
     techniqueVideoUrl: "",
@@ -3931,7 +3951,8 @@ const mapWorkoutExerciseFromApi = (row = {}, index = 0) => {
 	    description: row.description || row.exercise_description || systemSource?.description || "",
 	    instruction: row.instruction || row.description || systemSource?.instruction || systemSource?.description || "",
 	    techniqueDescription: row.technique_description || row.techniqueDescription || row.description || systemSource?.techniqueDescription || systemSource?.description || "",
-	    muscleWorkImageUrl: row.muscle_work_image_url || row.muscleWorkImageUrl || "",
+	    exerciseImageUrl: getExerciseImageUrlFromSource(row, systemSource),
+	    muscleWorkImageUrl: getMuscleWorkImageUrlFromSource(row, systemSource),
 	    muscleWorkVideoUrl: row.muscle_work_video_url || row.muscleWorkVideoUrl || "",
 	    techniqueVideoUrl: row.technique_video_url || row.techniqueVideoUrl || "",
 	    note: row.notes || row.note || "",
@@ -7339,7 +7360,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       description: source.description || source.exercise_description || systemSource?.description || "",
       instruction: source.instruction || source.description || systemSource?.instruction || systemSource?.description || "",
       techniqueDescription: source.techniqueDescription || source.technique_description || source.description || systemSource?.techniqueDescription || systemSource?.description || "",
-      muscleWorkImageUrl: source.muscleWorkImageUrl || source.muscle_work_image_url || "",
+      exerciseImageUrl: getExerciseImageUrlFromSource(source, systemSource),
+      muscleWorkImageUrl: getMuscleWorkImageUrlFromSource(source, systemSource),
       muscleWorkVideoUrl: source.muscleWorkVideoUrl || source.muscle_work_video_url || "",
       techniqueVideoUrl: source.techniqueVideoUrl || source.technique_video_url || "",
       ...settings,
@@ -7368,6 +7390,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       description: source.description || "",
       instruction: source.instruction || source.description || "",
       techniqueDescription: source.techniqueDescription || source.description || "",
+      exerciseImageUrl: source.exerciseImageUrl || "",
       muscleWorkImageUrl: source.muscleWorkImageUrl || "",
       muscleWorkVideoUrl: source.muscleWorkVideoUrl || "",
       techniqueVideoUrl: source.techniqueVideoUrl || "",
@@ -8582,7 +8605,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       description: row.description || row.exercise_description || systemSource?.description || "",
       instruction: row.instruction || row.description || systemSource?.instruction || systemSource?.description || "",
       techniqueDescription: row.technique_description || row.techniqueDescription || row.description || systemSource?.techniqueDescription || systemSource?.description || "",
-      muscleWorkImageUrl: row.muscle_work_image_url || row.muscleWorkImageUrl || "",
+      exerciseImageUrl: getExerciseImageUrlFromSource(row, systemSource),
+      muscleWorkImageUrl: getMuscleWorkImageUrlFromSource(row, systemSource),
       muscleWorkVideoUrl: row.muscle_work_video_url || row.muscleWorkVideoUrl || "",
       techniqueVideoUrl: row.technique_video_url || row.techniqueVideoUrl || "",
       ...settings,
@@ -9798,7 +9822,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 	      description: row.description || row.exercise_description || systemSource?.description || "",
 	      instruction: row.instruction || row.description || systemSource?.instruction || systemSource?.description || "",
 	      techniqueDescription: row.technique_description || row.techniqueDescription || row.description || systemSource?.techniqueDescription || systemSource?.description || "",
-	      muscleWorkImageUrl: row.muscle_work_image_url || row.muscleWorkImageUrl || "",
+		      exerciseImageUrl: getExerciseImageUrlFromSource(row, systemSource),
+		      muscleWorkImageUrl: getMuscleWorkImageUrlFromSource(row, systemSource),
 	      muscleWorkVideoUrl: row.muscle_work_video_url || row.muscleWorkVideoUrl || "",
 	      techniqueVideoUrl: row.technique_video_url || row.techniqueVideoUrl || "",
 	      note: row.notes || "",
@@ -10711,7 +10736,8 @@ const toggleExerciseMeasurementSetting = (field) => {
       description: exercise.description || exercise.instruction || exercise.notes || exercise.note || source.description || source.instruction || "",
       instruction: exercise.instruction || exercise.description || exercise.notes || exercise.note || source.instruction || source.description || "",
       techniqueDescription: exercise.techniqueDescription || exercise.technique_description || exercise.description || exercise.notes || exercise.note || source.techniqueDescription || source.description || "",
-      muscleWorkImageUrl: exercise.muscleWorkImageUrl || exercise.muscle_work_image_url || source.muscleWorkImageUrl || "",
+      exerciseImageUrl: getExerciseImageUrlFromSource(exercise, source),
+      muscleWorkImageUrl: getMuscleWorkImageUrlFromSource(exercise, source),
       muscleWorkVideoUrl: exercise.muscleWorkVideoUrl || exercise.muscle_work_video_url || source.muscleWorkVideoUrl || "",
       techniqueVideoUrl: exercise.techniqueVideoUrl || exercise.technique_video_url || source.techniqueVideoUrl || "",
     };
@@ -12662,6 +12688,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       description: source.description || "",
       instruction: source.instruction || source.description || "",
       techniqueDescription: source.techniqueDescription || source.description || "",
+      exerciseImageUrl: source.exerciseImageUrl || "",
       muscleWorkImageUrl: source.muscleWorkImageUrl || "",
       muscleWorkVideoUrl: source.muscleWorkVideoUrl || "",
       techniqueVideoUrl: source.techniqueVideoUrl || "",
@@ -14289,7 +14316,7 @@ const toggleExerciseMeasurementSetting = (field) => {
           <div className="onlypump-list-62 mt-5 space-y-4 overflow-y-auto onlypump-scrollbar-none">
             {guideTab === "description" && <>
               <div className="flex aspect-video items-center justify-center overflow-hidden rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
-                <ExerciseMediaImage src={exercise.muscleWorkImageUrl} alt={`${exercise.name || "Упражнение"}: фото`} fallback="Здесь будет фото упражнения" />
+                <ExerciseMediaImage src={exercise.exerciseImageUrl} alt={`${exercise.name || "Упражнение"}: фото`} fallback="Здесь будет фото упражнения" />
               </div>
               <div className="rounded-[24px] bg-white/[0.04] p-4">
                 <h3 className="text-sm font-black uppercase tracking-[0.16em] text-zinc-500">Описание</h3>
