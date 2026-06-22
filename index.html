@@ -2801,7 +2801,7 @@ const ExerciseThumbnail = ({ exercise = {}, className = "" }) => {
   const [hasError, setHasError] = React.useState(false);
   const imageUrl = String(getExerciseImageUrlFromSource(exercise) || "").trim();
   const label = String(exercise.name || "У").trim().slice(0, 1).toUpperCase();
-  return <span className={`flex h-[72px] w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] text-lg font-black text-zinc-500 ${className}`}>
+  return <span className={`flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] text-lg font-black text-zinc-500 ${className}`}>
     {imageUrl && !hasError
       ? <img src={imageUrl} alt={exercise.name || "Упражнение"} onError={() => setHasError(true)} className="h-full w-full object-cover" />
       : label}
@@ -12763,7 +12763,7 @@ const toggleExerciseMeasurementSetting = (field) => {
                   key={`${section.group}-${exercise.name}-${exercise.id || exercise.sourceExerciseId || ""}`}
                   data-exercise-picker-key={encodeURIComponent(key)}
                   onClick={exerciseBaseMode === "view" ? () => openExerciseGuide(exercise, "description") : undefined}
-                  className={`flex h-[96px] w-full items-center gap-3 rounded-2xl p-3 text-left font-semibold transition ${exerciseBaseMode === "view" ? "cursor-pointer" : ""} ${selected ? 'bg-red-500/15 text-white ring-1 ring-red-500/40' : focused ? 'bg-red-500/10 text-white ring-1 ring-red-500/25' : 'bg-black/30 hover:bg-white/[0.06]'}`}
+                  className={`flex h-[84px] w-full items-center gap-3 rounded-2xl p-3 text-left font-semibold transition ${exerciseBaseMode === "view" ? "cursor-pointer" : ""} ${selected ? 'bg-red-500/15 text-white ring-1 ring-red-500/40' : focused ? 'bg-red-500/10 text-white ring-1 ring-red-500/25' : 'bg-black/30 hover:bg-white/[0.06]'}`}
                 >
                   <button
                     type="button"
@@ -13539,7 +13539,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             {filteredExerciseGroups.length ? filteredExerciseGroups.map(section => <div key={section.group}>
               <h3 className="text-sm font-bold uppercase tracking-[0.16em] text-zinc-500">{section.group}</h3>
               <div className="mt-3 space-y-2">
-                {section.exercises.map(exercise => <button key={`${section.group}-${exercise.name}-${exercise.id || exercise.sourceExerciseId || ""}`} onClick={() => openExerciseGuide(exercise, "description")} className="flex h-[96px] w-full items-center gap-3 rounded-2xl bg-black/25 p-3 text-left font-semibold transition active:scale-[0.98] hover:bg-white/[0.06]">
+                {section.exercises.map(exercise => <button key={`${section.group}-${exercise.name}-${exercise.id || exercise.sourceExerciseId || ""}`} onClick={() => openExerciseGuide(exercise, "description")} className="flex h-[84px] w-full items-center gap-3 rounded-2xl bg-black/25 p-3 text-left font-semibold transition active:scale-[0.98] hover:bg-white/[0.06]">
                   <ExerciseThumbnail exercise={exercise} />
                   <span className="min-w-0 flex-1">
                     <span className="block overflow-hidden text-ellipsis text-sm font-black leading-5" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{exercise.name}</span>
@@ -14315,7 +14315,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
           <div className="onlypump-list-62 mt-5 space-y-4 overflow-y-auto onlypump-scrollbar-none">
             {guideTab === "description" && <>
-              <div className="flex aspect-video items-center justify-center overflow-hidden rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
+              <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
                 <ExerciseMediaImage src={exercise.exerciseImageUrl} alt={`${exercise.name || "Упражнение"}: фото`} fallback="Здесь будет фото упражнения" />
               </div>
               <div className="rounded-[24px] bg-white/[0.04] p-4">
