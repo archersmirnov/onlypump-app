@@ -2650,6 +2650,66 @@ const getOnlypumpBuiltInExerciseTechniqueVideoUrl = (name = "") => getOnlypumpBu
 const getOnlypumpBuiltInExerciseMuscleWorkVideoUrl = (name = "") => getOnlypumpBuiltInExerciseVideoUrl(name, onlypumpBuiltInExerciseMuscleWorkVideoUrls, onlypumpBuiltInExerciseMuscleWorkVideoUrlsByKey);
 const ONLYPUMP_EXERCISE_IMAGE_BASE_URL = "assets/exercises/";
 const ONLYPUMP_EXERCISE_MUSCLE_IMAGE_BASE_URL = "assets/exercises/muscles/";
+const onlypumpMuscleWorkImageFilesBySex = Object.freeze({
+  male: Object.freeze({
+    "Бицепс": "male-biceps.png",
+    "Бицепс / Плечелучевая": "male-biceps-brachioradialis.png",
+    "Грудные / Передние дельты": "male-chest-front-delts.png",
+    "Грудные / Трицепс / Передние дельты": "male-chest-triceps-front-delts.png",
+    "Задние дельты / Трапециевидные": "male-rear-delts-traps.png",
+    "Задние дельты / Трапециевидные / Бицепс / Трицепс": "male-rear-delts-traps-biceps-triceps.png",
+    "Задняя поверхность бедра": "male-hamstrings.png",
+    "Задняя поверхность бедра / Ягодицы": "male-hamstrings-glutes.png",
+    "Икроножные / Камбаловидные": "male-calves-soleus.png",
+    "Камбаловидные / Икроножные": "male-soleus-calves.png",
+    "Мышцы спины(Толщина) / Бицепс / Трицепс": "male-back-thickness-biceps-triceps.png",
+    "Мышцы спины(Толщина) / Бицепс / Трицепс / Задние дельты": "male-back-thickness-biceps-triceps-rear-delts.png",
+    "Мышцы спины(Ширина) / Бицепс / Трицепс": "male-back-width-biceps-triceps.png",
+    "Мышцы спины(Ширина) / Трицепс": "male-back-width-triceps.png",
+    "Передние дельты / Трицепс / Средние дельты": "male-front-delts-triceps-side-delts.png",
+    "Передняя поверхность бедра": "male-front-thighs.png",
+    "Передняя поверхность бедра / Ягодицы": "male-front-thighs-glutes.png",
+    "Пресс": "male-abs.png",
+    "Пресс / Сгибатели бедра": "male-abs-hip-flexors.png",
+    "Средние дельты": "male-side-delts.png",
+    "Средние дельты / Трапециевидные": "male-side-delts-traps.png",
+    "Средние и малые ягодичные": "male-glute-medius-minimus.png",
+    "Трицепс": "male-triceps.png",
+    "Ягодицы / Задняя поверхность бедра": "male-glutes-hamstrings.png",
+    "Ягодицы / Задняя поверхность бедра / Передняя поверхность бедра": "male-glutes-hamstrings-front-thighs.png",
+    "Ягодицы / Передняя поверхность бедра": "male-glutes-front-thighs.png",
+    "Ягодицы / Передняя поверхность бедра / Приводящие мышцы бедра": "male-glutes-front-thighs-adductors.png",
+  }),
+  female: Object.freeze({
+    "Бицепс": "female-biceps.png",
+    "Бицепс / Плечелучевая": "female-biceps-brachioradialis.png",
+    "Грудные / Передние дельты": "female-chest-front-delts.png",
+    "Грудные / Трицепс / Передние дельты": "female-chest-triceps-front-delts.png",
+    "Задние дельты / Трапециевидные": "female-rear-delts-traps.png",
+    "Задние дельты / Трапециевидные / Бицепс / Трицепс": "female-rear-delts-traps-biceps-triceps.png",
+    "Задняя поверхность бедра": "female-hamstrings.png",
+    "Задняя поверхность бедра / Ягодицы": "female-hamstrings-glutes.png",
+    "Икроножные / Камбаловидные": "female-calves-soleus.png",
+    "Камбаловидные / Икроножные": "female-soleus-calves.png",
+    "Мышцы спины(Толщина) / Бицепс / Трицепс": "female-back-thickness-biceps-triceps.png",
+    "Мышцы спины(Толщина) / Бицепс / Трицепс / Задние дельты": "female-back-thickness-biceps-triceps-rear-delts.png",
+    "Мышцы спины(Ширина) / Бицепс / Трицепс": "female-back-width-biceps-triceps.png",
+    "Мышцы спины(Ширина) / Трицепс": "female-back-width-triceps.png",
+    "Передние дельты / Трицепс / Средние дельты": "female-front-delts-triceps-side-delts.png",
+    "Передняя поверхность бедра": "female-front-thighs.png",
+    "Передняя поверхность бедра / Ягодицы": "female-front-thighs-glutes.png",
+    "Пресс": "female-abs.png",
+    "Пресс / Сгибатели бедра": "female-abs-hip-flexors.png",
+    "Средние дельты": "female-side-delts.png",
+    "Средние дельты / Трапециевидные": "female-side-delts-traps.png",
+    "Средние и малые ягодичные": "female-glute-medius-minimus.png",
+    "Трицепс": "female-triceps.png",
+    "Ягодицы / Задняя поверхность бедра": "female-glutes-hamstrings.png",
+    "Ягодицы / Задняя поверхность бедра / Передняя поверхность бедра": "female-glutes-hamstrings-front-thighs.png",
+    "Ягодицы / Передняя поверхность бедра": "female-glutes-front-thighs.png",
+    "Ягодицы / Передняя поверхность бедра / Приводящие мышцы бедра": "female-glutes-front-thighs-adductors.png",
+  }),
+});
 const onlypumpBuiltInExerciseMuscleWorkImageFiles = Object.freeze({
   "АВСТРАЛИЙСКИЕ ПОДТЯГИВАНИЯ (СВЕРХУ)": "avstraliyskie-podtyagivaniya-sverkhu.png",
   "АВСТРАЛИЙСКИЕ ПОДТЯГИВАНИЯ (СНИЗУ)": "avstraliyskie-podtyagivaniya-snizu.png",
@@ -2757,6 +2817,28 @@ const getOnlypumpBuiltInExerciseMuscleWorkImageUrl = (name = "") => {
 const getOnlypumpBuiltInExerciseImageUrl = (name = "") => {
   const fileName = getOnlypumpBuiltInExerciseMuscleWorkImageFile(name);
   return fileName ? ONLYPUMP_EXERCISE_IMAGE_BASE_URL + fileName : "";
+};
+const getOnlypumpMuscleWorkImageSex = (profile = {}) => profile?.sex === "female" ? "female" : "male";
+const normalizeOnlypumpMuscleImageList = (value) => {
+  if (Array.isArray(value)) return value.map(normalizeMuscleGroupLabel).filter(Boolean);
+  return parseOnlypumpMuscleList(value);
+};
+const getOnlypumpMuscleWorkImageKey = (source = {}) => {
+  const primaryList = normalizeOnlypumpMuscleImageList(source.primaryMuscles ?? source.primary_muscles);
+  const fallbackPrimary = normalizeMuscleGroupLabel(source.muscleGroup ?? source.muscle_group ?? source.group);
+  const primary = primaryList[0] || fallbackPrimary;
+  const secondary = normalizeOnlypumpMuscleImageList(source.secondaryMuscles ?? source.secondary_muscles)
+    .filter(group => group && group !== primary);
+  return [primary, ...secondary].filter(Boolean).join(" / ");
+};
+const getOnlypumpMuscleWorkImageUrlByKey = (key = "", sex = "male") => {
+  const normalizedSex = sex === "female" ? "female" : "male";
+  const fileName = onlypumpMuscleWorkImageFilesBySex[normalizedSex]?.[key] || onlypumpMuscleWorkImageFilesBySex.male[key] || "";
+  return fileName ? ONLYPUMP_EXERCISE_MUSCLE_IMAGE_BASE_URL + fileName : "";
+};
+const getOnlypumpMuscleWorkImageUrlForProfile = (source = {}, profile = {}) => {
+  const key = source.muscleWorkImageKey || source.muscle_work_image_key || getOnlypumpMuscleWorkImageKey(source);
+  return getOnlypumpMuscleWorkImageUrlByKey(key, getOnlypumpMuscleWorkImageSex(profile));
 };
 const isOnlypumpExercisePhotoUrl = (url = "") => {
   const value = String(url || "").trim();
@@ -3009,7 +3091,8 @@ const systemStrengthExerciseLibraryItems = onlypumpStrengthExerciseSeedRows.map(
   instruction: item.instruction || item.description || "",
   techniqueDescription: item.description || "",
   exerciseImageUrl: getOnlypumpBuiltInExerciseImageUrl(item.name),
-  muscleWorkImageUrl: getOnlypumpBuiltInExerciseMuscleWorkImageUrl(item.name),
+  muscleWorkImageKey: getOnlypumpMuscleWorkImageKey(item),
+  muscleWorkImageUrl: "",
   muscleWorkVideoUrl: getOnlypumpBuiltInExerciseMuscleWorkVideoUrl(item.name),
   techniqueVideoUrl: getOnlypumpBuiltInExerciseTechniqueVideoUrl(item.name),
   measurementMode: "weight_reps",
@@ -3035,6 +3118,7 @@ const systemExerciseLibraryItems = [
     instruction: "",
     techniqueDescription: "",
     exerciseImageUrl: "",
+    muscleWorkImageKey: "",
     muscleWorkImageUrl: "",
     muscleWorkVideoUrl: "",
     techniqueVideoUrl: "",
@@ -3952,6 +4036,7 @@ const mapWorkoutExerciseFromApi = (row = {}, index = 0) => {
 	    instruction: row.instruction || row.description || systemSource?.instruction || systemSource?.description || "",
 	    techniqueDescription: row.technique_description || row.techniqueDescription || row.description || systemSource?.techniqueDescription || systemSource?.description || "",
 	    exerciseImageUrl: getExerciseImageUrlFromSource(row, systemSource),
+	    muscleWorkImageKey: row.muscle_work_image_key || row.muscleWorkImageKey || getOnlypumpMuscleWorkImageKey({ ...(systemSource || {}), ...row }),
 	    muscleWorkImageUrl: getMuscleWorkImageUrlFromSource(row, systemSource),
 	    muscleWorkVideoUrl: row.muscle_work_video_url || row.muscleWorkVideoUrl || "",
 	    techniqueVideoUrl: row.technique_video_url || row.techniqueVideoUrl || "",
@@ -7361,6 +7446,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       instruction: source.instruction || source.description || systemSource?.instruction || systemSource?.description || "",
       techniqueDescription: source.techniqueDescription || source.technique_description || source.description || systemSource?.techniqueDescription || systemSource?.description || "",
       exerciseImageUrl: getExerciseImageUrlFromSource(source, systemSource),
+      muscleWorkImageKey: source.muscleWorkImageKey || source.muscle_work_image_key || getOnlypumpMuscleWorkImageKey(source),
       muscleWorkImageUrl: getMuscleWorkImageUrlFromSource(source, systemSource),
       muscleWorkVideoUrl: source.muscleWorkVideoUrl || source.muscle_work_video_url || "",
       techniqueVideoUrl: source.techniqueVideoUrl || source.technique_video_url || "",
@@ -7391,6 +7477,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       instruction: source.instruction || source.description || "",
       techniqueDescription: source.techniqueDescription || source.description || "",
       exerciseImageUrl: source.exerciseImageUrl || "",
+      muscleWorkImageKey: source.muscleWorkImageKey || "",
       muscleWorkImageUrl: source.muscleWorkImageUrl || "",
       muscleWorkVideoUrl: source.muscleWorkVideoUrl || "",
       techniqueVideoUrl: source.techniqueVideoUrl || "",
@@ -8606,6 +8693,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       instruction: row.instruction || row.description || systemSource?.instruction || systemSource?.description || "",
       techniqueDescription: row.technique_description || row.techniqueDescription || row.description || systemSource?.techniqueDescription || systemSource?.description || "",
       exerciseImageUrl: getExerciseImageUrlFromSource(row, systemSource),
+      muscleWorkImageKey: row.muscle_work_image_key || row.muscleWorkImageKey || getOnlypumpMuscleWorkImageKey({ ...(systemSource || {}), ...row }),
       muscleWorkImageUrl: getMuscleWorkImageUrlFromSource(row, systemSource),
       muscleWorkVideoUrl: row.muscle_work_video_url || row.muscleWorkVideoUrl || "",
       techniqueVideoUrl: row.technique_video_url || row.techniqueVideoUrl || "",
@@ -9823,6 +9911,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 	      instruction: row.instruction || row.description || systemSource?.instruction || systemSource?.description || "",
 	      techniqueDescription: row.technique_description || row.techniqueDescription || row.description || systemSource?.techniqueDescription || systemSource?.description || "",
 		      exerciseImageUrl: getExerciseImageUrlFromSource(row, systemSource),
+		      muscleWorkImageKey: row.muscle_work_image_key || row.muscleWorkImageKey || getOnlypumpMuscleWorkImageKey({ ...(systemSource || {}), ...row }),
 		      muscleWorkImageUrl: getMuscleWorkImageUrlFromSource(row, systemSource),
 	      muscleWorkVideoUrl: row.muscle_work_video_url || row.muscleWorkVideoUrl || "",
 	      techniqueVideoUrl: row.technique_video_url || row.techniqueVideoUrl || "",
@@ -10737,7 +10826,8 @@ const toggleExerciseMeasurementSetting = (field) => {
       instruction: exercise.instruction || exercise.description || exercise.notes || exercise.note || source.instruction || source.description || "",
       techniqueDescription: exercise.techniqueDescription || exercise.technique_description || exercise.description || exercise.notes || exercise.note || source.techniqueDescription || source.description || "",
       exerciseImageUrl: getExerciseImageUrlFromSource(exercise, source),
-      muscleWorkImageUrl: getMuscleWorkImageUrlFromSource(exercise, source),
+      muscleWorkImageKey: exercise.muscleWorkImageKey || exercise.muscle_work_image_key || source.muscleWorkImageKey || getOnlypumpMuscleWorkImageKey({ ...source, ...exercise }),
+      muscleWorkImageUrl: getOnlypumpMuscleWorkImageUrlForProfile({ ...source, ...exercise }, profile) || getMuscleWorkImageUrlFromSource(exercise, source),
       muscleWorkVideoUrl: exercise.muscleWorkVideoUrl || exercise.muscle_work_video_url || source.muscleWorkVideoUrl || "",
       techniqueVideoUrl: exercise.techniqueVideoUrl || exercise.technique_video_url || source.techniqueVideoUrl || "",
     };
@@ -12689,6 +12779,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       instruction: source.instruction || source.description || "",
       techniqueDescription: source.techniqueDescription || source.description || "",
       exerciseImageUrl: source.exerciseImageUrl || "",
+      muscleWorkImageKey: source.muscleWorkImageKey || "",
       muscleWorkImageUrl: source.muscleWorkImageUrl || "",
       muscleWorkVideoUrl: source.muscleWorkVideoUrl || "",
       techniqueVideoUrl: source.techniqueVideoUrl || "",
