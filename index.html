@@ -105,6 +105,21 @@
       0%, 100% { transform: rotate(-0.35deg) translateY(0); }
       50% { transform: rotate(0.35deg) translateY(-1px); }
     }
+    .onlypump-pumpxp-toast {
+      transform: translate3d(0, calc(-100% - 2rem), 0) scale(0.98);
+      opacity: 0;
+      pointer-events: none;
+      transition:
+        transform 360ms cubic-bezier(0.16, 1, 0.3, 1),
+        opacity 220ms ease,
+        box-shadow 220ms ease;
+      will-change: transform, opacity;
+    }
+    .onlypump-pumpxp-toast.is-visible {
+      transform: translate3d(0, 0, 0) scale(1);
+      opacity: 1;
+      pointer-events: auto;
+    }
     .onlypump-app-shell {
       position: relative;
       height: var(--onlypump-app-height);
@@ -801,6 +816,7 @@ const DEFAULT_PROFILE = {
   high_protein_enabled: false,
   higher_fat_enabled: false,
   manual_nutrition_targets_enabled: false,
+  nutrition_tracking_mode: "calories",
   goal_type: "recomposition",
   goal_description: null,
   target_weight_kg: null,
@@ -894,6 +910,14 @@ function parseProfileBoolean(value, fallback = false) {
   if (value === true || value === "true" || value === 1 || value === "1") return true;
   if (value === false || value === "false" || value === 0 || value === "0") return false;
   return fallback;
+}
+
+function normalizeNutritionTrackingMode(value, fallback = "calories") {
+  return value === "palms" ? "palms" : (fallback === "palms" ? "palms" : "calories");
+}
+
+function profileUsesPalmNutrition(profile = {}) {
+  return normalizeNutritionTrackingMode(profile?.nutrition_tracking_mode || profile?.nutritionTrackingMode) === "palms";
 }
 
 function normalizeProfileStringArray(value, fallback = []) {
@@ -1213,6 +1237,7 @@ function buildFallbackProfile(overrides = {}) {
     high_protein_enabled: parseProfileBoolean(overrides.high_protein_enabled, DEFAULT_PROFILE.high_protein_enabled),
     higher_fat_enabled: parseProfileBoolean(overrides.higher_fat_enabled, DEFAULT_PROFILE.higher_fat_enabled),
     manual_nutrition_targets_enabled: parseProfileBoolean(overrides.manual_nutrition_targets_enabled, DEFAULT_PROFILE.manual_nutrition_targets_enabled),
+    nutrition_tracking_mode: normalizeNutritionTrackingMode(overrides.nutrition_tracking_mode ?? overrides.nutritionTrackingMode, DEFAULT_PROFILE.nutrition_tracking_mode),
     goal_type: overrides.goal_type || DEFAULT_PROFILE.goal_type,
     goal_description: overrides.goal_description || DEFAULT_PROFILE.goal_description,
     target_weight_kg: optionalProfileNumber(overrides.target_weight_kg, DEFAULT_PROFILE.target_weight_kg),
@@ -1297,6 +1322,7 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     high_protein_enabled: parseProfileBoolean(record.high_protein_enabled, fallback.high_protein_enabled ?? DEFAULT_PROFILE.high_protein_enabled),
     higher_fat_enabled: parseProfileBoolean(record.higher_fat_enabled, fallback.higher_fat_enabled ?? DEFAULT_PROFILE.higher_fat_enabled),
     manual_nutrition_targets_enabled: parseProfileBoolean(record.manual_nutrition_targets_enabled, fallback.manual_nutrition_targets_enabled ?? DEFAULT_PROFILE.manual_nutrition_targets_enabled),
+    nutrition_tracking_mode: normalizeNutritionTrackingMode(record.nutrition_tracking_mode ?? record.nutritionTrackingMode, fallback.nutrition_tracking_mode ?? DEFAULT_PROFILE.nutrition_tracking_mode),
     goal_type: record.goal_type || fallback.goal_type || DEFAULT_PROFILE.goal_type,
     goal_description: record.goal_description !== undefined ? (record.goal_description || null) : (fallback.goal_description || null),
     target_weight_kg: optionalProfileNumber(record.target_weight_kg, fallback.target_weight_kg || DEFAULT_PROFILE.target_weight_kg),
@@ -1545,6 +1571,7 @@ const profileDraftFromProfile = (profile = DEFAULT_PROFILE) => ({
   high_protein_enabled: parseProfileBoolean(profile.high_protein_enabled),
   higher_fat_enabled: parseProfileBoolean(profile.higher_fat_enabled),
   manual_nutrition_targets_enabled: parseProfileBoolean(profile.manual_nutrition_targets_enabled),
+  nutrition_tracking_mode: normalizeNutritionTrackingMode(profile.nutrition_tracking_mode || DEFAULT_PROFILE.nutrition_tracking_mode),
   goal_type: profile.goal_type || "recomposition",
   deficit_percent: profile.deficit_percent ?? DEFAULT_PROFILE.deficit_percent,
   goal_intensity_percent: profile.goal_intensity_percent ?? profile.deficit_percent ?? DEFAULT_PROFILE.goal_intensity_percent,
@@ -1590,6 +1617,7 @@ const profilePayloadFromDraft = (draft = {}, currentDate = formatDateKey(new Dat
     high_protein_enabled: parseProfileBoolean(draft.high_protein_enabled),
     higher_fat_enabled: parseProfileBoolean(draft.higher_fat_enabled),
     manual_nutrition_targets_enabled: manualTargetsEnabled,
+    nutrition_tracking_mode: normalizeNutritionTrackingMode(draft.nutrition_tracking_mode || DEFAULT_PROFILE.nutrition_tracking_mode),
     goal_type: draft.goal_type || "recomposition",
     goal_description: profileGoalTypeLabels[draft.goal_type] || "Рекомпозиция",
     deficit_percent: normalizeDeficitPercent(draft.deficit_percent ?? draft.goal_intensity_percent),
@@ -5336,12 +5364,16 @@ const formatMeasurementSummary = (measurements = {}) => {
   return `${weight} · ${bodyFat} жира`;
 };
 
-function InlineDateDataCard({ context = "home", dateKey, nutritionTotals, nutritionGoal = initialNutritionGoal, nutritionMeals = [], workout, workoutSummary, measurements = {}, profile }) {
+function InlineDateDataCard({ context = "home", dateKey, nutritionTotals, nutritionGoal = initialNutritionGoal, nutritionMeals = [], nutritionDay = null, workout, workoutSummary, measurements = {}, profile }) {
   const showHome = context === "home";
   const showNutrition = context === "home" || context === "nutrition";
   const showWorkout = context === "home" || context === "workouts";
   const showProgress = context === "home";
-  const caloriesPercent = Math.min(100, Math.round((Number(nutritionTotals?.calories || 0) / Math.max(1, nutritionGoal.calories)) * 100));
+  const usePalmNutrition = profileUsesPalmNutrition(profile);
+  const palmSummary = getNutritionPalmSummary(nutritionDay || { date: dateKey, meals: nutritionMeals, totals: nutritionTotals }, nutritionGoal, profile);
+  const caloriesPercent = usePalmNutrition
+    ? Math.min(100, Math.round((palmSummary.total / Math.max(1, palmSummary.target || 1)) * 100))
+    : Math.min(100, Math.round((Number(nutritionTotals?.calories || 0) / Math.max(1, nutritionGoal.calories)) * 100));
 
   return <Card className="mt-4 p-4 sm:p-5">
     <div className="flex items-start justify-between gap-4">
@@ -5372,8 +5404,8 @@ function InlineDateDataCard({ context = "home", dateKey, nutritionTotals, nutrit
           <span className="rounded-full bg-red-500/10 px-3 py-1 text-[10px] uppercase tracking-wider text-red-400">Питание</span>
           <span className="text-xs text-zinc-500">{caloriesPercent}%</span>
         </div>
-        <h3 className="mt-3 font-semibold">{nutritionTotals.calories} / {nutritionGoal.calories} ккал</h3>
-        <p className="mt-2 text-xs text-zinc-500">{nutritionTotals.protein} Б · {nutritionTotals.fat} Ж · {nutritionTotals.carbs} У</p>
+        <h3 className="mt-3 font-semibold">{usePalmNutrition ? `${palmLabel(palmSummary.total)} / ${palmLabel(palmSummary.target)}` : `${nutritionTotals.calories} / ${nutritionGoal.calories} ккал`}</h3>
+        <p className="mt-2 text-xs text-zinc-500">{usePalmNutrition ? `${palmLabel(palmSummary.actual.protein)} белк. · ${palmLabel(palmSummary.actual.fat)} жир. · ${palmLabel(palmSummary.actual.carbs)} угл.` : `${nutritionTotals.protein} Б · ${nutritionTotals.fat} Ж · ${nutritionTotals.carbs} У`}</p>
         <div className="mt-3"><Progress value={caloriesPercent}/></div>
         {context === "nutrition" && <div className="mt-4 space-y-2">
           {nutritionMeals.slice(0, 4).map(meal => <div key={meal.id} className="rounded-xl bg-black/25 p-3 text-xs">
@@ -5500,7 +5532,7 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
   </>;
 }
 
-function DayDataModal({ dateKey, context = "home", onClose, setActive, workout, nutritionMeals = [], nutritionTotals, nutritionGoal = initialNutritionGoal, measurements = {}, workoutSummary, profile }) {
+function DayDataModal({ dateKey, context = "home", onClose, setActive, workout, nutritionMeals = [], nutritionTotals, nutritionGoal = initialNutritionGoal, nutritionDay = null, measurements = {}, workoutSummary, profile }) {
   const dayNutrition = nutritionTotals || {
     calories: 0,
     protein: 0,
@@ -5510,7 +5542,11 @@ function DayDataModal({ dateKey, context = "home", onClose, setActive, workout, 
   const dayMeals = nutritionMeals.length ? nutritionMeals : [];
   const dayWorkout = workout || null;
   const safeWorkoutSummary = workoutSummary || { completedSets: 0, totalSets: 0, completedVolume: 0, progress: 0 };
-  const caloriesPercent = Math.min(100, Math.round((dayNutrition.calories / Math.max(1, nutritionGoal.calories)) * 100));
+  const usePalmNutrition = profileUsesPalmNutrition(profile);
+  const palmSummary = getNutritionPalmSummary(nutritionDay || { date: dateKey, meals: nutritionMeals, totals: dayNutrition }, nutritionGoal, profile);
+  const caloriesPercent = usePalmNutrition
+    ? Math.min(100, Math.round((palmSummary.total / Math.max(1, palmSummary.target || 1)) * 100))
+    : Math.min(100, Math.round((dayNutrition.calories / Math.max(1, nutritionGoal.calories)) * 100));
   const showWorkout = context === "home" || context === "workouts";
   const showNutrition = context === "home" || context === "nutrition";
   const showMeals = context === "home" || context === "nutrition";
@@ -5553,8 +5589,8 @@ function DayDataModal({ dateKey, context = "home", onClose, setActive, workout, 
             <span className="rounded-full bg-red-500/10 px-3 py-1 text-[10px] uppercase tracking-wider text-red-400">Питание</span>
             <span className="text-xs text-zinc-500">{caloriesPercent}%</span>
           </div>
-          <h3 className="mt-3 text-lg font-semibold">{dayNutrition.calories} / {nutritionGoal.calories} ккал</h3>
-          <p className="mt-2 text-sm text-zinc-500">{dayNutrition.protein} Б · {dayNutrition.fat} Ж · {dayNutrition.carbs} У</p>
+          <h3 className="mt-3 text-lg font-semibold">{usePalmNutrition ? `${palmLabel(palmSummary.total)} / ${palmLabel(palmSummary.target)}` : `${dayNutrition.calories} / ${nutritionGoal.calories} ккал`}</h3>
+          <p className="mt-2 text-sm text-zinc-500">{usePalmNutrition ? `${palmLabel(palmSummary.actual.protein)} белк. · ${palmLabel(palmSummary.actual.fat)} жир. · ${palmLabel(palmSummary.actual.carbs)} угл.` : `${dayNutrition.protein} Б · ${dayNutrition.fat} Ж · ${dayNutrition.carbs} У`}</p>
           <div className="mt-4"><Progress value={caloriesPercent}/></div>
         </button>}
 
@@ -5727,14 +5763,29 @@ function PumpXpDetailSheet({ pumpXp, onClose }) {
 }
 
 function PumpXpToast({ toast, pumpXp, onOpen, onClose }) {
+  const [visible, setVisible] = useState(false);
   useEffect(() => {
     if (!toast) return undefined;
-    const timer = window.setTimeout(onClose, 4200);
-    return () => window.clearTimeout(timer);
+    setVisible(false);
+    const showFrame = window.requestAnimationFrame(() => setVisible(true));
+    const hideTimer = window.setTimeout(() => setVisible(false), 4200);
+    const closeTimer = window.setTimeout(onClose, 4560);
+    return () => {
+      window.cancelAnimationFrame(showFrame);
+      window.clearTimeout(hideTimer);
+      window.clearTimeout(closeTimer);
+    };
   }, [toast?.id]);
 
   if (!toast) return null;
-  return <button type="button" onClick={onOpen} className="fixed left-4 right-4 z-[245] mx-auto max-w-md rounded-[24px] border border-red-500/30 bg-zinc-950/95 p-4 text-left shadow-2xl shadow-black/60 backdrop-blur-2xl transition sm:left-auto sm:right-6" style={{ top: "calc(var(--onlypump-safe-top) + 14px)" }}>
+  const openDetails = () => {
+    setVisible(false);
+    window.setTimeout(() => {
+      onClose?.();
+      onOpen?.();
+    }, 180);
+  };
+  return <button type="button" onClick={openDetails} className={`onlypump-pumpxp-toast fixed left-4 right-4 z-[245] mx-auto max-w-md rounded-[24px] border border-red-500/30 bg-zinc-950/95 p-4 text-left shadow-2xl shadow-black/60 backdrop-blur-2xl sm:left-auto sm:right-6 ${visible ? "is-visible" : ""}`} style={{ top: "calc(var(--onlypump-safe-top) + 14px)" }}>
     <div className="flex items-start justify-between gap-4">
       <div>
         <p className="text-[10px] font-black uppercase tracking-[0.16em] text-red-300">Начислены баллы</p>
@@ -5783,10 +5834,10 @@ function StatStrip({ measurements, nutritionTotals, nutritionGoal, workoutSummar
   </Card>;
 }
 
-function NutritionRing({ calories = 0, goal = initialNutritionGoal.calories }) {
+function NutritionRing({ calories = 0, goal = initialNutritionGoal.calories, label = "Калории", unit = "ккал" }) {
   const percent = Math.min(100, goal ? Math.round((calories / goal) * 100) : 0);
 
-  return <div className="relative flex h-28 w-28 items-center justify-center rounded-full" style={{background:`conic-gradient(#ef4444 0 ${percent}%, var(--chart-track) ${percent}% 100%)`}}><div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-zinc-950"><span className="text-xs text-zinc-400">Калории</span><span className="text-2xl">{calories}</span><span className="text-[10px] text-zinc-500">/ {goal} ккал</span></div></div>;
+  return <div className="relative flex h-28 w-28 items-center justify-center rounded-full" style={{background:`conic-gradient(#ef4444 0 ${percent}%, var(--chart-track) ${percent}% 100%)`}}><div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-zinc-950"><span className="text-xs text-zinc-400">{label}</span><span className="text-2xl">{roundMacro(calories)}</span><span className="text-[10px] text-zinc-500">/ {roundMacro(goal)} {unit}</span></div></div>;
 }
 
 function MacrosWidget({ nutritionTotals, nutritionGoal, proteinPercent, fatPercent, carbsPercent, onOpen }) {
@@ -6844,6 +6895,9 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const proteinPercent = Math.min(100, Math.round((selectedNutritionTotals.protein / Math.max(1, nutritionGoal.protein)) * 100));
   const fatPercent = Math.min(100, Math.round((selectedNutritionTotals.fat / Math.max(1, nutritionGoal.fat)) * 100));
   const carbsPercent = Math.min(100, Math.round((selectedNutritionTotals.carbs / Math.max(1, nutritionGoal.carbs)) * 100));
+  const homeUsesPalmNutrition = profileUsesPalmNutrition(profile);
+  const selectedPalmSummary = useMemo(() => getNutritionPalmSummary(selectedNutritionDayMatches ? nutritionDay : buildLocalNutritionDay(selectedDateKey, nutritionGoal), nutritionGoal, profile), [selectedNutritionDayMatches, nutritionDay, selectedDateKey, nutritionGoal, profile]);
+  const palmNutritionPercent = Math.min(100, Math.round((selectedPalmSummary.total / Math.max(1, selectedPalmSummary.target || 1)) * 100));
   const selectedHealthRecord = (healthLog?.log_date || healthLog?.date) === selectedDateKey
     ? healthLog
     : healthLogs.find(log => (log.log_date || log.date) === selectedDateKey);
@@ -7005,9 +7059,9 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       case "metricSets":
         return <MetricWidgetCard title="Подходы" value={currentWeekWorkoutSummary.completedSets} sub={`из ${currentWeekWorkoutSummary.plannedSets} запланировано`} progress={currentWeekWorkoutSummary.progress} icon={CheckCircle2} onClick={() => setActive("workouts")}/>;
       case "metricCalories":
-        return <MetricWidgetCard title="Калории" value={selectedNutritionTotals.calories} sub={`/ ${nutritionGoal.calories} ккал`} delta={`${caloriesPercent}% цели`} progress={caloriesPercent} icon={Apple} onClick={openNutritionFromHome}/>;
+        return <MetricWidgetCard title={homeUsesPalmNutrition ? "Ладони" : "Калории"} value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.total) : selectedNutritionTotals.calories} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.target)}` : `/ ${nutritionGoal.calories} ккал`} delta={`${homeUsesPalmNutrition ? palmNutritionPercent : caloriesPercent}% цели`} progress={homeUsesPalmNutrition ? palmNutritionPercent : caloriesPercent} icon={Apple} onClick={openNutritionFromHome}/>;
       case "metricProtein":
-        return <MetricWidgetCard title="Белок" value={`${selectedNutritionTotals.protein} г`} sub={`/ ${nutritionGoal.protein} г`} delta={`${proteinPercent}% цели`} progress={proteinPercent} icon={Utensils} onClick={openNutritionFromHome}/>;
+        return <MetricWidgetCard title="Белок" value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.actual.protein) : `${selectedNutritionTotals.protein} г`} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.targets.protein)}` : `/ ${nutritionGoal.protein} г`} delta={`${homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}% цели`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent} icon={Utensils} onClick={openNutritionFromHome}/>;
       case "metricRecovery":
         return <MetricWidgetCard title="Восстановление" value={recovery == null ? "—" : `${recovery}%`} sub={selectedHealthLog.sleep_duration_minutes ? sleepQualityLabel(selectedHealthLog) : "сон не добавлен"} progress={recovery || 0} icon={HeartPulse} onClick={() => openAnalyticsFromHome("recovery")}/>;
       case "metricSleep":
@@ -7015,11 +7069,11 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       case "metricSteps":
         return <MetricWidgetCard title="Шаги" value={selectedSteps.toLocaleString("ru-RU")} sub={`цель ${stepsGoal.toLocaleString("ru-RU")}`} progress={stepsProgress} icon={Activity} onClick={() => setStepsSheetOpen(true)}/>;
       case "macros":
-        return <MetricWidgetCard title="БЖУ" value={`${proteinPercent}%`} sub={`${selectedNutritionTotals.protein} Б · ${selectedNutritionTotals.fat} Ж · ${selectedNutritionTotals.carbs} У`} icon={Utensils} onClick={openNutritionFromHome}>
+        return <MetricWidgetCard title={homeUsesPalmNutrition ? "Ладони" : "БЖУ"} value={`${homeUsesPalmNutrition ? palmNutritionPercent : proteinPercent}%`} sub={homeUsesPalmNutrition ? `${palmLabel(selectedPalmSummary.actual.protein)} белк. · ${palmLabel(selectedPalmSummary.actual.carbs)} угл.` : `${selectedNutritionTotals.protein} Б · ${selectedNutritionTotals.fat} Ж · ${selectedNutritionTotals.carbs} У`} icon={Utensils} onClick={openNutritionFromHome}>
           <div className="mt-4 space-y-2 text-[11px] text-zinc-400">
-            <div className="flex justify-between"><span>Б</span><span>{selectedNutritionTotals.protein}/{nutritionGoal.protein}</span></div><Progress value={proteinPercent}/>
-            <div className="flex justify-between"><span>Ж</span><span>{selectedNutritionTotals.fat}/{nutritionGoal.fat}</span></div><Progress value={fatPercent}/>
-            <div className="flex justify-between"><span>У</span><span>{selectedNutritionTotals.carbs}/{nutritionGoal.carbs}</span></div><Progress value={carbsPercent}/>
+            <div className="flex justify-between"><span>Б</span><span>{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.protein)}/${roundMacro(selectedPalmSummary.targets.protein)}` : `${selectedNutritionTotals.protein}/${nutritionGoal.protein}`}</span></div><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}/>
+            <div className="flex justify-between"><span>Ж</span><span>{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.fat)}/${roundMacro(selectedPalmSummary.targets.fat)}` : `${selectedNutritionTotals.fat}/${nutritionGoal.fat}`}</span></div><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.fat / Math.max(1, selectedPalmSummary.targets.fat)) * 100)) : fatPercent}/>
+            <div className="flex justify-between"><span>У</span><span>{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.carbs)}/${roundMacro(selectedPalmSummary.targets.carbs)}` : `${selectedNutritionTotals.carbs}/${nutritionGoal.carbs}`}</span></div><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.carbs / Math.max(1, selectedPalmSummary.targets.carbs)) * 100)) : carbsPercent}/>
           </div>
         </MetricWidgetCard>;
       case "water":
@@ -7047,12 +7101,12 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
           <h3 className="font-semibold">Питание за выбранный день</h3>
           <div className="mt-5 grid grid-cols-[1fr_auto] items-center gap-4">
             <div className="h-40 rounded-2xl bg-[url('https://images.unsplash.com/photo-1546069901-d5bfd2cbfb1f?q=80&w=700&auto=format&fit=crop')] bg-cover bg-center"/>
-            <NutritionRing calories={selectedNutritionTotals.calories} goal={nutritionGoal.calories}/>
+            <NutritionRing calories={homeUsesPalmNutrition ? selectedPalmSummary.total : selectedNutritionTotals.calories} goal={homeUsesPalmNutrition ? selectedPalmSummary.target : nutritionGoal.calories} label={homeUsesPalmNutrition ? "Ладони" : "Калории"} unit={homeUsesPalmNutrition ? "лад." : "ккал"}/>
           </div>
           <div className="mt-5 space-y-4 text-sm">
-            <div>Белки <span className="float-right">{selectedNutritionTotals.protein} / {nutritionGoal.protein}г</span><Progress value={proteinPercent}/></div>
-            <div>Жиры <span className="float-right">{selectedNutritionTotals.fat} / {nutritionGoal.fat}г</span><Progress value={fatPercent}/></div>
-            <div>Углеводы <span className="float-right">{selectedNutritionTotals.carbs} / {nutritionGoal.carbs}г</span><Progress value={carbsPercent}/></div>
+            <div>Белки <span className="float-right">{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.protein)} / ${roundMacro(selectedPalmSummary.targets.protein)} лад.` : `${selectedNutritionTotals.protein} / ${nutritionGoal.protein}г`}</span><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}/></div>
+            <div>Жиры <span className="float-right">{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.fat)} / ${roundMacro(selectedPalmSummary.targets.fat)} лад.` : `${selectedNutritionTotals.fat} / ${nutritionGoal.fat}г`}</span><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.fat / Math.max(1, selectedPalmSummary.targets.fat)) * 100)) : fatPercent}/></div>
+            <div>Углеводы <span className="float-right">{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.carbs)} / ${roundMacro(selectedPalmSummary.targets.carbs)} лад.` : `${selectedNutritionTotals.carbs} / ${nutritionGoal.carbs}г`}</span><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.carbs / Math.max(1, selectedPalmSummary.targets.carbs)) * 100)) : carbsPercent}/></div>
           </div>
           <Button className="mt-7 w-full bg-white/8">Открыть дневник питания</Button>
         </Card>;
@@ -7239,6 +7293,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       context="home"
       dateKey={selectedDateKey}
       nutritionMeals={selectedNutritionMeals}
+      nutritionDay={selectedNutritionDayMatches ? nutritionDay : null}
       nutritionTotals={selectedNutritionTotals}
       nutritionGoal={nutritionGoal}
       workout={workoutDisplayInfo(selectedPrimaryWorkout)}
@@ -15343,7 +15398,24 @@ const modifierPresets = {
   ],
 };
 
-const food = (name, category, calories, protein, fat, carbs, defaultGrams = 100, synonyms = [], modifiers = []) => ({
+const nutritionEntryMetaId = "onlypump_nutrition_entry_meta";
+const defaultUnitOption = { id: "grams", label: "Граммы", unitLabel: "г", grams: 1, amountStep: 10, inputLabel: "граммы" };
+const unitOption = (id, label, unitLabel, grams, amountStep = 1) => ({ id, label, unitLabel, grams, amountStep, inputLabel: label.toLowerCase() });
+const withUnits = (...units) => ({ unitOptions: [defaultUnitOption, ...units], defaultUnit: units[0]?.id || "grams" });
+
+const normalizeFoodUnitOptions = (options = {}, defaultGrams = 100) => {
+  const source = Array.isArray(options.unitOptions || options.unit_options) ? (options.unitOptions || options.unit_options) : [];
+  const merged = source.length ? source : [defaultUnitOption];
+  const hasGrams = merged.some(unit => unit.id === "grams");
+  return (hasGrams ? merged : [defaultUnitOption, ...merged]).map(unit => ({
+    ...unit,
+    grams: unit.id === "grams" ? 1 : Math.max(1, Number(unit.grams || defaultGrams || 100)),
+    amountStep: Math.max(0.1, Number(unit.amountStep || unit.step || (unit.id === "grams" ? 10 : 1))),
+    unitLabel: unit.unitLabel || (unit.id === "grams" ? "г" : "шт"),
+  }));
+};
+
+const food = (name, category, calories, protein, fat, carbs, defaultGrams = 100, synonyms = [], modifiers = [], options = {}) => ({
   key: normalizeFoodKey(`${category}-${name}`),
   name,
   category,
@@ -15354,7 +15426,86 @@ const food = (name, category, calories, protein, fat, carbs, defaultGrams = 100,
   carbs_per_100: carbs,
   default_grams: defaultGrams,
   modifiers,
+  unit_options: normalizeFoodUnitOptions(options, defaultGrams),
+  default_unit: options.defaultUnit || options.default_unit || "grams",
+  palm_kind: options.palmKind || options.palm_kind || null,
 });
+
+const getPalmGramConfig = (profile = {}) => {
+  const sex = profile?.sex === "female" ? "female" : "male";
+  const fallbackWeight = sex === "female" ? 62 : 78;
+  const weight = safeProfileNumber(profile?.weight_kg ?? profile?.weightKg, fallbackWeight);
+  const factor = Math.min(1.18, Math.max(0.82, weight / fallbackWeight));
+  const scale = (base) => Math.max(5, Math.round(base * factor));
+  return {
+    protein: scale(sex === "female" ? 90 : 110),
+    carbs: scale(sex === "female" ? 120 : 150),
+    fat: scale(sex === "female" ? 10 : 14),
+    vegetables: scale(sex === "female" ? 100 : 120),
+    mixed: scale(sex === "female" ? 130 : 160),
+  };
+};
+
+const getFoodPalmKind = (foodItem = {}) => {
+  if (foodItem.palm_kind) return foodItem.palm_kind;
+  const text = `${foodItem.category || ""} ${foodItem.name || ""}`.toLowerCase();
+  if (/овощ|салат|суп/.test(text)) return "vegetables";
+  if (/масло|соус|орех|паста арахис|нутел|сыр/.test(text)) return "fat";
+  if (/белков|кур|индей|говя|рыб|тунец|лосось|кревет|творог|йогурт|яйц|молоко/.test(text)) return "protein";
+  if (/гарнир|круп|рис|греч|макарон|овсян|геркулес|хлеб|лаваш|фрукт|пицц|слад|джем|варенье|сироп|панкейк|блин/.test(text)) return "carbs";
+  return "mixed";
+};
+
+const getPalmGramsForFood = (foodItem, profile) => {
+  const config = getPalmGramConfig(profile);
+  return config[getFoodPalmKind(foodItem)] || config.mixed;
+};
+
+const gramsToPalmAmount = (grams, foodItem, profile) => roundMacro(Number(grams || 0) / Math.max(1, getPalmGramsForFood(foodItem, profile)));
+const palmAmountToGrams = (amount, foodItem, profile) => Math.max(0, Math.round(Number(amount || 0) * getPalmGramsForFood(foodItem, profile)));
+
+const getNutritionEntryMeta = (modifiers = []) => (modifiers || []).find(modifier => (modifier?.id || modifier) === nutritionEntryMetaId)?.entry_meta || null;
+const buildNutritionEntryMetaModifier = (meta = {}) => ({
+  id: nutritionEntryMetaId,
+  label: "Единица ввода",
+  calories: 0,
+  protein: 0,
+  fat: 0,
+  carbs: 0,
+  entry_meta: meta,
+});
+
+const getFoodUnitOptions = (foodItem = {}) => normalizeFoodUnitOptions({ unitOptions: foodItem.unit_options || foodItem.unitOptions }, foodItem.default_grams);
+const getFoodUnitOption = (foodItem, unitId) => getFoodUnitOptions(foodItem).find(unit => unit.id === unitId) || defaultUnitOption;
+const formatFoodDefaultServing = (foodItem = {}) => {
+  const option = getFoodUnitOption(foodItem, foodItem.default_unit || "grams");
+  if (option.id === "grams") return `${foodItem.default_grams || 100} г`;
+  return `1 ${option.unitLabel}`;
+};
+
+const getFoodDraftServingGrams = (draft = {}, profile = {}) => {
+  if (draft.entryMode === "palms") return palmAmountToGrams(draft.palms, draft.food, profile);
+  const unit = getFoodUnitOption(draft.food, draft.unitId || "grams");
+  const amount = Math.max(0, Number(draft.unitAmount ?? draft.grams ?? 0));
+  return unit.id === "grams" ? amount : Math.round(amount * unit.grams);
+};
+
+const buildFoodDraftEntryMeta = (draft = {}, profile = {}) => {
+  const grams = getFoodDraftServingGrams(draft, profile);
+  const unit = getFoodUnitOption(draft.food, draft.unitId || "grams");
+  const amount = draft.entryMode === "palms"
+    ? Math.max(0, Number(draft.palms || 0))
+    : Math.max(0, Number(draft.unitAmount ?? grams));
+  return {
+    entry_mode: draft.entryMode === "palms" ? "palms" : "calories",
+    unit_id: draft.entryMode === "palms" ? "palm" : unit.id,
+    unit_label: draft.entryMode === "palms" ? "лад." : unit.unitLabel,
+    amount: roundMacro(amount),
+    grams,
+    palm_kind: getFoodPalmKind(draft.food),
+    palm_grams: getPalmGramsForFood(draft.food, profile),
+  };
+};
 
 const nutritionFoodLibrary = [
   food("Куриная грудка", "Белковые продукты", 165, 31, 3.6, 0, 180, ["курица", "грудка", "chicken"]),
@@ -15376,7 +15527,7 @@ const nutritionFoodLibrary = [
   food("Белая рыба", "Белковые продукты", 100, 22, 1.5, 0, 180, ["треска", "хек", "рыба"]),
   food("Креветки", "Белковые продукты", 99, 24, 0.3, 0.2, 150, ["морепродукты"]),
   food("Кальмар", "Белковые продукты", 92, 18, 1.4, 3, 150, ["морепродукты"]),
-  food("Яйца", "Белковые продукты", 155, 13, 11, 1, 120, ["яйцо"]),
+  food("Яйца", "Белковые продукты", 155, 13, 11, 1, 120, ["яйцо"], [], withUnits(unitOption("piece", "Штуки", "шт", 60))),
   food("Омлет", "Белковые продукты", 180, 12, 13, 2, 180, ["яйца"]),
   food("Творог 5%", "Белковые продукты", 121, 17, 5, 3, 200, ["творог"]),
   food("Творог 0%", "Белковые продукты", 80, 16, 0.5, 3, 200, ["творог"]),
@@ -15384,35 +15535,52 @@ const nutritionFoodLibrary = [
   food("Греческий йогурт", "Белковые продукты", 95, 9, 5, 4, 200, ["йогурт"]),
   food("Йогурт питьевой", "Белковые продукты", 75, 3, 2, 11, 250, ["йогурт"]),
   food("Протеиновый йогурт", "Белковые продукты", 80, 12, 1, 6, 200, ["йогурт", "protein"]),
+  food("Протеиновый йогурт низкой жирности", "Белковые продукты", 70, 10, 1, 5, 200, ["йогурт", "protein", "10г белка"]),
+  food("Протеиновый пудинг Ehrmann", "Белковые продукты", 78, 10, 1.5, 6, 200, ["пудинг", "эрман", "ehrmann", "20г белка"], [], withUnits(unitOption("cup", "Стаканчик", "шт", 200))),
   food("Протеиновый батончик", "Белковые продукты", 360, 32, 12, 28, 60, ["батончик", "protein bar"]),
   food("Сыр твердый", "Белковые продукты", 360, 25, 28, 2, 40, ["сыр"]),
+  food("Легкий сыр", "Белковые продукты", 230, 25, 12, 2, 30, ["сыр", "легкий"], [], withUnits(unitOption("slice", "Ломтики", "ломт.", 20))),
   food("Моцарелла", "Белковые продукты", 280, 18, 22, 3, 60, ["сыр"]),
-  food("Рис белый", "Гарниры", 130, 2.7, 0.3, 28, 180, ["рис"]),
-  food("Рис бурый", "Гарниры", 125, 2.6, 1, 26, 180, ["рис"]),
-  food("Гречка", "Гарниры", 110, 3.6, 1.1, 21, 180, ["греча"]),
+  food("Рис белый готовый", "Гарниры", 130, 2.7, 0.3, 28, 180, ["рис"]),
+  food("Рис белый сухой", "Гарниры", 360, 7, 0.7, 79, 70, ["рис", "сухой"]),
+  food("Рис бурый готовый", "Гарниры", 125, 2.6, 1, 26, 180, ["рис"]),
+  food("Рис бурый сухой", "Гарниры", 362, 7.5, 2.7, 76, 70, ["рис", "бурый", "сухой"]),
+  food("Гречка готовая", "Гарниры", 110, 3.6, 1.1, 21, 180, ["греча"]),
+  food("Гречка сухая", "Гарниры", 343, 13, 3.4, 72, 70, ["греча", "сухая"]),
   food("Картофель отварной", "Гарниры", 87, 2, 0.1, 20, 250, ["картошка"]),
   food("Картофель жареный", "Гарниры", 190, 3, 10, 24, 220, ["картошка"]),
   food("Пюре", "Гарниры", 115, 2, 4, 17, 220, ["картофель"]),
-  food("Макароны", "Гарниры", 150, 5, 1, 30, 200, ["паста"]),
+  food("Макароны готовые", "Гарниры", 150, 5, 1, 30, 200, ["паста"]),
+  food("Макароны сухие", "Гарниры", 350, 12, 1.5, 72, 80, ["паста", "макароны", "сухие"]),
   food("Паста с соусом", "Гарниры", 190, 6, 7, 27, 250, ["паста", "макароны"], modifierPresets.sauce),
-  food("Булгур", "Гарниры", 83, 3, 0.2, 19, 180, ["булгур"]),
-  food("Киноа", "Гарниры", 120, 4.4, 1.9, 21, 180, ["quinoa"]),
-  food("Овсянка", "Гарниры", 110, 4, 2, 19, 220, ["геркулес"]),
-  food("Перловка", "Гарниры", 109, 3.1, 0.4, 23, 180, ["крупа"]),
+  food("Булгур готовый", "Гарниры", 83, 3, 0.2, 19, 180, ["булгур"]),
+  food("Булгур сухой", "Гарниры", 342, 12, 1.3, 76, 70, ["булгур", "сухой"]),
+  food("Киноа готовая", "Гарниры", 120, 4.4, 1.9, 21, 180, ["quinoa"]),
+  food("Киноа сухая", "Гарниры", 368, 14, 6, 64, 70, ["quinoa", "киноа", "сухая"]),
+  food("Овсянка готовая", "Гарниры", 110, 4, 2, 19, 220, ["геркулес"]),
+  food("Геркулес сухой", "Гарниры", 366, 12, 6, 62, 60, ["овсянка", "овсяные хлопья", "геркулес сухой"]),
+  food("Перловка готовая", "Гарниры", 109, 3.1, 0.4, 23, 180, ["крупа"]),
+  food("Перловка сухая", "Гарниры", 352, 9.3, 1.1, 73, 70, ["перловка", "крупа", "сухая"]),
+  food("Пшено сухое", "Гарниры", 348, 11.5, 3.3, 69, 70, ["пшено", "крупа", "сухая"]),
+  food("Кускус сухой", "Гарниры", 376, 12.8, 0.6, 77, 70, ["кускус", "крупа", "сухая"]),
+  food("Манка сухая", "Гарниры", 333, 10.3, 1, 70.6, 60, ["манка", "крупа", "сухая"]),
+  food("Кукурузная крупа сухая", "Гарниры", 337, 8.3, 1.2, 75, 70, ["кукурузная крупа", "сухая"]),
+  food("Крупы сухие", "Гарниры", 350, 11, 2, 72, 70, ["крупа", "сухой вид"]),
   food("Плов", "Гарниры", 210, 8, 9, 24, 250, ["рис", "мясо"]),
   food("Лапша удон", "Гарниры", 145, 5, 1, 29, 220, ["лапша"]),
   food("Хлеб белый", "Гарниры", 265, 8, 3, 49, 50, ["хлеб"]),
   food("Хлеб цельнозерновой", "Гарниры", 245, 9, 4, 41, 60, ["хлеб"]),
-  food("Лаваш", "Гарниры", 275, 8, 1.5, 56, 80, ["лаваш"]),
-  food("Банан", "Фрукты", 89, 1.1, 0.3, 23, 120, ["banana"]),
-  food("Яблоко", "Фрукты", 52, 0.3, 0.2, 14, 180, ["apple"]),
-  food("Апельсин", "Фрукты", 47, 0.9, 0.1, 12, 180, ["orange"]),
-  food("Манго", "Фрукты", 60, 0.8, 0.4, 15, 200, ["mango"]),
+  food("Лаваш", "Гарниры", 275, 8, 1.5, 56, 80, ["лаваш"], [], withUnits(unitOption("sheet", "Листы", "лист", 80))),
+  food("Хлебцы", "Гарниры", 330, 10, 2.5, 65, 20, ["хлебцы"], [], withUnits(unitOption("piece", "Штуки", "шт", 10))),
+  food("Банан", "Фрукты", 89, 1.1, 0.3, 23, 120, ["banana"], [], withUnits(unitOption("piece", "Штуки", "шт", 120))),
+  food("Яблоко", "Фрукты", 52, 0.3, 0.2, 14, 180, ["apple"], [], withUnits(unitOption("piece", "Штуки", "шт", 180))),
+  food("Апельсин", "Фрукты", 47, 0.9, 0.1, 12, 180, ["orange"], [], withUnits(unitOption("piece", "Штуки", "шт", 180))),
+  food("Манго", "Фрукты", 60, 0.8, 0.4, 15, 200, ["mango"], [], withUnits(unitOption("piece", "Штуки", "шт", 200))),
   food("Арбуз", "Фрукты", 30, 0.6, 0.2, 8, 300, ["арбуз"]),
   food("Виноград", "Фрукты", 69, 0.7, 0.2, 18, 180, ["виноград"]),
   food("Клубника", "Фрукты", 32, 0.7, 0.3, 8, 200, ["ягоды"]),
   food("Черника", "Фрукты", 57, 0.7, 0.3, 14, 150, ["ягоды"]),
-  food("Груша", "Фрукты", 57, 0.4, 0.1, 15, 180, ["груша"]),
+  food("Груша", "Фрукты", 57, 0.4, 0.1, 15, 180, ["груша"], [], withUnits(unitOption("piece", "Штуки", "шт", 180))),
   food("Ананас", "Фрукты", 50, 0.5, 0.1, 13, 200, ["ананас"]),
   food("Огурцы", "Овощи", 15, 0.7, 0.1, 3.6, 150, ["огурец"]),
   food("Помидоры", "Овощи", 18, 0.9, 0.2, 3.9, 180, ["томат"]),
@@ -15437,10 +15605,10 @@ const nutritionFoodLibrary = [
   food("Картофель фри", "Фастфуд", 312, 3.4, 15, 41, 120, ["фри"]),
   food("Наггетсы", "Фастфуд", 295, 15, 19, 16, 150, ["нагетсы", "курица"]),
   food("Тако", "Фастфуд", 220, 11, 10, 22, 180, ["taco"]),
-  food("Пицца Маргарита", "Пицца", 240, 10, 8, 32, 250, ["маргарита"], modifierPresets.pizza),
-  food("Пицца Пепперони", "Пицца", 290, 13, 14, 30, 250, ["pepperoni"], modifierPresets.pizza),
-  food("Пицца 4 сыра", "Пицца", 310, 14, 16, 29, 250, ["четыре сыра"], modifierPresets.pizza),
-  food("Пицца мясная", "Пицца", 320, 16, 17, 28, 250, ["мясная"], modifierPresets.pizza),
+  food("Пицца Маргарита", "Пицца", 240, 10, 8, 32, 250, ["маргарита"], modifierPresets.pizza, withUnits(unitOption("slice", "Куски", "кус.", 125))),
+  food("Пицца Пепперони", "Пицца", 290, 13, 14, 30, 250, ["pepperoni"], modifierPresets.pizza, withUnits(unitOption("slice", "Куски", "кус.", 125))),
+  food("Пицца 4 сыра", "Пицца", 310, 14, 16, 29, 250, ["четыре сыра"], modifierPresets.pizza, withUnits(unitOption("slice", "Куски", "кус.", 125))),
+  food("Пицца мясная", "Пицца", 320, 16, 17, 28, 250, ["мясная"], modifierPresets.pizza, withUnits(unitOption("slice", "Куски", "кус.", 125))),
   food("Ролл Филадельфия", "Суши", 170, 7, 7, 20, 240, ["роллы", "суши", "philadelphia"]),
   food("Ролл Калифорния", "Суши", 150, 6, 5, 22, 220, ["роллы", "суши"]),
   food("Запеченные роллы", "Суши", 210, 8, 10, 22, 260, ["роллы", "суши"]),
@@ -15452,8 +15620,8 @@ const nutritionFoodLibrary = [
   food("Сырники", "Кафе и рестораны", 230, 14, 10, 22, 200, ["творог"]),
   food("Круассан", "Кафе и рестораны", 406, 8, 21, 46, 80, ["выпечка"]),
   food("Авокадо-тост", "Кафе и рестораны", 230, 7, 14, 20, 180, ["тост", "авокадо"]),
-  food("Блины", "Кафе и рестораны", 210, 6, 7, 31, 180, ["панкейки"]),
-  food("Панкейки", "Кафе и рестораны", 230, 6, 8, 34, 200, ["блины"]),
+  food("Блины", "Кафе и рестораны", 210, 6, 7, 31, 180, ["панкейки"], [], withUnits(unitOption("piece", "Штуки", "шт", 60))),
+  food("Панкейки", "Кафе и рестораны", 230, 6, 8, 34, 200, ["блины"], [], withUnits(unitOption("piece", "Штуки", "шт", 70))),
   food("Паста карбонара", "Кафе и рестораны", 280, 12, 16, 23, 300, ["паста"]),
   food("Паста болоньезе", "Кафе и рестораны", 210, 10, 8, 24, 300, ["паста", "фарш"]),
   food("Рамен", "Кафе и рестораны", 95, 5, 4, 11, 450, ["суп", "лапша"]),
@@ -15463,6 +15631,12 @@ const nutritionFoodLibrary = [
   food("Чизкейк", "Сладости", 320, 6, 21, 27, 130, ["десерт"]),
   food("Мороженое", "Сладости", 210, 4, 11, 24, 120, ["ice cream"]),
   food("Шоколадный батончик", "Сладости", 500, 7, 25, 62, 55, ["сникерс", "марс"]),
+  food("Нутела", "Сладости", 539, 6.3, 30.9, 57.5, 20, ["nutella", "шоколадная паста"]),
+  food("Буэно", "Сладости", 572, 8.6, 37.3, 49.5, 43, ["kinder bueno", "киндер буэно"], [], withUnits(unitOption("bar", "Батончики", "шт", 43))),
+  food("Джем", "Сладости", 260, 0.3, 0.1, 65, 25, ["джем"]),
+  food("Варенье", "Сладости", 270, 0.3, 0.1, 68, 25, ["варенье"]),
+  food("Сироп", "Сладости", 280, 0, 0, 70, 20, ["сироп"]),
+  food("Гранола", "Сладости", 450, 10, 15, 65, 50, ["мюсли", "гранола"]),
   food("Попкорн", "Сладости", 380, 8, 14, 56, 80, ["popcorn"]),
   food("Чипсы", "Сладости", 520, 6, 32, 53, 90, ["chips"]),
   food("Орехи микс", "Сладости", 600, 18, 52, 16, 35, ["орехи"]),
@@ -15480,6 +15654,7 @@ const nutritionFoodLibrary = [
   food("Кефир", "Напитки", 50, 3, 2.5, 4, 250, ["кефир"]),
   food("Айран", "Напитки", 35, 2, 1.5, 3, 250, ["айран"]),
   food("Молоко", "Напитки", 60, 3, 3.2, 4.7, 250, ["milk"]),
+  food("Белковое молоко", "Напитки", 52, 6, 1.5, 4.5, 250, ["молоко", "протеиновое молоко", "protein milk"]),
   food("Чай с сахаром", "Напитки", 32, 0, 0, 8, 250, ["чай"]),
   food("Майонез", "Соусы", 680, 1, 75, 1, 20, ["соус"]),
   food("Кетчуп", "Соусы", 110, 1, 0.2, 26, 25, ["соус"]),
@@ -15487,7 +15662,22 @@ const nutritionFoodLibrary = [
   food("Оливковое масло", "Соусы", 884, 0, 100, 0, 10, ["масло"]),
 ];
 
-const getFoodByKey = (key) => nutritionFoodLibrary.find(item => item.key === key) || null;
+const legacyNutritionFoodKeyAliases = {
+  [normalizeFoodKey("Гарниры-Рис белый")]: normalizeFoodKey("Гарниры-Рис белый готовый"),
+  [normalizeFoodKey("Гарниры-Рис бурый")]: normalizeFoodKey("Гарниры-Рис бурый готовый"),
+  [normalizeFoodKey("Гарниры-Гречка")]: normalizeFoodKey("Гарниры-Гречка готовая"),
+  [normalizeFoodKey("Гарниры-Макароны")]: normalizeFoodKey("Гарниры-Макароны готовые"),
+  [normalizeFoodKey("Гарниры-Булгур")]: normalizeFoodKey("Гарниры-Булгур готовый"),
+  [normalizeFoodKey("Гарниры-Киноа")]: normalizeFoodKey("Гарниры-Киноа готовая"),
+  [normalizeFoodKey("Гарниры-Овсянка")]: normalizeFoodKey("Гарниры-Овсянка готовая"),
+  [normalizeFoodKey("Гарниры-Перловка")]: normalizeFoodKey("Гарниры-Перловка готовая"),
+};
+
+const getFoodByKey = (key) => {
+  const normalizedKey = key || "";
+  const alias = legacyNutritionFoodKeyAliases[normalizedKey] || normalizedKey;
+  return nutritionFoodLibrary.find(item => item.key === alias || item.key === normalizedKey) || null;
+};
 const getFoodSearchText = (foodItem) => [foodItem.name, foodItem.category, ...(foodItem.synonyms || [])].join(" ").toLowerCase().replace(/ё/g, "е");
 const calculateNutritionItemTotals = (foodItem, grams = foodItem?.default_grams || 100, selectedModifierIds = []) => {
   const ratio = Math.max(0, Number(grams || 0)) / 100;
@@ -15506,8 +15696,9 @@ const calculateNutritionItemTotals = (foodItem, grams = foodItem?.default_grams 
   };
 };
 
-const buildNutritionPayloadFromFood = (foodItem, grams, selectedModifierIds, notes = "") => {
+const buildNutritionPayloadFromFood = (foodItem, grams, selectedModifierIds, notes = "", entryMeta = null) => {
   const totals = calculateNutritionItemTotals(foodItem, grams, selectedModifierIds);
+  const selectedModifiers = (foodItem.modifiers || []).filter(modifier => selectedModifierIds.includes(modifier.id));
   return {
     food_key: foodItem.key,
     food_name: foodItem.name,
@@ -15517,7 +15708,7 @@ const buildNutritionPayloadFromFood = (foodItem, grams, selectedModifierIds, not
     base_protein_per_100: Number(foodItem.protein_per_100 || 0),
     base_fat_per_100: Number(foodItem.fat_per_100 || 0),
     base_carbs_per_100: Number(foodItem.carbs_per_100 || 0),
-    selected_modifiers: (foodItem.modifiers || []).filter(modifier => selectedModifierIds.includes(modifier.id)),
+    selected_modifiers: entryMeta ? [...selectedModifiers, buildNutritionEntryMetaModifier(entryMeta)] : selectedModifiers,
     calories_total: totals.calories,
     protein_total: totals.protein,
     fat_total: totals.fat,
@@ -15537,6 +15728,7 @@ const mapNutritionItem = (row = {}) => ({
   baseFatPer100: Number(row.base_fat_per_100 ?? row.baseFatPer100 ?? row.fat_per_100 ?? 0),
   baseCarbsPer100: Number(row.base_carbs_per_100 ?? row.baseCarbsPer100 ?? row.carbs_per_100 ?? 0),
   selectedModifiers: Array.isArray(row.selected_modifiers) ? row.selected_modifiers : (Array.isArray(row.selectedModifiers) ? row.selectedModifiers : []),
+  entryMeta: getNutritionEntryMeta(Array.isArray(row.selected_modifiers) ? row.selected_modifiers : (Array.isArray(row.selectedModifiers) ? row.selectedModifiers : [])),
   calories: roundCalories(row.calories_total ?? row.caloriesTotal ?? row.calories ?? 0),
   protein: roundMacro(row.protein_total ?? row.proteinTotal ?? row.protein ?? 0),
   fat: roundMacro(row.fat_total ?? row.fatTotal ?? row.fat ?? 0),
@@ -15564,6 +15756,66 @@ const getNutritionDayTotalsFromMeals = (meals = []) => meals.reduce((acc, meal) 
   fat: acc.fat + Number(meal.fat || 0),
   carbs: acc.carbs + Number(meal.carbs || 0),
 }), { calories: 0, protein: 0, fat: 0, carbs: 0 });
+
+const getNutritionPalmTargets = (goal = initialNutritionGoal) => ({
+  protein: roundMacro(Number(goal.protein || initialNutritionGoal.protein) / 28),
+  fat: roundMacro(Number(goal.fat || initialNutritionGoal.fat) / 12),
+  carbs: roundMacro(Number(goal.carbs || initialNutritionGoal.carbs) / 35),
+  vegetables: 0,
+});
+
+const normalizeManualPalmUnits = (value = {}) => {
+  const source = typeof value === "string" ? (() => { try { return JSON.parse(value); } catch { return {}; } })() : (value || {});
+  return {
+    protein: Math.max(0, roundMacro(source.protein || 0)),
+    fat: Math.max(0, roundMacro(source.fat || 0)),
+    carbs: Math.max(0, roundMacro(source.carbs || 0)),
+    vegetables: Math.max(0, roundMacro(source.vegetables || 0)),
+  };
+};
+
+const getNutritionPalmSummary = (day = {}, goal = initialNutritionGoal, profile = {}) => {
+  const targets = getNutritionPalmTargets(day.goal || goal);
+  const totals = { protein: 0, fat: 0, carbs: 0, vegetables: 0, mixed: 0 };
+  const hasManual = nutritionDayHasManualEntry(day) && !(day.meals || []).some(meal => (meal.items || []).length);
+  if (hasManual) {
+    const manual = normalizeManualPalmUnits(day.manual_palm_units || day.manualPalmUnits);
+    totals.protein += manual.protein;
+    totals.fat += manual.fat;
+    totals.carbs += manual.carbs;
+    totals.vegetables += manual.vegetables;
+  } else {
+    (day.meals || []).forEach(meal => (meal.items || []).forEach(item => {
+      const foodSnapshot = snapshotFoodFromPayload(item);
+      const meta = item.entryMeta || getNutritionEntryMeta(item.selectedModifiers);
+      const kind = meta?.palm_kind || getFoodPalmKind(foodSnapshot);
+      const amount = meta?.entry_mode === "palms"
+        ? Number(meta.amount || 0)
+        : gramsToPalmAmount(item.servingGrams, foodSnapshot, profile);
+      totals[kind] = roundMacro((totals[kind] || 0) + Math.max(0, amount));
+    }));
+  }
+  const actual = {
+    protein: roundMacro(totals.protein),
+    fat: roundMacro(totals.fat),
+    carbs: roundMacro(totals.carbs),
+    vegetables: roundMacro(totals.vegetables),
+    mixed: roundMacro(totals.mixed),
+  };
+  const actualTotal = roundMacro(actual.protein + actual.fat + actual.carbs + actual.vegetables + actual.mixed);
+  const targetTotal = roundMacro(targets.protein + targets.fat + targets.carbs);
+  return { actual, targets, total: actualTotal, target: targetTotal };
+};
+
+const palmLabel = (value) => `${roundMacro(value)} лад.`;
+const formatNutritionItemServing = (item = {}) => {
+  const meta = item.entryMeta || getNutritionEntryMeta(item.selectedModifiers);
+  if (meta?.entry_mode === "palms") return `${roundMacro(meta.amount || 0)} лад. · ${item.servingGrams} г`;
+  if (meta?.entry_mode === "calories" && meta.unit_id && meta.unit_id !== "grams") {
+    return `${roundMacro(meta.amount || 0)} ${meta.unit_label || "шт"} · ${item.servingGrams} г`;
+  }
+  return `${item.servingGrams} г`;
+};
 
 const normalizeNutritionDay = (result = {}, fallbackDate = formatDateKey(new Date()), fallbackGoal = initialNutritionGoal) => {
   const day = result.nutrition_day || result.day || result || {};
@@ -15601,6 +15853,8 @@ const normalizeNutritionDay = (result = {}, fallbackDate = formatDateKey(new Dat
     manual_protein_total: manualTotals.protein,
     manual_fat_total: manualTotals.fat,
     manual_carbs_total: manualTotals.carbs,
+    manual_entry_mode: normalizeNutritionTrackingMode(day.manual_entry_mode ?? day.manualEntryMode, "calories"),
+    manual_palm_units: normalizeManualPalmUnits(day.manual_palm_units ?? day.manualPalmUnits),
     manual_entry_updated_at: day.manual_entry_updated_at || day.manualEntryUpdatedAt || null,
     calories_target: explicitCaloriesTarget != null ? Number(explicitCaloriesTarget) : null,
     goal: {
@@ -15677,8 +15931,11 @@ const snapshotFoodFromPayload = (item = {}) => ({
   fat_per_100: Number(item.base_fat_per_100 ?? item.baseFatPer100 ?? item.fat_per_100 ?? 0),
   carbs_per_100: Number(item.base_carbs_per_100 ?? item.baseCarbsPer100 ?? item.carbs_per_100 ?? 0),
   default_grams: Number(item.serving_grams ?? item.servingGrams ?? item.default_grams ?? 100),
-  modifiers: Array.isArray(item.modifiers) ? item.modifiers : (item.selected_modifiers || item.selectedModifiers || []),
-  defaultSelectedModifierIds: item.defaultSelectedModifierIds || (item.selected_modifiers || item.selectedModifiers || []).map(modifier => modifier.id || modifier).filter(Boolean),
+  modifiers: (Array.isArray(item.modifiers) ? item.modifiers : (item.selected_modifiers || item.selectedModifiers || [])).filter(modifier => (modifier?.id || modifier) !== nutritionEntryMetaId),
+  defaultSelectedModifierIds: item.defaultSelectedModifierIds || (item.selected_modifiers || item.selectedModifiers || []).map(modifier => modifier.id || modifier).filter(id => id && id !== nutritionEntryMetaId),
+  unit_options: normalizeFoodUnitOptions({ unitOptions: item.unit_options || item.unitOptions }, item.default_grams ?? item.serving_grams ?? item.servingGrams ?? 100),
+  default_unit: item.default_unit || item.defaultUnit || "grams",
+  palm_kind: item.palm_kind || item.palmKind || null,
   synonyms: Array.isArray(item.synonyms) ? item.synonyms : [],
 });
 
@@ -15713,6 +15970,8 @@ const applyLocalNutritionAction = (day, action, payload = {}) => {
       manual_protein_total: roundMacro(payload.manual_protein_total ?? payload.protein_total ?? payload.protein ?? 0),
       manual_fat_total: roundMacro(payload.manual_fat_total ?? payload.fat_total ?? payload.fat ?? 0),
       manual_carbs_total: roundMacro(payload.manual_carbs_total ?? payload.carbs_total ?? payload.carbs ?? 0),
+      manual_entry_mode: normalizeNutritionTrackingMode(payload.manual_entry_mode ?? payload.manualEntryMode, "calories"),
+      manual_palm_units: normalizeManualPalmUnits(payload.manual_palm_units ?? payload.manualPalmUnits),
       manual_entry_updated_at: new Date().toISOString(),
     };
   }
@@ -15779,6 +16038,9 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
 
   const totals = day.totals || { calories: 0, protein: 0, fat: 0, carbs: 0 };
   const goal = day.goal || nutritionGoal || initialNutritionGoal;
+  const usePalmNutrition = profileUsesPalmNutrition(profile);
+  const palmSummary = getNutritionPalmSummary(day, goal, profile);
+  const palmPercent = Math.min(100, Math.round((palmSummary.total / Math.max(1, palmSummary.target || 1)) * 100));
   const dayHasItems = (day.meals || []).some(meal => (meal.items || []).length > 0);
   const dayHasManualEntry = nutritionDayHasManualEntry(day) && !dayHasItems;
   const percent = (value, target) => Math.min(100, Math.round((Number(value || 0) / Math.max(1, Number(target || 1))) * 100));
@@ -15813,13 +16075,15 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   const saveManualNutritionTotals = async (values) => {
     const result = await onNutritionAction("save_manual_day_totals", {
       date: selectedDateKey,
+      manual_entry_mode: values.mode || "calories",
+      manual_palm_units: values.palmUnits || {},
       manual_calories_total: values.calories,
       manual_protein_total: values.protein,
       manual_fat_total: values.fat,
       manual_carbs_total: values.carbs,
     });
     if (result?.ok === false) {
-      showNutritionError("Не удалось сохранить КБЖУ");
+      showNutritionError("Не удалось сохранить ручной ввод");
       return false;
     }
     setManualEntryOpen(false);
@@ -15863,13 +16127,29 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   };
 
   const openFoodDraft = (foodItem, mealType = targetMealType, item = null) => {
-    const selectedModifierIds = item?.selectedModifiers?.map(modifier => modifier.id || modifier).filter(Boolean) || foodItem.defaultSelectedModifierIds || [];
+    const selectedModifierIds = item?.selectedModifiers?.map(modifier => modifier.id || modifier).filter(id => id && id !== nutritionEntryMetaId) || foodItem.defaultSelectedModifierIds || [];
+    const normalizedFood = snapshotFoodFromPayload(foodItem);
+    const entryMeta = item?.entryMeta || getNutritionEntryMeta(item?.selectedModifiers);
+    const servingGrams = Number(item?.servingGrams || normalizedFood.default_grams || 100);
+    const entryMode = normalizeNutritionTrackingMode(entryMeta?.entry_mode, usePalmNutrition ? "palms" : "calories");
+    const unitId = entryMeta?.unit_id && entryMeta.unit_id !== "palm" ? entryMeta.unit_id : (normalizedFood.default_unit || "grams");
+    const unit = getFoodUnitOption(normalizedFood, unitId);
+    const unitAmount = entryMeta?.entry_mode === "calories" && entryMeta.amount != null
+      ? entryMeta.amount
+      : unit.id === "grams" ? servingGrams : roundMacro(servingGrams / Math.max(1, unit.grams));
+    const palms = entryMeta?.entry_mode === "palms" && entryMeta.amount != null
+      ? entryMeta.amount
+      : gramsToPalmAmount(servingGrams, normalizedFood, profile);
     setFoodDraft({
       mode: item ? "edit" : "add",
       itemId: item?.id || null,
       mealType,
-      food: foodItem,
-      grams: item?.servingGrams || foodItem.default_grams || 100,
+      food: normalizedFood,
+      grams: servingGrams,
+      entryMode,
+      unitId,
+      unitAmount,
+      palms,
       selectedModifierIds,
       notes: item?.notes || "",
     });
@@ -15890,13 +16170,15 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   }, [activeEyeballFoods, activeEyeballTab, foodSearch]);
 
   const favoriteKeys = new Set((day.favorites || []).map(item => item.foodKey));
-  const draftTotals = foodDraft ? calculateNutritionItemTotals(foodDraft.food, foodDraft.grams, foodDraft.selectedModifierIds) : null;
+  const draftServingGrams = foodDraft ? getFoodDraftServingGrams(foodDraft, profile) : 0;
+  const draftTotals = foodDraft ? calculateNutritionItemTotals(foodDraft.food, draftServingGrams, foodDraft.selectedModifierIds) : null;
 
   const saveFoodDraft = async () => {
     if (!foodDraft?.food || pendingFoodAction) return;
     const actionKey = `${foodDraft.mode}-${foodDraft.mealType}-${foodDraft.food.key}`;
     setPendingFoodAction(actionKey);
-    const payload = buildNutritionPayloadFromFood(foodDraft.food, foodDraft.grams, foodDraft.selectedModifierIds, foodDraft.notes);
+    const entryMeta = buildFoodDraftEntryMeta(foodDraft, profile);
+    const payload = buildNutritionPayloadFromFood(foodDraft.food, entryMeta.grams, foodDraft.selectedModifierIds, foodDraft.notes, entryMeta);
     const action = foodDraft.mode === "edit" ? "update_item" : "add_item";
     const requestPayload = {
       date: selectedDateKey,
@@ -15964,7 +16246,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
           <div className="break-words text-base font-black text-zinc-100">{foodCard.name}</div>
           <div className="mt-1 text-xs font-semibold text-red-400">{foodCard.category}</div>
         </div>
-        <div className="shrink-0 text-right text-xs text-zinc-500">{foodCard.default_grams || 100} г</div>
+        <div className="shrink-0 text-right text-xs text-zinc-500">{formatFoodDefaultServing(foodCard)}</div>
       </div>
       <div className="mt-3 text-xs text-zinc-500">{foodCard.calories_per_100} ккал · {foodCard.protein_per_100} Б · {foodCard.fat_per_100} Ж · {foodCard.carbs_per_100} У</div>
     </button>;
@@ -15979,18 +16261,21 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
       <div className="grid grid-cols-[126px_1fr] gap-4">
         <div className="flex flex-col items-center justify-center">
           <div className="relative h-[86px] w-32 overflow-hidden">
-            <div className="absolute left-0 top-0 h-32 w-32 rounded-full" style={{ background: `conic-gradient(from 270deg, #ef4444 0deg ${Math.round(caloriesPercent * 1.8)}deg, var(--chart-track) ${Math.round(caloriesPercent * 1.8)}deg 180deg, transparent 180deg 360deg)` }} />
+            <div className="absolute left-0 top-0 h-32 w-32 rounded-full" style={{ background: `conic-gradient(from 270deg, #ef4444 0deg ${Math.round((usePalmNutrition ? palmPercent : caloriesPercent) * 1.8)}deg, var(--chart-track) ${Math.round((usePalmNutrition ? palmPercent : caloriesPercent) * 1.8)}deg 180deg, transparent 180deg 360deg)` }} />
             <div className="absolute left-[10px] top-[10px] flex h-28 w-28 flex-col items-center justify-start rounded-full bg-zinc-950 pt-3 text-center">
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Ккал</span>
-              <span className="mt-1 text-2xl font-black leading-none">{roundCalories(totals.calories)}</span>
-              <span className="mt-1 text-[10px] font-bold leading-none text-zinc-400">/ {calorieTarget}</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">{usePalmNutrition ? "Ладони" : "Ккал"}</span>
+              <span className="mt-1 text-2xl font-black leading-none">{usePalmNutrition ? roundMacro(palmSummary.total) : roundCalories(totals.calories)}</span>
+              <span className="mt-1 text-[10px] font-bold leading-none text-zinc-400">/ {usePalmNutrition ? roundMacro(palmSummary.target) : calorieTarget}</span>
             </div>
           </div>
         </div>
         <div className="space-y-3">
-          {[["Белки", totals.protein, goal.protein], ["Жиры", totals.fat, goal.fat], ["Углеводы", totals.carbs, goal.carbs]].map(([label, value, target]) => <div key={label}>
-            <div className="flex justify-between gap-3 text-xs"><span className="font-bold text-zinc-400">{label}</span><span className="text-zinc-500">{roundMacro(value)} / {target} г</span></div>
-            <div className="mt-2"><Progress value={percent(value, target)}/></div>
+          {(usePalmNutrition
+            ? [["Белковые", palmSummary.actual.protein, palmSummary.targets.protein], ["Жировые", palmSummary.actual.fat, palmSummary.targets.fat], ["Углеводные", palmSummary.actual.carbs, palmSummary.targets.carbs], ["Овощи", palmSummary.actual.vegetables, palmSummary.targets.vegetables || "—"]]
+            : [["Белки", totals.protein, goal.protein], ["Жиры", totals.fat, goal.fat], ["Углеводы", totals.carbs, goal.carbs]]
+          ).map(([label, value, target]) => <div key={label}>
+            <div className="flex justify-between gap-3 text-xs"><span className="font-bold text-zinc-400">{label}</span><span className="text-zinc-500">{usePalmNutrition ? `${roundMacro(value)} / ${target === "—" ? "—" : roundMacro(target)} лад.` : `${roundMacro(value)} / ${target} г`}</span></div>
+            <div className="mt-2"><Progress value={target === "—" ? 0 : percent(value, target)}/></div>
           </div>)}
         </div>
       </div>
@@ -16000,7 +16285,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
     <div className="mt-5 flex items-center justify-between gap-3">
       <h2 className="text-xl font-black tracking-[-0.03em]">Приемы пищи</h2>
       <div className="flex items-center gap-2">
-        {!dayHasItems && <button onClick={() => setManualEntryOpen(true)} className={`min-h-10 rounded-full border px-4 py-2 text-xs font-black transition ${dayHasManualEntry ? "border-red-500 bg-red-500 text-black shadow-lg shadow-red-500/20" : "border-red-500/60 bg-red-500/12 text-red-300 hover:bg-red-500 hover:text-black"}`}>Внести КБЖУ вручную</button>}
+        {!dayHasItems && <button onClick={() => setManualEntryOpen(true)} className={`min-h-10 rounded-full border px-4 py-2 text-xs font-black transition ${dayHasManualEntry ? "border-red-500 bg-red-500 text-black shadow-lg shadow-red-500/20" : "border-red-500/60 bg-red-500/12 text-red-300 hover:bg-red-500 hover:text-black"}`}>Ввести вручную</button>}
         <button onClick={openMealChoice} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/8 text-red-400"><Plus size={22}/></button>
       </div>
     </div>
@@ -16032,7 +16317,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
             <button onClick={() => openFoodDraft(foodFromItem(item), meal.type, item)} className="grid w-full grid-cols-[1fr_auto] gap-3 bg-zinc-950 px-4 py-4 text-left transition hover:bg-white/[0.03]">
               <div className="min-w-0">
                 <div className="break-words font-black text-zinc-100">{item.foodName}</div>
-                <div className="mt-1 text-xs font-semibold text-red-400">{item.servingGrams} г · {item.foodCategory}</div>
+                <div className="mt-1 text-xs font-semibold text-red-400">{formatNutritionItemServing(item)} · {item.foodCategory}</div>
               </div>
               <div className="shrink-0 text-right">
                 <div className="font-black">{item.calories}</div>
@@ -16112,6 +16397,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
     {manualEntryOpen && <ManualNutritionSheet
       day={day}
       dateKey={selectedDateKey}
+      profile={profile}
       onClose={() => setManualEntryOpen(false)}
       onSave={saveManualNutritionTotals}
     />}
@@ -16131,14 +16417,38 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
         </div>
         <div className="mt-4 flex-1 overflow-y-auto pr-1 onlypump-scrollbar-none">
           <div className="rounded-3xl bg-black/28 p-4">
-            <div className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Порция</div>
-            <div className="grid grid-cols-3 gap-2">
-              {[50, 100, 150, 200, 250, 300].map(grams => <button key={grams} onClick={() => setFoodDraft(prev => ({ ...prev, grams }))} className={`h-10 rounded-full text-sm font-black ${Number(foodDraft.grams) === grams ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-300"}`}>{grams} г</button>)}
+            <div className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Как считать</div>
+            <div className="grid grid-cols-2 gap-2">
+              {[["calories", "Калории"], ["palms", "Ладони"]].map(([mode, label]) => <button key={mode} onClick={() => setFoodDraft(prev => ({ ...prev, entryMode: mode }))} className={`h-10 rounded-full text-sm font-black ${foodDraft.entryMode === mode ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-300"}`}>{label}</button>)}
             </div>
-            <label className="mt-3 flex items-center rounded-2xl bg-white/[0.05] px-4 py-3">
-              <input type="number" value={foodDraft.grams} onChange={(e) => setFoodDraft(prev => ({ ...prev, grams: e.target.value }))} className="w-full bg-transparent text-lg font-black outline-none" />
-              <span className="text-sm text-zinc-500">г</span>
-            </label>
+
+            {foodDraft.entryMode !== "palms" ? <div className="mt-4">
+              <div className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Порция</div>
+              <div className="grid grid-cols-3 gap-2">
+                {getFoodUnitOptions(foodDraft.food).map(unit => <button key={unit.id} onClick={() => setFoodDraft(prev => ({
+                  ...prev,
+                  unitId: unit.id,
+                  unitAmount: unit.id === "grams" ? (prev.grams || prev.unitAmount || prev.food.default_grams || 100) : 1,
+                }))} className={`h-10 rounded-full text-sm font-black ${foodDraft.unitId === unit.id ? "bg-white text-black" : "bg-white/[0.06] text-zinc-300"}`}>{unit.label}</button>)}
+              </div>
+              {getFoodUnitOption(foodDraft.food, foodDraft.unitId).id === "grams" && <div className="mt-3 grid grid-cols-3 gap-2">
+                {[50, 100, 150, 200, 250, 300].map(grams => <button key={grams} onClick={() => setFoodDraft(prev => ({ ...prev, unitAmount: grams, grams }))} className={`h-10 rounded-full text-sm font-black ${Number(foodDraft.unitAmount) === grams ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-300"}`}>{grams} г</button>)}
+              </div>}
+              <label className="mt-3 flex items-center rounded-2xl bg-white/[0.05] px-4 py-3">
+                <input type="number" inputMode="decimal" value={foodDraft.unitAmount} onChange={(e) => setFoodDraft(prev => ({ ...prev, unitAmount: e.target.value, grams: getFoodUnitOption(prev.food, prev.unitId).id === "grams" ? e.target.value : prev.grams }))} className="w-full bg-transparent text-lg font-black outline-none" />
+                <span className="text-sm text-zinc-500">{getFoodUnitOption(foodDraft.food, foodDraft.unitId).unitLabel}</span>
+              </label>
+            </div> : <div className="mt-4">
+              <div className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Ладони</div>
+              <div className="grid grid-cols-5 gap-2">
+                {[0.5, 1, 1.5, 2, 3].map(amount => <button key={amount} onClick={() => setFoodDraft(prev => ({ ...prev, palms: amount }))} className={`h-10 rounded-full text-sm font-black ${Number(foodDraft.palms) === amount ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-300"}`}>{amount}</button>)}
+              </div>
+              <label className="mt-3 flex items-center rounded-2xl bg-white/[0.05] px-4 py-3">
+                <input type="number" inputMode="decimal" value={foodDraft.palms} onChange={(e) => setFoodDraft(prev => ({ ...prev, palms: e.target.value }))} className="w-full bg-transparent text-lg font-black outline-none" />
+                <span className="text-sm text-zinc-500">лад.</span>
+              </label>
+              <p className="mt-2 text-xs leading-5 text-zinc-500">1 ладонь для этого продукта ≈ {getPalmGramsForFood(foodDraft.food, profile)} г. Вес порции пересчитается автоматически: {draftServingGrams} г.</p>
+            </div>}
           </div>
           {!!foodDraft.food.modifiers?.length && <div className="mt-4 rounded-3xl bg-black/28 p-4">
             <div className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Дополнения</div>
@@ -16169,15 +16479,38 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   </>;
 }
 
-function ManualNutritionSheet({ day, dateKey, onSave, onClose }) {
+function ManualNutritionSheet({ day, dateKey, profile = DEFAULT_PROFILE, onSave, onClose }) {
   const hasManualEntry = nutritionDayHasManualEntry(day);
+  const initialMode = normalizeNutritionTrackingMode(day?.manual_entry_mode || day?.manualEntryMode, profileUsesPalmNutrition(profile) ? "palms" : "calories");
+  const initialPalmUnits = normalizeManualPalmUnits(day?.manual_palm_units || day?.manualPalmUnits);
   const [draft, setDraft] = useState({
+    mode: initialMode,
     calories: hasManualEntry ? String(day?.manual_calories_total || day?.manualCaloriesTotal || day?.totals?.calories || "") : "",
     protein: hasManualEntry ? String(day?.manual_protein_total || day?.manualProteinTotal || day?.totals?.protein || "") : "",
     fat: hasManualEntry ? String(day?.manual_fat_total || day?.manualFatTotal || day?.totals?.fat || "") : "",
     carbs: hasManualEntry ? String(day?.manual_carbs_total || day?.manualCarbsTotal || day?.totals?.carbs || "") : "",
+    palmProtein: String(initialPalmUnits.protein || ""),
+    palmFat: String(initialPalmUnits.fat || ""),
+    palmCarbs: String(initialPalmUnits.carbs || ""),
+    palmVegetables: String(initialPalmUnits.vegetables || ""),
   });
   const [saving, setSaving] = useState(false);
+  const safeNumber = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const palmUnits = {
+    protein: Math.max(0, roundMacro(safeNumber(draft.palmProtein))),
+    fat: Math.max(0, roundMacro(safeNumber(draft.palmFat))),
+    carbs: Math.max(0, roundMacro(safeNumber(draft.palmCarbs))),
+    vegetables: Math.max(0, roundMacro(safeNumber(draft.palmVegetables))),
+  };
+  const palmManualTotals = {
+    protein: roundMacro(palmUnits.protein * 28),
+    fat: roundMacro(palmUnits.fat * 12),
+    carbs: roundMacro(palmUnits.carbs * 35 + palmUnits.vegetables * 8),
+  };
+  palmManualTotals.calories = roundCalories(palmManualTotals.protein * 4 + palmManualTotals.fat * 9 + palmManualTotals.carbs * 4);
 
   const set = (key, value) => {
     setDraft(prev => ({ ...prev, [key]: value }));
@@ -16186,11 +16519,13 @@ function ManualNutritionSheet({ day, dateKey, onSave, onClose }) {
   const save = async () => {
     if (saving) return;
     setSaving(true);
-    const safeNumber = (value) => {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : 0;
-    };
-    const ok = await onSave?.({
+    const ok = await onSave?.(draft.mode === "palms" ? {
+      mode: "palms",
+      palmUnits,
+      ...palmManualTotals,
+    } : {
+      mode: "calories",
+      palmUnits: {},
       calories: Math.max(0, roundCalories(safeNumber(draft.calories))),
       protein: Math.max(0, roundMacro(safeNumber(draft.protein))),
       fat: Math.max(0, roundMacro(safeNumber(draft.fat))),
@@ -16213,12 +16548,20 @@ function ManualNutritionSheet({ day, dateKey, onSave, onClose }) {
         <button onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отмена</button>
         <div className="min-w-0 text-center">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">{formatCycleDate(dateKey)}</p>
-          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">КБЖУ вручную</h2>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Ввести вручную</h2>
         </div>
         <button onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
       </div>
+      <div className="mt-5 grid grid-cols-2 gap-2">
+        {[["calories", "Считать калории"], ["palms", "Считать в ладонях"]].map(([mode, label]) => <button key={mode} onClick={() => set("mode", mode)} className={`h-11 rounded-full text-sm font-black ${draft.mode === mode ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-300"}`}>{label}</button>)}
+      </div>
       <div className="mt-5 space-y-3">
-        {fields.map(([key, label, unit]) => <label key={key} className="onlypump-field-surface flex items-center gap-3 rounded-2xl bg-white/[0.05] px-4 py-3">
+        {(draft.mode === "palms" ? [
+          ["palmProtein", "Белковые", "лад."],
+          ["palmFat", "Жировые", "лад."],
+          ["palmCarbs", "Углеводные", "лад."],
+          ["palmVegetables", "Овощи", "лад."],
+        ] : fields).map(([key, label, unit]) => <label key={key} className="onlypump-field-surface flex items-center gap-3 rounded-2xl bg-white/[0.05] px-4 py-3">
           <span className="w-24 shrink-0 text-sm font-bold text-zinc-400">{label}</span>
           <input
             type="number"
@@ -16231,6 +16574,10 @@ function ManualNutritionSheet({ day, dateKey, onSave, onClose }) {
           <span className="w-10 shrink-0 text-right text-xs font-bold text-zinc-500">{unit}</span>
         </label>)}
       </div>
+      {draft.mode === "palms" && <div className="mt-4 rounded-3xl border border-red-500/20 bg-red-500/10 p-4 text-xs leading-5 text-zinc-400">
+        <b className="block text-sm text-zinc-100">Будет сохранено для аналитики</b>
+        {palmManualTotals.calories} ккал · {palmManualTotals.protein} Б · {palmManualTotals.fat} Ж · {palmManualTotals.carbs} У
+      </div>}
       <button onClick={save} disabled={saving} className="mt-6 h-12 w-full rounded-full bg-red-500 text-sm font-black text-black transition active:scale-[0.98] disabled:opacity-60">
         {saving ? "Сохраняю..." : "Сохранить"}
       </button>
@@ -17275,6 +17622,7 @@ const trainingAnalyticsMetrics = [
 
 const nutritionAnalyticsMetrics = [
   { key: "calories_total", label: "Калории", unit: "ккал", type: "bar" },
+  { key: "palms_total", label: "Ладони", unit: "лад.", type: "bar" },
 ];
 
 const analyticsTypeConfigs = {
@@ -17654,8 +18002,18 @@ const buildHealthSeries = (logs = [], metricKey = "steps_count") => logs
   .map(item => ({ date: String(item.log_date || item.date || "").slice(0, 10), value: Number(item[metricKey]) }))
   .filter(item => item.date && Number.isFinite(item.value) && item.value > 0);
 
+const nutritionPalmValueFromDay = (day = {}) => {
+  const manual = normalizeManualPalmUnits(day.manual_palm_units || day.manualPalmUnits);
+  const manualTotal = manual.protein + manual.fat + manual.carbs + manual.vegetables;
+  if (manualTotal > 0) return roundMacro(manualTotal);
+  const protein = Number(day?.totals?.protein ?? day?.protein_total ?? day?.proteinTotal ?? day?.protein ?? 0);
+  const fat = Number(day?.totals?.fat ?? day?.fat_total ?? day?.fatTotal ?? day?.fat ?? 0);
+  const carbs = Number(day?.totals?.carbs ?? day?.carbs_total ?? day?.carbsTotal ?? day?.carbs ?? 0);
+  return roundMacro((protein / 28) + (fat / 12) + (carbs / 35));
+};
+
 const buildNutritionSeries = (days = [], metricKey = "calories_total") => days
-  .map(item => ({ date: String(item.nutrition_date || item.date || "").slice(0, 10), value: Number(item[metricKey] ?? item.totals?.calories ?? item.calories ?? 0) }))
+  .map(item => ({ date: String(item.nutrition_date || item.date || "").slice(0, 10), value: metricKey === "palms_total" ? nutritionPalmValueFromDay(item) : Number(item[metricKey] ?? item.totals?.calories ?? item.calories ?? 0) }))
   .filter(item => item.date && Number.isFinite(item.value) && item.value > 0);
 
 const buildTrainingSeries = (workouts = [], metricKey = "sets") => {
@@ -17693,6 +18051,7 @@ const niceChartMax = (value, metricKey = "") => {
   let step = 10;
   if (metricKey === "steps_count") step = padded > 15000 ? 5000 : 1000;
   else if (["calories_total", "water_ml", "volume"].includes(metricKey)) step = padded > 4000 ? 1000 : 500;
+  else if (metricKey === "palms_total") step = padded > 20 ? 5 : 2;
   else if (["sleep_duration_minutes"].includes(metricKey)) step = 60;
   else if (["recovery_score", "body_fat_percent"].includes(metricKey)) step = padded > 60 ? 10 : 5;
   else if (["weight_kg", "neck_cm", "shoulders_cm", "chest_cm", "biceps_cm", "waist_cm", "abdomen_cm", "glutes_cm", "thigh_cm", "calf_cm"].includes(metricKey)) step = padded > 100 ? 10 : 5;
@@ -17885,8 +18244,12 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
 
 function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutritionDays = [], workouts, selectedDateKey, profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onClose, onOpenEditor }) {
   const typeConfig = analyticsTypeConfigs[type] || analyticsTypeConfigs.measurements;
-  const metricOptions = typeConfig.metrics.length ? typeConfig.metrics : measurementAnalyticsMetrics;
-  const [metric, setMetric] = useState(typeConfig.defaultMetric || metricOptions[0].key);
+  const usePalmNutritionDetail = typeConfig.source === "nutrition" && profileUsesPalmNutrition(profile);
+  const metricOptions = usePalmNutritionDetail
+    ? nutritionAnalyticsMetrics.filter(metric => metric.key === "palms_total")
+    : (typeConfig.metrics.length ? typeConfig.metrics : measurementAnalyticsMetrics);
+  const defaultMetric = usePalmNutritionDetail ? "palms_total" : (typeConfig.defaultMetric || metricOptions[0].key);
+  const [metric, setMetric] = useState(defaultMetric);
   const [period, setPeriod] = useState(typeConfig.source === "training" ? "week" : "month");
   const [chartDateKey, setChartDateKey] = useState(selectedDateKey);
   const [remoteData, setRemoteData] = useState({ measurements: [], health_logs: [], nutrition_days: [] });
@@ -17907,16 +18270,16 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
   const points = filterAnalyticsPoints(allPoints, period, chartDateKey);
   const summary = analyticsSummary(points);
   const chartType = metricConfig.type || (typeConfig.source === "health" || typeConfig.source === "nutrition" ? "bar" : "line");
-  const sheetTitle = title || typeConfig.title;
+  const sheetTitle = usePalmNutritionDetail ? "Ладони" : (title || typeConfig.title);
   const shiftChartPeriod = (amount) => {
     setChartDateKey(current => shiftAnalyticsPeriodDate(current, period, amount));
   };
 
   useEffect(() => {
-    setMetric(typeConfig.defaultMetric || metricOptions[0].key);
+    setMetric(defaultMetric);
     setPeriod(typeConfig.source === "training" ? "week" : "month");
     setChartDateKey(selectedDateKey);
-  }, [type]);
+  }, [type, defaultMetric]);
 
   useEffect(() => {
     let cancelled = false;
@@ -18320,13 +18683,21 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
   }, { opened: 0, total: 0 });
   const activityAchievementLabel = `${activityAchievementCount.opened}/${activityAchievementCount.total}`;
   const dataCounts = periodStats.dataCounts || {};
+  const analyticsUsesPalmNutrition = profileUsesPalmNutrition(profile);
+  const analyticsCardTitle = (card) => card?.id === "calories" && analyticsUsesPalmNutrition ? "Ладони" : card?.title;
+  const periodNutritionRows = (analyticsData.nutrition_days || []).filter(day => {
+    const key = String(day.nutrition_date || day.date || "").slice(0, 10);
+    return key && isDateKeyInRange(key, periodStats.range) && nutritionDayHasAnalyticsData(day);
+  });
+  const periodPalmTotal = periodNutritionRows.reduce((sum, day) => sum + nutritionPalmValueFromDay(day), 0);
+  const periodPalmAverage = analyticsPeriod === "day" ? periodPalmTotal : periodPalmTotal / Math.max(1, periodNutritionRows.length);
   const cardData = {
     measurements: { value: dataCounts.measurements ? (periodStats.waist ? `${periodStats.waist} см` : "замеры есть") : emptyAnalyticsValue, sub: dataCounts.measurements ? "талия и окружности" : emptyAnalyticsSub, detail: "measurements" },
     weight: { value: dataCounts.measurements && periodStats.weight ? `${periodStats.weight} кг` : emptyAnalyticsValue, sub: dataCounts.measurements ? (analyticsPeriod === "day" ? "в выбранный день" : "средние замеры периода") : emptyAnalyticsSub, detail: "weight" },
     steps: { value: dataCounts.steps ? Math.round(periodStats.stepsSum).toLocaleString("ru-RU") : emptyAnalyticsValue, sub: dataCounts.steps ? periodName : emptyAnalyticsSub, detail: "steps" },
     sleep: { value: dataCounts.sleep ? formatSleepDuration(Math.round(periodStats.sleepAverage || 0)) : emptyAnalyticsValue, sub: dataCounts.sleep ? "среднее за период" : emptyAnalyticsSub, detail: "sleep" },
     water: { value: dataCounts.water ? `${Math.round(periodStats.waterAverage || 0)} мл` : emptyAnalyticsValue, sub: dataCounts.water ? "в среднем за день" : emptyAnalyticsSub, detail: "water" },
-    calories: { value: dataCounts.nutrition ? Math.round(periodStats.calorieAverage || 0).toLocaleString("ru-RU") : emptyAnalyticsValue, sub: dataCounts.nutrition ? (analyticsPeriod === "day" ? "питание за день" : "среднее за день") : emptyAnalyticsSub, detail: "calories" },
+    calories: { value: dataCounts.nutrition ? (analyticsUsesPalmNutrition ? palmLabel(periodPalmAverage) : Math.round(periodStats.calorieAverage || 0).toLocaleString("ru-RU")) : emptyAnalyticsValue, sub: dataCounts.nutrition ? (analyticsUsesPalmNutrition ? (analyticsPeriod === "day" ? "ладони за день" : "среднее ладоней за день") : (analyticsPeriod === "day" ? "питание за день" : "среднее за день")) : emptyAnalyticsSub, detail: "calories" },
     training: { value: dataCounts.workouts ? String(periodStats.sets) : emptyAnalyticsValue, sub: dataCounts.workouts ? `${loadLevel.label} · подходов ${periodName}` : emptyAnalyticsSub, detail: "training_load" },
     recovery: { value: dataCounts.recovery ? `${Math.round(periodStats.recoveryAverage)}%` : emptyAnalyticsValue, sub: dataCounts.recovery ? "среднее восстановление" : emptyAnalyticsSub, detail: "recovery" },
     tonnage: { value: dataCounts.strength ? formatVolumeForProfile(periodStats.volume || 0, profile) : emptyAnalyticsValue, sub: dataCounts.strength ? `${periodStats.strengthWorkouts.length} силовых ${periodName}` : emptyAnalyticsSub, detail: "training_load" },
@@ -18484,9 +18855,10 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
         <p className="mt-4 leading-7 text-zinc-300">{dataCounts.workouts ? `За период ${periodStats.range.label}: ${periodStats.workoutsCount} выполненных тренировок, ${periodStats.sets} силовых подходов, ${formatVolumeForProfile(periodStats.volume || 0, profile)} тоннажа, ${Math.round(periodStats.activityMinutes)} минут активностей.` : emptyAnalyticsSub}</p>
       </Card>;
     }
-    return <Card key={cardId} onClick={() => data.detail && setDetail({ type: data.detail, title: catalog.title })} className="cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5">
+    const title = analyticsCardTitle(catalog);
+    return <Card key={cardId} onClick={() => data.detail && setDetail({ type: data.detail, title })} className="cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5">
       <Icon className="text-red-500"/>
-      <p className="mt-5 text-sm text-zinc-500">{catalog.title}</p>
+      <p className="mt-5 text-sm text-zinc-500">{title}</p>
       <div className="mt-2 break-words text-4xl">{data.value}</div>
       <p className="mt-3 text-sm text-zinc-400">{data.sub}</p>
     </Card>;
@@ -18530,7 +18902,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
         </div>
         <div className="mt-5 space-y-2">
           {hiddenCatalogCards.length ? hiddenCatalogCards.map(card => <button key={card.id} type="button" onClick={() => addAnalyticsCard(card.id)} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold">
-            <span>{card.title}</span>
+            <span>{analyticsCardTitle(card)}</span>
             <Plus size={18} className="text-red-400"/>
           </button>) : <div className="rounded-2xl bg-white/[0.04] p-5 text-sm text-zinc-500">Все карточки уже добавлены.</div>}
         </div>
@@ -18566,7 +18938,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
             >
               <span className="flex min-w-0 items-center gap-3 font-semibold">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-zinc-400">☰</span>
-                <span className="min-w-0 break-words">{card.title}</span>
+                <span className="min-w-0 break-words">{analyticsCardTitle(card)}</span>
               </span>
               <div className="flex items-center gap-2" data-no-card-drag="true" onPointerDown={(event) => event.stopPropagation()}>
                 <button type="button" onClick={() => moveAnalyticsCardByOffset(id, -1)} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.06] text-xs font-black text-zinc-300">↑</button>
@@ -18724,6 +19096,9 @@ function ProfileFormFields({ draft, setDraft, showManualTargets = true, onBirthD
   const calculatedAge = calculateProfileAge(draft.birth_date);
   const activityMultiplier = getProfileActivityMultiplier(draft.steps_per_day, draft.workouts_per_week);
   const manualTargetsEnabled = parseProfileBoolean(draft.manual_nutrition_targets_enabled);
+  const nutritionTrackingMode = normalizeNutritionTrackingMode(draft.nutrition_tracking_mode || DEFAULT_PROFILE.nutrition_tracking_mode);
+  const usesPalmNutrition = nutritionTrackingMode === "palms";
+  const palmFormula = getPalmGramConfig(draft);
   const targetValues = {
     calories_target: manualTargetsEnabled ? normalizeManualTargetValue(draft.calories_target, calculatedTargets.calories_target) : calculatedTargets.calories_target,
     protein_target: manualTargetsEnabled ? normalizeManualTargetValue(draft.protein_target, calculatedTargets.protein_target) : calculatedTargets.protein_target,
@@ -18754,6 +19129,10 @@ function ProfileFormFields({ draft, setDraft, showManualTargets = true, onBirthD
       <ProfileInput label="Тренировок в неделю" type="number" value={draft.workouts_per_week} onChange={(value) => set("workouts_per_week", value)} required/>
       <ProfileInput label="Целевой вес, кг" type="number" value={draft.target_weight_kg} onChange={(value) => set("target_weight_kg", value)}/>
       <ProfileSelect label="Цель" value={draft.goal_type} onChange={(value) => set("goal_type", value)} options={Object.entries(profileGoalTypeLabels).map(([value, label]) => ({ value, label }))}/>
+      <ProfileSelect label="Как считать питание" value={nutritionTrackingMode} onChange={(value) => set("nutrition_tracking_mode", value)} options={[
+        { value: "calories", label: "Считать калории" },
+        { value: "palms", label: "Считать в ладонях" },
+      ]}/>
     </div>
 
     <div>
@@ -18780,7 +19159,7 @@ function ProfileFormFields({ draft, setDraft, showManualTargets = true, onBirthD
         <div className="mt-2 text-3xl font-black">{calculatedBodyFat == null ? "—" : `${calculatedBodyFat}%`}</div>
         <p className="mt-2 text-xs leading-5 text-zinc-500">{calculatedBodyFat == null ? "Недостаточно данных для формулы US Navy." : "Приблизительная оценка по формуле US Navy."}</p>
       </div>
-      <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+      {!usesPalmNutrition ? <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-red-400">Расчет КБЖУ</p>
           <span className="rounded-full bg-white/[0.06] px-2 py-1 text-[10px] font-bold text-zinc-400">x{activityMultiplier.toFixed(2)}</span>
@@ -18792,10 +19171,19 @@ function ProfileFormFields({ draft, setDraft, showManualTargets = true, onBirthD
           <div className="rounded-xl bg-black/30 p-2"><span className="block text-zinc-500">У</span><b>{targetValues.carbs_target}</b></div>
         </div>
         <p className="mt-2 text-xs text-zinc-500">{manualTargetsEnabled ? "Ручная корректировка" : "Авторасчет по профилю"}</p>
-      </div>
+      </div> : <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-red-400">Расчет ладоней</p>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs">
+          <div className="rounded-xl bg-black/30 p-2"><span className="block text-zinc-500">Белок</span><b>{palmFormula.protein} г</b></div>
+          <div className="rounded-xl bg-black/30 p-2"><span className="block text-zinc-500">Углеводы</span><b>{palmFormula.carbs} г</b></div>
+          <div className="rounded-xl bg-black/30 p-2"><span className="block text-zinc-500">Жиры</span><b>{palmFormula.fat} г</b></div>
+          <div className="rounded-xl bg-black/30 p-2"><span className="block text-zinc-500">Овощи</span><b>{palmFormula.vegetables} г</b></div>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-zinc-500">Размер порции считается по полу и весу. Калории сохраняются для аналитики, но в интерфейсе питания показываются ладони.</p>
+      </div>}
     </div>
 
-    {showManualTargets && <div>
+    {showManualTargets && !usesPalmNutrition && <div>
       <div className="mb-3 flex items-center justify-between gap-3">
         <p className="text-xs font-bold text-zinc-500">КБЖУ вручную</p>
         {manualTargetsEnabled && <button type="button" onClick={resetManualTargets} className="text-xs font-bold text-red-400">Вернуть авторасчет</button>}
@@ -19610,6 +19998,8 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
   const canManageUsers = Boolean(panel.permissions?.can_manage_users);
   const canCreateInvites = Boolean(panel.permissions?.can_create_invites);
   const canViewStudents = Boolean(panel.permissions?.can_view_students);
+  const trainerInviteOnly = canCreateInvites && profileHasRole(profile, "trainer") && !profileHasAnyRole(profile, ["owner", "admin"]);
+  const inviteRoleOptions = trainerInviteOnly ? MANAGED_ROLE_OPTIONS.filter(option => option.id === "student") : MANAGED_ROLE_OPTIONS;
   const periodLabel = formatInvitePeriodLabel(inviteDays);
   const limitLabel = formatInviteLimitLabel(inviteMaxUses);
   const pendingUsersCount = panel.users.filter(user => normalizeAccessStatus(user.access_status) === "pending").length;
@@ -19655,6 +20045,10 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
     loadPanel();
   }, [loadPanel]);
 
+  useEffect(() => {
+    if (trainerInviteOnly && inviteRole !== "student") setInviteRole("student");
+  }, [inviteRole, trainerInviteOnly]);
+
   const copyInvite = async (invite) => {
     const value = invite.invite_url || invite.code || "";
     if (!value) return;
@@ -19680,12 +20074,12 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
     try {
       await callOnlyPumpProfileApi(telegramInitData, "create_invite_link", {
         title: inviteTitle,
-        access_days: inviteDays,
-        issued_role: inviteRole,
+        access_days: trainerInviteOnly ? null : inviteDays,
+        issued_role: trainerInviteOnly ? "student" : inviteRole,
         max_uses: inviteMaxUses,
       });
       setInviteTitle("");
-      setInviteRole("user");
+      setInviteRole(trainerInviteOnly ? "student" : "user");
       setInviteDays(30);
       setInviteMaxUses(100);
       await loadPanel();
@@ -19811,20 +20205,23 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
           <div className="flex items-start justify-between gap-4">
             <div>
               <h3 className="text-lg font-black">Новая инвайт-ссылка</h3>
-              <p className="mt-1 text-sm text-zinc-500">Название, роль, срок доступа и лимит активаций.</p>
+              <p className="mt-1 text-sm text-zinc-500">{trainerInviteOnly ? "Тренерская ссылка выдает роль ученика и привязывает ученика к тебе." : "Название, роль, срок доступа и лимит активаций."}</p>
             </div>
             <ShieldCheck className="shrink-0 text-red-500"/>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_170px]">
             <input value={inviteTitle} onChange={(event) => setInviteTitle(event.target.value)} placeholder="Название ссылки" className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm outline-none"/>
-            <select value={inviteRole} onChange={(event) => setInviteRole(normalizeAssignableProfileRole(event.target.value))} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-black outline-none">
-              {MANAGED_ROLE_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+            <select value={trainerInviteOnly ? "student" : inviteRole} onChange={(event) => setInviteRole(normalizeAssignableProfileRole(event.target.value))} disabled={trainerInviteOnly} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-black outline-none disabled:opacity-75">
+              {inviteRoleOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
             </select>
           </div>
-          <button type="button" onClick={() => setPeriodPickerOpen(true)} className="mt-3 flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left transition hover:bg-white/[0.08]">
+          {!trainerInviteOnly && <button type="button" onClick={() => setPeriodPickerOpen(true)} className="mt-3 flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left transition hover:bg-white/[0.08]">
             <span className="text-sm font-black text-zinc-500">Срок</span>
             <span className="text-sm font-black">{periodLabel}</span>
-          </button>
+          </button>}
+          {trainerInviteOnly && <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm leading-6 text-zinc-400">
+            Срок доступа не выбирается: ученик привязан к тренеру. Если подписка тренера будет отключена, это место готово для автоматического отключения его учеников.
+          </div>}
           <button type="button" onClick={() => setLimitPickerOpen(true)} className="mt-3 flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left transition hover:bg-white/[0.08]">
             <span className="text-sm font-black text-zinc-500">Лимит</span>
             <span className="text-sm font-black">{limitLabel}</span>
@@ -19901,7 +20298,9 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
   const profileWorkouts = profileNonNegativeNumber(profile?.workouts_per_week, DEFAULT_PROFILE.workouts_per_week);
   const profileActivityLabel = `${profileSteps.toLocaleString("ru-RU")} шагов · ${profileWorkouts} тр/нед`;
   const hasNutritionTargets = Boolean(profile?.onboarding_completed) && [profile?.calories_target, profile?.protein_target, profile?.fat_target, profile?.carbs_target].every(hasPositiveMetric);
-  const profileNutritionLabel = hasNutritionTargets
+  const profileNutritionLabel = profileUsesPalmNutrition(profile)
+    ? "ладони"
+    : hasNutritionTargets
     ? `${profile.calories_target} / ${profile.protein_target} / ${profile.fat_target} / ${profile.carbs_target}`
     : "заполните профиль";
   const subscriptionLabel = formatProfileSubscriptionLabel(profile);
@@ -19926,7 +20325,7 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
 
   return <div className="profile-screen"><Header title="Личный кабинет" subtitle="Профиль, тариф, подписка, настройки, доступы и история платежей."/><PageGrid>
     <Card className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p><p className="mt-3 rounded-full bg-white/8 px-3 py-1 text-xs font-black text-zinc-300">{getProfileRoleLabels(profile)}</p></Card>
-    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? formatAgeRu(calculatedAge) : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profileWeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profileHeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profileActivityLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">КБЖУ</span><span>{profileNutritionLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profile.manual_nutrition_targets_enabled ? "ручной" : "авто"}{profile.high_protein_enabled ? " · белок+" : ""}{profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><Button onClick={() => setEditOpen(true)} className="mt-5 w-full bg-white/8">Редактировать</Button></Card>
+    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? formatAgeRu(calculatedAge) : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profileWeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profileHeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profileActivityLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Питание</span><span>{profileNutritionLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profileUsesPalmNutrition(profile) ? "ладони" : (profile.manual_nutrition_targets_enabled ? "ручной" : "авто")}{!profileUsesPalmNutrition(profile) && profile.high_protein_enabled ? " · белок+" : ""}{!profileUsesPalmNutrition(profile) && profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><Button onClick={() => setEditOpen(true)} className="mt-5 w-full bg-white/8">Редактировать</Button></Card>
     <Card className="p-5"><CreditCard className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Подписка</h2><p className="mt-2 text-zinc-400">{subscriptionLabel}</p><Button className="mt-5 w-full bg-white/8">Управлять</Button></Card>
     <Card className="p-5"><ShieldCheck className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Доступы</h2><p className="mt-2 text-zinc-400">Все модули открыты</p><div className="mt-5 flex gap-2 text-xs text-zinc-500"><Lock size={14}/> 1PM bonus locked</div></Card>
     {canOpenAccessPanel && <Card className="p-5 xl:col-span-2"><Users className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Пользователи и ученики</h2><p className="mt-2 text-zinc-400">{profileHasRole(profile, "owner") ? "Инвайт-ссылки, пользователи и ученики." : profileHasRole(profile, "admin") ? "Блокировка, разблокировка и удаление пользователей." : "Аналитика твоих учеников."}</p><Button onClick={() => setAccessPanelOpen(true)} className="mt-5 w-full bg-white/8">Открыть управление</Button></Card>}
@@ -21111,7 +21510,7 @@ function OnlyPumpPlatform() {
       <main className="onlypump-main-scroll min-w-0 w-full px-4 md:px-8 lg:px-12">{page}</main>
       <MobilePreview active={active}/>
     </div>
-    <PumpXpToast toast={pumpXpToast} pumpXp={pumpXpSummary} onClose={() => setPumpXpToast(null)} onOpen={() => setPumpXpDetailsOpen(true)}/>
+    <PumpXpToast key={pumpXpToast?.id || "pump-xp-toast"} toast={pumpXpToast} pumpXp={pumpXpSummary} onClose={() => setPumpXpToast(null)} onOpen={() => setPumpXpDetailsOpen(true)}/>
     <PumpXpLevelUpModal levelUp={pumpXpLevelUp} pumpXp={pumpXpSummary} onClose={() => setPumpXpLevelUp(null)} onOpenDetails={() => { setPumpXpLevelUp(null); setPumpXpDetailsOpen(true); }}/>
     {pumpXpDetailsOpen && <PumpXpDetailSheet pumpXp={pumpXpSummary} onClose={() => setPumpXpDetailsOpen(false)}/>}
     <FloatingNavMenu active={active} setActive={setActive}/>
