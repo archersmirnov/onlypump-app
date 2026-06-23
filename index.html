@@ -4624,19 +4624,41 @@ const calculatePumpXp = ({
   const steps80Flags = [];
   const steps100Flags = [];
   const mainDoneFlags = [];
+  const todayKey = formatDateKey(new Date());
+  const isClosedDay = (dateKey) => String(dateKey || "") < todayKey;
+  const hasWorkoutPlanSource = (workout = {}) => Boolean(
+    workout.userProgramId ||
+    workout.user_program_id ||
+    workout.userProgramClientId ||
+    workout.user_program_client_id ||
+    workout.programTemplateWorkoutId ||
+    workout.program_template_workout_id ||
+    workout.programTemplateWorkoutKey ||
+    workout.program_template_workout_key ||
+    workout.isProgramGenerated ||
+    workout.is_program_generated ||
+    (workout.exercises || workout.workout_exercises || []).some(exercise => (
+      exercise?.plannedSets != null ||
+      exercise?.planned_sets != null ||
+      exercise?.programTemplateExerciseKey ||
+      exercise?.program_template_exercise_key ||
+      exercise?.userProgramExerciseSettingId ||
+      exercise?.user_program_exercise_setting_id
+    ))
+  );
 
   dateRange.forEach(dateKey => {
     let dayXp = 0;
     const parts = [];
     const dayWorkouts = workoutMap[dateKey] || [];
     const workoutScore = dayWorkouts.reduce((best, workout) => {
-      const status = workout.status || "completed";
+      const status = normalizeWorkoutStatus(workout.status || "completed");
       const summary = summarizeWorkouts([workout]);
       let score = 0;
       if (status === "planned") score += 1;
       if (status === "active" || status === "completed") score += 1;
       if (status === "completed") score += 3;
-      if (summary.totalSets > 0 && summary.completedSets / Math.max(1, summary.totalSets) >= 0.8) score += 5;
+      if (status === "completed" && hasWorkoutPlanSource(workout) && summary.totalSets > 0 && summary.completedSets / Math.max(1, summary.totalSets) >= 0.8) score += 5;
       return Math.max(best, Math.min(10, score));
     }, 0);
     if (workoutScore) {
@@ -4651,8 +4673,8 @@ const calculatePumpXp = ({
       const totals = pumpXpNutritionTotals(detail);
       const caloriesTarget = Math.max(1, profileNonNegativeNumber(detail.calories_target ?? nutritionGoal.calories, nutritionGoal.calories));
       const proteinTarget = Math.max(1, profileNonNegativeNumber(detail.protein_target ?? nutritionGoal.protein, nutritionGoal.protein));
-      if (totals.calories > 0 && Math.abs(totals.calories - caloriesTarget) / caloriesTarget <= 0.15) nutritionScore += 5;
-      if (totals.protein >= proteinTarget) nutritionScore += 5;
+      if (isClosedDay(dateKey) && totals.calories > 0 && Math.abs(totals.calories - caloriesTarget) / caloriesTarget <= 0.15) nutritionScore += 5;
+      if (isClosedDay(dateKey) && totals.protein >= proteinTarget) nutritionScore += 5;
       if (pumpXpNutritionMealCount(detail) >= 3) nutritionScore += 3;
     }
     nutritionScore = Math.min(15, nutritionScore);
@@ -7727,6 +7749,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [programBuilderSheet, setProgramBuilderSheet] = useState(null);
   const [customTrainingPrograms, setCustomTrainingPrograms] = useState([]);
   const [programBuilderExercisePicker, setProgramBuilderExercisePicker] = useState(null);
+  const [programBuilderTargetPicker, setProgramBuilderTargetPicker] = useState(null);
   const [programBuilderExerciseSearch, setProgramBuilderExerciseSearch] = useState("");
   const [programBuilderExerciseGroup, setProgramBuilderExerciseGroup] = useState("Все");
   const [programSaving, setProgramSaving] = useState(false);
@@ -8284,6 +8307,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       description: "",
       visibilityScope: profileHasRole(profile, "owner") ? "all" : "trainer_students",
       targetProfileIdsText: "",
+      targetProfileIds: [],
+      targetProfileLabels: [],
       days: Array.from({ length: workoutCount }, (_, index) => ({
         id: `builder-day-${Date.now()}-${index}`,
         title: `День ${index + 1}`,
@@ -8434,7 +8459,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         workout_count: Number(draft.workoutCount || 1),
         progression_type: draft.progressionType,
         visibility_scope: draft.visibilityScope,
-        target_profile_ids: String(draft.targetProfileIdsText || "").split(/[,\s]+/).map(item => item.trim()).filter(Boolean),
+        target_profile_ids: Array.isArray(draft.targetProfileIds) && draft.targetProfileIds.length
+          ? draft.targetProfileIds
+          : String(draft.targetProfileIdsText || "").split(/[,\s]+/).map(item => item.trim()).filter(Boolean),
       },
       workouts: (draft.days || []).map((day, dayIndex) => ({
         template_workout_key: `${templateKey}-day-${dayIndex + 1}`,
@@ -12944,6 +12971,7 @@ const toggleExerciseMeasurementSetting = (field) => {
   useAppBackLayer("workouts-week-menu", Boolean(weekMenuGroup), () => setWeekMenuGroup(null), 155);
   useAppBackLayer("workouts-week-stats", weekStatsOpen, () => setWeekStatsOpen(false), 150);
   useAppBackLayer("workouts-program-builder-picker", Boolean(programBuilderExercisePicker), () => setProgramBuilderExercisePicker(null), 154);
+  useAppBackLayer("workouts-program-builder-target-picker", Boolean(programBuilderTargetPicker), () => setProgramBuilderTargetPicker(null), 154);
   useAppBackLayer("workouts-program-builder", Boolean(programBuilderSheet), () => setProgramBuilderSheet(null), 153);
   useAppBackLayer("workouts-program-settings", Boolean(programSettingsSheet), () => setProgramSettingsSheet(null), 151);
   useAppBackLayer("workouts-templates", isTemplatesOpen, () => setIsTemplatesOpen(false), 145);
@@ -14578,6 +14606,13 @@ const toggleExerciseMeasurementSetting = (field) => {
 	      const muscleStats = getProgramBuilderMuscleStats(draft);
 	      const totalSets = getProgramBuilderTotalSets(draft);
 	      const shareOptions = getProgramBuilderShareOptions();
+	      const chooseShareOption = (option) => {
+	        if (["selected", "students", "trainer_students"].includes(option.id)) {
+	          setProgramBuilderTargetPicker({ mode: option.id });
+	          return;
+	        }
+	        updateProgramBuilderDraft({ visibilityScope: option.id, targetProfileIds: [], targetProfileLabels: [], targetProfileIdsText: "", error: "" });
+	      };
 	      const closeBuilder = () => !programSaving && setProgramBuilderSheet(null);
 	      const goToMetaNext = () => {
 	        if (!String(draft.title || "").trim()) {
@@ -14631,8 +14666,10 @@ const toggleExerciseMeasurementSetting = (field) => {
 	              </div>
 	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Акцент</span><input value={draft.focus} onChange={(e) => updateProgramBuilderDraft({ focus: e.target.value })} placeholder="Например: плечи, ягодицы, сила" className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/></label>
 	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Описание</span><textarea value={draft.description} onChange={(e) => updateProgramBuilderDraft({ description: e.target.value })} rows="4" className="mt-2 w-full resize-none rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold leading-6 outline-none ring-1 ring-white/10"/></label>
-	              <div><div className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Кому доступна</div><div className="mt-2 grid grid-cols-1 gap-2">{shareOptions.map(option => <button key={option.id} type="button" onClick={() => updateProgramBuilderDraft({ visibilityScope: option.id })} className={`rounded-2xl px-4 py-3 text-left text-sm font-black transition ${draft.visibilityScope === option.id ? "bg-red-500 text-black" : "bg-white/[0.05] text-zinc-300"}`}>{option.label}</button>)}</div></div>
-	              {draft.visibilityScope === "selected" && <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">ID пользователей</span><textarea value={draft.targetProfileIdsText} onChange={(e) => updateProgramBuilderDraft({ targetProfileIdsText: e.target.value })} rows="3" placeholder="UUID через пробел или запятую" className="mt-2 w-full resize-none rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/></label>}
+	              <div><div className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Кому доступна</div><div className="mt-2 grid grid-cols-1 gap-2">{shareOptions.map(option => <button key={option.id} type="button" onClick={() => chooseShareOption(option)} className={`rounded-2xl px-4 py-3 text-left text-sm font-black transition ${draft.visibilityScope === option.id ? "bg-red-500 text-black" : "bg-white/[0.05] text-zinc-300"}`}>{option.label}</button>)}</div></div>
+	              {["selected", "students", "trainer_students"].includes(draft.visibilityScope) && <button type="button" onClick={() => setProgramBuilderTargetPicker({ mode: draft.visibilityScope })} className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-bold text-zinc-300 transition hover:bg-white/[0.08]">
+	                {Array.isArray(draft.targetProfileLabels) && draft.targetProfileLabels.length ? `Выбрано: ${draft.targetProfileLabels.join(", ")}` : "Выбрать пользователей по имени или нику"}
+	              </button>}
 	            </>}
 
 	            {draft.step === "day" && <>
@@ -14702,6 +14739,24 @@ const toggleExerciseMeasurementSetting = (field) => {
 	        </div>
 	      </BottomSheetPanel>
 	    </div>}
+
+	    {programBuilderTargetPicker && <ProgramTargetPickerSheet
+	      mode={programBuilderTargetPicker.mode}
+	      profile={profile}
+	      telegramInitData={telegramInitData}
+	      selectedIds={programBuilderSheet?.draft?.targetProfileIds || []}
+	      onClose={() => setProgramBuilderTargetPicker(null)}
+	      onSave={({ ids, labels }) => {
+	        updateProgramBuilderDraft({
+	          visibilityScope: "selected",
+	          targetProfileIds: ids,
+	          targetProfileLabels: labels,
+	          targetProfileIdsText: ids.join(" "),
+	          error: "",
+	        });
+	        setProgramBuilderTargetPicker(null);
+	      }}
+	    />}
 
 	    {programSettingsSheet && (() => {
 	      const { program, draft } = programSettingsSheet;
@@ -19769,15 +19824,350 @@ function InviteLimitPickerSheet({ value = 100, onSave, onClose }) {
   </div>;
 }
 
+function ProgramTargetPickerSheet({ mode = "selected", profile = DEFAULT_PROFILE, telegramInitData = "", selectedIds = [], onSave, onClose }) {
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [rows, setRows] = useState([]);
+  const [selected, setSelected] = useState(() => new Set((selectedIds || []).map(String)));
+  const trainerOnly = profileHasRole(profile, "trainer") && !profileHasAnyRole(profile, ["owner", "admin"]);
+  const studentMode = ["students", "trainer_students"].includes(mode) || trainerOnly;
+  const title = studentMode ? "Выбрать учеников" : "Выбрать пользователей";
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const result = await callOnlyPumpProfileApi(telegramInitData, "load_access_panel", {});
+        const users = Array.isArray(result.users) ? result.users : [];
+        const students = Array.isArray(result.students) ? result.students : [];
+        const map = new Map();
+        [...users, ...students].forEach(user => {
+          if (!user?.id || String(user.id) === String(profile?.id || "")) return;
+          if (studentMode && !profileHasRole(user, "student")) return;
+          map.set(String(user.id), user);
+        });
+        if (alive) setRows(Array.from(map.values()).sort((a, b) => getManagedUserTitle(a).localeCompare(getManagedUserTitle(b), "ru")));
+      } catch (loadError) {
+        console.error("program target picker error:", loadError);
+        if (alive) setError("Не удалось загрузить список.");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    };
+    if (telegramInitData) load();
+    else {
+      setLoading(false);
+      setError("Выбор доступен внутри Telegram.");
+    }
+    return () => { alive = false; };
+  }, [mode, profile?.id, studentMode, telegramInitData]);
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRows = rows.filter(user => {
+    if (!normalizedQuery) return true;
+    return [
+      getManagedUserTitle(user),
+      user.telegram_username,
+      user.telegram_id,
+      getProfileRoleLabels(user),
+    ].some(value => String(value || "").toLowerCase().includes(normalizedQuery));
+  });
+  const toggle = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(String(id))) next.delete(String(id));
+      else next.add(String(id));
+      return next;
+    });
+  };
+  const submit = () => {
+    const ids = Array.from(selected);
+    const labels = ids.map(id => rows.find(user => String(user.id) === String(id))).filter(Boolean).map(getManagedUserTitle);
+    if (!ids.length) {
+      setError(studentMode ? "Выбери хотя бы одного ученика." : "Выбери хотя бы одного пользователя.");
+      return;
+    }
+    onSave?.({ ids, labels });
+  };
+
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[157] flex items-end bg-black/60 p-3 backdrop-blur-sm">
+    <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="mx-auto flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-[460px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+      <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отмена</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Программа</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">{title}</h2>
+          <p className="mt-1 text-xs text-zinc-500">{selected.size} выбрано</p>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Поиск по имени или нику" className="mt-5 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/>
+      {error && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{error}</p>}
+      <div className="onlypump-sheet-list mt-4 flex-1 space-y-2 overflow-y-auto pr-1 onlypump-scrollbar-none" data-no-sheet-drag="true">
+        {loading ? <p className="rounded-2xl bg-white/[0.04] p-4 text-sm text-zinc-500">Загружаю...</p> : filteredRows.length ? filteredRows.map(user => {
+          const active = selected.has(String(user.id));
+          return <button key={user.id} type="button" onClick={() => toggle(user.id)} className={`flex w-full items-center justify-between gap-3 rounded-2xl p-3 text-left transition ${active ? "bg-red-500 text-black" : "bg-white/[0.04] hover:bg-white/[0.08]"}`}>
+            <span className="min-w-0">
+              <span className="block break-words text-sm font-black">{getManagedUserTitle(user)}</span>
+              <span className={`mt-1 block text-xs ${active ? "text-black/60" : "text-zinc-500"}`}>{user.telegram_username ? `@${user.telegram_username}` : `ID ${user.telegram_id || "—"}`} · {getProfileRoleLabels(user)}</span>
+            </span>
+            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-sm font-black ${active ? "border-black bg-black text-red-500" : "border-white/15 text-transparent"}`}>✓</span>
+          </button>;
+        }) : <p className="rounded-2xl bg-white/[0.04] p-4 text-sm text-zinc-500">Ничего не найдено.</p>}
+      </div>
+      <button type="button" onClick={submit} className="mt-4 h-12 rounded-full bg-red-500 font-black text-black">Выбрать</button>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose }) {
+  const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [tab, setTab] = useState("overview");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [data, setData] = useState({ workouts: [], health_logs: [], nutrition_days: [], measurements: [] });
+  const [detail, setDetail] = useState(null);
+  const studentName = getManagedUserTitle(student);
+  const monthKey = formatDateKey(monthDate);
+  const monthLabel = monthDate.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const result = await callOnlyPumpProfileApi(telegramInitData, "load_student_dashboard", {
+          target_profile_id: student?.id,
+          month: monthKey,
+        });
+        if (!alive) return;
+        setData({
+          workouts: Array.isArray(result.workouts) ? result.workouts.map(mapApiWorkoutRowToModel) : [],
+          health_logs: Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [],
+          nutrition_days: Array.isArray(result.nutrition_days) ? result.nutrition_days.map(day => normalizeNutritionDay(day, initialNutritionGoal)) : [],
+          measurements: Array.isArray(result.measurements) ? result.measurements : [],
+        });
+      } catch (loadError) {
+        console.error("student dashboard error:", loadError);
+        if (alive) setError("Не удалось загрузить аналитику ученика.");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    };
+    if (student?.id && telegramInitData) load();
+    else {
+      setLoading(false);
+      setError("Аналитика ученика доступна внутри Telegram.");
+    }
+    return () => { alive = false; };
+  }, [monthKey, student?.id, telegramInitData]);
+
+  const monthDays = useMemo(() => {
+    const count = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+    return Array.from({ length: count }, (_, index) => {
+      const date = new Date(monthDate.getFullYear(), monthDate.getMonth(), index + 1);
+      return { date, key: formatDateKey(date), label: String(index + 1).padStart(2, "0"), weekday: date.toLocaleDateString("ru-RU", { weekday: "short" }).replace(".", "") };
+    });
+  }, [monthDate]);
+
+  const dashboardRows = useMemo(() => {
+    const workoutsByDate = new Map();
+    data.workouts.forEach(workout => {
+      const key = pumpXpDateKey(workout.date || workout.workout_date);
+      if (!key) return;
+      workoutsByDate.set(key, [...(workoutsByDate.get(key) || []), workout]);
+    });
+    const healthByDate = new Map(data.health_logs.map(log => [pumpXpDateKey(log.log_date || log.date), log]));
+    const nutritionByDate = new Map(data.nutrition_days.map(day => [pumpXpDateKey(day.date || day.nutrition_date), day]));
+    const measurementsByDate = new Map(data.measurements.map(item => [pumpXpDateKey(item.measurement_date || item.date), item]));
+    return monthDays.map(day => {
+      const workouts = workoutsByDate.get(day.key) || [];
+      const completed = workouts.filter(workout => normalizeWorkoutStatus(workout.status) === "completed");
+      const workoutSummary = summarizeWorkouts(completed);
+      const health = healthByDate.get(day.key) || {};
+      const nutrition = nutritionByDate.get(day.key) || {};
+      const nutritionTotals = nutrition.totals || normalizeNutritionDay(nutrition, initialNutritionGoal).totals || {};
+      const measurement = measurementsByDate.get(day.key) || {};
+      return {
+        ...day,
+        workouts,
+        hasWorkout: completed.length > 0,
+        volume: workoutSummary.completedVolume || 0,
+        sets: workoutSummary.completedSets || 0,
+        calories: roundCalories(nutritionTotals.calories || 0),
+        protein: roundMacro(nutritionTotals.protein || 0),
+        sleep: roundMacro(profileNonNegativeNumber(health.sleep_hours, 0)),
+        steps: Math.round(profileNonNegativeNumber(health.steps_count, 0)),
+        weight: profileNumber(measurement.weight_kg ?? measurement.weight, 0),
+      };
+    });
+  }, [data, monthDays]);
+
+  const summarizeRows = (rows) => {
+    const withValue = (key) => rows.map(row => Number(row[key] || 0)).filter(value => value > 0);
+    const avg = (key) => {
+      const values = withValue(key);
+      return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+    };
+    return {
+      workouts: rows.filter(row => row.hasWorkout).length,
+      volume: rows.reduce((sum, row) => sum + row.volume, 0),
+      sets: rows.reduce((sum, row) => sum + row.sets, 0),
+      calories: avg("calories"),
+      protein: avg("protein"),
+      sleep: avg("sleep"),
+      steps: avg("steps"),
+      weight: avg("weight"),
+    };
+  };
+
+  const monthSummary = summarizeRows(dashboardRows);
+  const trainingWorkouts = data.workouts.filter(workout => normalizeWorkoutStatus(workout.status) !== "deleted");
+  const maxSetCount = Math.max(3, ...trainingWorkouts.flatMap(workout => (workout.exercises || []).map(exercise => (exercise.sets || []).length || Number(exercise.plannedSets || exercise.planned_sets || 0))));
+  const metricColumns = [
+    { key: "workout", label: "Тренировка", value: row => row.hasWorkout ? "✓" : "" },
+    { key: "volume", label: "Тоннаж", value: row => row.volume ? Math.round(row.volume).toLocaleString("ru-RU") : "" },
+    { key: "sets", label: "Подходы", value: row => row.sets || "" },
+    { key: "calories", label: "Ккал", value: row => row.calories || "" },
+    { key: "protein", label: "Белок", value: row => row.protein || "" },
+    { key: "sleep", label: "Сон", value: row => row.sleep || "" },
+    { key: "steps", label: "Шаги", value: row => row.steps ? row.steps.toLocaleString("ru-RU") : "" },
+    { key: "weight", label: "Вес", value: row => row.weight || "" },
+  ];
+  const openMetricDetail = (column, row) => {
+    setDetail({
+      title: column.label,
+      dateKey: row.key,
+      value: column.value(row) || "нет данных",
+      rows: dashboardRows.map(item => ({ dateKey: item.key, value: column.value(item) || 0 })),
+    });
+  };
+
+  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[235] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} priority={235} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet flex max-h-[calc(var(--onlypump-app-height)-18px)] w-full max-w-6xl flex-col overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Назад</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Ученик</p>
+          <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{studentName}</h2>
+          <p className="mt-1 text-xs text-zinc-500">{student?.telegram_username ? `@${student.telegram_username}` : `ID ${student?.telegram_id || "—"}`}</p>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-2">
+        <button type="button" onClick={() => setMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))} className="rounded-full bg-white/8 px-4 py-2 text-sm font-black">‹</button>
+        <b className="text-center text-sm capitalize">{monthLabel}</b>
+        <button type="button" onClick={() => setMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))} className="rounded-full bg-white/8 px-4 py-2 text-sm font-black">›</button>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {[["overview", "Обычный вид"], ["table", "Таблица"], ["training", "Тренировки"]].map(([id, label]) => <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-full px-3 py-2 text-xs font-black transition ${tab === id ? "bg-red-500 text-black" : "bg-white/8 text-zinc-300"}`}>{label}</button>)}
+      </div>
+      {error && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{error}</p>}
+      <div className="onlypump-sheet-list mt-4 flex-1 overflow-auto pr-1 onlypump-scrollbar-none" data-no-sheet-drag="true">
+        {loading ? <p className="rounded-2xl bg-white/[0.04] p-4 text-sm text-zinc-500">Загружаю...</p> : <>
+          {tab === "overview" && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl bg-white/[0.04] p-4"><span className="text-xs text-zinc-500">Тренировок</span><b className="mt-2 block text-2xl">{monthSummary.workouts}</b></div>
+            <div className="rounded-2xl bg-white/[0.04] p-4"><span className="text-xs text-zinc-500">Тоннаж</span><b className="mt-2 block text-2xl">{Math.round(monthSummary.volume).toLocaleString("ru-RU")}</b></div>
+            <div className="rounded-2xl bg-white/[0.04] p-4"><span className="text-xs text-zinc-500">Шаги сред.</span><b className="mt-2 block text-2xl">{Math.round(monthSummary.steps).toLocaleString("ru-RU")}</b></div>
+            <div className="rounded-2xl bg-white/[0.04] p-4"><span className="text-xs text-zinc-500">Сон сред.</span><b className="mt-2 block text-2xl">{roundMacro(monthSummary.sleep)} ч</b></div>
+          </div>}
+          {tab === "table" && <div className="overflow-auto rounded-[24px] border border-white/10">
+            <table className="min-w-[900px] border-separate border-spacing-0 text-sm">
+              <thead><tr>{["Дата", "День", ...metricColumns.map(column => column.label)].map((label, index) => <th key={label} className={`sticky top-0 z-10 bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500 ${index === 0 ? "left-0 z-20" : ""}`}>{label}</th>)}</tr></thead>
+              <tbody>
+                {dashboardRows.map((row, index) => <React.Fragment key={row.key}>
+                  <tr>
+                    <td className="sticky left-0 z-10 border-t border-white/10 bg-zinc-950 p-3 font-black">{row.label}</td>
+                    <td className="border-t border-white/10 p-3 text-zinc-500">{row.weekday}</td>
+                    {metricColumns.map(column => <td key={column.key} className="border-t border-white/10 p-2"><button type="button" onClick={() => openMetricDetail(column, row)} className="min-h-10 w-full rounded-xl bg-white/[0.035] px-2 text-left font-bold transition hover:bg-white/[0.08]">{column.value(row) || " "}</button></td>)}
+                  </tr>
+                  {(index + 1) % 7 === 0 && <tr className="bg-red-500/7">
+                    <td className="sticky left-0 z-10 bg-zinc-950 p-3 text-xs font-black text-red-300">Итоги 7 дней</td>
+                    <td className="p-3 text-xs text-zinc-500">{row.label}</td>
+                    {(() => {
+                      const summary = summarizeRows(dashboardRows.slice(Math.max(0, index - 6), index + 1));
+                      return [
+                        summary.workouts,
+                        Math.round(summary.volume).toLocaleString("ru-RU"),
+                        summary.sets,
+                        Math.round(summary.calories),
+                        Math.round(summary.protein),
+                        roundMacro(summary.sleep),
+                        Math.round(summary.steps).toLocaleString("ru-RU"),
+                        roundMacro(summary.weight),
+                      ].map((value, summaryIndex) => <td key={summaryIndex} className="p-3 text-xs font-black text-red-200">{value || "—"}</td>);
+                    })()}
+                  </tr>}
+                </React.Fragment>)}
+                <tr className="bg-white/[0.04]">
+                  <td className="sticky left-0 z-10 bg-zinc-950 p-3 text-xs font-black text-red-300">Итоги месяца</td>
+                  <td className="p-3 text-xs text-zinc-500">{monthLabel}</td>
+                  {[monthSummary.workouts, Math.round(monthSummary.volume).toLocaleString("ru-RU"), monthSummary.sets, Math.round(monthSummary.calories), Math.round(monthSummary.protein), roundMacro(monthSummary.sleep), Math.round(monthSummary.steps).toLocaleString("ru-RU"), roundMacro(monthSummary.weight)].map((value, index) => <td key={index} className="p-3 text-xs font-black text-red-200">{value || "—"}</td>)}
+                </tr>
+              </tbody>
+            </table>
+          </div>}
+          {tab === "training" && <div className="space-y-4">
+            {trainingWorkouts.length ? trainingWorkouts.map((workout, workoutIndex) => <div key={workout.id || workoutIndex} className="overflow-auto rounded-[24px] border border-white/10">
+              <div className="sticky left-0 top-0 bg-zinc-950 p-4"><b>{workout.title}</b><p className="mt-1 text-xs text-zinc-500">{formatCycleCardDate(workout.date)} · {normalizeWorkoutStatus(workout.status)}</p></div>
+              <table className="min-w-[900px] border-separate border-spacing-0 text-sm">
+                <thead><tr>{["День", "Упражнение", "Основная мышца", ...Array.from({ length: maxSetCount }, (_, index) => `${index + 1} подход`), "Итоги"].map((label, index) => <th key={label} className={`sticky top-0 bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500 ${index === 0 ? "left-0 z-20" : "z-10"}`}>{label}</th>)}</tr></thead>
+                <tbody>
+                  {(workout.exercises || []).map((exercise, exerciseIndex) => {
+                    const sets = exercise.sets || [];
+                    const completed = sets.filter(set => getSetStatusGlobal(set) === "completed");
+                    return <tr key={exercise.id || exerciseIndex}>
+                      <td className="sticky left-0 z-10 border-t border-white/10 bg-zinc-950 p-3 font-black">День {workoutIndex + 1}</td>
+                      <td className="border-t border-white/10 p-3">{exerciseIndex + 1}. {exercise.name}</td>
+                      <td className="border-t border-white/10 p-3 text-zinc-500">{exercise.muscleGroup}</td>
+                      {Array.from({ length: maxSetCount }, (_, setIndex) => {
+                        const set = sets[setIndex];
+                        return <td key={setIndex} className="border-t border-white/10 p-2">{set ? <button type="button" onClick={() => setDetail({ title: `${exercise.name}: ${setIndex + 1} подход`, dateKey: workout.date, value: `${set.reps || 0} x ${set.weight || 0} кг`, rows: [] })} className="w-full rounded-xl bg-white/[0.035] p-2 text-left text-xs font-bold hover:bg-white/[0.08]">{set.reps || 0} п · {set.weight || 0} кг<br/><span className="text-zinc-500">RPE {set.rpe || "—"}</span></button> : ""}</td>;
+                      })}
+                      <td className="border-t border-white/10 p-3 text-xs text-zinc-500">{completed.length}/{sets.length} · {formatVolumeForProfile(completed.reduce((sum, set) => sum + getSetVolumeForExercise(set, exercise), 0), DEFAULT_PROFILE)}</td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>) : <p className="rounded-2xl bg-white/[0.04] p-4 text-sm text-zinc-500">Тренировок за месяц нет.</p>}
+          </div>}
+        </>}
+      </div>
+      {detail && <div onClick={() => setDetail(null)} className="fixed inset-0 z-[245] flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center">
+        <div onClick={(event) => event.stopPropagation()} className="w-full max-w-md rounded-[28px] border border-white/10 bg-zinc-950 p-5 shadow-2xl">
+          <div className="flex items-start justify-between gap-3">
+            <div><p className="text-xs font-black uppercase tracking-[0.18em] text-red-400">Детали</p><h3 className="mt-2 text-2xl font-black">{detail.title}</h3><p className="mt-1 text-sm text-zinc-500">{formatCycleCardDate(detail.dateKey)}</p></div>
+            <button type="button" onClick={() => setDetail(null)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8">×</button>
+          </div>
+          <div className="mt-5 rounded-2xl bg-white/[0.04] p-4"><span className="text-xs text-zinc-500">Значение</span><b className="mt-2 block text-3xl">{detail.value}</b></div>
+          <div className="mt-4 max-h-56 overflow-y-auto rounded-2xl bg-black/20 p-3 onlypump-scrollbar-none">
+            {(detail.rows || []).filter(item => item.value).map(item => <div key={item.dateKey} className="flex justify-between gap-3 border-b border-white/5 py-2 text-sm"><span className="text-zinc-500">{formatCycleCardDate(item.dateKey)}</span><b>{item.value}</b></div>)}
+          </div>
+        </div>
+      </div>}
+    </BottomSheetPanel>
+  </div>;
+}
+
 function ManagedUserRoleSheet({ user, currentProfile, saving, onClose, onRoleChange, onRolesChange, onAccessChange }) {
   const protectedUser = isProtectedManagedProfile(user, currentProfile);
   const selectedRole = normalizeProfileMemberRole(user);
   const selectedRoles = new Set(getAssignableProfileRoles(user));
   const userName = getManagedUserTitle(user);
   const ownerMode = profileHasRole(currentProfile, "owner");
-  const availableRoles = profileHasRole(currentProfile, "owner")
+  const trainerOnlyMode = profileHasRole(currentProfile, "trainer") && !profileHasAnyRole(currentProfile, ["owner", "admin"]);
+  const canManageAccess = profileHasAnyRole(currentProfile, ["owner", "admin"]);
+  const availableRoles = ownerMode
     ? MANAGED_ROLE_OPTIONS
-    : MANAGED_ROLE_OPTIONS.filter(option => option.id === "user" || option.id === "trainer");
+    : trainerOnlyMode
+      ? MANAGED_ROLE_OPTIONS.filter(option => option.id === "student")
+      : MANAGED_ROLE_OPTIONS.filter(option => option.id === "user" || option.id === "trainer" || option.id === "student");
   const toggleRole = (role) => {
     if (!ownerMode) {
       onRoleChange?.(user, role);
@@ -19826,12 +20216,12 @@ function ManagedUserRoleSheet({ user, currentProfile, saving, onClose, onRoleCha
       <div className="mt-4 rounded-[24px] bg-white/[0.035] p-4">
         <p className="text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Доступ</p>
         <p className="mt-2 text-sm text-zinc-400">Статус: {user?.access_status || "pending"} · до {formatAccessUntil(user?.access_expires_at)}</p>
-        <div className="mt-4 flex flex-col gap-2">
+        {canManageAccess ? <div className="mt-4 flex flex-col gap-2">
           {user?.access_status === "blocked"
             ? <button type="button" onClick={() => onAccessChange?.(user, "unblock")} disabled={saving || protectedUser} className="rounded-2xl bg-emerald-500/10 px-4 py-3 text-sm font-black text-emerald-300 disabled:cursor-not-allowed disabled:opacity-45">Разблокировать</button>
             : <button type="button" onClick={() => onAccessChange?.(user, "block")} disabled={saving || protectedUser} className="rounded-2xl bg-white/[0.06] px-4 py-3 text-sm font-black text-zinc-100 disabled:cursor-not-allowed disabled:opacity-45">Блокировать</button>}
           <button type="button" onClick={() => onAccessChange?.(user, "delete")} disabled={saving || protectedUser} className="rounded-2xl bg-red-500/10 px-4 py-3 text-sm font-black text-red-300 disabled:cursor-not-allowed disabled:opacity-45">Удалить</button>
-        </div>
+        </div> : <p className="mt-3 rounded-2xl bg-white/[0.04] p-3 text-xs font-semibold text-zinc-500">Тренер может назначить роль ученика. Блокировка и удаление остаются у владельца и админа.</p>}
       </div>
     </div>
   </div>;
@@ -19991,13 +20381,16 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
   const [inviteDays, setInviteDays] = useState(30);
   const [inviteMaxUses, setInviteMaxUses] = useState(100);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [selectedStudentDashboard, setSelectedStudentDashboard] = useState(null);
   const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
   const [limitPickerOpen, setLimitPickerOpen] = useState(false);
   const [accessPanelView, setAccessPanelView] = useState(null);
   const [copiedInviteId, setCopiedInviteId] = useState(null);
   const canManageUsers = Boolean(panel.permissions?.can_manage_users);
+  const canAssignStudents = Boolean(panel.permissions?.can_assign_students);
   const canCreateInvites = Boolean(panel.permissions?.can_create_invites);
   const canViewStudents = Boolean(panel.permissions?.can_view_students);
+  const canOpenUserList = canManageUsers || canAssignStudents;
   const trainerInviteOnly = canCreateInvites && profileHasRole(profile, "trainer") && !profileHasAnyRole(profile, ["owner", "admin"]);
   const inviteRoleOptions = trainerInviteOnly ? MANAGED_ROLE_OPTIONS.filter(option => option.id === "student") : MANAGED_ROLE_OPTIONS;
   const periodLabel = formatInvitePeriodLabel(inviteDays);
@@ -20009,6 +20402,12 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
   }, []);
   const closeManagedUserWindow = useCallback(() => {
     preserveOnlyPumpScrollPosition(() => setSelectedUser(null));
+  }, []);
+  const openStudentDashboard = useCallback((student) => {
+    preserveOnlyPumpScrollPosition(() => setSelectedStudentDashboard(student));
+  }, []);
+  const closeStudentDashboard = useCallback(() => {
+    preserveOnlyPumpScrollPosition(() => setSelectedStudentDashboard(null));
   }, []);
   const openAccessPanelWindow = useCallback((view) => {
     preserveOnlyPumpScrollPosition(() => setAccessPanelView(view));
@@ -20236,11 +20635,11 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
           <p className="mt-1 text-xs text-zinc-600">Поиск, сортировка, активации и удаление ссылок.</p>
         </button>}
 
-        {canManageUsers && <button type="button" onClick={() => openAccessPanelWindow("users")} className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/75 p-4 text-left shadow-2xl shadow-black/40 backdrop-blur transition hover:bg-white/[0.06]">
+        {canOpenUserList && <button type="button" onClick={() => openAccessPanelWindow("users")} className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/75 p-4 text-left shadow-2xl shadow-black/40 backdrop-blur transition hover:bg-white/[0.06]">
           <Users className="text-red-500"/>
-          <h3 className="mt-4 text-lg font-black">Пользователи</h3>
+          <h3 className="mt-4 text-lg font-black">{canManageUsers ? "Пользователи" : "Назначить ученика"}</h3>
           <p className="mt-2 text-sm text-zinc-500">{panel.users.length} всего · {pendingUsersCount} ожидают доступа</p>
-          <p className="mt-1 text-xs text-zinc-600">Поиск, ручное одобрение, роли и доступ.</p>
+          <p className="mt-1 text-xs text-zinc-600">{canManageUsers ? "Поиск, ручное одобрение, роли и доступ." : "Поиск по имени или нику, затем назначение роли ученика."}</p>
         </button>}
 
         {canViewStudents && <Card className="p-4 lg:col-span-2">
@@ -20249,7 +20648,7 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
             <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-zinc-400">{panel.students.length}</span>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {panel.students.length ? panel.students.map(student => <div key={student.id} className="rounded-2xl bg-white/[0.035] p-4">
+            {panel.students.length ? panel.students.map(student => <button key={student.id} type="button" onClick={() => openStudentDashboard(student)} className="rounded-2xl bg-white/[0.035] p-4 text-left transition hover:bg-white/[0.07]">
               <p className="break-words text-sm font-black">{getManagedUserTitle(student)}</p>
               <p className="mt-1 text-xs text-zinc-500">{student.telegram_username ? `@${student.telegram_username}` : `ID ${student.telegram_id || "—"}`}</p>
               <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
@@ -20258,7 +20657,8 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
                 <div className="rounded-xl bg-white/[0.04] p-3"><b className="block text-lg">{student.analytics_30d?.total_sets || 0}</b><span className="text-zinc-500">подходов</span></div>
                 <div className="rounded-xl bg-white/[0.04] p-3"><b className="block text-lg">{(student.analytics_30d?.steps_average || 0).toLocaleString("ru-RU")}</b><span className="text-zinc-500">шаги ср.</span></div>
               </div>
-            </div>) : <p className="rounded-2xl bg-white/[0.035] p-4 text-sm text-zinc-500">Ученики пока не назначены.</p>}
+              <p className="mt-3 text-xs font-black text-red-300">Открыть аналитику</p>
+            </button>) : <p className="rounded-2xl bg-white/[0.035] p-4 text-sm text-zinc-500">Ученики пока не назначены.</p>}
           </div>
         </Card>}
       </div>}
@@ -20269,6 +20669,7 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
       {accessPanelView === "users" && <ManagedUsersListSheet users={panel.users} currentProfile={profile} saving={saving} onClose={closeAccessPanelWindow} onSelectUser={openManagedUserWindow}/>}
       {accessPanelView === "invites" && <ManagedInvitesListSheet invites={panel.invites} saving={saving} copiedInviteId={copiedInviteId} onClose={closeAccessPanelWindow} onCopy={copyInvite} onRevoke={revokeInvite} onDelete={deleteInvite} onSelectUser={openManagedUserWindow}/>}
       {selectedUser && <ManagedUserRoleSheet user={selectedUser} currentProfile={profile} saving={saving} onClose={closeManagedUserWindow} onRoleChange={updateUserRole} onRolesChange={updateUserRoles} onAccessChange={updateUserAccess}/>}
+      {selectedStudentDashboard && <TrainerStudentDashboardSheet student={selectedStudentDashboard} telegramInitData={telegramInitData} onClose={closeStudentDashboard}/>}
     </BottomSheetPanel>
   </div>;
 
