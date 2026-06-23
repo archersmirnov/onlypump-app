@@ -2872,11 +2872,12 @@ const getOnlypumpYouTubeEmbedUrl = (url = "") => {
   }
 };
 
-const ExerciseMediaImage = ({ src, alt = "Рабочие мышцы", fallback = "Здесь будет фото рабочих мышечных групп" }) => {
+const ExerciseMediaImage = ({ src, alt = "Рабочие мышцы", fallback = "Здесь будет фото рабочих мышечных групп", fit = "cover" }) => {
   const [hasError, setHasError] = React.useState(false);
   const imageUrl = String(src || "").trim();
   if (!imageUrl || hasError) return <>{fallback}</>;
-  return <img src={imageUrl} alt={alt} onError={() => setHasError(true)} className="h-full w-full rounded-[24px] object-cover" />;
+  const objectFitClass = fit === "contain" ? "object-contain" : "object-cover";
+  return <img src={imageUrl} alt={alt} onError={() => setHasError(true)} className={`h-full w-full rounded-[24px] ${objectFitClass}`} />;
 };
 
 const ExerciseThumbnail = ({ exercise = {}, className = "" }) => {
@@ -14445,8 +14446,8 @@ const toggleExerciseMeasurementSetting = (field) => {
                 <span className="rounded-full bg-red-500/15 px-3 py-1.5 text-xs font-black text-red-300">Основная: {primary}</span>
                 {synergists.map((muscle, index) => <span key={`${muscle}-${index}`} className="rounded-full bg-white/[0.06] px-3 py-1.5 text-xs font-bold text-zinc-400">Синергист {index + 1}: {muscle}</span>)}
               </div>
-              <div className="flex aspect-video items-center justify-center overflow-hidden rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
-                <ExerciseMediaImage src={muscleWorkImageUrl} alt={`${exercise.name || "Упражнение"}: рабочие мышцы`} fallback="Здесь будет картинка рабочих мышечных групп" />
+              <div className="flex aspect-[3/4] max-h-[520px] items-center justify-center overflow-hidden rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
+                <ExerciseMediaImage src={muscleWorkImageUrl} alt={`${exercise.name || "Упражнение"}: рабочие мышцы`} fallback="Здесь будет картинка рабочих мышечных групп" fit="contain" />
               </div>
               <div className="flex aspect-video items-center justify-center rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
                 {renderExerciseVideoMedia(exercise.muscleWorkVideoUrl, "Здесь будет ролик с работой мышц", `${exercise.name || "Упражнение"}: работа мышц`)}
@@ -14488,8 +14489,8 @@ const toggleExerciseMeasurementSetting = (field) => {
               <p className="mt-3 whitespace-pre-line text-sm font-medium leading-6 text-zinc-300">{instruction}</p>
             </div>
             <div className="grid grid-cols-1 gap-3">
-              <div className="flex aspect-video items-center justify-center rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
-                <ExerciseMediaImage src={muscleWorkImageUrl} alt={`${exercise.name || "Упражнение"}: рабочие мышцы`} />
+              <div className="flex aspect-[3/4] max-h-[520px] items-center justify-center rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
+                <ExerciseMediaImage src={muscleWorkImageUrl} alt={`${exercise.name || "Упражнение"}: рабочие мышцы`} fit="contain" />
               </div>
               <div className="flex aspect-video items-center justify-center rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
                 {renderExerciseVideoMedia(exercise.muscleWorkVideoUrl, "Здесь будет ролик с работой мышц", `${exercise.name || "Упражнение"}: работа мышц`)}
