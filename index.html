@@ -430,12 +430,54 @@
     .onlypump-program-settings-sheet select,
     .onlypump-program-settings-sheet textarea {
       font-size: 16px !important;
+      line-height: 1.35;
+      caret-color: #ef4444 !important;
       -webkit-text-size-adjust: 100%;
+    }
+    .onlypump-program-field {
+      box-sizing: border-box;
+      border: 1px solid rgba(255, 255, 255, 0.12) !important;
+      background: rgba(0, 0, 0, 0.30);
+      color: #f8fafc;
+      caret-color: #ef4444 !important;
+      font-size: 16px !important;
+      -webkit-text-size-adjust: 100%;
+    }
+    .onlypump-program-field::placeholder {
+      color: rgba(148, 163, 184, 0.72);
+    }
+    .onlypump-program-chip {
+      border: 1px solid rgba(255, 255, 255, 0.10);
+    }
+    .onlypump-program-chip.is-active {
+      border-color: rgba(239, 68, 68, 0.72);
     }
     .onlypump-program-builder-short-field > span {
       min-height: 2.35rem;
       display: flex;
       align-items: flex-end;
+    }
+    .theme-light .onlypump-program-field {
+      border-color: rgba(15, 23, 42, 0.18) !important;
+      background-color: rgba(255, 255, 255, 0.98) !important;
+      color: #111827 !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.78);
+    }
+    .theme-light .onlypump-program-field:focus {
+      border-color: rgba(239, 68, 68, 0.62) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.78), 0 0 0 1px rgba(239, 68, 68, 0.20);
+    }
+    .theme-light .onlypump-program-chip {
+      background-color: rgba(255, 255, 255, 0.96) !important;
+      border-color: rgba(15, 23, 42, 0.12) !important;
+      color: #374151 !important;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+    }
+    .theme-light .onlypump-program-chip.is-active {
+      background-color: #ef4444 !important;
+      border-color: #ef4444 !important;
+      color: #111827 !important;
+      box-shadow: 0 10px 24px rgba(239, 68, 68, 0.22);
     }
     .theme-light .onlypump-program-settings-sheet input,
     .theme-light .onlypump-program-settings-sheet select,
@@ -8380,6 +8422,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [programBuilderExerciseSearch, setProgramBuilderExerciseSearch] = useState("");
   const [programBuilderExerciseGroup, setProgramBuilderExerciseGroup] = useState("Все");
   const [programSaving, setProgramSaving] = useState(false);
+  const programBuilderAutosaveRef = useRef(null);
+  const programBuilderLastAutosaveRef = useRef("");
   const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
   const [isExerciseBaseOpen, setIsExerciseBaseOpen] = useState(false);
   const [exerciseBaseMode, setExerciseBaseMode] = useState("view");
@@ -8892,7 +8936,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const readLocalProgramTemplates = () => {
     try {
       const rows = JSON.parse(localStorage.getItem(programTemplateStorageKey()) || "[]");
-      return Array.isArray(rows) ? rows.map(mapProgramTemplateRowToProgram).filter(program => program.days?.length) : [];
+      return Array.isArray(rows) ? rows.map(mapProgramTemplateRowToProgram).filter(program => program.isUserCreated) : [];
     } catch {
       return [];
     }
@@ -8976,6 +9020,77 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     };
   };
 
+  const blurProgramBuilderFocus = () => {
+    const active = document.activeElement;
+    if (active && typeof active.blur === "function" && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName || "")) active.blur();
+  };
+
+  const mapProgramToProgramBuilderDraft = (program = {}) => {
+    const days = Array.isArray(program.days) && program.days.length ? program.days : [{
+      title: "День 1",
+      durationMinutes: 0,
+      offsetDays: 0,
+      exercises: [],
+    }];
+    const workoutCount = Math.max(1, Number(program.workoutCount || program.workout_count || days.length || 1));
+    const cycleLengthDays = Math.max(1, Math.min(20, Number(program.cycleLengthDays || program.cycle_length_days || 7)));
+    const audienceOption = programBuilderAudienceOptions.find(option => {
+      const raw = String(program.audience || "").trim().toLowerCase();
+      return option.id === raw || option.label.toLowerCase() === raw;
+    });
+    return ensureProgramBuilderDays({
+      step: "meta",
+      activeDayIndex: 0,
+      remoteProgramTemplateId: program.remoteProgramTemplateId || program.program_template_id || (String(program.id || "").match(/^[0-9a-f-]{36}$/i) ? program.id : null),
+      templateKey: program.templateKey || program.template_key || program.id || `custom-program-${Date.now()}`,
+      title: program.title || program.name || "",
+      durationWeeks: Number(program.defaultDurationWeeks || program.default_duration_weeks || program.durationWeeks || 8),
+      schedulePattern: program.schedulePattern || program.schedule_pattern || "every_other_day",
+      cycleLengthDays,
+      workoutCount,
+      progressionType: program.progressionType || program.progression_type || "double_progression",
+      audience: audienceOption?.id || "unisex",
+      focus: program.focus || program.goal || "",
+      description: program.description || "",
+      visibilityScope: program.visibilityScope || program.visibility_scope || "private",
+      targetProfileIdsText: "",
+      targetProfileIds: normalizeProgramTargetProfileIds(program.targetProfileIds || program.target_profile_ids),
+      targetProfileLabels: [],
+      days: days.map((day, dayIndex) => ({
+        id: `builder-day-${Date.now()}-${dayIndex}`,
+        title: day.title || `День ${dayIndex + 1}`,
+        durationMinutes: Number(day.durationMinutes || day.duration_minutes || 0),
+        offsetDays: Number(day.offsetDays ?? day.offset_days ?? getProgramBuilderOffsetDays(program.schedulePattern || program.schedule_pattern, dayIndex, cycleLengthDays)),
+        exercises: (day.exercises || []).map((exercise, exerciseIndex) => ({
+          id: `builder-exercise-${Date.now()}-${dayIndex}-${exerciseIndex}`,
+          name: exercise.name || exercise.exerciseName || exercise.exercise_name || "Упражнение",
+          muscleGroup: exercise.muscleGroup || exercise.muscle_group || "Другое",
+          primaryMuscles: exercise.primaryMuscles || exercise.primary_muscles || (exercise.muscleGroup ? [exercise.muscleGroup] : []),
+          secondaryMuscles: exercise.secondaryMuscles || exercise.secondary_muscles || [],
+          measurementMode: exercise.measurementMode || exercise.measurement_mode || "weight_reps",
+          targetSets: Number(exercise.targetSets || exercise.target_sets || getProgramExerciseSetsCount(exercise) || 3),
+          repMin: Number(exercise.repMin || exercise.rep_min || 8),
+          repMax: Number(exercise.repMax || exercise.rep_max || 12),
+          targetWeight: Number(exercise.targetWeight || exercise.target_weight || 0),
+          progressionWeightStep: Number(exercise.progressionWeightStep || exercise.progression_weight_step || 2.5),
+          progressionRepStep: Number(exercise.progressionRepStep || exercise.progression_rep_step || 1),
+          progressionMode: exercise.progressionMode || exercise.progression_mode || program.progressionType || program.progression_type || "double_progression",
+          deloadWeightSteps: Number(exercise.deloadWeightSteps || exercise.deload_weight_steps || 1),
+          regressionThresholdSessions: Number(exercise.regressionThresholdSessions || exercise.regression_threshold_sessions || 2),
+          restSeconds: Number(exercise.restSeconds || exercise.rest_seconds || 120),
+          restAfterSeconds: Number(exercise.restAfterSeconds || exercise.rest_after_seconds || 0),
+          rir: exercise.rir ?? "",
+          rpe: exercise.rpe ?? "",
+          tempo: exercise.tempo || "",
+          note: exercise.note || exercise.notes || "",
+          alternatives: (exercise.alternatives || []).map(item => typeof item === "string" ? item : item.exercise_name || item.exerciseName || item.name).filter(Boolean),
+          alternativesText: (exercise.alternatives || []).map(item => typeof item === "string" ? item : item.exercise_name || item.exerciseName || item.name).filter(Boolean).join(", "),
+        })),
+      })),
+      error: "",
+    });
+  };
+
   const ensureProgramBuilderDays = (draft) => {
     const workoutCount = Math.max(1, Math.min(20, Number(draft.workoutCount || 1)));
     const current = Array.isArray(draft.days) ? draft.days : [];
@@ -9000,8 +9115,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
   };
 
-  const openProgramBuilder = () => {
-    setProgramBuilderSheet({ draft: createProgramBuilderDraft() });
+  const openProgramBuilder = (program = null, event = null) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    blurProgramBuilderFocus();
+    setProgramBuilderSheet({ draft: program ? mapProgramToProgramBuilderDraft(program) : createProgramBuilderDraft() });
   };
 
   const getProgramBuilderMuscleStats = (draft) => {
@@ -9096,9 +9214,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const buildProgramTemplatePayloadFromDraft = (draft) => {
-    const templateKey = `custom-program-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const templateKey = draft.templateKey || `custom-program-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     return {
       program: {
+        program_template_id: draft.remoteProgramTemplateId || null,
         template_key: templateKey,
         name: draft.title.trim(),
         description: draft.description.trim(),
@@ -9158,23 +9277,60 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     };
   };
 
-  const saveProgramBuilder = async (draft) => {
+  const getProgramBuilderAutosaveSignature = (draft = {}) => JSON.stringify({
+    title: draft.title || "",
+    durationWeeks: draft.durationWeeks,
+    schedulePattern: draft.schedulePattern,
+    cycleLengthDays: draft.cycleLengthDays,
+    workoutCount: draft.workoutCount,
+    progressionType: draft.progressionType,
+    audience: draft.audience,
+    focus: draft.focus || "",
+    description: draft.description || "",
+    visibilityScope: draft.visibilityScope,
+    targetProfileIds: draft.targetProfileIds || [],
+    days: (draft.days || []).map(day => ({
+      title: day.title || "",
+      durationMinutes: day.durationMinutes || 0,
+      offsetDays: day.offsetDays || 0,
+      exercises: (day.exercises || []).map(exercise => ({
+        name: exercise.name || "",
+        muscleGroup: exercise.muscleGroup || "",
+        targetSets: exercise.targetSets,
+        repMin: exercise.repMin,
+        repMax: exercise.repMax,
+        progressionWeightStep: exercise.progressionWeightStep,
+        progressionRepStep: exercise.progressionRepStep,
+        restSeconds: exercise.restSeconds,
+        restAfterSeconds: exercise.restAfterSeconds,
+        rir: exercise.rir,
+        rpe: exercise.rpe,
+        tempo: exercise.tempo || "",
+        note: exercise.note || "",
+        alternativesText: exercise.alternativesText ?? (exercise.alternatives || []).join(", "),
+      })),
+    })),
+  });
+
+  const saveProgramBuilder = async (draft, options = {}) => {
+    const { autosave = false, allowEmptyExercises = false, stayOpen = false } = options;
     const title = String(draft.title || "").trim();
     if (!title) {
       updateProgramBuilderDraft({ error: "Введите название программы." });
-      return;
+      return null;
     }
     const totalExercises = (draft.days || []).reduce((sum, day) => sum + (day.exercises || []).length, 0);
-    if (!totalExercises) {
+    if (!allowEmptyExercises && !totalExercises) {
       updateProgramBuilderDraft({ error: "Добавьте хотя бы одно упражнение." });
-      return;
+      return null;
     }
     const payload = buildProgramTemplatePayloadFromDraft({ ...draft, title, error: "" });
     setProgramSaving(true);
     try {
       let savedProgram = null;
       if (canUseWorkoutApi) {
-        const result = await callWorkoutsApi("save_program_template", payload);
+        const action = draft.remoteProgramTemplateId || draft.templateKey ? "update_program_template" : "save_program_template";
+        const result = await callWorkoutsApi(action, payload);
         savedProgram = mapProgramTemplateRowToProgram(result.program_template || result.template);
       } else {
         savedProgram = mapProgramTemplateRowToProgram({
@@ -9209,15 +9365,48 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           return next;
         });
       }
-      setProgramBuilderSheet(null);
-      if (savedProgram) openProgramSettings(savedProgram);
+      if (savedProgram) {
+        programBuilderLastAutosaveRef.current = getProgramBuilderAutosaveSignature({ ...draft, title });
+        setProgramBuilderSheet(prev => prev ? {
+          ...prev,
+          draft: {
+            ...prev.draft,
+            remoteProgramTemplateId: savedProgram.remoteProgramTemplateId || savedProgram.id || prev.draft.remoteProgramTemplateId,
+            templateKey: savedProgram.templateKey || prev.draft.templateKey || savedProgram.id,
+            error: "",
+          },
+        } : prev);
+      }
+      if (!autosave && !stayOpen) {
+        setProgramBuilderSheet(null);
+        if (savedProgram) openProgramSettings(savedProgram);
+      }
+      return savedProgram;
     } catch (error) {
       console.error("Program template save error", error);
-      updateProgramBuilderDraft({ error: "Не удалось сохранить программу." });
+      updateProgramBuilderDraft({ error: autosave ? "Черновик пока не сохранился. Попробуй ещё раз." : "Не удалось сохранить программу." });
+      return null;
     } finally {
       setProgramSaving(false);
     }
   };
+
+  useEffect(() => {
+    const draft = programBuilderSheet?.draft;
+    if (!draft || programSaving) return undefined;
+    if (!draft.remoteProgramTemplateId && !draft.templateKey) return undefined;
+    if (!String(draft.title || "").trim()) return undefined;
+    const signature = getProgramBuilderAutosaveSignature(draft);
+    if (programBuilderLastAutosaveRef.current === signature) return undefined;
+    if (programBuilderAutosaveRef.current) window.clearTimeout(programBuilderAutosaveRef.current);
+    programBuilderAutosaveRef.current = window.setTimeout(() => {
+      programBuilderLastAutosaveRef.current = signature;
+      saveProgramBuilder(draft, { autosave: true, allowEmptyExercises: true, stayOpen: true });
+    }, 1200);
+    return () => {
+      if (programBuilderAutosaveRef.current) window.clearTimeout(programBuilderAutosaveRef.current);
+    };
+  }, [programBuilderSheet?.draft, programSaving]);
 
   const openProgramShareSheet = (program, event) => {
     event?.preventDefault?.();
@@ -9354,6 +9543,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const openProgramSettings = (program) => {
+    if (canShareProgramTemplate(program) && (!program?.days?.length || getProgramSetCount(program) === 0)) {
+      openProgramBuilder(program);
+      return;
+    }
     setProgramSettingsSheet({ program, draft: createProgramSettingsDraft(program) });
   };
 
@@ -10073,7 +10266,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       .then(result => {
         if (cancelled) return;
         const rows = readApiArray(result, "program_templates", ["templates"]);
-        const mapped = rows.map(mapProgramTemplateRowToProgram).filter(program => program.isUserCreated && program.days?.length);
+        const mapped = rows.map(mapProgramTemplateRowToProgram).filter(program => program.isUserCreated);
         setCustomTrainingPrograms(mapped);
         writeLocalProgramTemplates(mapped);
       })
@@ -15306,7 +15499,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             <h2 className="text-xl font-black tracking-[-0.03em]">Доступные программы</h2>
             <p className="mt-2 text-sm leading-6 text-zinc-500">Нажми программу, настрой длительность, сложность и прогрессию. В календарь она добавится только после подтверждения.</p>
           </div>
-          {canCreateProgramTemplates && <button type="button" onClick={openProgramBuilder} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-500 text-black shadow-lg shadow-red-500/20 transition active:scale-95"><Plus size={22}/></button>}
+          {canCreateProgramTemplates && <button type="button" onClick={() => openProgramBuilder()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-500 text-black shadow-lg shadow-red-500/20 transition active:scale-95"><Plus size={22}/></button>}
         </div>
         <div className="mt-5 space-y-3">
           {visibleTrainingPrograms.map(program => {
@@ -15322,10 +15515,11 @@ const toggleExerciseMeasurementSetting = (field) => {
                   {program.isUserCreated && <span className="rounded-full bg-white/[0.07] px-2.5 py-1 text-zinc-400">{getProgramVisibilityLabel(program)}</span>}
                 </div>
               </div>
-              <div className="flex shrink-0 flex-col items-end gap-2">
-                <span className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-black">Настроить</span>
-                {canShareProgram && <button type="button" onClick={(event) => openProgramShareSheet(program, event)} className="rounded-full bg-red-500/15 px-3 py-1.5 text-xs font-black text-red-300 transition active:scale-95 hover:bg-red-500/25">Поделиться</button>}
-              </div>
+	              <div className="flex shrink-0 flex-col items-end gap-2">
+	                <span className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-black">Настроить</span>
+	                {canShareProgram && <button type="button" onClick={(event) => openProgramBuilder(program, event)} className="rounded-full bg-white/[0.08] px-3 py-1.5 text-xs font-black text-zinc-300 transition active:scale-95 hover:bg-white/[0.12]">Редактировать</button>}
+	                {canShareProgram && <button type="button" onClick={(event) => openProgramShareSheet(program, event)} className="rounded-full bg-red-500/15 px-3 py-1.5 text-xs font-black text-red-300 transition active:scale-95 hover:bg-red-500/25">Поделиться</button>}
+	              </div>
             </div>
             <p className="mt-3 text-sm leading-6 text-zinc-500">{program.description}</p>
             <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
@@ -15363,21 +15557,28 @@ const toggleExerciseMeasurementSetting = (field) => {
 	        updateProgramBuilderDraft({ visibilityScope: option.id, targetProfileIds: [], targetProfileLabels: [], targetProfileIdsText: "", error: "" });
 	      };
 	      const closeBuilder = () => !programSaving && setProgramBuilderSheet(null);
-	      const goToMetaNext = () => {
+	      const goToMetaNext = async () => {
+	        blurProgramBuilderFocus();
 	        if (!String(draft.title || "").trim()) {
 	          updateProgramBuilderDraft({ error: "Введите название программы." });
 	          return;
 	        }
+	        const savedProgram = await saveProgramBuilder(draft, { autosave: true, allowEmptyExercises: true, stayOpen: true });
+	        if (!savedProgram) return;
 	        updateProgramBuilderDraft(prev => ({ ...prev, step: "day", activeDayIndex: 0, error: "" }));
 	      };
 	      const goDayBack = () => {
+	        blurProgramBuilderFocus();
 	        if (activeDayIndex <= 0) {
 	          updateProgramBuilderDraft(prev => ({ ...prev, step: "meta", error: "" }));
 	          return;
 	        }
 	        updateProgramBuilderDraft(prev => ({ ...prev, activeDayIndex: activeDayIndex - 1, error: "" }));
 	      };
-	      const goDayNext = () => {
+	      const goDayNext = async () => {
+	        blurProgramBuilderFocus();
+	        const savedProgram = await saveProgramBuilder(draft, { autosave: true, allowEmptyExercises: true, stayOpen: true });
+	        if (!savedProgram) return;
 	        if (activeDayIndex >= (draft.days || []).length - 1) {
 	          updateProgramBuilderDraft(prev => ({ ...prev, step: "summary", error: "" }));
 	          return;
@@ -15391,7 +15592,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	            <button disabled={programSaving} onClick={draft.step === "meta" ? closeBuilder : () => updateProgramBuilderDraft(prev => ({ ...prev, step: "meta", error: "" }))} className="mt-1 shrink-0 text-sm font-black text-zinc-400 disabled:opacity-40">{draft.step === "meta" ? "Отмена" : "Назад"}</button>
 	            <div className="min-w-0 text-center">
 	              <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Конструктор</p>
-	              <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{draft.step === "summary" ? "Итоги программы" : draft.step === "day" ? `${activeDay.title || `День ${activeDayIndex + 1}`}` : "Новая программа"}</h2>
+	              <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{draft.step === "summary" ? "Итоги программы" : draft.step === "day" ? `${activeDay.title || `День ${activeDayIndex + 1}`}` : (draft.remoteProgramTemplateId || draft.templateKey ? "Редактировать программу" : "Новая программа")}</h2>
 	            </div>
 	            <button disabled={programSaving} onClick={closeBuilder} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300 disabled:opacity-40">×</button>
 	          </div>
@@ -15400,21 +15601,21 @@ const toggleExerciseMeasurementSetting = (field) => {
 	            {draft.error && <p className="rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{draft.error}</p>}
 
 	            {draft.step === "meta" && <>
-	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название программы</span><input value={draft.title} onChange={(e) => updateProgramBuilderDraft({ title: e.target.value, error: "" })} placeholder="Например: Верх сила" className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/></label>
+	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название программы</span><input value={draft.title} onChange={(e) => updateProgramBuilderDraft({ title: e.target.value, error: "" })} placeholder="Например: Верх сила" className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 font-bold outline-none"/></label>
 	              <div className="grid grid-cols-2 gap-3">
-                <label className="onlypump-program-builder-short-field block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Длительность, недель</span><input inputMode="numeric" value={draft.durationWeeks} onChange={(e) => updateProgramBuilderDraft({ durationWeeks: clampProgramNumber(e.target.value, 1, 52) })} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
-                <label className="onlypump-program-builder-short-field block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Тренировок</span><input inputMode="numeric" value={draft.workoutCount} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, workoutCount: clampProgramNumber(e.target.value, 1, 20) }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+                <label className="onlypump-program-builder-short-field block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Длительность, недель</span><input inputMode="numeric" value={draft.durationWeeks} onChange={(e) => updateProgramBuilderDraft({ durationWeeks: clampProgramNumber(e.target.value, 1, 52) })} className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 text-center font-black outline-none"/></label>
+                <label className="onlypump-program-builder-short-field block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Тренировок</span><input inputMode="numeric" value={draft.workoutCount} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, workoutCount: clampProgramNumber(e.target.value, 1, 20) }))} className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 text-center font-black outline-none"/></label>
 	              </div>
 	              <div className="grid grid-cols-2 gap-3">
-	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Периодичность</span><select value={draft.schedulePattern} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, schedulePattern: e.target.value }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">{programBuilderScheduleOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
-	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Цикл, дней</span><input inputMode="numeric" value={draft.cycleLengthDays} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, cycleLengthDays: clampProgramNumber(e.target.value, 1, 20) }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Периодичность</span><select value={draft.schedulePattern} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, schedulePattern: e.target.value }))} className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 font-bold outline-none">{programBuilderScheduleOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Цикл, дней</span><input inputMode="numeric" value={draft.cycleLengthDays} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, cycleLengthDays: clampProgramNumber(e.target.value, 1, 20) }))} className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 text-center font-black outline-none"/></label>
 	              </div>
 	              <div className="grid grid-cols-2 gap-3">
-	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Прогрессия</span><select value={draft.progressionType} onChange={(e) => updateProgramBuilderDraft({ progressionType: e.target.value })} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">{programBuilderProgressionOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
-	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Пол</span><select value={draft.audience} onChange={(e) => updateProgramBuilderDraft({ audience: e.target.value })} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">{programBuilderAudienceOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Прогрессия</span><select value={draft.progressionType} onChange={(e) => updateProgramBuilderDraft({ progressionType: e.target.value })} className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 font-bold outline-none">{programBuilderProgressionOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Пол</span><select value={draft.audience} onChange={(e) => updateProgramBuilderDraft({ audience: e.target.value })} className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 font-bold outline-none">{programBuilderAudienceOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
 	              </div>
-	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Акцент</span><input value={draft.focus} onChange={(e) => updateProgramBuilderDraft({ focus: e.target.value })} placeholder="Например: плечи, ягодицы, сила" className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/></label>
-	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Описание</span><textarea value={draft.description} onChange={(e) => updateProgramBuilderDraft({ description: e.target.value })} rows="4" className="mt-2 w-full resize-none rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold leading-6 outline-none ring-1 ring-white/10"/></label>
+	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Акцент</span><input value={draft.focus} onChange={(e) => updateProgramBuilderDraft({ focus: e.target.value })} placeholder="Например: плечи, ягодицы, сила" className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 font-bold outline-none"/></label>
+	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Описание</span><textarea value={draft.description} onChange={(e) => updateProgramBuilderDraft({ description: e.target.value })} rows="4" className="onlypump-program-field mt-2 w-full resize-none rounded-2xl px-4 py-3 font-bold leading-6 outline-none"/></label>
 	              <div><div className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Кому доступна</div><div className="mt-2 grid grid-cols-1 gap-2">{shareOptions.map(option => <button key={option.id} type="button" onClick={() => chooseShareOption(option)} className={`rounded-2xl px-4 py-3 text-left text-sm font-black transition ${draft.visibilityScope === option.id ? "bg-red-500 text-black" : "bg-white/[0.05] text-zinc-300"}`}>{option.label}</button>)}</div></div>
 	              {draft.visibilityScope === "selected" && <button type="button" onClick={() => setProgramBuilderTargetPicker({ mode: draft.visibilityScope })} className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-bold text-zinc-300 transition hover:bg-white/[0.08]">
 	                {Array.isArray(draft.targetProfileLabels) && draft.targetProfileLabels.length ? `Выбрано: ${draft.targetProfileLabels.join(", ")}` : "Выбрать пользователей по имени или нику"}
@@ -15427,27 +15628,27 @@ const toggleExerciseMeasurementSetting = (field) => {
 	                <div className="rounded-2xl bg-white/[0.05] p-3"><span className="block text-zinc-500">Подходы</span><b>{(activeDay.exercises || []).reduce((sum, ex) => sum + Number(ex.targetSets || 3), 0)}</b></div>
 	                <div className="rounded-2xl bg-white/[0.05] p-3"><span className="block text-zinc-500">Смещение</span><b>+{activeDay.offsetDays} д</b></div>
 	              </div>
-	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название дня</span><input value={activeDay.title} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, days: prev.days.map((day, index) => index === activeDayIndex ? { ...day, title: e.target.value } : day) }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/></label>
-	              <button type="button" onClick={() => setProgramBuilderExercisePicker({ dayIndex: activeDayIndex })} className="flex w-full items-center justify-center gap-2 rounded-full bg-red-500 px-4 py-3 font-black text-black transition active:scale-[0.98]"><Plus size={18}/> Добавить упражнение</button>
+	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название дня</span><input value={activeDay.title} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, days: prev.days.map((day, index) => index === activeDayIndex ? { ...day, title: e.target.value } : day) }))} className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 font-bold outline-none"/></label>
+	              <button type="button" onClick={() => { blurProgramBuilderFocus(); setProgramBuilderExercisePicker({ dayIndex: activeDayIndex }); }} className="flex w-full items-center justify-center gap-2 rounded-full bg-red-500 px-4 py-3 font-black text-black transition active:scale-[0.98]"><Plus size={18}/> Добавить упражнение</button>
 	              <div className="space-y-3">
 	                {(activeDay.exercises || []).map((exercise) => <div key={exercise.id} className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
 	                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="break-words font-black">{exercise.name}</h3><p className="mt-1 text-xs font-semibold text-red-300">{exercise.muscleGroup}</p></div><button type="button" onClick={() => removeProgramBuilderExercise(activeDayIndex, exercise.id)} className="shrink-0 rounded-full bg-white/8 px-3 py-2 text-xs font-black text-red-300">Удалить</button></div>
 	                  <div className="mt-3 grid grid-cols-3 gap-2">
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Подх.</span><input inputMode="numeric" value={exercise.targetSets} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { targetSets: Math.max(1, Number(e.target.value || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">От</span><input inputMode="numeric" value={exercise.repMin} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { repMin: Math.max(1, Number(e.target.value || 1)), repMax: Math.max(Number(e.target.value || 1), Number(exercise.repMax || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">До</span><input inputMode="numeric" value={exercise.repMax} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { repMax: Math.max(Number(exercise.repMin || 1), Number(e.target.value || exercise.repMin || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Подх.</span><input inputMode="numeric" value={exercise.targetSets} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { targetSets: Math.max(1, Number(e.target.value || 1)) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">От</span><input inputMode="numeric" value={exercise.repMin} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { repMin: Math.max(1, Number(e.target.value || 1)), repMax: Math.max(Number(e.target.value || 1), Number(exercise.repMax || 1)) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">До</span><input inputMode="numeric" value={exercise.repMax} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { repMax: Math.max(Number(exercise.repMin || 1), Number(e.target.value || exercise.repMin || 1)) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
 	                  </div>
 	                  <div className="mt-3 grid grid-cols-3 gap-2">
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Вес +</span><input inputMode="decimal" value={exercise.progressionWeightStep} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { progressionWeightStep: Number(String(e.target.value).replace(",", ".") || 0) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Отдых</span><input inputMode="numeric" value={exercise.restSeconds} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { restSeconds: Math.max(0, Number(e.target.value || 0)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">После</span><input inputMode="numeric" value={exercise.restAfterSeconds} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { restAfterSeconds: Math.max(0, Number(e.target.value || 0)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Вес +</span><input inputMode="decimal" value={exercise.progressionWeightStep} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { progressionWeightStep: Number(String(e.target.value).replace(",", ".") || 0) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Отдых</span><input inputMode="numeric" value={exercise.restSeconds} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { restSeconds: Math.max(0, Number(e.target.value || 0)) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">После</span><input inputMode="numeric" value={exercise.restAfterSeconds} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { restAfterSeconds: Math.max(0, Number(e.target.value || 0)) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
 	                  </div>
 	                  <div className="mt-3 grid grid-cols-3 gap-2">
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">RIR</span><input inputMode="decimal" value={exercise.rir} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { rir: e.target.value })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">RPE</span><input inputMode="decimal" value={exercise.rpe} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { rpe: e.target.value })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Темп</span><input value={exercise.tempo} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { tempo: e.target.value })} placeholder="3-1-1" className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">RIR</span><input inputMode="decimal" value={exercise.rir} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { rir: e.target.value })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">RPE</span><input inputMode="decimal" value={exercise.rpe} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { rpe: e.target.value })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Темп</span><input value={exercise.tempo} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { tempo: e.target.value })} placeholder="3-1-1" className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
 	                  </div>
-	                  <label className="mt-3 block"><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Альтернативы</span><input value={exercise.alternativesText ?? (exercise.alternatives || []).join(", ")} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { alternativesText: e.target.value })} placeholder="Через запятую" className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/></label>
+	                  <label className="mt-3 block"><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Альтернативы</span><input value={exercise.alternativesText ?? (exercise.alternatives || []).join(", ")} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { alternativesText: e.target.value })} placeholder="Через запятую" className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 font-bold outline-none"/></label>
 	                </div>)}
 	              </div>
 	            </>}
@@ -15465,23 +15666,23 @@ const toggleExerciseMeasurementSetting = (field) => {
 
 	          <div className="mt-4 grid grid-cols-2 gap-3 pb-[var(--onlypump-safe-bottom)]">
 	            {draft.step === "meta" ? <button disabled={programSaving} onClick={closeBuilder} className="h-12 rounded-full bg-white/8 font-black text-zinc-300 disabled:opacity-50">Отмена</button> : draft.step === "day" ? <button disabled={programSaving} onClick={goDayBack} className="h-12 rounded-full bg-white/8 font-black text-zinc-300 disabled:opacity-50">{activeDayIndex === 0 ? "Отмена" : "Назад"}</button> : <button disabled={programSaving} onClick={() => updateProgramBuilderDraft(prev => ({ ...prev, step: "day", activeDayIndex: Math.max(0, prev.days.length - 1), error: "" }))} className="h-12 rounded-full bg-white/8 font-black text-zinc-300 disabled:opacity-50">Назад</button>}
-	            {draft.step === "meta" ? <button disabled={programSaving} onClick={goToMetaNext} className="h-12 rounded-full bg-red-500 font-black text-black disabled:opacity-50">Далее</button> : draft.step === "day" ? <button disabled={programSaving} onClick={goDayNext} className="h-12 rounded-full bg-red-500 font-black text-black disabled:opacity-50">Далее</button> : <button disabled={programSaving} onClick={() => saveProgramBuilder(draft)} className="h-12 rounded-full bg-red-500 font-black text-black disabled:opacity-50">{programSaving ? "Сохраняю..." : "Сохранить"}</button>}
+	            {draft.step === "meta" ? <button disabled={programSaving} onClick={goToMetaNext} className="h-12 rounded-full bg-red-500 font-black text-black disabled:opacity-50">{programSaving ? "Сохраняю..." : "Далее"}</button> : draft.step === "day" ? <button disabled={programSaving} onClick={goDayNext} className="h-12 rounded-full bg-red-500 font-black text-black disabled:opacity-50">{programSaving ? "Сохраняю..." : "Далее"}</button> : <button disabled={programSaving} onClick={() => { blurProgramBuilderFocus(); saveProgramBuilder(draft); }} className="h-12 rounded-full bg-red-500 font-black text-black disabled:opacity-50">{programSaving ? "Сохраняю..." : "Сохранить"}</button>}
 	          </div>
 	        </BottomSheetPanel>
 	      </div>;
 	    })()}
 
 	    {programBuilderExercisePicker && <div onClick={() => setProgramBuilderExercisePicker(null)} className="onlypump-modal-layer fixed inset-0 z-[156] flex items-end bg-black/55 p-3 backdrop-blur-sm">
-	      <BottomSheetPanel onClose={() => setProgramBuilderExercisePicker(null)} onClick={(e) => e.stopPropagation()} className="mx-auto flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-[460px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+	      <BottomSheetPanel onClose={() => setProgramBuilderExercisePicker(null)} onClick={(e) => e.stopPropagation()} className="onlypump-program-settings-sheet mx-auto flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-[460px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
 	        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
 	        <div className="flex items-start justify-between gap-3">
 	          <button type="button" onClick={() => setProgramBuilderExercisePicker(null)} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отмена</button>
 	          <div className="min-w-0 text-center"><p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Программа</p><h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Добавить упражнение</h2></div>
 	          <button type="button" onClick={() => setProgramBuilderExercisePicker(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
 	        </div>
-	        <input value={programBuilderExerciseSearch} onChange={(e) => setProgramBuilderExerciseSearch(e.target.value)} placeholder="Поиск упражнения" className="mt-5 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/>
+	        <input value={programBuilderExerciseSearch} onChange={(e) => setProgramBuilderExerciseSearch(e.target.value)} placeholder="Поиск упражнения" className="onlypump-program-field mt-5 w-full rounded-2xl px-4 py-3 font-bold outline-none"/>
 	        <div className="mt-3 flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
-	          {programBuilderGroups.map(group => <button key={group} type="button" onClick={() => setProgramBuilderExerciseGroup(group)} className={`shrink-0 rounded-full px-3 py-2 text-xs font-black transition ${programBuilderExerciseGroup === group ? "bg-red-500 text-black" : "bg-white/8 text-zinc-300"}`}>{group}</button>)}
+	          {programBuilderGroups.map(group => <button key={group} type="button" onClick={() => setProgramBuilderExerciseGroup(group)} className={`onlypump-program-chip shrink-0 rounded-full px-3 py-2 text-xs font-black transition ${programBuilderExerciseGroup === group ? "is-active bg-red-500 text-black" : "bg-white/8 text-zinc-300"}`}>{group}</button>)}
 	        </div>
 	        <div className="onlypump-sheet-list mt-4 flex-1 space-y-4 overflow-y-auto pr-1 onlypump-scrollbar-none" data-no-sheet-drag="true">
 	          {filteredProgramBuilderGroups.map(section => <div key={section.group}><p className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">{section.group}</p><div className="space-y-2">{section.exercises.map(exercise => <button key={exercisePickerKey(exercise)} type="button" onClick={() => addExerciseToProgramBuilder(exercise)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-3 text-left transition hover:bg-white/[0.08]"><span className="min-w-0"><span className="block break-words font-black">{exercise.name}</span><span className="mt-1 block text-xs text-zinc-500">{exercise.muscleGroup}</span></span><Plus size={18} className="shrink-0 text-red-400"/></button>)}</div></div>)}
@@ -15594,6 +15795,11 @@ const toggleExerciseMeasurementSetting = (field) => {
 	              <span className="block text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Доступ</span>
 	              <span className="mt-1 block text-lg font-black">Поделиться с учеником</span>
 	              <span className="mt-1 block text-sm leading-5 text-zinc-500">Сейчас: {getProgramVisibilityLabel(program)}.</span>
+	            </button>}
+	            {canShareProgramTemplate(program) && <button type="button" onClick={(event) => { setProgramSettingsSheet(null); openProgramBuilder(program, event); }} className="w-full rounded-[24px] border border-white/10 bg-white/[0.04] px-4 py-4 text-left transition active:scale-[0.99] hover:border-red-500/40 hover:bg-red-500/10">
+	              <span className="block text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Конструктор</span>
+	              <span className="mt-1 block text-lg font-black">Редактировать программу</span>
+	              <span className="mt-1 block text-sm leading-5 text-zinc-500">Измени дни, упражнения, подходы, повторы, отдых и альтернативы.</span>
 	            </button>}
 
 	            <div className="rounded-[24px] bg-white/[0.04] p-4">
