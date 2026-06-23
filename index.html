@@ -126,10 +126,43 @@
     }
     .onlypump-tour-spotlight {
       animation: onlypump-tour-pulse 1.35s ease-in-out infinite;
+      background: rgba(239, 68, 68, 0.10);
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.00), 0 0 34px rgba(239, 68, 68, 0.32);
     }
     .onlypump-tour-card {
       opacity: 0;
       animation: onlypump-tour-card-in 260ms ease-out forwards;
+      background: var(--onlypump-card-solid);
+      color: var(--onlypump-text);
+      border: 1px solid rgba(239, 68, 68, 0.34);
+      box-shadow: 0 22px 70px var(--onlypump-shadow);
+    }
+    .onlypump-tour-copy {
+      color: var(--onlypump-muted);
+    }
+    .onlypump-tour-step-label {
+      color: #f87171;
+    }
+    .onlypump-tour-close {
+      background: var(--onlypump-soft);
+      color: var(--onlypump-text);
+    }
+    .onlypump-tour-task {
+      border: 1px solid rgba(239, 68, 68, 0.36);
+      background: rgba(239, 68, 68, 0.16);
+      color: #fecaca;
+    }
+    .theme-light .onlypump-tour-spotlight {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: #ef4444;
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12), 0 0 32px rgba(239, 68, 68, 0.26);
+    }
+    .theme-light .onlypump-tour-card {
+      box-shadow: 0 22px 70px rgba(17, 24, 39, 0.16);
+    }
+    .theme-light .onlypump-tour-task {
+      background: rgba(239, 68, 68, 0.10);
+      color: #991b1b;
     }
     @keyframes onlypump-tour-card-in {
       to { opacity: 1; }
@@ -5049,24 +5082,29 @@ function getTourCardStyle(targetRect) {
       left: "50%",
       top: "50%",
       transform: "translate(-50%, -50%)",
-      width: "min(92vw, 420px)",
+      width: "min(90vw, 340px)",
     };
   }
   const viewportWidth = window.innerWidth || 390;
   const viewportHeight = window.innerHeight || 740;
-  const width = Math.min(420, viewportWidth - 32);
-  const left = Math.max(16, Math.min(viewportWidth - width - 16, targetRect.left + targetRect.width / 2 - width / 2));
-  const belowTop = targetRect.bottom + 16;
-  const aboveTop = targetRect.top - 226;
-  const top = belowTop + 210 < viewportHeight ? belowTop : Math.max(16, aboveTop);
+  const width = Math.min(340, viewportWidth - 24);
+  const margin = 12;
+  const left = Math.max(margin, Math.min(viewportWidth - width - margin, targetRect.left + targetRect.width / 2 - width / 2));
+  const belowTop = targetRect.bottom + 10;
+  const aboveTop = targetRect.top - 174;
+  const top = belowTop + 172 < viewportHeight ? belowTop : Math.max(margin, aboveTop);
   return { left, top, width };
 }
 
-function InteractiveTourOverlay({ step, stepIndex, totalSteps, onNext, onSkip }) {
+function InteractiveTourOverlay({ step, stepIndex, totalSteps, onNext, onSkip, onTargetAction }) {
   const [targetRect, setTargetRect] = useState(null);
+  const targetElementRef = useRef(null);
+  const targetClickTimerRef = useRef(null);
+  const lastTargetClickRef = useRef(0);
 
   useEffect(() => {
     if (!step?.target) {
+      targetElementRef.current = null;
       setTargetRect(null);
       return undefined;
     }
@@ -5078,12 +5116,15 @@ function InteractiveTourOverlay({ step, stepIndex, totalSteps, onNext, onSkip })
         return rect.width > 0 && rect.height > 0;
       });
       if (!target) {
+        targetElementRef.current = null;
         setTargetRect(null);
         return;
       }
+      targetElementRef.current = target;
       try { target.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" }); } catch (error) {}
       const rect = target.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) {
+        targetElementRef.current = null;
         setTargetRect(null);
         return;
       }
@@ -5112,14 +5153,33 @@ function InteractiveTourOverlay({ step, stepIndex, totalSteps, onNext, onSkip })
     };
   }, [step?.target, stepIndex]);
 
+  useEffect(() => {
+    if (!step?.target || !onTargetAction) return undefined;
+    const handleDocumentClick = (event) => {
+      const target = targetElementRef.current;
+      if (!target || !event.target || !target.contains(event.target)) return;
+      const now = Date.now();
+      if (now - lastTargetClickRef.current < 850) return;
+      lastTargetClickRef.current = now;
+      window.clearTimeout(targetClickTimerRef.current);
+      targetClickTimerRef.current = window.setTimeout(() => {
+        onTargetAction();
+      }, 420);
+    };
+    document.addEventListener("click", handleDocumentClick, true);
+    return () => {
+      window.clearTimeout(targetClickTimerRef.current);
+      document.removeEventListener("click", handleDocumentClick, true);
+    };
+  }, [step?.target, stepIndex, onTargetAction]);
+
   if (!step) return null;
   const isLast = stepIndex >= totalSteps - 1;
   const cardStyle = getTourCardStyle(targetRect);
 
-  return <div className="fixed inset-0 z-[244] text-zinc-100" data-no-edge-back="true">
-    <div className="absolute inset-0 bg-black/62 backdrop-blur-[2px]"/>
+  return <div className="pointer-events-none fixed inset-0 z-[244]" data-no-edge-back="true">
     {targetRect && <div
-      className="onlypump-tour-spotlight pointer-events-none absolute rounded-[26px] border-2 border-red-400 bg-red-500/10"
+      className="onlypump-tour-spotlight pointer-events-none absolute rounded-[24px] border-2 border-red-400"
       style={{
         left: Math.max(8, targetRect.left - 8),
         top: Math.max(8, targetRect.top - 8),
@@ -5127,19 +5187,19 @@ function InteractiveTourOverlay({ step, stepIndex, totalSteps, onNext, onSkip })
         height: targetRect.height + 16,
       }}
     />}
-    <div className="onlypump-tour-card absolute rounded-[30px] border border-red-500/25 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl" style={cardStyle}>
-      <div className="flex items-start justify-between gap-4">
+    <div className="onlypump-tour-card pointer-events-auto absolute rounded-[22px] p-4 backdrop-blur-md" style={cardStyle}>
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-red-300">Шаг {stepIndex + 1} из {totalSteps}</p>
-          <h2 className="mt-2 text-2xl font-black tracking-[-0.05em]">{step.title}</h2>
+          <p className="onlypump-tour-step-label text-[10px] font-black uppercase tracking-[0.18em]">Шаг {stepIndex + 1} из {totalSteps}</p>
+          <h2 className="mt-1.5 text-lg font-black tracking-[-0.04em]">{step.title}</h2>
         </div>
-        <button type="button" onClick={onSkip} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+        <button type="button" onClick={onSkip} className="onlypump-tour-close flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg font-black">×</button>
       </div>
-      <p className="mt-3 text-sm leading-6 text-zinc-400">{step.text}</p>
-      {step.task && <div className="mt-4 rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-sm font-black text-red-100">{step.task}</div>}
-      <div className="mt-5 flex items-center justify-between gap-3">
-        <button type="button" onClick={onSkip} className="rounded-full px-4 py-3 text-sm font-black text-zinc-500">Пропустить</button>
-        <button type="button" onClick={onNext} className="rounded-full bg-red-500 px-5 py-3 text-sm font-black text-black">
+      <p className="onlypump-tour-copy mt-2 text-xs font-semibold leading-5">{step.text}</p>
+      {step.task && <div className="onlypump-tour-task mt-3 rounded-2xl p-3 text-xs font-black leading-5">{step.task}</div>}
+      <div className="mt-4 flex items-center justify-between gap-2">
+        <button type="button" onClick={onSkip} className="rounded-full px-3 py-2 text-xs font-black" style={{ color: "var(--onlypump-muted)" }}>Пропустить</button>
+        <button type="button" onClick={onNext} className="rounded-full bg-red-500 px-4 py-2.5 text-xs font-black text-black">
           {isLast ? "Понял" : "Далее"}
         </button>
       </div>
@@ -22251,7 +22311,7 @@ function OnlyPumpPlatform() {
 	    <PumpXpLevelUpModal levelUp={pumpXpLevelUp} pumpXp={pumpXpSummary} onClose={() => setPumpXpLevelUp(null)} onOpenDetails={() => { setPumpXpLevelUp(null); setPumpXpDetailsOpen(true); }}/>
 	    {pumpXpDetailsOpen && <PumpXpDetailSheet pumpXp={pumpXpSummary} onClose={() => setPumpXpDetailsOpen(false)}/>}
 	    {profileWelcomeOpen && <ProfileWelcomeSheet profile={profile || DEFAULT_PROFILE} pumpXp={pumpXpSummary} onClose={closeProfileWelcome} onStartTour={() => startInteractiveTour("home", { reset: true, force: true })}/>}
-	    {tourState.active && <InteractiveTourOverlay step={activeTourStep} stepIndex={tourState.stepIndex} totalSteps={activeTourSteps.length} onNext={nextTourStep} onSkip={skipTour}/>}
+	    {tourState.active && <InteractiveTourOverlay step={activeTourStep} stepIndex={tourState.stepIndex} totalSteps={activeTourSteps.length} onNext={nextTourStep} onSkip={skipTour} onTargetAction={nextTourStep}/>}
 	    <FloatingNavMenu active={active} setActive={setActive}/>
 	  </div>;
 }
