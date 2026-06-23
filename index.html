@@ -120,6 +120,20 @@
       opacity: 1;
       pointer-events: auto;
     }
+    @keyframes onlypump-tour-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.62), 0 0 34px rgba(239, 68, 68, 0.38); }
+      50% { box-shadow: 0 0 0 14px rgba(239, 68, 68, 0), 0 0 52px rgba(239, 68, 68, 0.58); }
+    }
+    .onlypump-tour-spotlight {
+      animation: onlypump-tour-pulse 1.35s ease-in-out infinite;
+    }
+    .onlypump-tour-card {
+      opacity: 0;
+      animation: onlypump-tour-card-in 260ms ease-out forwards;
+    }
+    @keyframes onlypump-tour-card-in {
+      to { opacity: 1; }
+    }
     .onlypump-app-shell {
       position: relative;
       height: var(--onlypump-app-height);
@@ -1452,6 +1466,22 @@ const calculateProfileBodyFat = (draft = {}) => {
   if (!Number.isFinite(value)) return null;
   return profileRound(Math.max(3, Math.min(60, value)), 1);
 };
+
+function getProfileBodyFatIssue(draft = {}) {
+  const missing = [];
+  if (!draft.sex) missing.push("пол");
+  if (!profileNumber(draft.height_cm)) missing.push("рост");
+  if (!profileNumber(draft.neck_cm)) missing.push("шею");
+  if (!profileNumber(draft.waist_cm)) missing.push("талию");
+  if (draft.sex === "female" && !profileNumber(draft.hips_cm)) missing.push("бедра");
+  if (missing.length) return `Не хватает данных: ${missing.join(", ")}.`;
+  const waist = profileNumber(draft.waist_cm);
+  const neck = profileNumber(draft.neck_cm);
+  const hips = profileNumber(draft.hips_cm);
+  if (draft.sex === "male" && waist <= neck) return "Для мужской формулы талия должна быть больше шеи.";
+  if (draft.sex === "female" && waist + hips <= neck) return "Для женской формулы сумма талии и бедер должна быть больше шеи.";
+  return "Проверь введенные замеры: формула US Navy не смогла получить корректное значение.";
+}
 
 const calculateProfileNutritionTargets = (draft = {}) => {
   const sex = draft.sex === "female" ? "female" : "male";
@@ -4931,6 +4961,235 @@ const emptyPumpXpSummary = () => ({
   rules: PUMP_XP_RULE_GROUPS,
 });
 
+const onlyPumpTourScreens = ["home", "nutrition", "workouts", "progress", "analytics", "education", "lectures", "calculators", "community", "profile"];
+
+const onlyPumpTourDefinitions = {
+  home: [
+    { target: '[data-tour="home-calendar"]', title: "Календарь недели", text: "Здесь выбирается день. Главная, питание, сон, шаги и трекеры подстраиваются под выбранную дату." },
+    { target: '[data-tour="home-level"]', title: "Уровень", text: "Нажми на Lvl, чтобы увидеть PUMP XP, шкалу уровня и правила начисления баллов." },
+    { target: '[data-tour="home-edit-widgets"]', title: "Настрой вид", text: "Эта кнопка включает настройку карточек главной: можно менять состав и порядок виджетов." },
+    { target: '[data-tour="home-edit-widgets"]', title: "Первое задание", text: "Включи настройку вида, затем добавь свой виджет или персональный трекер.", task: "Добавь виджет на главную." },
+  ],
+  nutrition: [
+    { target: '[data-tour="nutrition-calendar"]', title: "День питания", text: "Выбирай дату, чтобы видеть и заполнять питание именно за этот день." },
+    { target: '[data-tour="nutrition-manual"]', title: "Быстрый ручной ввод", text: "Если не хочешь искать продукт, можно быстро внести питание вручную." },
+    { target: '[data-tour="nutrition-add"]', title: "Добавить еду", text: "Плюс открывает выбор приема пищи и базу продуктов." },
+    { target: '[data-tour="nutrition-add"]', title: "Первое задание", text: "Открой добавление еды, выбери завтрак и добавь любой продукт. Так день начнет считаться в аналитике.", task: "Добавь продукт в завтрак." },
+  ],
+  workouts: [
+    { target: '[data-tour="workouts-programs"]', title: "Доступные программы", text: "Здесь находятся готовые и выданные программы тренировок." },
+    { target: '[data-tour="workouts-add"]', title: "Новая тренировка", text: "Эта кнопка открывает создание активной, запланированной или выполненной тренировки." },
+    { target: '[data-tour="workouts-calendar"]', title: "Неделя тренировок", text: "Календарь помогает быстро перейти к тренировкам выбранного дня." },
+    { target: '[data-tour="workouts-add"]', title: "Первое задание", text: "Нажми плюс и выбери «Начать пустую тренировку», чтобы начать дневник с нуля.", task: "Начни пустую тренировку." },
+  ],
+  progress: [
+    { target: '[data-tour="progress-calendar"]', title: "Неделя прогресса", text: "Замеры и цель можно смотреть и менять по выбранной дате." },
+    { target: '[data-tour="progress-strength"]', title: "Силовой прогресс", text: "Сюда подтягиваются упражнения, подходы, вес и повторы из тренировок." },
+    { target: '[data-tour="progress-measurements"]', title: "Первое задание", text: "Заполни актуальные замеры, чтобы графики и цели стали точнее.", task: "Обнови вес или талию." },
+  ],
+  analytics: [
+    { target: '[data-tour="analytics-period"]', title: "Период аналитики", text: "Переключай день, неделю, месяц и год, чтобы смотреть динамику без потери контекста." },
+    { target: '[data-tour="analytics-add-card"]', title: "Карточки аналитики", text: "Добавляй нужные карточки: шаги, сон, вода, нагрузка, питание и трекеры." },
+    { target: '[data-tour="analytics-settings"]', title: "Настройка карточек", text: "Здесь меняется порядок и видимость аналитических карточек." },
+  ],
+  education: [
+    { target: '[data-tour="education-module"]', title: "Модули обучения", text: "Открывай модуль, смотри уроки и отмечай то, что уже изучено." },
+    { target: '[data-tour="education-continue"]', title: "Продолжить", text: "Кнопка переносит к следующему непройденному уроку активного модуля." },
+  ],
+  lectures: [
+    { target: '[data-tour="lectures-filter"]', title: "Фильтр лекций", text: "Отфильтруй лекции по теме, чтобы быстрее найти нужный разбор." },
+    { target: '[data-tour="lecture-card"]', title: "Карточка лекции", text: "Открой лекцию, отметь просмотр и продолжай обучение." },
+  ],
+  calculators: [
+    { target: '[data-tour="calculator-card"]', title: "Калькуляторы", text: "Инструменты открываются по карточкам и ведут на связанные страницы." },
+  ],
+  community: [
+    { target: '[data-tour="community-feed"]', title: "Сообщество", text: "Здесь будет лента, рейтинг и челленджи для дисциплины." },
+  ],
+  profile: [
+    { target: '[data-tour="profile-card"]', title: "Твой профиль", text: "Здесь видны имя, Telegram, роли и источник профиля." },
+    { target: '[data-tour="profile-edit"]', title: "Редактирование", text: "Открой профиль, если нужно изменить данные, цель, питание или замеры." },
+    { target: '[data-tour="profile-start-tour"]', title: "Обучение в любой момент", text: "Эта кнопка запускает интерактивное обучение заново.", task: "Вернись сюда, если захочешь повторить подсказки." },
+  ],
+};
+
+function getOnlyPumpTourCacheKey(profile = DEFAULT_PROFILE) {
+  return `onlypump_tour_seen_${profile?.id || profile?.telegram_id || "local"}`;
+}
+
+function readOnlyPumpTourSeen(profile = DEFAULT_PROFILE) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(getOnlyPumpTourCacheKey(profile)) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function markOnlyPumpTourScreenSeen(profile = DEFAULT_PROFILE, screen) {
+  try {
+    const seen = readOnlyPumpTourSeen(profile);
+    localStorage.setItem(getOnlyPumpTourCacheKey(profile), JSON.stringify({ ...seen, [screen]: true }));
+  } catch (error) {}
+}
+
+function resetOnlyPumpTourSeen(profile = DEFAULT_PROFILE) {
+  try {
+    localStorage.removeItem(getOnlyPumpTourCacheKey(profile));
+  } catch (error) {}
+}
+
+function getOnlyPumpProfileWelcomeKey(profile = DEFAULT_PROFILE) {
+  return `onlypump_profile_welcome_${profile?.id || profile?.telegram_id || "local"}_${profile?.invite_code || profile?.access_granted_at || profile?.onboarding_completed_at || "start"}`;
+}
+
+function getTourCardStyle(targetRect) {
+  if (!targetRect) {
+    return {
+      left: "50%",
+      top: "50%",
+      transform: "translate(-50%, -50%)",
+      width: "min(92vw, 420px)",
+    };
+  }
+  const viewportWidth = window.innerWidth || 390;
+  const viewportHeight = window.innerHeight || 740;
+  const width = Math.min(420, viewportWidth - 32);
+  const left = Math.max(16, Math.min(viewportWidth - width - 16, targetRect.left + targetRect.width / 2 - width / 2));
+  const belowTop = targetRect.bottom + 16;
+  const aboveTop = targetRect.top - 226;
+  const top = belowTop + 210 < viewportHeight ? belowTop : Math.max(16, aboveTop);
+  return { left, top, width };
+}
+
+function InteractiveTourOverlay({ step, stepIndex, totalSteps, onNext, onSkip }) {
+  const [targetRect, setTargetRect] = useState(null);
+
+  useEffect(() => {
+    if (!step?.target) {
+      setTargetRect(null);
+      return undefined;
+    }
+
+    let rafId = 0;
+    const update = () => {
+      const target = Array.from(document.querySelectorAll(step.target)).find(element => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+      if (!target) {
+        setTargetRect(null);
+        return;
+      }
+      try { target.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" }); } catch (error) {}
+      const rect = target.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) {
+        setTargetRect(null);
+        return;
+      }
+      setTargetRect({
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height,
+      });
+    };
+
+    const scheduleUpdate = () => {
+      window.cancelAnimationFrame(rafId);
+      rafId = window.requestAnimationFrame(update);
+    };
+    const timeoutId = window.setTimeout(update, 90);
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, true);
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate, true);
+    };
+  }, [step?.target, stepIndex]);
+
+  if (!step) return null;
+  const isLast = stepIndex >= totalSteps - 1;
+  const cardStyle = getTourCardStyle(targetRect);
+
+  return <div className="fixed inset-0 z-[244] text-zinc-100" data-no-edge-back="true">
+    <div className="absolute inset-0 bg-black/62 backdrop-blur-[2px]"/>
+    {targetRect && <div
+      className="onlypump-tour-spotlight pointer-events-none absolute rounded-[26px] border-2 border-red-400 bg-red-500/10"
+      style={{
+        left: Math.max(8, targetRect.left - 8),
+        top: Math.max(8, targetRect.top - 8),
+        width: targetRect.width + 16,
+        height: targetRect.height + 16,
+      }}
+    />}
+    <div className="onlypump-tour-card absolute rounded-[30px] border border-red-500/25 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl" style={cardStyle}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-red-300">Шаг {stepIndex + 1} из {totalSteps}</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.05em]">{step.title}</h2>
+        </div>
+        <button type="button" onClick={onSkip} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-zinc-400">{step.text}</p>
+      {step.task && <div className="mt-4 rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-sm font-black text-red-100">{step.task}</div>}
+      <div className="mt-5 flex items-center justify-between gap-3">
+        <button type="button" onClick={onSkip} className="rounded-full px-4 py-3 text-sm font-black text-zinc-500">Пропустить</button>
+        <button type="button" onClick={onNext} className="rounded-full bg-red-500 px-5 py-3 text-sm font-black text-black">
+          {isLast ? "Понял" : "Далее"}
+        </button>
+      </div>
+    </div>
+  </div>;
+}
+
+function ProfileWelcomeSheet({ profile = DEFAULT_PROFILE, pumpXp, onClose, onStartTour }) {
+  const summary = pumpXp || emptyPumpXpSummary();
+  const roleLabel = getProfileRoleLabels(profile);
+  const subscriptionLabel = formatProfileSubscriptionLabel(profile);
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[243] flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center">
+    <BottomSheetPanel onClose={onClose} priority={243} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md rounded-[34px] border border-red-500/25 bg-zinc-950/96 p-6 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-red-300">Профиль активирован</p>
+          <h2 className="mt-2 break-words text-3xl font-black tracking-[-0.06em]">{getProfileDisplayName(profile)}</h2>
+          <p className="mt-2 text-sm leading-6 text-zinc-400">ONLYPUMP присвоил стартовый уровень, роль и доступ. Дальше можно пройти короткое обучение по экранам.</p>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+      <div className="mt-6 grid grid-cols-3 gap-3">
+        <div className="rounded-2xl bg-white/[0.05] p-3 text-center">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">Lvl</p>
+          <b className="mt-1 block text-2xl">{summary.level.current.level}</b>
+        </div>
+        <div className="rounded-2xl bg-white/[0.05] p-3 text-center">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">PUMP XP</p>
+          <b className="mt-1 block text-2xl">{summary.totalXp.toLocaleString("ru-RU")}</b>
+        </div>
+        <div className="rounded-2xl bg-white/[0.05] p-3 text-center">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-zinc-500">Роль</p>
+          <b className="mt-1 block break-words text-sm">{roleLabel}</b>
+        </div>
+      </div>
+      <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-4 text-sm">
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-zinc-500">Подписка</span>
+          <span className="text-right font-black">{subscriptionLabel}</span>
+        </div>
+      </div>
+      <div className="mt-5"><PumpXpMiniScale pumpXp={summary}/></div>
+      <div className="mt-6 grid gap-3">
+        <Button onClick={onStartTour} className="bg-red-500 text-black">Начать обучение</Button>
+        <button type="button" onClick={onClose} className="rounded-full px-4 py-3 text-sm font-black text-zinc-400">Позже</button>
+      </div>
+    </BottomSheetPanel>
+  </div>;
+}
+
 function PumpXpMiniScale({ pumpXp }) {
   const summary = pumpXp || emptyPumpXpSummary();
   const current = summary.level.current;
@@ -4957,7 +5216,7 @@ function DesktopSidebar({ active, setActive, profile }) {
 
   return <aside className="hidden w-64 shrink-0 border-r border-white/10 bg-zinc-950/95 p-7 lg:block">
     <button onClick={() => setActive("home")} className="mb-10 text-left"><div className="text-3xl font-black tracking-tight">ONLY<span className="text-red-500">PUMP</span></div><div className="mt-1 text-xs uppercase tracking-[0.18em] text-zinc-500">фитнес-платформа</div></button>
-    <nav className="space-y-2">{nav.map(({ icon: Icon, label, id }) => <button key={id} onClick={() => setActive(id)} className={`flex w-full items-center gap-4 rounded-lg px-4 py-3 text-left text-sm ${active === id ? "onlypump-side-menu-active bg-white/8 text-red-500" : "text-zinc-400 hover:bg-white/5 hover:text-white"}`}><Icon size={18}/><span>{label}</span></button>)}</nav>
+    <nav className="space-y-2">{nav.map(({ icon: Icon, label, id }) => <button key={id} data-tour={`nav-${id}`} onClick={() => setActive(id)} className={`flex w-full items-center gap-4 rounded-lg px-4 py-3 text-left text-sm ${active === id ? "onlypump-side-menu-active bg-white/8 text-red-500" : "text-zinc-400 hover:bg-white/5 hover:text-white"}`}><Icon size={18}/><span>{label}</span></button>)}</nav>
     <Card className="mt-16 p-5"><div className="text-2xl font-black text-red-500">1PM</div><div className="mt-1 text-sm font-bold">ПЕРСОНАЛЬНЫЙ КОУЧИНГ</div><p className="mt-3 text-xs leading-5 text-zinc-500">Программа, питание и поддержка 24/7</p><Button className="mt-5 w-full bg-gradient-to-r from-red-700 to-red-500">Подробнее</Button></Card>
     <div className="mt-16 flex items-center gap-3"><div className="h-11 w-11 rounded-full border border-red-500/50 bg-[url('https://images.unsplash.com/photo-1568602471122-7832951cc4c5?q=80&w=200&auto=format&fit=crop')] bg-cover"/><div><div className="break-words text-sm">{displayName}</div><div className="text-xs text-zinc-500">Тариф: <span className="text-red-500">PREMIUM</span></div></div></div>
   </aside>;
@@ -4984,7 +5243,7 @@ function FloatingNavMenu({ active, setActive }) {
           <button onClick={() => setOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-zinc-300 transition hover:bg-white/10 hover:text-white">×</button>
         </div>
         <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
-          {nav.map(({ icon: Icon, label, id }) => <button key={id} onClick={() => navigate(id)} className={`flex w-full items-center gap-4 rounded-2xl px-4 py-3.5 text-left text-sm transition ${active === id ? "onlypump-side-menu-active bg-red-500/20 text-red-300" : "text-zinc-300 hover:bg-white/[0.07] hover:text-white"}`}>
+	          {nav.map(({ icon: Icon, label, id }) => <button key={id} data-tour={`nav-${id}`} onClick={() => navigate(id)} className={`flex w-full items-center gap-4 rounded-2xl px-4 py-3.5 text-left text-sm transition ${active === id ? "onlypump-side-menu-active bg-red-500/20 text-red-300" : "text-zinc-300 hover:bg-white/[0.07] hover:text-white"}`}>
             <Icon size={20}/>
             <span>{label}</span>
           </button>)}
@@ -5661,12 +5920,12 @@ function Header({ title, subtitle, pumpXp, onOpenPumpXp }) {
       <p className="mt-2 break-words text-sm text-zinc-400">{subtitle}</p>
     </div>
     {summary && <div className="hidden items-center gap-8 md:flex">
-      <button type="button" onClick={onOpenPumpXp} className="text-left transition hover:text-red-400">
-        <div className="text-xs text-zinc-500">Подряд <Flame className="inline text-red-500" size={13}/></div>
-        <div className="mt-1 text-2xl">{summary.currentStreak} дн</div>
-      </button>
-      <div className="h-12 w-px bg-white/10"/>
-      <button type="button" onClick={onOpenPumpXp} className="text-left transition hover:text-red-400">
+	      <button type="button" onClick={onOpenPumpXp} className="text-left transition hover:text-red-400">
+	        <div className="text-xs text-zinc-500">Подряд <Flame className="inline text-red-500" size={13}/></div>
+	        <div className="mt-1 text-2xl">{summary.currentStreak} дн</div>
+	      </button>
+	      <div className="h-12 w-px bg-white/10"/>
+	      <button type="button" data-tour="home-level" onClick={onOpenPumpXp} className="text-left transition hover:text-red-400">
         <div className="text-xs text-zinc-500">Уровень</div>
         <div className="mt-1 text-2xl">Lvl {summary.level.current.level}</div>
       </button>
@@ -7250,7 +7509,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
 
   return <>
     <Header title={<>Добро пожаловать, <span className="text-red-500">{displayName}</span></>} subtitle="Продолжай работать. Результат — это система." pumpXp={pumpXp} onOpenPumpXp={onOpenPumpXpDetails} />
-    <div className="mt-5">
+    <div className="mt-5" data-tour="home-calendar">
       <IOSWeekCalendar
         title="Календарь недели"
         selectedDateKey={selectedDateKey}
@@ -7260,15 +7519,15 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       />
     </div>
     <div className="mt-4 flex items-center justify-between gap-2">
-      <button type="button" onClick={onOpenPumpXpDetails} className="rounded-full border border-red-400/30 bg-red-500 px-3 py-1.5 text-xs font-black text-black shadow-xl shadow-red-500/25 sm:hidden">
+      <button type="button" data-tour="home-level" onClick={onOpenPumpXpDetails} className="rounded-full border border-red-400/30 bg-red-500 px-3 py-1.5 text-xs font-black text-black shadow-xl shadow-red-500/25 sm:hidden">
         Lvl {pumpXp.level.current.level}
       </button>
       <div className="ml-auto flex flex-wrap justify-end gap-2">
-        {homeEditMode && <button onClick={() => setWidgetPickerOpen(true)} className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-white transition hover:bg-white/15">
+        {homeEditMode && <button data-tour="home-add-widget" onClick={() => setWidgetPickerOpen(true)} className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-white transition hover:bg-white/15">
           <Plus size={16}/>
           Добавить виджет
         </button>}
-        <button onClick={() => setHomeEditMode(prev => !prev)} className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition ${homeEditMode ? "bg-red-500 text-black" : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"}`}>
+        <button data-tour="home-edit-widgets" onClick={() => setHomeEditMode(prev => !prev)} className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition ${homeEditMode ? "bg-red-500 text-black" : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"}`}>
           <Grid3X3 size={16}/>
           {homeEditMode ? "Готово" : "Настроить вид"}
         </button>
@@ -7279,7 +7538,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         {homeWidgets.map(id => renderEditableWidget(id))}
         {homeWidgets.length === 0 && <Card className="col-span-full p-8 text-center">
           <p className="text-zinc-400">Нет активных виджетов.</p>
-          <Button onClick={() => setWidgetPickerOpen(true)} className="mt-4 bg-white/8">Добавить виджет</Button>
+          <Button data-tour="home-add-widget" onClick={() => setWidgetPickerOpen(true)} className="mt-4 bg-white/8">Добавить виджет</Button>
         </Card>}
       </MasonryGrid>
     </div>
@@ -14204,15 +14463,15 @@ const toggleExerciseMeasurementSetting = (field) => {
     <div className="mt-6 w-full pb-32">
       <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-6">
         <div className="flex min-h-11 items-center justify-between gap-4">
-          <button onClick={() => setIsTemplatesOpen(true)} className="min-h-11 rounded-full px-1 text-base font-medium text-zinc-100 transition hover:text-red-400">
+          <button data-tour="workouts-programs" onClick={() => setIsTemplatesOpen(true)} className="min-h-11 rounded-full px-1 text-base font-medium text-zinc-100 transition hover:text-red-400">
             Доступные программы
           </button>
-          <button onClick={() => setIsAddMenuOpen(true)} className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-3xl font-light leading-none text-zinc-100 transition active:scale-95 hover:text-red-400">
+          <button data-tour="workouts-add" onClick={() => setIsAddMenuOpen(true)} className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-3xl font-light leading-none text-zinc-100 transition active:scale-95 hover:text-red-400">
             +
           </button>
         </div>
 
-        <div className="mt-5">
+        <div className="mt-5" data-tour="workouts-calendar">
           <IOSWeekCalendar
             title="Календарь недели"
             selectedDateKey={selectedDateKey}
@@ -14296,7 +14555,7 @@ const toggleExerciseMeasurementSetting = (field) => {
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
         <h2 className="text-xl font-black tracking-[-0.03em]">Добавить на {formatDayMonth(selectedDate)}</h2>
         <div className="mt-5 space-y-2">
-          <button onClick={() => openWorkoutTitlePrompt("active")} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Начать пустую тренировку</button>
+          <button data-tour="workouts-start-empty" onClick={() => openWorkoutTitlePrompt("active")} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Начать пустую тренировку</button>
           <button onClick={() => openWorkoutTitlePrompt("planned")} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить запланированную</button>
           <button onClick={() => openWorkoutTitlePrompt("completed")} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">Добавить выполненную</button>
         </div>
@@ -16308,7 +16567,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   };
 
   return <><Header title="Питание" subtitle="Добавляй еду на глаз: порции, дополнения, избранное и быстрый поиск."/>
-    <div className="mt-6">
+    <div className="mt-6" data-tour="nutrition-calendar">
       <IOSWeekCalendar title="Неделя питания" selectedDateKey={selectedDateKey} onSelect={setSelectedDateKey} markedDateKeys={nutritionMarkedDateKeys}/>
     </div>
 
@@ -16340,8 +16599,8 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
     <div className="mt-5 flex items-center justify-between gap-3">
       <h2 className="text-xl font-black tracking-[-0.03em]">Приемы пищи</h2>
       <div className="flex items-center gap-2">
-        {!dayHasItems && <button onClick={() => setManualEntryOpen(true)} className={`min-h-10 rounded-full border px-4 py-2 text-xs font-black transition ${dayHasManualEntry ? "border-red-500 bg-red-500 text-black shadow-lg shadow-red-500/20" : "border-red-500/60 bg-red-500/12 text-red-300 hover:bg-red-500 hover:text-black"}`}>Ввести вручную</button>}
-        <button onClick={openMealChoice} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/8 text-red-400"><Plus size={22}/></button>
+        {!dayHasItems && <button data-tour="nutrition-manual" onClick={() => setManualEntryOpen(true)} className={`min-h-10 rounded-full border px-4 py-2 text-xs font-black transition ${dayHasManualEntry ? "border-red-500 bg-red-500 text-black shadow-lg shadow-red-500/20" : "border-red-500/60 bg-red-500/12 text-red-300 hover:bg-red-500 hover:text-black"}`}>Ввести вручную</button>}
+        <button data-tour="nutrition-add" onClick={openMealChoice} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/8 text-red-400"><Plus size={22}/></button>
       </div>
     </div>
 
@@ -16381,7 +16640,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
             </button>
           </SwipeActionRow>)}
           <div className="p-4">
-            <button onClick={() => openFoodPicker(meal.type)} className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-white/[0.06] text-sm font-black text-red-300 transition hover:bg-white/[0.09]">
+            <button data-tour={meal.type === "breakfast" ? "nutrition-breakfast-add" : undefined} onClick={() => openFoodPicker(meal.type)} className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-white/[0.06] text-sm font-black text-red-300 transition hover:bg-white/[0.09]">
               <Plus size={18}/>
               Добавить продукт
             </button>
@@ -16641,7 +16900,7 @@ function ManualNutritionSheet({ day, dateKey, profile = DEFAULT_PROFILE, onSave,
 }
 
 function CalculatorsPage() {
-  return <><Header title="Калькуляторы" subtitle="Все инструменты ONLYPUMP с привязанными ссылками на реальные страницы сайта."/><MasonryGrid className="mt-8 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{calculators.map(({ icon: Icon, title, desc, href, tag }) => <a key={title} href={href} target="_blank" rel="noreferrer"><Card className="h-full p-6 transition hover:-translate-y-1 hover:border-red-500/60 hover:bg-red-500/5"><div className="flex items-start justify-between"><Icon className="text-red-500" size={28}/><ExternalLink size={16} className="text-zinc-500"/></div><h2 className="mt-6 text-xl font-semibold">{title}</h2><p className="mt-2 break-words text-sm text-zinc-400">{desc}</p><p className="mt-5 rounded-lg bg-white/5 px-3 py-2 text-xs text-zinc-500">{tag}</p></Card></a>)}</MasonryGrid></>;
+  return <><Header title="Калькуляторы" subtitle="Все инструменты ONLYPUMP с привязанными ссылками на реальные страницы сайта."/><MasonryGrid className="mt-8 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{calculators.map(({ icon: Icon, title, desc, href, tag }, index) => <a key={title} data-tour={index === 0 ? "calculator-card" : undefined} href={href} target="_blank" rel="noreferrer"><Card className="h-full p-6 transition hover:-translate-y-1 hover:border-red-500/60 hover:bg-red-500/5"><div className="flex items-start justify-between"><Icon className="text-red-500" size={28}/><ExternalLink size={16} className="text-zinc-500"/></div><h2 className="mt-6 text-xl font-semibold">{title}</h2><p className="mt-2 break-words text-sm text-zinc-400">{desc}</p><p className="mt-5 rounded-lg bg-white/5 px-3 py-2 text-xs text-zinc-500">{tag}</p></Card></a>)}</MasonryGrid></>;
 }
 
 function EducationPage() {
@@ -16865,7 +17124,7 @@ function EducationPage() {
           const stats = moduleStats(module);
           const locked = module.locked && !showLocked;
 
-          return <Card key={module.id} className={`relative flex h-full cursor-pointer p-5 transition ${activeEducation === module.id ? 'border-red-500/50 bg-red-500/5' : 'hover:border-white/20'} ${locked ? 'opacity-60' : ''}`}>
+	          return <Card key={module.id} data-tour={module.id === activeEducation ? "education-module" : undefined} className={`relative flex h-full cursor-pointer p-5 transition ${activeEducation === module.id ? 'border-red-500/50 bg-red-500/5' : 'hover:border-white/20'} ${locked ? 'opacity-60' : ''}`}>
             <button onClick={() => openModule(module)} className="w-full text-left">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -16909,7 +17168,7 @@ function EducationPage() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <Button onClick={continueModule} className="bg-gradient-to-r from-red-700 to-red-500">
+	            <Button data-tour="education-continue" onClick={continueModule} className="bg-gradient-to-r from-red-700 to-red-500">
               Продолжить
             </Button>
             <button onClick={() => setShowLocked(prev => !prev)} className="rounded-lg bg-white/5 px-4 py-2 text-xs text-zinc-400 transition hover:bg-white/10">
@@ -17150,8 +17409,8 @@ function LecturesPage({ lectureItems, setLectureItems }) {
     <div className="mt-8 grid gap-4 xl:grid-cols-[1fr_320px]">
       <div>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-2">
-            {lectureCategories.map(category => <button key={category} onClick={() => setLectureFilter(category)} className={`rounded-lg px-3 py-2 text-xs transition ${lectureFilter === category ? 'bg-red-500 text-black' : 'bg-white/5 text-zinc-400 hover:bg-white/10'}`}>
+	          <div className="flex flex-wrap gap-2" data-tour="lectures-filter">
+	            {lectureCategories.map(category => <button key={category} onClick={() => setLectureFilter(category)} className={`rounded-lg px-3 py-2 text-xs transition ${lectureFilter === category ? 'bg-red-500 text-black' : 'bg-white/5 text-zinc-400 hover:bg-white/10'}`}>
               {category}
             </button>)}
           </div>
@@ -17159,7 +17418,7 @@ function LecturesPage({ lectureItems, setLectureItems }) {
         </div>
 
         <MasonryGrid className="grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {filteredLectures.map(lecture => <Card key={lecture.id} onClick={() => openLecture(lecture)} className="cursor-pointer overflow-hidden transition hover:-translate-y-1 hover:border-red-500/50 hover:bg-red-500/5">
+	          {filteredLectures.map((lecture, index) => <Card key={lecture.id} data-tour={index === 0 ? "lecture-card" : undefined} onClick={() => openLecture(lecture)} className="cursor-pointer overflow-hidden transition hover:-translate-y-1 hover:border-red-500/50 hover:bg-red-500/5">
             <div className={`relative h-40 bg-cover bg-center ${lecture.watched || lecture.progress >= 100 ? "" : "grayscale"}`} style={{backgroundImage:`url(${lecture.img})`}}>
               <div className="absolute inset-0 bg-black/40"/>
               <button className="absolute left-1/2 top-1/2 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-red-500 text-black shadow-lg shadow-red-500/20">
@@ -17547,11 +17806,11 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
   }, [measurements, previousMeasurements, progressGoal, progressMeasurements]);
 
   return <><Header title="Прогресс" subtitle="Силовые показатели связаны с вкладкой тренировок. Замеры и цель можно менять вручную."/>
-    <div className="mt-8">
+    <div className="mt-8" data-tour="progress-calendar">
       <IOSWeekCalendar title="Неделя прогресса" selectedDateKey={selectedDateKey} onSelect={setSelectedDateKey} markedDateKeys={progressMarkedDateKeys} markerClassName="bg-white"/>
     </div>
     <div className="mt-8 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-      <Card className="p-5">
+      <Card data-tour="progress-strength" className="p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold">Прогресс в силовых</h2>
@@ -17587,7 +17846,7 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
       </Card>
 
       <div className="space-y-4">
-        <Card className="p-5">
+        <Card data-tour="progress-goal" className="p-5">
           <Target className="text-red-500"/>
           <h2 className="mt-5 text-xl font-semibold">Цель</h2>
           <label className="mt-4 block rounded-xl bg-white/[0.03] p-3">
@@ -17610,7 +17869,7 @@ function ProgressPage({ workouts = [], measurements, setMeasurements, progressGo
           <p className="mt-3 text-xs text-zinc-500">{isProgressSaving ? "Сохраняю..." : "Автосохранение включено"}</p>
         </Card>
 
-        <Card className="p-5">
+        <Card data-tour="progress-measurements" className="p-5">
           <h2 className="text-xl font-semibold">Замеры</h2>
           <div className="mt-5 grid grid-cols-2 gap-3">
             {progressMeasurementFields.map(({ field, label, unit }) => {
@@ -18923,12 +19182,12 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     <div className="mb-6 flex items-start justify-between gap-4">
       <Header title="Аналитика" subtitle="Календарь, карточки, тоннаж, активность и ачивки."/>
       <div className="flex shrink-0 gap-2 pt-1">
-        <button type="button" onClick={() => setCardPickerOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200"><Plus size={20}/></button>
-        <button type="button" onClick={() => setCardSettingsOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200"><Settings size={20}/></button>
+	        <button type="button" data-tour="analytics-add-card" onClick={() => setCardPickerOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200"><Plus size={20}/></button>
+	        <button type="button" data-tour="analytics-settings" onClick={() => setCardSettingsOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200"><Settings size={20}/></button>
       </div>
     </div>
     <div className="mb-6 space-y-3">
-      <AnalyticsPeriodCalendar period={analyticsPeriod} selectedDateKey={selectedDateKey} onSelect={setSelectedDateKey}/>
+	      <div data-tour="analytics-period"><AnalyticsPeriodCalendar period={analyticsPeriod} selectedDateKey={selectedDateKey} onSelect={setSelectedDateKey}/></div>
       <div className="flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
         {analyticsMainPeriods.map(item => <button key={item.id} type="button" onClick={() => setAnalyticsPeriod(item.id)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-black transition ${analyticsPeriod === item.id ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-300"}`}>{item.label}</button>)}
       </div>
@@ -19010,7 +19269,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
 
 function CommunityPage() {
   return <><Header title="Сообщество" subtitle="Чат, челленджи, разборы участников и рейтинг дисциплины."/><PageGrid>
-    <Card className="p-5 xl:col-span-2"><h2 className="text-xl font-semibold">Лента сообщества</h2>{["Антон закрыл неделю без пропусков", "Мария улучшила сон на 42 минуты", "Разбор техники: присед и румынская тяга"].map(x=><div key={x} className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4"><MessageCircle className="inline text-red-500" size={18}/> <span className="ml-2">{x}</span></div>)}</Card>
+    <Card data-tour="community-feed" className="p-5 xl:col-span-2"><h2 className="text-xl font-semibold">Лента сообщества</h2>{["Антон закрыл неделю без пропусков", "Мария улучшила сон на 42 минуты", "Разбор техники: присед и румынская тяга"].map(x=><div key={x} className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4"><MessageCircle className="inline text-red-500" size={18}/> <span className="ml-2">{x}</span></div>)}</Card>
     <Card className="p-5"><Trophy className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Рейтинг</h2>{["Артур", "Антон", "Мария", "Илья"].map((x,i)=><div key={x} className="mt-4 flex justify-between"><span>{i+1}. {x}</span><span className="text-red-500">{2450-i*180}</span></div>)}</Card>
     <Card className="p-5"><h2 className="text-xl font-semibold">Челлендж</h2><p className="mt-3 text-zinc-400">14 дней без пропуска трекинга питания.</p><div className="mt-6"><Progress value={64}/></div></Card>
   </PageGrid></>;
@@ -19147,6 +19406,7 @@ function ProfileFormFields({ draft, setDraft, showManualTargets = true, onBirthD
     nutrition_targets_error: "",
   }));
   const calculatedBodyFat = calculateProfileBodyFat(draft);
+  const bodyFatIssue = calculatedBodyFat == null ? getProfileBodyFatIssue(draft) : "";
   const calculatedTargets = calculateProfileNutritionTargets(draft);
   const calculatedAge = calculateProfileAge(draft.birth_date);
   const activityMultiplier = getProfileActivityMultiplier(draft.steps_per_day, draft.workouts_per_week);
@@ -19212,7 +19472,9 @@ function ProfileFormFields({ draft, setDraft, showManualTargets = true, onBirthD
       <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
         <p className="text-xs font-bold uppercase tracking-[0.14em] text-red-400">Процент жира</p>
         <div className="mt-2 text-3xl font-black">{calculatedBodyFat == null ? "—" : `${calculatedBodyFat}%`}</div>
-        <p className="mt-2 text-xs leading-5 text-zinc-500">{calculatedBodyFat == null ? "Недостаточно данных для формулы US Navy." : "Приблизительная оценка по формуле US Navy."}</p>
+        <p className={`mt-2 rounded-2xl p-3 text-xs leading-5 ${calculatedBodyFat == null ? "bg-red-500/10 text-red-200" : "bg-white/[0.04] text-zinc-500"}`}>
+          {calculatedBodyFat == null ? `Почему не считается: ${bodyFatIssue}` : "Приблизительная оценка по формуле US Navy."}
+        </p>
       </div>
       {!usesPalmNutrition ? <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
         <div className="flex items-center justify-between gap-3">
@@ -20675,7 +20937,7 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
 
 }
 
-function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onSaveProfile, profileSaving = false, onSaveThemeSettings, themeSaving = false, onResetProfile }) {
+function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onSaveProfile, profileSaving = false, onSaveThemeSettings, themeSaving = false, onResetProfile, onStartTutorial }) {
   const displayName = getProfileDisplayName(profile);
   const telegramLabel = profile?.telegram_username ? `@${profile.telegram_username}` : profile?.telegram_id ? `ID ${profile.telegram_id}` : "Обычная web-версия";
   const profileSource = profileStatus === "verified" ? "Supabase: Telegram проверен" : profileStatus === "loaded" ? "Supabase: профиль загружен" : profileStatus === "created" ? "Supabase: профиль создан" : "Локальный fallback";
@@ -20724,9 +20986,9 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
     if (ok === false) setResetError("Не удалось сбросить настройки профиля. Попробуй еще раз.");
   };
 
-  return <div className="profile-screen"><Header title="Личный кабинет" subtitle="Профиль, тариф, подписка, настройки, доступы и история платежей."/><PageGrid>
-    <Card className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p><p className="mt-3 rounded-full bg-white/8 px-3 py-1 text-xs font-black text-zinc-300">{getProfileRoleLabels(profile)}</p></Card>
-    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? formatAgeRu(calculatedAge) : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profileWeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profileHeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profileActivityLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Питание</span><span>{profileNutritionLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profileUsesPalmNutrition(profile) ? "ладони" : (profile.manual_nutrition_targets_enabled ? "ручной" : "авто")}{!profileUsesPalmNutrition(profile) && profile.high_protein_enabled ? " · белок+" : ""}{!profileUsesPalmNutrition(profile) && profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><Button onClick={() => setEditOpen(true)} className="mt-5 w-full bg-white/8">Редактировать</Button></Card>
+	  return <div className="profile-screen"><Header title="Личный кабинет" subtitle="Профиль, тариф, подписка, настройки, доступы и история платежей."/><PageGrid>
+	    <Card data-tour="profile-card" className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p><p className="mt-3 rounded-full bg-white/8 px-3 py-1 text-xs font-black text-zinc-300">{getProfileRoleLabels(profile)}</p></Card>
+	    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? formatAgeRu(calculatedAge) : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profileWeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profileHeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profileActivityLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Питание</span><span>{profileNutritionLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profileUsesPalmNutrition(profile) ? "ладони" : (profile.manual_nutrition_targets_enabled ? "ручной" : "авто")}{!profileUsesPalmNutrition(profile) && profile.high_protein_enabled ? " · белок+" : ""}{!profileUsesPalmNutrition(profile) && profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><Button data-tour="profile-edit" onClick={() => setEditOpen(true)} className="mt-5 w-full bg-white/8">Редактировать</Button></Card>
     <Card className="p-5"><CreditCard className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Подписка</h2><p className="mt-2 text-zinc-400">{subscriptionLabel}</p><Button className="mt-5 w-full bg-white/8">Управлять</Button></Card>
     <Card className="p-5"><ShieldCheck className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Доступы</h2><p className="mt-2 text-zinc-400">Все модули открыты</p><div className="mt-5 flex gap-2 text-xs text-zinc-500"><Lock size={14}/> 1PM bonus locked</div></Card>
     {canOpenAccessPanel && <Card className="p-5 xl:col-span-2"><Users className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Пользователи и ученики</h2><p className="mt-2 text-zinc-400">{profileHasRole(profile, "owner") ? "Инвайт-ссылки, пользователи и ученики." : profileHasRole(profile, "admin") ? "Блокировка, разблокировка и удаление пользователей." : "Аналитика твоих учеников."}</p><Button onClick={() => setAccessPanelOpen(true)} className="mt-5 w-full bg-white/8">Открыть управление</Button></Card>}
@@ -20745,8 +21007,9 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
 	        <Button onClick={() => setThemeOpen(true)} className="mt-3 w-full bg-white/8">Настроить темы</Button>
 	        {themeError && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{themeError}</p>}
 	      </div>
-	      <div className="mt-5 border-t border-white/10 pt-5">
-	        <Button onClick={resetProfileSettings} disabled={profileSaving} className="w-full bg-red-500/10 text-red-300 hover:bg-red-500/15 disabled:opacity-50">Сбросить настройки профиля</Button>
+		      <div className="mt-5 border-t border-white/10 pt-5">
+		        <Button data-tour="profile-start-tour" onClick={onStartTutorial} className="mb-3 w-full bg-white/8">Пройти обучение</Button>
+		        <Button onClick={resetProfileSettings} disabled={profileSaving} className="w-full bg-red-500/10 text-red-300 hover:bg-red-500/15 disabled:opacity-50">Сбросить настройки профиля</Button>
 	        <p className="mt-2 text-xs leading-5 text-zinc-500">Откроет первичное заполнение заново. Тренировки, питание, замеры, доступ и имя не удаляются.</p>
 	        {resetError && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{resetError}</p>}
 	      </div>
@@ -21149,10 +21412,13 @@ function OnlyPumpPlatform() {
   const [homeWidgets, setHomeWidgets] = useState(() => readCachedHomeWidgetsForProfile(DEFAULT_PROFILE));
   const [personalTrackers, setPersonalTrackers] = useState(() => readCachedPersonalTrackersForProfile(profile || DEFAULT_PROFILE));
   const [personalTrackersOwnerKey, setPersonalTrackersOwnerKey] = useState(() => getPersonalTrackerCacheKey(profile || DEFAULT_PROFILE));
-  const [homeStateReady, setHomeStateReady] = useState(!isTelegramBootMode);
-  const [pumpXpDetailsOpen, setPumpXpDetailsOpen] = useState(false);
-  const [pumpXpToast, setPumpXpToast] = useState(null);
-  const [pumpXpLevelUp, setPumpXpLevelUp] = useState(null);
+	  const [homeStateReady, setHomeStateReady] = useState(!isTelegramBootMode);
+	  const [pumpXpDetailsOpen, setPumpXpDetailsOpen] = useState(false);
+	  const [pumpXpToast, setPumpXpToast] = useState(null);
+	  const [pumpXpLevelUp, setPumpXpLevelUp] = useState(null);
+	  const [profileWelcomeOpen, setProfileWelcomeOpen] = useState(false);
+	  const [profileWelcomeKey, setProfileWelcomeKey] = useState("");
+	  const [tourState, setTourState] = useState({ active: false, screen: "home", stepIndex: 0, force: false });
 
   const activeTheme = useMemo(
     () => profileWantsLightTheme(profile || DEFAULT_PROFILE, new Date(themeTick)) ? "light" : "dark",
@@ -21620,20 +21886,90 @@ function OnlyPumpPlatform() {
   }, [globalSelectedDateKey, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, profile, profileStatus, telegramInitData]);
 
   const nutritionMeals = useMemo(() => deriveHomeMealsFromNutritionDay(nutritionDay), [nutritionDay]);
-  const pumpXpSummary = useMemo(() => calculatePumpXp({
-    workouts,
-    nutritionDay,
+	  const pumpXpSummary = useMemo(() => calculatePumpXp({
+	    workouts,
+	    nutritionDay,
     nutritionMarkedDateKeys,
     nutritionGoal,
     healthLog,
     healthLogs,
     personalTrackers,
     measurements,
-    profile: profile || DEFAULT_PROFILE,
-  }), [workouts, nutritionDay, nutritionMarkedDateKeys, nutritionGoal, healthLog, healthLogs, personalTrackers, measurements, profile]);
+	    profile: profile || DEFAULT_PROFILE,
+	  }), [workouts, nutritionDay, nutritionMarkedDateKeys, nutritionGoal, healthLog, healthLogs, personalTrackers, measurements, profile]);
 
-  useEffect(() => {
-    if (!profile || appLoading || profileLoading || accessGateStatus) return;
+	  const activeTourSteps = onlyPumpTourDefinitions[tourState.screen] || [];
+	  const activeTourStep = tourState.active ? activeTourSteps[tourState.stepIndex] : null;
+
+	  const closeProfileWelcome = useCallback(() => {
+	    if (profileWelcomeKey) {
+	      try { localStorage.setItem(profileWelcomeKey, "1"); } catch (error) {}
+	    }
+	    setProfileWelcomeOpen(false);
+	  }, [profileWelcomeKey]);
+
+	  const startInteractiveTour = useCallback((screen = "home", options = {}) => {
+	    const nextScreen = onlyPumpTourDefinitions[screen] ? screen : "home";
+	    if (options.reset) resetOnlyPumpTourSeen(profile || DEFAULT_PROFILE);
+	    if (profileWelcomeKey) {
+	      try { localStorage.setItem(profileWelcomeKey, "1"); } catch (error) {}
+	    }
+	    setProfileWelcomeOpen(false);
+	    setActive(nextScreen, { replace: true });
+	    setTourState({ active: true, screen: nextScreen, stepIndex: 0, force: Boolean(options.force || options.reset) });
+	  }, [profile, profileWelcomeKey, setActive]);
+
+	  const finishTourScreen = useCallback(() => {
+	    setTourState(prev => {
+	      if (prev.screen) markOnlyPumpTourScreenSeen(profile || DEFAULT_PROFILE, prev.screen);
+	      return { active: false, screen: activeRef.current || "home", stepIndex: 0, force: false };
+	    });
+	  }, [profile]);
+
+	  const nextTourStep = useCallback(() => {
+	    setTourState(prev => {
+	      const steps = onlyPumpTourDefinitions[prev.screen] || [];
+	      if (prev.stepIndex < steps.length - 1) {
+	        return { ...prev, stepIndex: prev.stepIndex + 1 };
+	      }
+	      if (prev.screen) markOnlyPumpTourScreenSeen(profile || DEFAULT_PROFILE, prev.screen);
+	      return { active: false, screen: activeRef.current || "home", stepIndex: 0, force: false };
+	    });
+	  }, [profile]);
+
+	  const skipTour = useCallback(() => {
+	    finishTourScreen();
+	  }, [finishTourScreen]);
+
+	  useAppBackLayer("interactive-tour", tourState.active, skipTour, 244);
+
+	  useEffect(() => {
+	    if (!profile || appLoading || profileLoading || accessGateStatus) return;
+	    if (profileStatus !== "verified" || profile.onboarding_completed !== true || !profileHasTestAccess(profile)) return;
+	    const key = getOnlyPumpProfileWelcomeKey(profile);
+	    let alreadySeen = false;
+	    try { alreadySeen = localStorage.getItem(key) === "1"; } catch (error) {}
+	    if (alreadySeen) return;
+	    setProfileWelcomeKey(key);
+	    setProfileWelcomeOpen(true);
+	  }, [profile?.id, profile?.telegram_id, profile?.invite_code, profile?.access_granted_at, profile?.onboarding_completed_at, profile?.onboarding_completed, profileStatus, appLoading, profileLoading, accessGateStatus]);
+
+	  useEffect(() => {
+	    if (!profile || appLoading || profileLoading || accessGateStatus || profileWelcomeOpen) return undefined;
+	    if (profile.onboarding_completed !== true) return undefined;
+	    if (tourState.active) return undefined;
+	    const steps = onlyPumpTourDefinitions[active] || [];
+	    if (!steps.length) return undefined;
+	    const seen = readOnlyPumpTourSeen(profile || DEFAULT_PROFILE);
+	    if (seen[active]) return undefined;
+	    const timerId = window.setTimeout(() => {
+	      setTourState({ active: true, screen: active, stepIndex: 0, force: false });
+	    }, 520);
+	    return () => window.clearTimeout(timerId);
+	  }, [active, profile?.id, profile?.telegram_id, profile?.onboarding_completed, appLoading, profileLoading, accessGateStatus, profileWelcomeOpen, tourState.active]);
+
+	  useEffect(() => {
+	    if (!profile || appLoading || profileLoading || accessGateStatus) return;
     const key = getPumpXpSnapshotCacheKey(profile || DEFAULT_PROFILE);
     let previous = null;
     try {
@@ -21885,8 +22221,8 @@ function OnlyPumpPlatform() {
     progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} onProgressProfileSaved={handleProgressProfileSaved}/>,
     analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} nutritionDay={nutritionDay} healthLog={healthLog} healthLogs={healthLogs} personalTrackers={personalTrackers} healthSaving={healthSaving} healthRefreshing={healthRefreshing} profileSaving={profileSaving} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} analyticsIntent={analyticsIntent} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onSaveAnalyticsCardSettings={handleSaveAnalyticsCardSettings} onOpenNutrition={() => setActive("nutrition")} onOpenProgress={() => setActive("progress")}/>,
     community: <CommunityPage/>,
-    profile: <ProfilePage profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings}/>,
-  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, personalTrackers, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, pumpXpSummary, handleNutritionAction, handleSaveProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog]);
+	    profile: <ProfilePage profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings} onStartTutorial={() => startInteractiveTour("home", { reset: true, force: true })}/>,
+	  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, personalTrackers, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, pumpXpSummary, handleNutritionAction, handleSaveProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog, startInteractiveTour]);
 
   if (appLoading || profileLoading) {
     return <LoadingScreen theme={activeTheme}/>;
@@ -21911,11 +22247,13 @@ function OnlyPumpPlatform() {
       <main className="onlypump-main-scroll min-w-0 w-full px-4 md:px-8 lg:px-12">{page}</main>
       <MobilePreview active={active}/>
     </div>
-    <PumpXpToast key={pumpXpToast?.id || "pump-xp-toast"} toast={pumpXpToast} pumpXp={pumpXpSummary} onClose={() => setPumpXpToast(null)} onOpen={() => setPumpXpDetailsOpen(true)}/>
-    <PumpXpLevelUpModal levelUp={pumpXpLevelUp} pumpXp={pumpXpSummary} onClose={() => setPumpXpLevelUp(null)} onOpenDetails={() => { setPumpXpLevelUp(null); setPumpXpDetailsOpen(true); }}/>
-    {pumpXpDetailsOpen && <PumpXpDetailSheet pumpXp={pumpXpSummary} onClose={() => setPumpXpDetailsOpen(false)}/>}
-    <FloatingNavMenu active={active} setActive={setActive}/>
-  </div>;
+	    <PumpXpToast key={pumpXpToast?.id || "pump-xp-toast"} toast={pumpXpToast} pumpXp={pumpXpSummary} onClose={() => setPumpXpToast(null)} onOpen={() => setPumpXpDetailsOpen(true)}/>
+	    <PumpXpLevelUpModal levelUp={pumpXpLevelUp} pumpXp={pumpXpSummary} onClose={() => setPumpXpLevelUp(null)} onOpenDetails={() => { setPumpXpLevelUp(null); setPumpXpDetailsOpen(true); }}/>
+	    {pumpXpDetailsOpen && <PumpXpDetailSheet pumpXp={pumpXpSummary} onClose={() => setPumpXpDetailsOpen(false)}/>}
+	    {profileWelcomeOpen && <ProfileWelcomeSheet profile={profile || DEFAULT_PROFILE} pumpXp={pumpXpSummary} onClose={closeProfileWelcome} onStartTour={() => startInteractiveTour("home", { reset: true, force: true })}/>}
+	    {tourState.active && <InteractiveTourOverlay step={activeTourStep} stepIndex={tourState.stepIndex} totalSteps={activeTourSteps.length} onNext={nextTourStep} onSkip={skipTour}/>}
+	    <FloatingNavMenu active={active} setActive={setActive}/>
+	  </div>;
 }
 
 class OnlyPumpRuntimeBoundary extends React.Component {
