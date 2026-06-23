@@ -884,17 +884,19 @@ function parseProfileBoolean(value, fallback = false) {
 }
 
 function normalizeProfileStringArray(value, fallback = []) {
-  if (Array.isArray(value)) return value.map(item => String(item || "").trim()).filter(Boolean);
+  const cleanItem = (item) => String(item || "").trim().replace(/^["'{\[]+|["'}\]]+$/g, "").trim();
+  if (Array.isArray(value)) return value.map(cleanItem).filter(Boolean);
   if (typeof value === "string") {
     const trimmed = value.trim();
     if (!trimmed) return [];
     try {
       const parsed = JSON.parse(trimmed);
-      if (Array.isArray(parsed)) return parsed.map(item => String(item || "").trim()).filter(Boolean);
+      if (Array.isArray(parsed)) return parsed.map(cleanItem).filter(Boolean);
     } catch (error) {}
-    return trimmed.split(",").map(item => item.trim()).filter(Boolean);
+    const pgArrayText = trimmed.startsWith("{") && trimmed.endsWith("}") ? trimmed.slice(1, -1) : trimmed;
+    return pgArrayText.split(",").map(cleanItem).filter(Boolean);
   }
-  return Array.isArray(fallback) ? fallback.map(item => String(item || "").trim()).filter(Boolean) : [];
+  return Array.isArray(fallback) ? fallback.map(cleanItem).filter(Boolean) : [];
 }
 
 function normalizeProfileJsonArray(value, fallback = null) {
@@ -973,6 +975,11 @@ function profileHasTestAccess(profile = {}) {
 function normalizeProfileRoles(value, profile = {}) {
   const base = normalizeProfileStringArray(value, []);
   const roles = new Set(base.map(role => String(role || "").trim().toLowerCase()).filter(Boolean));
+  if (isArcherOwnerProfile(profile)) {
+    roles.add("owner");
+    roles.add("admin");
+    roles.add("trainer");
+  }
   if (parseProfileBoolean(profile?.is_owner)) roles.add("owner");
   if (parseProfileBoolean(profile?.is_admin)) roles.add("admin");
   if (parseProfileBoolean(profile?.is_trainer)) roles.add("trainer");
@@ -1000,6 +1007,15 @@ function getProfileRoleLabels(profile = {}) {
   const roles = normalizeProfileRoles(profile?.roles, profile).filter(role => labels[role]);
   if (roles.length) return roles.map(role => labels[role]).join(" · ");
   return labels[normalizeProfileMemberRole(profile)] || labels.user;
+}
+
+function getAssignableProfileRoles(profile = {}) {
+  const roles = new Set(normalizeProfileRoles(profile?.roles, profile).filter(role => ["admin", "trainer", "student", "user"].includes(role)));
+  const memberRole = normalizeProfileMemberRole(profile);
+  if (memberRole && ["admin", "trainer", "student", "user"].includes(memberRole)) roles.add(memberRole);
+  if (!roles.size) roles.add("user");
+  if (roles.size > 1 && roles.has("user")) roles.delete("user");
+  return Array.from(roles);
 }
 
 function normalizeAssignableProfileRole(value, fallback = "user") {
@@ -3494,6 +3510,24 @@ const programDifficultyDefaults = {
 const programPlanModeOptions = [
   { id: "flexible", label: "Свободная настройка", subtitle: "можно сделать больше, план учтет факт" },
   { id: "strict", label: "Жёсткий план", subtitle: "план держит цель, факт всё равно адаптирует будущие дни" },
+];
+const programBuilderScheduleOptions = [
+  { id: "every_other_day", label: "Через день", subtitle: "тренировки идут через день" },
+  { id: "2_2", label: "2/2", subtitle: "два тренировочных, два свободных" },
+  { id: "2_1", label: "2/1", subtitle: "два тренировочных, один свободный" },
+  { id: "3_1", label: "3/1", subtitle: "три тренировочных, один свободный" },
+  { id: "manual", label: "Ручной цикл", subtitle: "цикл задается количеством дней" },
+];
+const programBuilderProgressionOptions = [
+  { id: "double_progression", label: "Двойная прогрессия" },
+  { id: "linear", label: "Линейная" },
+  { id: "rir_based", label: "По RIR" },
+  { id: "manual", label: "Ручная" },
+];
+const programBuilderAudienceOptions = [
+  { id: "male", label: "Мужская" },
+  { id: "female", label: "Женская" },
+  { id: "unisex", label: "Унисекс" },
 ];
 const clampProgramNumber = (value, min, max) => Math.min(max, Math.max(min, Number(value || min)));
 const getProgramDurationBounds = (program = {}) => ({
@@ -7622,6 +7656,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [programSettingsSheet, setProgramSettingsSheet] = useState(null);
+  const [programBuilderSheet, setProgramBuilderSheet] = useState(null);
+  const [customTrainingPrograms, setCustomTrainingPrograms] = useState([]);
+  const [programBuilderExercisePicker, setProgramBuilderExercisePicker] = useState(null);
+  const [programBuilderExerciseSearch, setProgramBuilderExerciseSearch] = useState("");
+  const [programBuilderExerciseGroup, setProgramBuilderExerciseGroup] = useState("Все");
   const [programSaving, setProgramSaving] = useState(false);
   const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
   const [isExerciseBaseOpen, setIsExerciseBaseOpen] = useState(false);
@@ -8026,9 +8065,404 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setSelectedWorkout(workout);
   };
 
-  const getProgramSetCount = (program) => program.days.reduce((sum, day) => {
-    return sum + day.exercises.reduce((exerciseSum, exercise) => exerciseSum + exercise.sets.length, 0);
+  const getProgramSetCount = (program) => (program.days || []).reduce((sum, day) => {
+    return sum + (day.exercises || []).reduce((exerciseSum, exercise) => exerciseSum + getProgramExerciseSetsCount(exercise), 0);
   }, 0);
+
+  const mapProgramTemplateRowToProgram = (row = {}) => {
+    if (Array.isArray(row.days) && row.days.length) {
+      return {
+        ...row,
+        id: row.id || row.templateKey || row.template_key || `program-${Date.now()}`,
+        title: row.title || row.name || "Программа",
+        audience: row.audience || "унисекс",
+        focus: row.focus || row.goal || "ручной акцент",
+        defaultDurationWeeks: Number(row.defaultDurationWeeks || row.default_duration_weeks || row.durationWeeks || 8),
+        minDurationWeeks: Number(row.minDurationWeeks || row.min_duration_weeks || 1),
+        maxDurationWeeks: Number(row.maxDurationWeeks || row.max_duration_weeks || 52),
+        cycleLengthDays: Number(row.cycleLengthDays || row.cycle_length_days || 7),
+        workoutCount: Number(row.workoutCount || row.workout_count || row.days.length),
+        progressionType: row.progressionType || row.progression_type || "double_progression",
+        isUserCreated: row.isUserCreated ?? row.is_user_created ?? true,
+      };
+    }
+    const templateKey = row.template_key || row.templateKey || row.id || `program-${Date.now()}`;
+    const workouts = [...(row.program_template_workouts || row.workouts || [])].sort((a, b) => Number(a.sort_order || a.sortOrder || a.day_index || 0) - Number(b.sort_order || b.sortOrder || b.day_index || 0));
+    const days = workouts.map((day, dayIndex) => {
+      const exercises = [...(day.program_template_exercises || day.exercises || [])].sort((a, b) => Number(a.sort_order || a.sortOrder || 0) - Number(b.sort_order || b.sortOrder || 0)).map((exercise, exerciseIndex) => {
+        const source = normalizeExerciseSourceItem({
+          name: exercise.exercise_name || exercise.exerciseName || exercise.name,
+          muscleGroup: exercise.muscle_group || exercise.muscleGroup,
+          measurementMode: exercise.measurement_mode || exercise.measurementMode,
+        });
+        const targetSets = Math.max(1, Number(exercise.target_sets || exercise.targetSets || 3));
+        const repMin = Math.max(1, Number(exercise.rep_min || exercise.repMin || 8));
+        const repMax = Math.max(repMin, Number(exercise.rep_max || exercise.repMax || 12));
+        const targetWeight = Number(exercise.target_weight ?? exercise.targetWeight ?? 0);
+        const targetReps = Number(exercise.target_reps || exercise.targetReps || repMin);
+        const alternatives = (exercise.program_exercise_alternatives || exercise.alternatives || []).map(item => typeof item === "string" ? item : item.exercise_name || item.exerciseName || item.name).filter(Boolean);
+        return {
+          name: source.name,
+          muscleGroup: exercise.muscle_group || source.muscleGroup,
+          primaryMuscles: source.primaryMuscles,
+          secondaryMuscles: source.secondaryMuscles,
+          sets: Array.from({ length: targetSets }, () => [targetWeight, targetReps]),
+          targetSets,
+          repMin,
+          repMax,
+          targetWeight,
+          targetReps,
+          measurementMode: exercise.measurement_mode || source.measurementMode,
+          progressionMode: exercise.progression_mode || exercise.progressionMode || row.progression_type || "double_progression",
+          progressionWeightStep: Number(exercise.progression_weight_step || exercise.progressionWeightStep || 2.5),
+          progressionRepStep: Number(exercise.progression_rep_step || exercise.progressionRepStep || 1),
+          deloadWeightSteps: Number(exercise.deload_weight_steps || exercise.deloadWeightSteps || 1),
+          regressionThresholdSessions: Number(exercise.regression_threshold_sessions || exercise.regressionThresholdSessions || 2),
+          restSeconds: Number(exercise.rest_seconds || exercise.restSeconds || 120),
+          restAfterSeconds: Number(exercise.rest_after_seconds || exercise.restAfterSeconds || 0),
+          rir: exercise.rir ?? null,
+          rpe: exercise.rpe ?? null,
+          tempo: exercise.tempo || "",
+          alternatives,
+          templateExerciseKey: exercise.template_exercise_key || exercise.templateExerciseKey || makeProgramTemplateExerciseKey(templateKey, dayIndex, exerciseIndex),
+        };
+      });
+      return {
+        title: day.title || `День ${dayIndex + 1}`,
+        durationMinutes: Number(day.duration_minutes || day.durationMinutes || 0),
+        offsetDays: Number(day.offset_days ?? day.offsetDays ?? dayIndex),
+        exercises,
+      };
+    });
+    return {
+      id: templateKey,
+      remoteProgramTemplateId: row.id || null,
+      templateKey,
+      title: row.name || row.title || "Программа",
+      audience: row.audience || "унисекс",
+      focus: row.focus || row.goal || "ручной акцент",
+      description: row.description || "",
+      minDurationWeeks: Number(row.min_duration_weeks || row.minDurationWeeks || 1),
+      maxDurationWeeks: Number(row.max_duration_weeks || row.maxDurationWeeks || 52),
+      defaultDurationWeeks: Number(row.default_duration_weeks || row.defaultDurationWeeks || 8),
+      defaultDifficulty: row.default_difficulty || row.defaultDifficulty || "intermediate",
+      schedulePattern: row.schedule_pattern || row.schedulePattern || "manual",
+      cycleLengthDays: Number(row.cycle_length_days || row.cycleLengthDays || 7),
+      workoutCount: Number(row.workout_count || row.workoutCount || days.length || 1),
+      progressionType: row.progression_type || row.progressionType || "double_progression",
+      visibilityScope: row.visibility_scope || row.visibilityScope || "all",
+      isUserCreated: Boolean(row.is_user_created || row.isUserCreated),
+      days,
+    };
+  };
+
+  const programTemplateStorageKey = () => `onlypump-custom-programs-${profile?.id || profile?.telegram_id || "demo"}`;
+
+  const readLocalProgramTemplates = () => {
+    try {
+      const rows = JSON.parse(localStorage.getItem(programTemplateStorageKey()) || "[]");
+      return Array.isArray(rows) ? rows.map(mapProgramTemplateRowToProgram).filter(program => program.days?.length) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const writeLocalProgramTemplates = (programs) => {
+    try { localStorage.setItem(programTemplateStorageKey(), JSON.stringify(programs || [])); } catch {}
+  };
+
+  const getProgramBuilderShareOptions = () => {
+    if (profileHasRole(profile, "owner")) {
+      return [
+        { id: "all", label: "Всем пользователям" },
+        { id: "students", label: "Ученикам" },
+        { id: "selected", label: "Выборочно" },
+        { id: "private", label: "Только мне" },
+      ];
+    }
+    return [
+      { id: "trainer_students", label: "Моим ученикам" },
+      { id: "selected", label: "Выборочно" },
+      { id: "private", label: "Только мне" },
+    ];
+  };
+
+  const getProgramBuilderOffsetDays = (pattern, index, cycleLength) => {
+    const safeCycle = Math.max(1, Math.min(20, Number(cycleLength || 7)));
+    const value = (() => {
+      if (pattern === "every_other_day") return index * 2;
+      if (pattern === "2_2") return Math.floor(index / 2) * 4 + (index % 2);
+      if (pattern === "2_1") return Math.floor(index / 2) * 3 + (index % 2);
+      if (pattern === "3_1") return Math.floor(index / 3) * 4 + (index % 3);
+      return index;
+    })();
+    return Math.max(0, Math.min(safeCycle - 1, value));
+  };
+
+  const createProgramBuilderDraft = () => {
+    const workoutCount = 3;
+    const cycleLengthDays = 7;
+    return {
+      step: "meta",
+      activeDayIndex: 0,
+      title: "",
+      durationWeeks: 8,
+      schedulePattern: "every_other_day",
+      cycleLengthDays,
+      workoutCount,
+      progressionType: "double_progression",
+      audience: "unisex",
+      focus: "",
+      description: "",
+      visibilityScope: profileHasRole(profile, "owner") ? "all" : "trainer_students",
+      targetProfileIdsText: "",
+      days: Array.from({ length: workoutCount }, (_, index) => ({
+        id: `builder-day-${Date.now()}-${index}`,
+        title: `День ${index + 1}`,
+        durationMinutes: 0,
+        offsetDays: getProgramBuilderOffsetDays("every_other_day", index, cycleLengthDays),
+        exercises: [],
+      })),
+      error: "",
+    };
+  };
+
+  const ensureProgramBuilderDays = (draft) => {
+    const workoutCount = Math.max(1, Math.min(20, Number(draft.workoutCount || 1)));
+    const current = Array.isArray(draft.days) ? draft.days : [];
+    const nextDays = Array.from({ length: workoutCount }, (_, index) => {
+      const previous = current[index] || {};
+      return {
+        id: previous.id || `builder-day-${Date.now()}-${index}`,
+        title: previous.title || `День ${index + 1}`,
+        durationMinutes: Number(previous.durationMinutes || 0),
+        offsetDays: getProgramBuilderOffsetDays(draft.schedulePattern, index, draft.cycleLengthDays),
+        exercises: Array.isArray(previous.exercises) ? previous.exercises : [],
+      };
+    });
+    return { ...draft, workoutCount, days: nextDays, activeDayIndex: Math.min(Number(draft.activeDayIndex || 0), workoutCount - 1) };
+  };
+
+  const updateProgramBuilderDraft = (patcher) => {
+    setProgramBuilderSheet(prev => {
+      if (!prev) return prev;
+      const draft = typeof patcher === "function" ? patcher(prev.draft) : { ...prev.draft, ...patcher };
+      return { ...prev, draft: ensureProgramBuilderDays(draft) };
+    });
+  };
+
+  const openProgramBuilder = () => {
+    setProgramBuilderSheet({ draft: createProgramBuilderDraft() });
+  };
+
+  const getProgramBuilderMuscleStats = (draft) => {
+    const stats = {};
+    (draft.days || []).forEach(day => {
+      (day.exercises || []).forEach(exercise => {
+        const targetSets = Math.max(1, Number(exercise.targetSets || 3));
+        const source = normalizeExerciseSourceItem(exercise);
+        const primary = source.primaryMuscles?.[0] || exercise.muscleGroup || "Другое";
+        const secondary = source.secondaryMuscles || [];
+        [
+          { muscleGroup: primary, sets: targetSets },
+          secondary[0] ? { muscleGroup: secondary[0], sets: targetSets * 0.3 } : null,
+          secondary[1] ? { muscleGroup: secondary[1], sets: targetSets * 0.2 } : null,
+        ].filter(Boolean).forEach(item => {
+          if (!stats[item.muscleGroup]) stats[item.muscleGroup] = { muscleGroup: item.muscleGroup, rawSets: 0 };
+          stats[item.muscleGroup].rawSets += item.sets;
+        });
+      });
+    });
+    return Object.values(stats)
+      .map(item => ({ ...item, sets: Math.round(item.rawSets) }))
+      .filter(item => item.sets > 0)
+      .sort((a, b) => b.sets - a.sets);
+  };
+
+  const getProgramBuilderTotalSets = (draft) => (draft.days || []).reduce((sum, day) => {
+    return sum + (day.exercises || []).reduce((exerciseSum, exercise) => exerciseSum + Math.max(1, Number(exercise.targetSets || 3)), 0);
+  }, 0);
+
+  const addExerciseToProgramBuilder = (exerciseItem) => {
+    if (!programBuilderSheet || !programBuilderExercisePicker) return;
+    const source = normalizeExerciseSourceItem(exerciseItem);
+    const dayIndex = Number(programBuilderExercisePicker.dayIndex || 0);
+    const groupAlternatives = availableExerciseItems
+      .filter(item => (item.muscleGroup || item.group) === source.muscleGroup && item.name !== source.name)
+      .slice(0, 4)
+      .map(item => item.name);
+    updateProgramBuilderDraft(draft => ({
+      ...draft,
+      days: (draft.days || []).map((day, index) => {
+        if (index !== dayIndex) return day;
+        const exercise = {
+          id: `builder-exercise-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          name: source.name,
+          muscleGroup: source.muscleGroup,
+          primaryMuscles: source.primaryMuscles,
+          secondaryMuscles: source.secondaryMuscles,
+          measurementMode: source.measurementMode,
+          targetSets: normalizeExerciseCategory(source.exerciseCategory) === "strength" ? 3 : 1,
+          repMin: 8,
+          repMax: 12,
+          targetWeight: 0,
+          progressionWeightStep: /ног|спин|ягод|груд/i.test(source.muscleGroup) ? 5 : 2.5,
+          progressionRepStep: 1,
+          progressionMode: draft.progressionType,
+          deloadWeightSteps: 1,
+          regressionThresholdSessions: 2,
+          restSeconds: 120,
+          restAfterSeconds: 0,
+          rir: "",
+          rpe: "",
+          tempo: "",
+          note: "",
+          alternatives: groupAlternatives,
+        };
+        return { ...day, exercises: [...(day.exercises || []), exercise] };
+      }),
+    }));
+    setProgramBuilderExercisePicker(null);
+    setProgramBuilderExerciseSearch("");
+  };
+
+  const updateProgramBuilderExercise = (dayIndex, exerciseId, patch) => {
+    updateProgramBuilderDraft(draft => ({
+      ...draft,
+      days: (draft.days || []).map((day, index) => index !== dayIndex ? day : {
+        ...day,
+        exercises: (day.exercises || []).map(exercise => exercise.id === exerciseId ? { ...exercise, ...patch } : exercise),
+      }),
+    }));
+  };
+
+  const removeProgramBuilderExercise = (dayIndex, exerciseId) => {
+    updateProgramBuilderDraft(draft => ({
+      ...draft,
+      days: (draft.days || []).map((day, index) => index !== dayIndex ? day : {
+        ...day,
+        exercises: (day.exercises || []).filter(exercise => exercise.id !== exerciseId),
+      }),
+    }));
+  };
+
+  const buildProgramTemplatePayloadFromDraft = (draft) => {
+    const templateKey = `custom-program-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    return {
+      program: {
+        template_key: templateKey,
+        name: draft.title.trim(),
+        description: draft.description.trim(),
+        goal: draft.focus.trim(),
+        focus: draft.focus.trim(),
+        audience: programBuilderAudienceOptions.find(option => option.id === draft.audience)?.label || "Унисекс",
+        default_duration_weeks: Number(draft.durationWeeks || 8),
+        min_duration_weeks: 1,
+        max_duration_weeks: 52,
+        default_difficulty: "intermediate",
+        workouts_per_week: Number(draft.workoutCount || 1),
+        schedule_pattern: draft.schedulePattern,
+        cycle_length_days: Number(draft.cycleLengthDays || 7),
+        workout_count: Number(draft.workoutCount || 1),
+        progression_type: draft.progressionType,
+        visibility_scope: draft.visibilityScope,
+        target_profile_ids: String(draft.targetProfileIdsText || "").split(/[,\s]+/).map(item => item.trim()).filter(Boolean),
+      },
+      workouts: (draft.days || []).map((day, dayIndex) => ({
+        template_workout_key: `${templateKey}-day-${dayIndex + 1}`,
+        week_number: 1,
+        day_index: dayIndex + 1,
+        title: day.title || `День ${dayIndex + 1}`,
+        workout_type: "strength",
+        offset_days: day.offsetDays,
+        duration_minutes: Number(day.durationMinutes || 0),
+        exercises: (day.exercises || []).map((exercise, exerciseIndex) => ({
+          template_exercise_key: `${templateKey}-day-${dayIndex + 1}-exercise-${exerciseIndex + 1}`,
+          exercise_name: exercise.name,
+          muscle_group: exercise.muscleGroup,
+          target_sets: Number(exercise.targetSets || 3),
+          rep_min: Number(exercise.repMin || 8),
+          rep_max: Number(exercise.repMax || 12),
+          target_weight: Number(exercise.targetWeight || 0),
+          target_reps: Number(exercise.repMin || 8),
+          measurement_mode: exercise.measurementMode || "weight_reps",
+          progression_mode: exercise.progressionMode || draft.progressionType || "double_progression",
+          progression_weight_step: Number(exercise.progressionWeightStep || 2.5),
+          progression_rep_step: Number(exercise.progressionRepStep || 1),
+          deload_weight_steps: Number(exercise.deloadWeightSteps || 1),
+          regression_threshold_sessions: Number(exercise.regressionThresholdSessions || 2),
+          rest_seconds: Number(exercise.restSeconds || 120),
+          rest_after_seconds: Number(exercise.restAfterSeconds || 0),
+          rir: exercise.rir === "" ? null : Number(exercise.rir),
+          rpe: exercise.rpe === "" ? null : Number(exercise.rpe),
+          tempo: exercise.tempo,
+          notes: exercise.note,
+          alternatives: String(exercise.alternativesText ?? (exercise.alternatives || []).join(", "))
+            .split(",")
+            .map(item => item.trim())
+            .filter(Boolean)
+            .map(name => ({ exercise_name: name })),
+        })),
+      })),
+    };
+  };
+
+  const saveProgramBuilder = async (draft) => {
+    const title = String(draft.title || "").trim();
+    if (!title) {
+      updateProgramBuilderDraft({ error: "Введите название программы." });
+      return;
+    }
+    const totalExercises = (draft.days || []).reduce((sum, day) => sum + (day.exercises || []).length, 0);
+    if (!totalExercises) {
+      updateProgramBuilderDraft({ error: "Добавьте хотя бы одно упражнение." });
+      return;
+    }
+    const payload = buildProgramTemplatePayloadFromDraft({ ...draft, title, error: "" });
+    setProgramSaving(true);
+    try {
+      let savedProgram = null;
+      if (canUseWorkoutApi) {
+        const result = await callWorkoutsApi("save_program_template", payload);
+        savedProgram = mapProgramTemplateRowToProgram(result.program_template || result.template);
+      } else {
+        savedProgram = mapProgramTemplateRowToProgram({
+          id: payload.program.template_key,
+          template_key: payload.program.template_key,
+          name: payload.program.name,
+          description: payload.program.description,
+          goal: payload.program.goal,
+          audience: payload.program.audience,
+          focus: payload.program.focus,
+          default_duration_weeks: payload.program.default_duration_weeks,
+          min_duration_weeks: payload.program.min_duration_weeks,
+          max_duration_weeks: payload.program.max_duration_weeks,
+          default_difficulty: payload.program.default_difficulty,
+          schedule_pattern: payload.program.schedule_pattern,
+          cycle_length_days: payload.program.cycle_length_days,
+          workout_count: payload.program.workout_count,
+          progression_type: payload.program.progression_type,
+          visibility_scope: payload.program.visibility_scope,
+          is_user_created: true,
+          program_template_workouts: payload.workouts.map((day, index) => ({ ...day, sort_order: index + 1, program_template_exercises: day.exercises.map((exercise, exerciseIndex) => ({ ...exercise, sort_order: exerciseIndex + 1, program_exercise_alternatives: exercise.alternatives })) })),
+        });
+      }
+      if (savedProgram?.days?.length) {
+        setCustomTrainingPrograms(prev => {
+          const next = [savedProgram, ...prev.filter(program => program.id !== savedProgram.id)];
+          writeLocalProgramTemplates(next);
+          return next;
+        });
+      }
+      setProgramBuilderSheet(null);
+      if (savedProgram) openProgramSettings(savedProgram);
+    } catch (error) {
+      console.error("Program template save error", error);
+      updateProgramBuilderDraft({ error: "Не удалось сохранить программу." });
+    } finally {
+      setProgramSaving(false);
+    }
+  };
 
   const getProgramExerciseAlternatives = (exercise = {}) => {
     const explicit = (exercise.alternatives || []).map(item => typeof item === "string" ? item : item.name).filter(Boolean);
@@ -8057,11 +8491,16 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       repMax: reps.max,
       progressionWeightStep: bigLift ? config.bigStep : config.smallStep,
       progressionRepStep: 1,
-      progressionMode: "double_progression",
+      progressionMode: exercise.progressionMode || exercise.progression_mode || program.progressionType || program.progression_type || "double_progression",
       deloadWeightSteps: 1,
       regressionThresholdSessions: config.regressionThreshold,
       measurementMode: normalizeMeasurementMode(exercise.measurementMode || "weight_reps"),
       targetWeight: Number((exercise.sets || [])[0]?.[0] || exercise.targetWeight || 0),
+      restSeconds: Number(exercise.restSeconds ?? exercise.rest_seconds ?? 120),
+      restAfterSeconds: Number(exercise.restAfterSeconds ?? exercise.rest_after_seconds ?? 0),
+      rir: exercise.rir ?? "",
+      rpe: exercise.rpe ?? "",
+      tempo: exercise.tempo || "",
     };
   };
 
@@ -8199,12 +8638,21 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         difficulty: draft.difficulty,
         missedSessions: 0,
       },
+      restSeconds: Number(setting.restSeconds ?? 120),
+      restAfterSeconds: Number(setting.restAfterSeconds ?? 0),
+      rir: setting.rir === "" ? null : Number(setting.rir),
+      rpe: setting.rpe === "" ? null : Number(setting.rpe),
+      tempo: setting.tempo || "",
       sets: base.sets.map(set => ({
         ...set,
         weight: target.weight,
         reps: target.reps,
         weightValue: target.weight,
         repsValue: target.reps,
+        restSeconds: Number(setting.restSeconds ?? set.restSeconds ?? 120),
+        restAfterSeconds: Number(setting.restAfterSeconds ?? set.restAfterSeconds ?? 0),
+        rir: setting.rir === "" ? null : Number(setting.rir),
+        rpe: setting.rpe === "" ? null : Number(setting.rpe),
         status: "pending",
         isCompleted: false,
       })),
@@ -8214,9 +8662,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const buildProgramPlanWorkouts = (program, draft) => {
     const occurrenceByKey = {};
     const workoutsToCreate = [];
-    for (let weekIndex = 0; weekIndex < Number(draft.durationWeeks || 1); weekIndex += 1) {
+    const totalPlanDays = Math.max(1, Number(draft.durationWeeks || 1) * 7);
+    const cycleLengthDays = Math.max(1, Math.min(20, Number(program.cycleLengthDays || program.cycle_length_days || 7)));
+    const cycleCount = Math.max(1, Math.ceil(totalPlanDays / cycleLengthDays));
+    for (let cycleIndex = 0; cycleIndex < cycleCount; cycleIndex += 1) {
       (program.days || []).forEach((day, dayIndex) => {
-        const dateKey = toDateKey(addLocalDays(parseDateKey(draft.startedAt || selectedDateKey), weekIndex * 7 + (day.offsetDays ?? dayIndex * 2)));
+        const offsetInCycle = Math.max(0, Number(day.offsetDays ?? day.offset_days ?? dayIndex * 2));
+        const absoluteOffset = cycleIndex * cycleLengthDays + offsetInCycle;
+        if (absoluteOffset >= totalPlanDays) return;
+        const dateKey = toDateKey(addLocalDays(parseDateKey(draft.startedAt || selectedDateKey), absoluteOffset));
         const exercises = (day.exercises || []).map((exercise, exerciseIndex) => {
           const settingKey = makeProgramTemplateExerciseKey(program.id, dayIndex, exerciseIndex);
           const setting = draft.exerciseSettings[settingKey];
@@ -8241,7 +8695,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           userProgramClientId: draft.clientId,
           programTemplateWorkoutId: null,
           programTemplateWorkoutKey: makeProgramTemplateWorkoutKey(program.id, dayIndex),
-          programWeekNumber: weekIndex + 1,
+          programWeekNumber: Math.floor(absoluteOffset / 7) + 1,
           programDayIndex: dayIndex + 1,
           programName: program.title,
           programPlanMode: draft.planMode,
@@ -8280,7 +8734,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     },
     settings: {
       client_id: draft.clientId,
-      template_key: program.id,
+      program_template_id: program.remoteProgramTemplateId || program.program_template_id || null,
+      template_key: program.templateKey || program.template_key || program.id,
       name: program.title,
       started_at: draft.startedAt,
       duration_weeks: Number(draft.durationWeeks || 1),
@@ -8775,6 +9230,27 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       .catch(error => {
         console.error("Supabase workout error", { action: "load_exercise_library", error });
         if (!cancelled) setCustomExercises(readCachedCustomExercises());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canUseWorkoutApi, profile?.id, telegramInitData]);
+
+  useEffect(() => {
+    setCustomTrainingPrograms(readLocalProgramTemplates());
+    if (!canUseWorkoutApi) return;
+    let cancelled = false;
+    callWorkoutsApi("load_program_templates", {})
+      .then(result => {
+        if (cancelled) return;
+        const rows = readApiArray(result, "program_templates", ["templates"]);
+        const mapped = rows.map(mapProgramTemplateRowToProgram).filter(program => program.isUserCreated && program.days?.length);
+        setCustomTrainingPrograms(mapped);
+        writeLocalProgramTemplates(mapped);
+      })
+      .catch(error => {
+        console.error("Program templates load error", error);
+        if (!cancelled) setCustomTrainingPrograms(readLocalProgramTemplates());
       });
     return () => {
       cancelled = true;
@@ -12399,6 +12875,8 @@ const toggleExerciseMeasurementSetting = (field) => {
   useAppBackLayer("workouts-exercise-base", isExerciseBaseOpen, closeExerciseBase, 160);
   useAppBackLayer("workouts-week-menu", Boolean(weekMenuGroup), () => setWeekMenuGroup(null), 155);
   useAppBackLayer("workouts-week-stats", weekStatsOpen, () => setWeekStatsOpen(false), 150);
+  useAppBackLayer("workouts-program-builder-picker", Boolean(programBuilderExercisePicker), () => setProgramBuilderExercisePicker(null), 154);
+  useAppBackLayer("workouts-program-builder", Boolean(programBuilderSheet), () => setProgramBuilderSheet(null), 153);
   useAppBackLayer("workouts-program-settings", Boolean(programSettingsSheet), () => setProgramSettingsSheet(null), 151);
   useAppBackLayer("workouts-templates", isTemplatesOpen, () => setIsTemplatesOpen(false), 145);
   useAppBackLayer("workouts-title-prompt", Boolean(workoutTitlePrompt), () => setWorkoutTitlePrompt(null), 143);
@@ -12457,6 +12935,45 @@ const toggleExerciseMeasurementSetting = (field) => {
       }))
       .filter(section => section.exercises.length);
   }, [exerciseSearch, selectedExerciseGroup, exerciseGroups, availableExerciseItems]);
+
+  const visibleTrainingPrograms = useMemo(() => {
+    const byId = new Map();
+    [...availableTrainingPrograms, ...customTrainingPrograms].forEach(program => {
+      if (!program?.id || byId.has(program.id)) return;
+      byId.set(program.id, program);
+    });
+    return Array.from(byId.values());
+  }, [customTrainingPrograms]);
+
+  const canCreateProgramTemplates = profileHasAnyRole(profile, ["owner", "trainer"]);
+  const programBuilderExerciseItems = useMemo(() => {
+    const items = [...systemExerciseLibraryItems, ...customExercises.map(mapExerciseLibraryRow)].map(normalizeExerciseSourceItem);
+    const seen = new Set();
+    return items.filter(item => {
+      const key = `${item.exerciseCategory}-${item.name}-${item.sourceExerciseId || ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [customExercises]);
+  const programBuilderGroups = useMemo(() => {
+    const groups = programBuilderExerciseItems.map(item => item.group || item.muscleGroup || exerciseCategoryLabels[item.exerciseCategory] || "Другое");
+    return Array.from(new Set([...exerciseGroupFilterOrder, ...groups].filter(Boolean)));
+  }, [programBuilderExerciseItems]);
+  const filteredProgramBuilderGroups = useMemo(() => {
+    const query = programBuilderExerciseSearch.trim().toLowerCase();
+    return programBuilderGroups
+      .filter(group => group !== "Все")
+      .filter(group => programBuilderExerciseGroup === "Все" || group === programBuilderExerciseGroup)
+      .map(group => ({
+        group,
+        exercises: programBuilderExerciseItems.filter(exercise => {
+          const exerciseGroup = exercise.group || exercise.muscleGroup || exerciseCategoryLabels[exercise.exerciseCategory] || "Другое";
+          return exerciseGroup === group && (!query || exercise.name.toLowerCase().includes(query));
+        }),
+      }))
+      .filter(section => section.exercises.length);
+  }, [programBuilderExerciseSearch, programBuilderExerciseGroup, programBuilderGroups, programBuilderExerciseItems]);
 
   useEffect(() => {
     if (!customExerciseFocusKey || !isExerciseBaseOpen) return undefined;
@@ -13946,37 +14463,175 @@ const toggleExerciseMeasurementSetting = (field) => {
 	    {isTemplatesOpen && <div onClick={() => setIsTemplatesOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
 	      <BottomSheetPanel onClose={() => setIsTemplatesOpen(false)} onClick={(e) => e.stopPropagation()} className="onlypump-modal-scroll mx-auto w-full max-w-[430px] overflow-y-auto rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl onlypump-scrollbar-none">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
-        <h2 className="text-xl font-black tracking-[-0.03em]">Доступные программы</h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-500">Нажми программу, настрой длительность, сложность и прогрессию. В календарь она добавится только после подтверждения.</p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-black tracking-[-0.03em]">Доступные программы</h2>
+            <p className="mt-2 text-sm leading-6 text-zinc-500">Нажми программу, настрой длительность, сложность и прогрессию. В календарь она добавится только после подтверждения.</p>
+          </div>
+          {canCreateProgramTemplates && <button type="button" onClick={openProgramBuilder} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-500 text-black shadow-lg shadow-red-500/20 transition active:scale-95"><Plus size={22}/></button>}
+        </div>
         <div className="mt-5 space-y-3">
-          {availableTrainingPrograms.map(program => <button key={program.id} onClick={() => openProgramSettings(program)} className="w-full rounded-[24px] border border-white/10 bg-white/[0.04] p-4 text-left transition active:scale-[0.99] hover:border-red-500/40 hover:bg-red-500/10">
+          {visibleTrainingPrograms.map(program => <button key={program.id} onClick={() => openProgramSettings(program)} className="w-full rounded-[24px] border border-white/10 bg-white/[0.04] p-4 text-left transition active:scale-[0.99] hover:border-red-500/40 hover:bg-red-500/10">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="break-words text-[22px] font-black leading-tight tracking-[-0.04em]">{program.title}</div>
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold uppercase tracking-[0.12em]">
                   <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-red-300">{program.audience}</span>
                   <span className="rounded-full bg-white/[0.07] px-2.5 py-1 text-zinc-400">{program.focus}</span>
+                  {program.isUserCreated && <span className="rounded-full bg-white/[0.07] px-2.5 py-1 text-zinc-400">моя</span>}
                 </div>
               </div>
               <span className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-black text-black">Настроить</span>
             </div>
             <p className="mt-3 text-sm leading-6 text-zinc-500">{program.description}</p>
             <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
-              <div className="rounded-2xl bg-black/25 p-3"><span className="block text-zinc-500">Дней</span><b>{program.days.length}</b></div>
+              <div className="rounded-2xl bg-black/25 p-3"><span className="block text-zinc-500">Дней</span><b>{(program.days || []).length}</b></div>
               <div className="rounded-2xl bg-black/25 p-3"><span className="block text-zinc-500">Подходов</span><b>{getProgramSetCount(program)}</b></div>
               <div className="rounded-2xl bg-black/25 p-3"><span className="block text-zinc-500">Недель</span><b>{getProgramDurationBounds(program).defaultValue}</b></div>
             </div>
             <div className="mt-4 space-y-2">
-              {program.days.map((day, index) => <div key={day.title} className="rounded-2xl bg-black/25 p-3">
+              {(program.days || []).map((day, index) => <div key={day.title} className="rounded-2xl bg-black/25 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <span className="min-w-0 break-words text-sm font-semibold text-zinc-200">{index + 1}. {day.title}</span>
-                  <span className="shrink-0 text-xs text-zinc-500">{day.exercises.length} упр.</span>
+                  <span className="shrink-0 text-xs text-zinc-500">{(day.exercises || []).length} упр.</span>
                 </div>
-                <div className="mt-1 text-xs text-zinc-600">{formatDuration(day.durationMinutes)} · {day.exercises.reduce((sum, exercise) => sum + exercise.sets.length, 0)} подходов</div>
+                <div className="mt-1 text-xs text-zinc-600">{formatDuration(day.durationMinutes)} · {(day.exercises || []).reduce((sum, exercise) => sum + getProgramExerciseSetsCount(exercise), 0)} подходов</div>
               </div>)}
             </div>
           </button>)}
         </div>
+	      </BottomSheetPanel>
+	    </div>}
+
+	    {programBuilderSheet && (() => {
+	      const draft = programBuilderSheet.draft;
+	      const activeDayIndex = Math.min(Number(draft.activeDayIndex || 0), Math.max(0, (draft.days || []).length - 1));
+	      const activeDay = (draft.days || [])[activeDayIndex] || { title: "День", exercises: [] };
+	      const muscleStats = getProgramBuilderMuscleStats(draft);
+	      const totalSets = getProgramBuilderTotalSets(draft);
+	      const shareOptions = getProgramBuilderShareOptions();
+	      const closeBuilder = () => !programSaving && setProgramBuilderSheet(null);
+	      const goToMetaNext = () => {
+	        if (!String(draft.title || "").trim()) {
+	          updateProgramBuilderDraft({ error: "Введите название программы." });
+	          return;
+	        }
+	        updateProgramBuilderDraft(prev => ({ ...prev, step: "day", activeDayIndex: 0, error: "" }));
+	      };
+	      const goDayBack = () => {
+	        if (activeDayIndex <= 0) {
+	          updateProgramBuilderDraft(prev => ({ ...prev, step: "meta", error: "" }));
+	          return;
+	        }
+	        updateProgramBuilderDraft(prev => ({ ...prev, activeDayIndex: activeDayIndex - 1, error: "" }));
+	      };
+	      const goDayNext = () => {
+	        if (activeDayIndex >= (draft.days || []).length - 1) {
+	          updateProgramBuilderDraft(prev => ({ ...prev, step: "summary", error: "" }));
+	          return;
+	        }
+	        updateProgramBuilderDraft(prev => ({ ...prev, activeDayIndex: activeDayIndex + 1, error: "" }));
+	      };
+	      return <div onClick={closeBuilder} className="onlypump-modal-layer fixed inset-0 z-[153] flex items-end bg-black/55 p-3 backdrop-blur-sm">
+	        <BottomSheetPanel onClose={closeBuilder} onClick={(e) => e.stopPropagation()} className="onlypump-program-settings-sheet mx-auto flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-[460px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+	          <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+	          <div className="flex items-start justify-between gap-3">
+	            <button disabled={programSaving} onClick={draft.step === "meta" ? closeBuilder : () => updateProgramBuilderDraft(prev => ({ ...prev, step: "meta", error: "" }))} className="mt-1 shrink-0 text-sm font-black text-zinc-400 disabled:opacity-40">{draft.step === "meta" ? "Отмена" : "Назад"}</button>
+	            <div className="min-w-0 text-center">
+	              <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Конструктор</p>
+	              <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{draft.step === "summary" ? "Итоги программы" : draft.step === "day" ? `${activeDay.title || `День ${activeDayIndex + 1}`}` : "Новая программа"}</h2>
+	            </div>
+	            <button disabled={programSaving} onClick={closeBuilder} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300 disabled:opacity-40">×</button>
+	          </div>
+
+	          <div className="onlypump-sheet-list mt-5 flex-1 space-y-4 overflow-y-auto pr-1 pb-3 onlypump-scrollbar-none" data-no-sheet-drag="true">
+	            {draft.error && <p className="rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{draft.error}</p>}
+
+	            {draft.step === "meta" && <>
+	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название программы</span><input value={draft.title} onChange={(e) => updateProgramBuilderDraft({ title: e.target.value, error: "" })} placeholder="Например: Верх сила" className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/></label>
+	              <div className="grid grid-cols-2 gap-3">
+	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Длительность, недель</span><input inputMode="numeric" value={draft.durationWeeks} onChange={(e) => updateProgramBuilderDraft({ durationWeeks: clampProgramNumber(e.target.value, 1, 52) })} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Тренировок</span><input inputMode="numeric" value={draft.workoutCount} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, workoutCount: clampProgramNumber(e.target.value, 1, 20) }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	              </div>
+	              <div className="grid grid-cols-2 gap-3">
+	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Периодичность</span><select value={draft.schedulePattern} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, schedulePattern: e.target.value }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">{programBuilderScheduleOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Цикл, дней</span><input inputMode="numeric" value={draft.cycleLengthDays} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, cycleLengthDays: clampProgramNumber(e.target.value, 1, 20) }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	              </div>
+	              <div className="grid grid-cols-2 gap-3">
+	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Прогрессия</span><select value={draft.progressionType} onChange={(e) => updateProgramBuilderDraft({ progressionType: e.target.value })} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">{programBuilderProgressionOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Пол</span><select value={draft.audience} onChange={(e) => updateProgramBuilderDraft({ audience: e.target.value })} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">{programBuilderAudienceOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+	              </div>
+	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Акцент</span><input value={draft.focus} onChange={(e) => updateProgramBuilderDraft({ focus: e.target.value })} placeholder="Например: плечи, ягодицы, сила" className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/></label>
+	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Описание</span><textarea value={draft.description} onChange={(e) => updateProgramBuilderDraft({ description: e.target.value })} rows="4" className="mt-2 w-full resize-none rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold leading-6 outline-none ring-1 ring-white/10"/></label>
+	              <div><div className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Кому доступна</div><div className="mt-2 grid grid-cols-1 gap-2">{shareOptions.map(option => <button key={option.id} type="button" onClick={() => updateProgramBuilderDraft({ visibilityScope: option.id })} className={`rounded-2xl px-4 py-3 text-left text-sm font-black transition ${draft.visibilityScope === option.id ? "bg-red-500 text-black" : "bg-white/[0.05] text-zinc-300"}`}>{option.label}</button>)}</div></div>
+	              {draft.visibilityScope === "selected" && <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">ID пользователей</span><textarea value={draft.targetProfileIdsText} onChange={(e) => updateProgramBuilderDraft({ targetProfileIdsText: e.target.value })} rows="3" placeholder="UUID через пробел или запятую" className="mt-2 w-full resize-none rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/></label>}
+	            </>}
+
+	            {draft.step === "day" && <>
+	              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+	                <div className="rounded-2xl bg-white/[0.05] p-3"><span className="block text-zinc-500">День</span><b>{activeDayIndex + 1}/{draft.days.length}</b></div>
+	                <div className="rounded-2xl bg-white/[0.05] p-3"><span className="block text-zinc-500">Подходы</span><b>{(activeDay.exercises || []).reduce((sum, ex) => sum + Number(ex.targetSets || 3), 0)}</b></div>
+	                <div className="rounded-2xl bg-white/[0.05] p-3"><span className="block text-zinc-500">Смещение</span><b>+{activeDay.offsetDays} д</b></div>
+	              </div>
+	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название дня</span><input value={activeDay.title} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, days: prev.days.map((day, index) => index === activeDayIndex ? { ...day, title: e.target.value } : day) }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/></label>
+	              <button type="button" onClick={() => setProgramBuilderExercisePicker({ dayIndex: activeDayIndex })} className="flex w-full items-center justify-center gap-2 rounded-full bg-red-500 px-4 py-3 font-black text-black transition active:scale-[0.98]"><Plus size={18}/> Добавить упражнение</button>
+	              <div className="space-y-3">
+	                {(activeDay.exercises || []).map((exercise) => <div key={exercise.id} className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
+	                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="break-words font-black">{exercise.name}</h3><p className="mt-1 text-xs font-semibold text-red-300">{exercise.muscleGroup}</p></div><button type="button" onClick={() => removeProgramBuilderExercise(activeDayIndex, exercise.id)} className="shrink-0 rounded-full bg-white/8 px-3 py-2 text-xs font-black text-red-300">Удалить</button></div>
+	                  <div className="mt-3 grid grid-cols-3 gap-2">
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Подх.</span><input inputMode="numeric" value={exercise.targetSets} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { targetSets: Math.max(1, Number(e.target.value || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">От</span><input inputMode="numeric" value={exercise.repMin} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { repMin: Math.max(1, Number(e.target.value || 1)), repMax: Math.max(Number(e.target.value || 1), Number(exercise.repMax || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">До</span><input inputMode="numeric" value={exercise.repMax} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { repMax: Math.max(Number(exercise.repMin || 1), Number(e.target.value || exercise.repMin || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	                  </div>
+	                  <div className="mt-3 grid grid-cols-3 gap-2">
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Вес +</span><input inputMode="decimal" value={exercise.progressionWeightStep} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { progressionWeightStep: Number(String(e.target.value).replace(",", ".") || 0) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Отдых</span><input inputMode="numeric" value={exercise.restSeconds} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { restSeconds: Math.max(0, Number(e.target.value || 0)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">После</span><input inputMode="numeric" value={exercise.restAfterSeconds} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { restAfterSeconds: Math.max(0, Number(e.target.value || 0)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	                  </div>
+	                  <div className="mt-3 grid grid-cols-3 gap-2">
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">RIR</span><input inputMode="decimal" value={exercise.rir} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { rir: e.target.value })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">RPE</span><input inputMode="decimal" value={exercise.rpe} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { rpe: e.target.value })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Темп</span><input value={exercise.tempo} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { tempo: e.target.value })} placeholder="3-1-1" className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+	                  </div>
+	                  <label className="mt-3 block"><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Альтернативы</span><input value={exercise.alternativesText ?? (exercise.alternatives || []).join(", ")} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { alternativesText: e.target.value })} placeholder="Через запятую" className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/></label>
+	                </div>)}
+	              </div>
+	            </>}
+
+	            {draft.step === "summary" && <>
+	              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+	                <div className="rounded-2xl bg-white/[0.05] p-3"><span className="block text-zinc-500">Дней</span><b>{draft.days.length}</b></div>
+	                <div className="rounded-2xl bg-white/[0.05] p-3"><span className="block text-zinc-500">Подходов</span><b>{totalSets}</b></div>
+	                <div className="rounded-2xl bg-white/[0.05] p-3"><span className="block text-zinc-500">Цикл</span><b>{draft.cycleLengthDays} д</b></div>
+	              </div>
+	              <VolumeLoadBar count={totalSets} title="Общий объем" subtitle="подходов" experiencedAt={volumeStandards.weeklyTotal} />
+	              <div className="space-y-3">{muscleStats.length ? muscleStats.map(stat => <VolumeLoadBar key={stat.muscleGroup} count={stat.sets} title={stat.muscleGroup} subtitle="подходов" experiencedAt={volumeStandards.weeklyMuscle} />) : <p className="rounded-2xl bg-white/[0.04] p-4 text-sm text-zinc-500">Добавь упражнения, чтобы увидеть объемы.</p>}</div>
+	            </>}
+	          </div>
+
+	          <div className="mt-4 grid grid-cols-2 gap-3 pb-[var(--onlypump-safe-bottom)]">
+	            {draft.step === "meta" ? <button disabled={programSaving} onClick={closeBuilder} className="h-12 rounded-full bg-white/8 font-black text-zinc-300 disabled:opacity-50">Отмена</button> : draft.step === "day" ? <button disabled={programSaving} onClick={goDayBack} className="h-12 rounded-full bg-white/8 font-black text-zinc-300 disabled:opacity-50">{activeDayIndex === 0 ? "Отмена" : "Назад"}</button> : <button disabled={programSaving} onClick={() => updateProgramBuilderDraft(prev => ({ ...prev, step: "day", activeDayIndex: Math.max(0, prev.days.length - 1), error: "" }))} className="h-12 rounded-full bg-white/8 font-black text-zinc-300 disabled:opacity-50">Назад</button>}
+	            {draft.step === "meta" ? <button disabled={programSaving} onClick={goToMetaNext} className="h-12 rounded-full bg-red-500 font-black text-black disabled:opacity-50">Далее</button> : draft.step === "day" ? <button disabled={programSaving} onClick={goDayNext} className="h-12 rounded-full bg-red-500 font-black text-black disabled:opacity-50">Далее</button> : <button disabled={programSaving} onClick={() => saveProgramBuilder(draft)} className="h-12 rounded-full bg-red-500 font-black text-black disabled:opacity-50">{programSaving ? "Сохраняю..." : "Сохранить"}</button>}
+	          </div>
+	        </BottomSheetPanel>
+	      </div>;
+	    })()}
+
+	    {programBuilderExercisePicker && <div onClick={() => setProgramBuilderExercisePicker(null)} className="onlypump-modal-layer fixed inset-0 z-[156] flex items-end bg-black/55 p-3 backdrop-blur-sm">
+	      <BottomSheetPanel onClose={() => setProgramBuilderExercisePicker(null)} onClick={(e) => e.stopPropagation()} className="mx-auto flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-[460px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+	        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+	        <div className="flex items-start justify-between gap-3">
+	          <button type="button" onClick={() => setProgramBuilderExercisePicker(null)} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отмена</button>
+	          <div className="min-w-0 text-center"><p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Программа</p><h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Добавить упражнение</h2></div>
+	          <button type="button" onClick={() => setProgramBuilderExercisePicker(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+	        </div>
+	        <input value={programBuilderExerciseSearch} onChange={(e) => setProgramBuilderExerciseSearch(e.target.value)} placeholder="Поиск упражнения" className="mt-5 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/>
+	        <div className="mt-3 flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
+	          {programBuilderGroups.map(group => <button key={group} type="button" onClick={() => setProgramBuilderExerciseGroup(group)} className={`shrink-0 rounded-full px-3 py-2 text-xs font-black transition ${programBuilderExerciseGroup === group ? "bg-red-500 text-black" : "bg-white/8 text-zinc-300"}`}>{group}</button>)}
+	        </div>
+	        <div className="onlypump-sheet-list mt-4 flex-1 space-y-4 overflow-y-auto pr-1 onlypump-scrollbar-none" data-no-sheet-drag="true">
+	          {filteredProgramBuilderGroups.map(section => <div key={section.group}><p className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">{section.group}</p><div className="space-y-2">{section.exercises.map(exercise => <button key={exercisePickerKey(exercise)} type="button" onClick={() => addExerciseToProgramBuilder(exercise)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-3 text-left transition hover:bg-white/[0.08]"><span className="min-w-0"><span className="block break-words font-black">{exercise.name}</span><span className="mt-1 block text-xs text-zinc-500">{exercise.muscleGroup}</span></span><Plus size={18} className="shrink-0 text-red-400"/></button>)}</div></div>)}
+	        </div>
 	      </BottomSheetPanel>
 	    </div>}
 
@@ -18713,13 +19368,32 @@ function InviteLimitPickerSheet({ value = 100, onSave, onClose }) {
   </div>;
 }
 
-function ManagedUserRoleSheet({ user, currentProfile, saving, onClose, onRoleChange, onAccessChange }) {
+function ManagedUserRoleSheet({ user, currentProfile, saving, onClose, onRoleChange, onRolesChange, onAccessChange }) {
   const protectedUser = isProtectedManagedProfile(user, currentProfile);
   const selectedRole = normalizeProfileMemberRole(user);
+  const selectedRoles = new Set(getAssignableProfileRoles(user));
   const userName = getManagedUserTitle(user);
+  const ownerMode = profileHasRole(currentProfile, "owner");
   const availableRoles = profileHasRole(currentProfile, "owner")
     ? MANAGED_ROLE_OPTIONS
     : MANAGED_ROLE_OPTIONS.filter(option => option.id === "user" || option.id === "trainer");
+  const toggleRole = (role) => {
+    if (!ownerMode) {
+      onRoleChange?.(user, role);
+      return;
+    }
+    let nextRoles;
+    if (role === "user") {
+      nextRoles = ["user"];
+    } else {
+      const next = new Set(selectedRoles);
+      next.delete("user");
+      if (next.has(role)) next.delete(role);
+      else next.add(role);
+      nextRoles = next.size ? Array.from(next) : ["user"];
+    }
+    onRolesChange?.(user, nextRoles);
+  };
   return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[230] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
     <div onClick={(event) => event.stopPropagation()} className="w-full max-w-md overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
       <div className="flex items-start justify-between gap-3">
@@ -18733,14 +19407,14 @@ function ManagedUserRoleSheet({ user, currentProfile, saving, onClose, onRoleCha
       </div>
 
       <div className="mt-6 rounded-[24px] bg-white/[0.035] p-4">
-        <p className="text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Назначить роль</p>
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-zinc-500">{ownerMode ? "Назначить роли" : "Назначить роль"}</p>
         <div className="mt-3 grid grid-cols-2 gap-2">
           {availableRoles.map(option => <button
             key={option.id}
             type="button"
-            onClick={() => onRoleChange?.(user, option.id)}
+            onClick={() => toggleRole(option.id)}
             disabled={saving || protectedUser}
-            className={`rounded-2xl px-3 py-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${selectedRole === option.id ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-200 hover:bg-white/[0.1]"}`}
+            className={`rounded-2xl px-3 py-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${(ownerMode ? selectedRoles.has(option.id) : selectedRole === option.id) ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-200 hover:bg-white/[0.1]"}`}
           >
             {option.label}
           </button>)}
@@ -19084,6 +19758,28 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
     }
   };
 
+  const updateUserRoles = async (user, roles) => {
+    if (isProtectedManagedProfile(user, profile)) {
+      setError("Роль владельца нельзя менять через панель.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const result = await callOnlyPumpProfileApi(telegramInitData, "update_user_roles", {
+        target_profile_id: user.id,
+        roles,
+      });
+      await loadPanel();
+      preserveOnlyPumpScrollPosition(() => setSelectedUser(result.profile || { ...user, roles }));
+    } catch (roleError) {
+      console.error("profile roles update error:", roleError);
+      setError("Не удалось изменить роли пользователя.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[190] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <BottomSheetPanel onClose={onClose} priority={190} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-5xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem] sm:p-6">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
@@ -19162,7 +19858,7 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
       {limitPickerOpen && <InviteLimitPickerSheet value={inviteMaxUses} onSave={setInviteMaxUses} onClose={() => setLimitPickerOpen(false)}/>}
       {accessPanelView === "users" && <ManagedUsersListSheet users={panel.users} currentProfile={profile} saving={saving} onClose={closeAccessPanelWindow} onSelectUser={openManagedUserWindow}/>}
       {accessPanelView === "invites" && <ManagedInvitesListSheet invites={panel.invites} saving={saving} copiedInviteId={copiedInviteId} onClose={closeAccessPanelWindow} onCopy={copyInvite} onRevoke={revokeInvite} onDelete={deleteInvite} onSelectUser={openManagedUserWindow}/>}
-      {selectedUser && <ManagedUserRoleSheet user={selectedUser} currentProfile={profile} saving={saving} onClose={closeManagedUserWindow} onRoleChange={updateUserRole} onAccessChange={updateUserAccess}/>}
+      {selectedUser && <ManagedUserRoleSheet user={selectedUser} currentProfile={profile} saving={saving} onClose={closeManagedUserWindow} onRoleChange={updateUserRole} onRolesChange={updateUserRoles} onAccessChange={updateUserAccess}/>}
     </BottomSheetPanel>
   </div>;
 
