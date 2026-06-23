@@ -731,7 +731,7 @@ import {
   BarChart3, Users, User, Bell, Flame, ChevronDown, Play, Activity, Grid3X3,
   Menu, CalendarDays, Trophy, Moon, Target, BookOpen, MessageCircle, Settings,
   ShieldCheck, CreditCard, Scale, Ruler, Utensils, Clock3, CheckCircle2, Lock,
-  Search, Plus, ExternalLink, Star, Zap, HeartPulse, Droplets, MoreHorizontal, Share2, Pencil, Repeat2
+  Search, Plus, ExternalLink, Star, Zap, HeartPulse, Droplets, MoreHorizontal, Share2, Pencil, Repeat2, Route, ChevronRight
 } from "lucide-react";
 
 function syncOnlyPumpViewportHeight(tg) {
@@ -901,6 +901,12 @@ const DEFAULT_PROFILE = {
   analytics_cards_hidden: [],
   home_widgets_order: null,
   personal_trackers: null,
+  tutorial_completed_screens: [],
+  tutorial_skipped_screens: [],
+  tutorial_awards: [],
+  tutorial_completed_at: null,
+  tutorial_skipped_at: null,
+  tutorial_state_updated_at: null,
   source: "fallback",
 };
 
@@ -1325,6 +1331,12 @@ function buildFallbackProfile(overrides = {}) {
     analytics_cards_hidden: normalizeProfileStringArray(overrides.analytics_cards_hidden, DEFAULT_PROFILE.analytics_cards_hidden),
     home_widgets_order: normalizeProfileJsonArray(overrides.home_widgets_order, DEFAULT_PROFILE.home_widgets_order),
     personal_trackers: normalizeProfileJsonArray(overrides.personal_trackers, DEFAULT_PROFILE.personal_trackers),
+    tutorial_completed_screens: normalizeOnlyPumpTourScreens(overrides.tutorial_completed_screens || DEFAULT_PROFILE.tutorial_completed_screens),
+    tutorial_skipped_screens: normalizeOnlyPumpTourScreens(overrides.tutorial_skipped_screens || DEFAULT_PROFILE.tutorial_skipped_screens),
+    tutorial_awards: normalizeOnlyPumpTourAwards(overrides.tutorial_awards || DEFAULT_PROFILE.tutorial_awards),
+    tutorial_completed_at: overrides.tutorial_completed_at || DEFAULT_PROFILE.tutorial_completed_at,
+    tutorial_skipped_at: overrides.tutorial_skipped_at || DEFAULT_PROFILE.tutorial_skipped_at,
+    tutorial_state_updated_at: overrides.tutorial_state_updated_at || DEFAULT_PROFILE.tutorial_state_updated_at,
     source: overrides.source || "fallback",
   };
 }
@@ -1407,6 +1419,12 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     analytics_cards_hidden: normalizeProfileStringArray(record.analytics_cards_hidden, fallback.analytics_cards_hidden || DEFAULT_PROFILE.analytics_cards_hidden),
     home_widgets_order: normalizeProfileJsonArray(record.home_widgets_order, fallback.home_widgets_order ?? DEFAULT_PROFILE.home_widgets_order),
     personal_trackers: normalizeProfileJsonArray(record.personal_trackers, fallback.personal_trackers ?? DEFAULT_PROFILE.personal_trackers),
+    tutorial_completed_screens: normalizeOnlyPumpTourScreens(record.tutorial_completed_screens ?? fallback.tutorial_completed_screens ?? DEFAULT_PROFILE.tutorial_completed_screens),
+    tutorial_skipped_screens: normalizeOnlyPumpTourScreens(record.tutorial_skipped_screens ?? fallback.tutorial_skipped_screens ?? DEFAULT_PROFILE.tutorial_skipped_screens),
+    tutorial_awards: normalizeOnlyPumpTourAwards(record.tutorial_awards ?? fallback.tutorial_awards ?? DEFAULT_PROFILE.tutorial_awards),
+    tutorial_completed_at: record.tutorial_completed_at || fallback.tutorial_completed_at || null,
+    tutorial_skipped_at: record.tutorial_skipped_at || fallback.tutorial_skipped_at || null,
+    tutorial_state_updated_at: record.tutorial_state_updated_at || fallback.tutorial_state_updated_at || null,
     source: record.source || fallback.source || "supabase",
   };
 }
@@ -4514,6 +4532,23 @@ const ONLYPUMP_TOUR_XP_AWARDS = {
   "full-tour-completed": { id: "full-tour-completed", title: "Полное обучение ONLYPUMP", xp: 10 },
 };
 
+const normalizeOnlyPumpTourScreens = (values = []) => {
+  const source = Array.isArray(values) ? values : normalizeProfileJsonArray(values, []);
+  const allowed = new Set(onlyPumpTourScreens);
+  return Array.from(new Set(source.map(value => String(value || "").trim()).filter(value => allowed.has(value))));
+};
+
+const getProfileTutorialCompletedScreens = (profile = DEFAULT_PROFILE) => normalizeOnlyPumpTourScreens(profile?.tutorial_completed_screens);
+const getProfileTutorialSkippedScreens = (profile = DEFAULT_PROFILE) => normalizeOnlyPumpTourScreens(profile?.tutorial_skipped_screens)
+  .filter(screen => !getProfileTutorialCompletedScreens(profile).includes(screen));
+
+const profileTutorialHasBeenDismissed = (profile = DEFAULT_PROFILE) => Boolean(
+  profile?.tutorial_completed_at ||
+  profile?.tutorial_skipped_at ||
+  getProfileTutorialCompletedScreens(profile).includes("home") ||
+  getProfileTutorialSkippedScreens(profile).includes("home")
+);
+
 const PUMP_XP_RULE_GROUPS = [
   {
     title: "Интерактивное обучение",
@@ -5042,6 +5077,11 @@ const onlyPumpTourDefinitions = {
     { target: '[data-tour="workouts-add"]', title: "Открой создание", text: "Нажми плюс, чтобы открыть меню новой тренировки.", taskId: "workouts-open-add", completion: "target-click", task: "Нажми плюс тренировок." },
     { target: '[data-tour="workouts-start-empty"]', title: "Начни пустую", text: "Выбери пустую тренировку. Далее останется подтвердить название.", taskId: "workouts-pick-empty", completion: "target-click", task: "Нажми «Начать пустую тренировку»." },
     { target: '[data-tour="workouts-title-confirm"]', title: "Подтверди тренировку", text: "Название можно оставить стандартным. Я продолжу, когда тренировка появится в дневнике.", taskId: "workouts-start-empty", completion: "workout-created", task: "Нажми «Продолжить»." },
+    { target: '[data-tour="workouts-add-exercise"]', title: "Добавь упражнение", text: "Открой базу упражнений из экрана тренировки.", taskId: "workouts-open-exercise-base", completion: "target-click", task: "Нажми плюс упражнения." },
+    { target: '[data-tour="workouts-exercise-option"]', title: "Выбери упражнение", text: "Отметь любое упражнение из базы. Оно добавится в список выбранных.", taskId: "workouts-pick-exercise", completion: "target-click", task: "Выбери упражнение." },
+    { target: '[data-tour="workouts-add-selected-exercises"]', title: "Подтверди добавление", text: "Теперь добавь выбранное упражнение в тренировку. Я продолжу, когда оно появится на экране.", taskId: "workouts-add-exercise-to-workout", completion: "workout-exercise-added", task: "Нажми «Добавить упражнение»." },
+    { target: '[data-tour="workouts-open-exercise"]', title: "Открой упражнение", text: "Нажми на добавленное упражнение, чтобы перейти к подходам.", taskId: "workouts-open-exercise", completion: "target-click", task: "Открой упражнение." },
+    { target: '[data-tour="workouts-add-set"]', title: "Добавь подход", text: "Открой упражнение и добавь рабочий подход. Я продолжу, когда подход появится в тренировке.", taskId: "workouts-add-set", completion: "workout-set-added", task: "Добавь подход." },
   ],
   progress: [
     { target: '[data-tour="progress-calendar"]', title: "Неделя прогресса", text: "Замеры и цель можно смотреть и менять по выбранной дате." },
@@ -5051,6 +5091,7 @@ const onlyPumpTourDefinitions = {
   analytics: [
     { target: '[data-tour="analytics-period"]', title: "Период аналитики", text: "Переключай день, неделю, месяц и год, чтобы смотреть динамику без потери контекста." },
     { target: '[data-tour="analytics-add-card"]', title: "Карточки аналитики", text: "Добавляй нужные карточки: шаги, сон, вода, нагрузка, питание и трекеры." },
+    { target: '[data-tour="analytics-open-graph"]', title: "График", text: "Открой график карточки: внутри можно листать период и смотреть динамику.", taskId: "analytics-open-graph", completion: "target-click", task: "Открой любой график аналитики." },
     { target: '[data-tour="analytics-settings"]', title: "Настройка карточек", text: "Здесь меняется порядок и видимость аналитических карточек.", taskId: "analytics-open-settings", completion: "target-click", task: "Открой настройку карточек аналитики." },
   ],
   education: [
@@ -5103,10 +5144,13 @@ function readOnlyPumpTourSeen(profile = DEFAULT_PROFILE) {
   try {
     const keys = getOnlyPumpTourProfileKeys("onlypump_tour_seen", profile);
     keys.push(getOnlyPumpTourCacheKey(profile));
-    return Array.from(new Set(keys)).reduce((result, key) => {
+    const localSeen = Array.from(new Set(keys)).reduce((result, key) => {
       const parsed = JSON.parse(localStorage.getItem(key) || "{}");
       return parsed && typeof parsed === "object" ? { ...result, ...parsed } : result;
     }, {});
+    const remoteSeen = [...getProfileTutorialCompletedScreens(profile), ...getProfileTutorialSkippedScreens(profile)]
+      .reduce((result, screen) => ({ ...result, [screen]: true }), {});
+    return { ...localSeen, ...remoteSeen };
   } catch (error) {
     return {};
   }
@@ -5124,6 +5168,7 @@ function markOnlyPumpTourScreenSeen(profile = DEFAULT_PROFILE, screen) {
 
 function readOnlyPumpTourCompleted(profile = DEFAULT_PROFILE) {
   try {
+    if (profileTutorialHasBeenDismissed(profile)) return true;
     const keys = getOnlyPumpTourProfileKeys("onlypump_tour_completed", profile);
     keys.push(getOnlyPumpTourCompletedKey(profile));
     return keys.some(key => localStorage.getItem(key) === "1");
@@ -5170,14 +5215,15 @@ function readOnlyPumpTourAwards(profile = DEFAULT_PROFILE) {
   try {
     const keys = getOnlyPumpTourProfileKeys("onlypump_tour_awards", profile);
     keys.push(getOnlyPumpTourAwardsKey(profile));
-    return normalizeOnlyPumpTourAwards(Array.from(new Set(keys)).flatMap(key => {
+    const localAwards = Array.from(new Set(keys)).flatMap(key => {
       try {
         const parsed = JSON.parse(localStorage.getItem(key) || "[]");
         return Array.isArray(parsed) ? parsed : [];
       } catch (error) {
         return [];
       }
-    }));
+    });
+    return normalizeOnlyPumpTourAwards([...(profile?.tutorial_awards || []), ...localAwards]);
   } catch (error) {
     return [];
   }
@@ -5194,6 +5240,27 @@ function writeOnlyPumpTourAwards(profile = DEFAULT_PROFILE, awards = []) {
 
 function getOnlyPumpProfileWelcomeKey(profile = DEFAULT_PROFILE) {
   return `onlypump_profile_welcome_${profile?.id || profile?.telegram_id || "local"}_${profile?.invite_code || profile?.access_granted_at || profile?.onboarding_completed_at || "start"}`;
+}
+
+function getOnlyPumpProfileWelcomeKeys(profile = DEFAULT_PROFILE) {
+  const keys = getOnlyPumpTourProfileKeys("onlypump_profile_welcome", profile);
+  keys.push(getOnlyPumpProfileWelcomeKey(profile));
+  return Array.from(new Set(keys));
+}
+
+function readOnlyPumpProfileWelcomeSeen(profile = DEFAULT_PROFILE) {
+  try {
+    if (profileTutorialHasBeenDismissed(profile)) return true;
+    return getOnlyPumpProfileWelcomeKeys(profile).some(key => localStorage.getItem(key) === "1");
+  } catch (error) {
+    return false;
+  }
+}
+
+function markOnlyPumpProfileWelcomeSeen(profile = DEFAULT_PROFILE) {
+  try {
+    getOnlyPumpProfileWelcomeKeys(profile).forEach(key => localStorage.setItem(key, "1"));
+  } catch (error) {}
 }
 
 function getTourCardStyle(targetRect, compact = false) {
@@ -5378,6 +5445,77 @@ function ProfileWelcomeSheet({ profile = DEFAULT_PROFILE, pumpXp, onClose, onSta
       <div className="mt-6 grid gap-3">
         <Button onClick={onStartTour} className="bg-red-500 text-black">Начать обучение</Button>
         <button type="button" onClick={onClose} className="rounded-full px-4 py-3 text-sm font-black text-zinc-400">Позже</button>
+      </div>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function TutorialPickerSheet({ profile = DEFAULT_PROFILE, onClose, onStartTour }) {
+  const navMetaById = Object.fromEntries(nav.map(item => [item.id, item]));
+  const completedScreens = getProfileTutorialCompletedScreens(profile);
+  const skippedScreens = getProfileTutorialSkippedScreens(profile);
+  const fullCompleted = Boolean(profile?.tutorial_completed_at) || onlyPumpTourScreens.every(screen => completedScreens.includes(screen));
+  const startTour = (screen, options = {}) => {
+    onClose?.();
+    onStartTour?.(screen, options);
+  };
+  const screenOptions = onlyPumpTourScreens
+    .map(screen => {
+      const steps = onlyPumpTourDefinitions[screen] || [];
+      const meta = navMetaById[screen] || { id: screen, icon: Play, label: screen };
+      return {
+        screen,
+        steps,
+        taskCount: steps.filter(step => step.taskId).length,
+        Icon: meta.icon || Play,
+        label: meta.label || screen,
+      };
+    })
+    .filter(item => item.steps.length);
+
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[236] flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center">
+    <BottomSheetPanel onClose={onClose} priority={236} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-lg overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-red-300">Обучение</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.05em]">Выбери экран</h2>
+          <p className="mt-2 text-sm leading-6 text-zinc-500">Можно пройти весь маршрут или открыть обучение только по нужному экрану. Задания сохраняются.</p>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+      <div className="mt-5 grid gap-3">
+        <button type="button" onClick={() => startTour("home", { force: true, full: true })} className="flex w-full items-center justify-between gap-4 rounded-3xl border border-red-500/30 bg-red-500/12 p-4 text-left transition active:scale-[0.99] hover:bg-red-500/18">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-500 text-black"><Route size={20}/></span>
+            <div className="min-w-0">
+              <p className="text-base font-black">Полное обучение</p>
+              <p className="mt-1 text-xs text-zinc-500">Все экраны по очереди · +10 PUMP XP один раз</p>
+            </div>
+          </div>
+          <span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${fullCompleted ? "bg-emerald-500/10 text-emerald-300" : "bg-white/8 text-zinc-400"}`}>{fullCompleted ? "пройдено" : "не пройдено"}</span>
+          <ChevronRight className="shrink-0 text-red-300" size={18}/>
+        </button>
+        {screenOptions.map(({ screen, steps, taskCount, Icon, label }) => {
+          const completed = completedScreens.includes(screen);
+          const skipped = !completed && skippedScreens.includes(screen);
+          const statusLabel = completed ? "пройдено" : skipped ? "пропущено" : "не пройдено";
+          const statusClass = completed
+            ? "bg-emerald-500/10 text-emerald-300"
+            : skipped
+              ? "bg-amber-500/10 text-amber-300"
+              : "bg-white/8 text-zinc-400";
+          return <button key={screen} type="button" onClick={() => startTour(screen, { force: true, full: false })} className="flex w-full items-center justify-between gap-4 rounded-3xl bg-white/[0.04] p-4 text-left transition active:scale-[0.99] hover:bg-white/[0.07]">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06] text-red-300"><Icon size={20}/></span>
+            <div className="min-w-0">
+              <p className="break-words text-base font-black">{label}</p>
+              <p className="mt-1 text-xs text-zinc-500">{steps.length} шагов · {taskCount ? `${taskCount} заданий` : "без задания"}</p>
+            </div>
+          </div>
+          <span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${statusClass}`}>{statusLabel}</span>
+          <ChevronRight className="shrink-0 text-zinc-500" size={18}/>
+        </button>;
+        })}
       </div>
     </BottomSheetPanel>
   </div>;
@@ -13949,6 +14087,7 @@ const toggleExerciseMeasurementSetting = (field) => {
                   </button>
                   <button
                     type="button"
+                    data-tour={exerciseBaseMode === "add" ? "workouts-exercise-option" : undefined}
                     onClick={() => handleExerciseBaseItemAction(exercise)}
                     className="flex min-w-0 flex-1 flex-col justify-center self-stretch text-left"
                   >
@@ -13957,6 +14096,7 @@ const toggleExerciseMeasurementSetting = (field) => {
                   </button>
                   <button
                     type="button"
+                    data-tour={exerciseBaseMode === "add" ? "workouts-exercise-option" : undefined}
                     onClick={() => handleExerciseBaseItemAction(exercise)}
                     className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${selected ? 'bg-red-500 text-black' : 'bg-white/8 text-red-400'}`}
                     aria-label={exerciseBaseMode === "add" ? "Выбрать упражнение" : exerciseBaseMode === "replace" ? "Заменить упражнение" : "Открыть упражнение"}
@@ -13969,6 +14109,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
         {exerciseBaseMode === "add" && <div className="onlypump-exercise-add-footer mt-4 flex justify-center bg-transparent pb-[calc(var(--onlypump-safe-bottom)+4px)] pt-3">
           <button
+            data-tour="workouts-add-selected-exercises"
             onClick={addPendingExercisesToWorkout}
             disabled={!pendingExerciseAdds.length}
 	            className="onlypump-exercise-add-button h-12 min-h-12 rounded-full border border-transparent bg-red-500 px-8 text-sm font-black text-black shadow-2xl shadow-red-500/20 transition active:scale-[0.98] disabled:cursor-not-allowed"
@@ -14123,7 +14264,7 @@ const toggleExerciseMeasurementSetting = (field) => {
               <h3 className="text-xl font-black tracking-[-0.04em]">Упражнения</h3>
               <p className="mt-1 text-sm text-zinc-500">{isEditingWorkout ? "Выбирай кружками, объединяй в суперсеты или меняй порядок ручкой справа." : "Нажми на упражнение, чтобы открыть подходы."}</p>
             </div>
-            <button onClick={() => openExerciseBase("add")} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/8 text-red-400"><Plus size={22}/></button>
+            <button data-tour="workouts-add-exercise" onClick={() => openExerciseBase("add")} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/8 text-red-400"><Plus size={22}/></button>
           </div>
 
           <div className="overflow-hidden rounded-[28px] border border-white/10 bg-zinc-950/80">
@@ -14184,7 +14325,7 @@ const toggleExerciseMeasurementSetting = (field) => {
                   <span className="h-0.5 w-4 rounded-full bg-current" />
                   <span className="h-0.5 w-4 rounded-full bg-current" />
                 </button>
-              </div> : <button onClick={() => openExerciseFromOverview(index)} style={rowStyle} className="grid w-full grid-cols-[34px_1fr] gap-3 px-4 py-5 text-left transition active:scale-[0.99] hover:bg-white/[0.04]">
+              </div> : <button data-tour="workouts-open-exercise" onClick={() => openExerciseFromOverview(index)} style={rowStyle} className="grid w-full grid-cols-[34px_1fr] gap-3 px-4 py-5 text-left transition active:scale-[0.99] hover:bg-white/[0.04]">
                 <div style={numberStyle} className={`mt-1 flex h-7 w-7 items-center justify-center rounded-full text-xs font-black ${supersetColor ? '' : 'bg-white/[0.08] text-zinc-400'}`}>{exercise.order || index + 1}</div>
                 <div>
                   <h4 className="break-words text-[21px] font-black leading-tight tracking-[-0.04em]">{exercise.name}</h4>
@@ -14211,7 +14352,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
         <div className="onlypump-workout-bottom-bar fixed bottom-0 left-0 right-0 z-[166] border-t border-white/10 bg-black/86 px-4 pb-[calc(var(--onlypump-safe-bottom)+10px)] pt-3 backdrop-blur-2xl">
           <div className={`mx-auto grid h-[72px] max-w-[430px] items-center gap-2 ${isEditingWorkout ? 'grid-cols-[48px_48px_48px_48px_1fr_48px]' : 'grid-cols-[48px_1fr_48px_48px]'}`}>
-            <button onClick={() => openExerciseBase("add")} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/8 text-zinc-200"><Plus size={24}/></button>
+            <button data-tour="workouts-add-exercise" onClick={() => openExerciseBase("add")} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/8 text-zinc-200"><Plus size={24}/></button>
             {isEditingWorkout ? <>
               <button onClick={createSupersetFromSelection} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/8 text-zinc-200 active:scale-95"><Zap size={20}/></button>
               <button onClick={() => setRestMenuOpen(true)} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/8 text-zinc-200 active:scale-95"><Clock3 size={20}/></button>
@@ -14561,6 +14702,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             <div className="mx-auto grid h-[72px] max-w-[430px] grid-cols-[48px_48px_1fr_58px_48px] items-center gap-2">
               <button onClick={() => goToExercise(activeExerciseIndex - 1)} disabled={activeExerciseIndex <= 0} className="flex h-12 w-12 items-center justify-center rounded-full bg-white/8 text-zinc-200 disabled:opacity-30">←</button>
               <button
+                data-tour="workouts-add-set"
                 onClick={() => addSetToActiveExercise("working")}
                 aria-hidden={Boolean(activeSetInput)}
                 tabIndex={activeSetInput ? -1 : 0}
@@ -19349,7 +19491,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
                   <p className="mt-1 text-sm font-black">{topStrengthAchievement.title}</p>
                 </div>
               </div>}
-              <button type="button" onClick={() => setDetail({ type: data.detail, title: "Тоннаж" })} className="rounded-full bg-white/[0.06] px-4 py-2 text-xs font-black text-zinc-200">График</button>
+              <button type="button" data-tour="analytics-open-graph" onClick={() => setDetail({ type: data.detail, title: "Тоннаж" })} className="rounded-full bg-white/[0.06] px-4 py-2 text-xs font-black text-zinc-200">График</button>
             </div>
             <AchievementGrid items={strengthAchievements} />
           </div>
@@ -21140,6 +21282,7 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
   const [settingsThinkingOpen, setSettingsThinkingOpen] = useState(false);
   const [unitSettingsOpen, setUnitSettingsOpen] = useState(false);
   const [accessPanelOpen, setAccessPanelOpen] = useState(false);
+  const [tutorialPickerOpen, setTutorialPickerOpen] = useState(false);
   const [themeError, setThemeError] = useState("");
   const [resetError, setResetError] = useState("");
   const canOpenAccessPanel = profileStatus === "verified" && profileHasAnyRole(profile, ["owner", "admin", "trainer"]);
@@ -21201,7 +21344,7 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
 	        {themeError && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{themeError}</p>}
 	      </div>
 		      <div className="mt-5 border-t border-white/10 pt-5">
-		        <Button data-tour="profile-start-tour" onClick={onStartTutorial} className="mb-3 w-full bg-white/8">Пройти обучение</Button>
+		        <Button data-tour="profile-start-tour" onClick={() => setTutorialPickerOpen(true)} className="mb-3 w-full bg-white/8">Пройти обучение</Button>
 		        <Button onClick={resetProfileSettings} disabled={profileSaving} className="w-full bg-red-500/10 text-red-300 hover:bg-red-500/15 disabled:opacity-50">Сбросить настройки профиля</Button>
 	        <p className="mt-2 text-xs leading-5 text-zinc-500">Откроет первичное заполнение заново. Тренировки, питание, замеры, доступ и имя не удаляются.</p>
 	        {resetError && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{resetError}</p>}
@@ -21212,6 +21355,7 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
     {settingsThinkingOpen && <SettingsThinkingModal onClose={() => setSettingsThinkingOpen(false)}/>}
     {unitSettingsOpen && <UnitSystemSheet profile={profile} saving={profileSaving} onClose={() => setUnitSettingsOpen(false)} onSave={onSaveProfile}/>}
     {accessPanelOpen && <ProfileAccessPanelSheet profile={profile} telegramInitData={telegramInitData} onClose={() => setAccessPanelOpen(false)}/>}
+    {tutorialPickerOpen && <TutorialPickerSheet profile={profile} onClose={() => setTutorialPickerOpen(false)} onStartTour={onStartTutorial}/>}
   </PageGrid></div>;
 }
 
@@ -21610,7 +21754,6 @@ function OnlyPumpPlatform() {
 	  const [pumpXpToast, setPumpXpToast] = useState(null);
 	  const [pumpXpLevelUp, setPumpXpLevelUp] = useState(null);
 	  const [profileWelcomeOpen, setProfileWelcomeOpen] = useState(false);
-	  const [profileWelcomeKey, setProfileWelcomeKey] = useState("");
 	  const [tourAwards, setTourAwards] = useState(() => readOnlyPumpTourAwards(DEFAULT_PROFILE));
 	  const [tourState, setTourState] = useState({ active: false, screen: "home", stepIndex: 0, force: false, full: false });
 	  const tourTaskSnapshotRef = useRef(null);
@@ -22106,6 +22249,8 @@ function OnlyPumpPlatform() {
     homeWidgetCount: normalizeHomeWidgetsOrder(homeWidgets, []).length,
     nutritionFoodCount: (nutritionDay?.meals || []).reduce((sum, meal) => sum + (meal.items || []).length, 0),
     workoutCount: workouts.length,
+    workoutExerciseCount: workouts.reduce((sum, workout) => sum + (workout.exercises || []).length, 0),
+    workoutSetCount: workouts.reduce((sum, workout) => sum + (workout.exercises || []).reduce((exerciseSum, exercise) => exerciseSum + (exercise.sets || []).length, 0), 0),
     measurementSignature: JSON.stringify(measurements || {}),
   }), [homeWidgets, measurements, nutritionDay, workouts]);
 
@@ -22130,6 +22275,64 @@ function OnlyPumpPlatform() {
     return awarded;
   }, [profile]);
 
+  const syncTutorialProfileState = useCallback(async ({ event = "", screen = "", awards = [] } = {}) => {
+    const baseProfile = profile || DEFAULT_PROFILE;
+    const completedSet = new Set(getProfileTutorialCompletedScreens(baseProfile));
+    const skippedSet = new Set(getProfileTutorialSkippedScreens(baseProfile));
+    const now = new Date().toISOString();
+    const safeScreen = onlyPumpTourScreens.includes(screen) ? screen : "";
+
+    if (event === "complete_screen" && safeScreen) {
+      completedSet.add(safeScreen);
+      skippedSet.delete(safeScreen);
+      markOnlyPumpTourScreenSeen(baseProfile, safeScreen);
+    }
+    if (event === "skip_screen" && safeScreen && !completedSet.has(safeScreen)) {
+      skippedSet.add(safeScreen);
+      markOnlyPumpTourScreenSeen(baseProfile, safeScreen);
+    }
+    if (event === "complete_full") {
+      onlyPumpTourScreens.forEach(item => completedSet.add(item));
+      skippedSet.clear();
+    }
+
+    const nextAwards = normalizeOnlyPumpTourAwards([...readOnlyPumpTourAwards(baseProfile), ...awards]);
+    const patch = {
+      tutorial_completed_screens: Array.from(completedSet),
+      tutorial_skipped_screens: Array.from(skippedSet).filter(item => !completedSet.has(item)),
+      tutorial_awards: nextAwards,
+      tutorial_completed_at: event === "complete_full" ? (baseProfile.tutorial_completed_at || now) : baseProfile.tutorial_completed_at,
+      tutorial_skipped_at: (event === "dismiss" || event === "skip_screen") ? (baseProfile.tutorial_skipped_at || now) : baseProfile.tutorial_skipped_at,
+      tutorial_state_updated_at: now,
+    };
+
+    const optimisticProfile = applyProfileState({
+      ...baseProfile,
+      ...patch,
+      source: baseProfile.source || "fallback",
+    });
+    setTourAwards(nextAwards);
+    writeOnlyPumpTourAwards(optimisticProfile || baseProfile, nextAwards);
+
+    if (!(profileStatus === "verified" && profileHasTestAccess(baseProfile) && telegramInitData && baseProfile?.id)) return true;
+
+    try {
+      const result = await callOnlyPumpProfileApi(telegramInitData, "update_tutorial_state", {
+        event,
+        screen: safeScreen,
+        tutorial_awards: awards,
+      });
+      if (result.profile) {
+        const savedProfile = applyProfileState(result.profile);
+        setTourAwards(readOnlyPumpTourAwards(savedProfile || result.profile));
+      }
+      return true;
+    } catch (error) {
+      console.error("onlypump-profile-api tutorial error:", error);
+      return false;
+    }
+  }, [applyProfileState, profile, profileStatus, telegramInitData]);
+
   const isTourTaskComplete = useCallback((step) => {
     if (!step?.completion || step.completion === "target-click") return false;
     const snapshot = tourTaskSnapshotRef.current || getTourTaskSnapshot();
@@ -22137,38 +22340,38 @@ function OnlyPumpPlatform() {
     if (step.completion === "home-widget-added") return current.homeWidgetCount > Number(snapshot.homeWidgetCount || 0);
     if (step.completion === "nutrition-food-added") return current.nutritionFoodCount > Number(snapshot.nutritionFoodCount || 0);
     if (step.completion === "workout-created") return current.workoutCount > Number(snapshot.workoutCount || 0);
+    if (step.completion === "workout-exercise-added") return current.workoutExerciseCount > Number(snapshot.workoutExerciseCount || 0);
+    if (step.completion === "workout-set-added") return current.workoutSetCount > Number(snapshot.workoutSetCount || 0);
     if (step.completion === "measurement-updated") return current.measurementSignature !== snapshot.measurementSignature;
     return false;
   }, [getTourTaskSnapshot]);
 
 	  const closeProfileWelcome = useCallback(() => {
-	    if (profileWelcomeKey) {
-	      try { localStorage.setItem(profileWelcomeKey, "1"); } catch (error) {}
-	    }
+      markOnlyPumpProfileWelcomeSeen(profile || DEFAULT_PROFILE);
       markOnlyPumpTourCompleted(profile || DEFAULT_PROFILE);
+      void syncTutorialProfileState({ event: "dismiss" });
 	    setProfileWelcomeOpen(false);
-	  }, [profile, profileWelcomeKey]);
+	  }, [profile, syncTutorialProfileState]);
 
 	  const startInteractiveTour = useCallback((screen = "home", options = {}) => {
 	    const nextScreen = onlyPumpTourDefinitions[screen] ? screen : "home";
 	    if (options.reset) resetOnlyPumpTourSeen(profile || DEFAULT_PROFILE);
-	    if (profileWelcomeKey) {
-	      try { localStorage.setItem(profileWelcomeKey, "1"); } catch (error) {}
-	    }
+      markOnlyPumpProfileWelcomeSeen(profile || DEFAULT_PROFILE);
 	    setProfileWelcomeOpen(false);
 	    setActive(nextScreen, { replace: true });
       markOnlyPumpTourCompleted(profile || DEFAULT_PROFILE);
 	    tourTaskSnapshotRef.current = null;
 	    setTourState({ active: true, screen: nextScreen, stepIndex: 0, force: Boolean(options.force || options.reset), full: options.full !== false });
-	  }, [profile, profileWelcomeKey, setActive]);
+	  }, [profile, setActive]);
 
 	  const finishTourScreen = useCallback(() => {
 	    setTourState(prev => {
 	      if (prev.screen) markOnlyPumpTourScreenSeen(profile || DEFAULT_PROFILE, prev.screen);
 	      markOnlyPumpTourCompleted(profile || DEFAULT_PROFILE);
+        void syncTutorialProfileState({ event: "skip_screen", screen: prev.screen });
 	      return { active: false, screen: activeRef.current || "home", stepIndex: 0, force: false, full: false };
 	    });
-	  }, [profile]);
+	  }, [profile, syncTutorialProfileState]);
 
   const nextTourStep = useCallback(() => {
 	    setTourState(prev => {
@@ -22178,21 +22381,30 @@ function OnlyPumpPlatform() {
 	        return { ...prev, stepIndex: prev.stepIndex + 1 };
 	      }
 	      if (prev.screen) markOnlyPumpTourScreenSeen(profile || DEFAULT_PROFILE, prev.screen);
-        if (prev.screen === "home") awardTourXp("home-tour-completed");
+        const awards = [];
+        if (prev.screen === "home") {
+          awardTourXp("home-tour-completed");
+          awards.push(ONLYPUMP_TOUR_XP_AWARDS["home-tour-completed"]);
+        }
         if (prev.full) {
           const currentIndex = onlyPumpTourScreens.indexOf(prev.screen);
           const nextScreen = onlyPumpTourScreens.slice(currentIndex + 1).find(screen => (onlyPumpTourDefinitions[screen] || []).length);
           if (nextScreen) {
+            void syncTutorialProfileState({ event: "complete_screen", screen: prev.screen, awards });
             setActive(nextScreen, { replace: true });
             tourTaskSnapshotRef.current = null;
             return { ...prev, screen: nextScreen, stepIndex: 0 };
           }
           awardTourXp("full-tour-completed");
+          awards.push(ONLYPUMP_TOUR_XP_AWARDS["full-tour-completed"]);
+          void syncTutorialProfileState({ event: "complete_full", screen: prev.screen, awards });
+        } else {
+          void syncTutorialProfileState({ event: "complete_screen", screen: prev.screen, awards });
         }
         markOnlyPumpTourCompleted(profile || DEFAULT_PROFILE);
 	      return { active: false, screen: activeRef.current || "home", stepIndex: 0, force: false, full: false };
 	    });
-	  }, [awardTourXp, profile, setActive]);
+	  }, [awardTourXp, profile, setActive, syncTutorialProfileState]);
 
   const handleTourTargetAction = useCallback((step) => {
     if (!step) return;
@@ -22227,28 +22439,38 @@ function OnlyPumpPlatform() {
     activeTourStep?.taskId,
     homeWidgets.length,
     workouts.length,
+    JSON.stringify(workouts.map(workout => ({
+      id: workout.id,
+      exercises: (workout.exercises || []).map(exercise => ({
+        id: exercise.id,
+        sets: (exercise.sets || []).length,
+      })),
+    }))),
     JSON.stringify(nutritionDay?.meals || []),
     JSON.stringify(measurements || {}),
     isTourTaskComplete,
     nextTourStep,
   ]);
 
-	  useEffect(() => {
-	    if (!profile || appLoading || profileLoading || accessGateStatus) return;
-	    if (profileStatus !== "verified" || profile.onboarding_completed !== true || !profileHasTestAccess(profile)) return;
-	    const key = getOnlyPumpProfileWelcomeKey(profile);
-	    let alreadySeen = false;
-	    try { alreadySeen = localStorage.getItem(key) === "1"; } catch (error) {}
-	    if (alreadySeen) return;
-	    setProfileWelcomeKey(key);
-	    setProfileWelcomeOpen(true);
-	  }, [profile?.id, profile?.telegram_id, profile?.invite_code, profile?.access_granted_at, profile?.onboarding_completed_at, profile?.onboarding_completed, profileStatus, appLoading, profileLoading, accessGateStatus]);
+		  useEffect(() => {
+		    if (!profile || appLoading || profileLoading || accessGateStatus) return;
+		    if (profileStatus !== "verified" || profile.onboarding_completed !== true || !profileHasTestAccess(profile)) return;
+        if (readOnlyPumpTourCompleted(profile || DEFAULT_PROFILE) || readOnlyPumpProfileWelcomeSeen(profile || DEFAULT_PROFILE)) {
+          setProfileWelcomeOpen(false);
+          return;
+        }
+		    setProfileWelcomeOpen(true);
+		  }, [profile?.id, profile?.telegram_id, profile?.invite_code, profile?.access_granted_at, profile?.onboarding_completed_at, profile?.onboarding_completed, profileStatus, appLoading, profileLoading, accessGateStatus]);
 
 	  useEffect(() => {
 	    if (!profile || appLoading || profileLoading || accessGateStatus || profileWelcomeOpen) return undefined;
 	    if (profile.onboarding_completed !== true) return undefined;
 	    if (tourState.active) return undefined;
       if (readOnlyPumpTourCompleted(profile || DEFAULT_PROFILE)) return undefined;
+      if (readOnlyPumpProfileWelcomeSeen(profile || DEFAULT_PROFILE)) {
+        markOnlyPumpTourCompleted(profile || DEFAULT_PROFILE);
+        return undefined;
+      }
       const seenScreens = readOnlyPumpTourSeen(profile || DEFAULT_PROFILE);
       if (seenScreens.home) {
         markOnlyPumpTourCompleted(profile || DEFAULT_PROFILE);
@@ -22517,7 +22739,7 @@ function OnlyPumpPlatform() {
     progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} onProgressProfileSaved={handleProgressProfileSaved}/>,
     analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} nutritionDay={nutritionDay} healthLog={healthLog} healthLogs={healthLogs} personalTrackers={personalTrackers} healthSaving={healthSaving} healthRefreshing={healthRefreshing} profileSaving={profileSaving} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} analyticsIntent={analyticsIntent} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onSaveAnalyticsCardSettings={handleSaveAnalyticsCardSettings} onOpenNutrition={() => setActive("nutrition")} onOpenProgress={() => setActive("progress")}/>,
     community: <CommunityPage/>,
-	    profile: <ProfilePage profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings} onStartTutorial={() => startInteractiveTour("home", { force: true, full: true })}/>,
+	    profile: <ProfilePage profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings} onStartTutorial={(screen = "home", options = {}) => startInteractiveTour(screen, { force: true, ...options })}/>,
 	  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, personalTrackers, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, pumpXpSummary, handleNutritionAction, handleSaveProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog, startInteractiveTour]);
 
   if (appLoading || profileLoading) {
