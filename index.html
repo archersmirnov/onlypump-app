@@ -4509,13 +4509,19 @@ const PUMP_XP_LEVELS = [
   { level: 10, title: "ONLYPUMP Legend", xp: 50000 },
 ];
 
+const ONLYPUMP_TOUR_XP_AWARDS = {
+  "home-tour-completed": { id: "home-tour-completed", title: "Обучение на главной", xp: 5 },
+  "full-tour-completed": { id: "full-tour-completed", title: "Полное обучение ONLYPUMP", xp: 10 },
+};
+
 const PUMP_XP_RULE_GROUPS = [
   {
     title: "Интерактивное обучение",
     items: [
-      "Учебные задания дают +5-10 PUMP XP",
-      "Баллы за каждое учебное задание начисляются только один раз",
-      "Повторное обучение из личного кабинета баллы не дублирует",
+      "Прошёл обучение на главной: +5 PUMP XP",
+      "Прошёл обучение на всех экранах: +10 PUMP XP",
+      "Баллы за обучение начисляются только один раз",
+      "Повторное обучение из личного кабинета PUMP XP не дублирует",
     ],
   },
   {
@@ -4872,7 +4878,7 @@ const calculatePumpXp = ({
     bonusItems.push({ title: "Первые шаги", xp: 10 });
   }
 
-  (Array.isArray(tutorialAwards) ? tutorialAwards : []).forEach(award => {
+  normalizeOnlyPumpTourAwards(tutorialAwards).forEach(award => {
     const xp = Math.max(0, Math.round(Number(award?.xp || 0)));
     if (!award?.id || !xp) return;
     totalXp += xp;
@@ -5016,54 +5022,54 @@ const onlyPumpTourDefinitions = {
   home: [
     { target: '[data-tour="home-calendar"]', title: "Календарь недели", text: "Здесь выбирается день. Главная, питание, сон, шаги и трекеры подстраиваются под выбранную дату." },
     { target: '[data-tour="home-level"]', title: "Уровень", text: "Нажми на Lvl, чтобы увидеть PUMP XP, шкалу уровня и правила начисления баллов." },
-    { target: '[data-tour="home-edit-widgets"]', title: "Настрой вид", text: "Эта кнопка включает настройку карточек главной: можно менять состав и порядок виджетов.", taskId: "home-open-widget-settings", rewardXp: 5, rewardTitle: "Обучение: настройка главной", completion: "target-click", task: "Нажми «Настроить вид»." },
-    { target: '[data-tour="home-add-widget"]', title: "Открой список", text: "Теперь открой список доступных виджетов.", taskId: "home-open-widget-list", rewardXp: 5, rewardTitle: "Обучение: открыт список виджетов", completion: "target-click", task: "Нажми «Добавить виджет»." },
-    { target: '[data-tour="home-widget-option"]', title: "Добавь виджет", text: "Выбери любой виджет из списка.", taskId: "home-add-widget", rewardXp: 10, rewardTitle: "Обучение: добавлен виджет", completion: "home-widget-added", task: "Выбери любой виджет из списка." },
+    { target: '[data-tour="home-edit-widgets"]', title: "Настрой вид", text: "Эта кнопка включает настройку карточек главной: можно менять состав и порядок виджетов.", taskId: "home-open-widget-settings", completion: "target-click", task: "Нажми «Настроить вид»." },
+    { target: '[data-tour="home-add-widget"]', title: "Открой список", text: "Теперь открой список доступных виджетов.", taskId: "home-open-widget-list", completion: "target-click", task: "Нажми «Добавить виджет»." },
+    { target: '[data-tour="home-widget-option"]', title: "Добавь виджет", text: "Выбери любой виджет из списка.", taskId: "home-add-widget", completion: "home-widget-added", task: "Выбери любой виджет из списка." },
   ],
   nutrition: [
     { target: '[data-tour="nutrition-calendar"]', title: "День питания", text: "Выбирай дату, чтобы видеть и заполнять питание именно за этот день." },
     { target: '[data-tour="nutrition-manual"]', title: "Быстрый ручной ввод", text: "Если не хочешь искать продукт, можно быстро внести питание вручную." },
     { target: '[data-tour="nutrition-add"]', title: "Добавить еду", text: "Плюс открывает выбор приема пищи и базу продуктов." },
-    { target: '[data-tour="nutrition-add"]', title: "Открой добавление", text: "Сначала нажми плюс рядом с приёмами пищи.", taskId: "nutrition-open-add", rewardXp: 5, rewardTitle: "Обучение: открыто добавление еды", completion: "target-click", task: "Нажми плюс питания." },
-    { target: '[data-tour="nutrition-breakfast-choice"]', title: "Выбери завтрак", text: "Теперь выбери приём пищи. Для первого задания подойдёт завтрак.", taskId: "nutrition-choose-breakfast", rewardXp: 5, rewardTitle: "Обучение: выбран завтрак", completion: "target-click", task: "Нажми «Завтрак»." },
-    { target: '[data-tour="nutrition-food-option"]', title: "Выбери продукт", text: "Открой любой продукт из списка. После этого появится карточка порции.", taskId: "nutrition-pick-food", rewardXp: 5, rewardTitle: "Обучение: выбран продукт", completion: "target-click", task: "Нажми на любой продукт." },
-    { target: '[data-tour="nutrition-food-save"]', title: "Добавь продукт", text: "Подтверди добавление. Я продолжу, когда питание за день реально изменится.", taskId: "nutrition-add-food", rewardXp: 10, rewardTitle: "Обучение: добавлена еда", completion: "nutrition-food-added", task: "Нажми «Добавить»." },
+    { target: '[data-tour="nutrition-add"]', title: "Открой добавление", text: "Сначала нажми плюс рядом с приёмами пищи.", taskId: "nutrition-open-add", completion: "target-click", task: "Нажми плюс питания." },
+    { target: '[data-tour="nutrition-breakfast-choice"]', title: "Выбери завтрак", text: "Теперь выбери приём пищи. Для первого задания подойдёт завтрак.", taskId: "nutrition-choose-breakfast", completion: "target-click", task: "Нажми «Завтрак»." },
+    { target: '[data-tour="nutrition-food-option"]', title: "Выбери продукт", text: "Открой любой продукт из списка. После этого появится карточка порции.", taskId: "nutrition-pick-food", completion: "target-click", task: "Нажми на любой продукт." },
+    { target: '[data-tour="nutrition-food-save"]', title: "Добавь продукт", text: "Подтверди добавление. Я продолжу, когда питание за день реально изменится.", taskId: "nutrition-add-food", completion: "nutrition-food-added", task: "Нажми «Добавить»." },
   ],
   workouts: [
     { target: '[data-tour="workouts-programs"]', title: "Доступные программы", text: "Здесь находятся готовые и выданные программы тренировок." },
     { target: '[data-tour="workouts-add"]', title: "Новая тренировка", text: "Эта кнопка открывает создание активной, запланированной или выполненной тренировки." },
     { target: '[data-tour="workouts-calendar"]', title: "Неделя тренировок", text: "Календарь помогает быстро перейти к тренировкам выбранного дня." },
-    { target: '[data-tour="workouts-add"]', title: "Открой создание", text: "Нажми плюс, чтобы открыть меню новой тренировки.", taskId: "workouts-open-add", rewardXp: 5, rewardTitle: "Обучение: открыто меню тренировок", completion: "target-click", task: "Нажми плюс тренировок." },
-    { target: '[data-tour="workouts-start-empty"]', title: "Начни пустую", text: "Выбери пустую тренировку. Далее останется подтвердить название.", taskId: "workouts-pick-empty", rewardXp: 5, rewardTitle: "Обучение: выбран старт тренировки", completion: "target-click", task: "Нажми «Начать пустую тренировку»." },
-    { target: '[data-tour="workouts-title-confirm"]', title: "Подтверди тренировку", text: "Название можно оставить стандартным. Я продолжу, когда тренировка появится в дневнике.", taskId: "workouts-start-empty", rewardXp: 10, rewardTitle: "Обучение: создана тренировка", completion: "workout-created", task: "Нажми «Продолжить»." },
+    { target: '[data-tour="workouts-add"]', title: "Открой создание", text: "Нажми плюс, чтобы открыть меню новой тренировки.", taskId: "workouts-open-add", completion: "target-click", task: "Нажми плюс тренировок." },
+    { target: '[data-tour="workouts-start-empty"]', title: "Начни пустую", text: "Выбери пустую тренировку. Далее останется подтвердить название.", taskId: "workouts-pick-empty", completion: "target-click", task: "Нажми «Начать пустую тренировку»." },
+    { target: '[data-tour="workouts-title-confirm"]', title: "Подтверди тренировку", text: "Название можно оставить стандартным. Я продолжу, когда тренировка появится в дневнике.", taskId: "workouts-start-empty", completion: "workout-created", task: "Нажми «Продолжить»." },
   ],
   progress: [
     { target: '[data-tour="progress-calendar"]', title: "Неделя прогресса", text: "Замеры и цель можно смотреть и менять по выбранной дате." },
     { target: '[data-tour="progress-strength"]', title: "Силовой прогресс", text: "Сюда подтягиваются упражнения, подходы, вес и повторы из тренировок." },
-    { target: '[data-tour="progress-measurements"]', title: "Задание прогресса", text: "Измени любой замер: вес, талию или другой параметр. Я продолжу после сохранения изменения на экране.", taskId: "progress-update-measurement", rewardXp: 10, rewardTitle: "Обучение: обновлены замеры", completion: "measurement-updated", task: "Обнови вес или талию." },
+    { target: '[data-tour="progress-measurements"]', title: "Задание прогресса", text: "Измени любой замер: вес, талию или другой параметр. Я продолжу после сохранения изменения на экране.", taskId: "progress-update-measurement", completion: "measurement-updated", task: "Обнови вес или талию." },
   ],
   analytics: [
     { target: '[data-tour="analytics-period"]', title: "Период аналитики", text: "Переключай день, неделю, месяц и год, чтобы смотреть динамику без потери контекста." },
     { target: '[data-tour="analytics-add-card"]', title: "Карточки аналитики", text: "Добавляй нужные карточки: шаги, сон, вода, нагрузка, питание и трекеры." },
-    { target: '[data-tour="analytics-settings"]', title: "Настройка карточек", text: "Здесь меняется порядок и видимость аналитических карточек.", taskId: "analytics-open-settings", rewardXp: 5, rewardTitle: "Обучение: открыта настройка аналитики", completion: "target-click", task: "Открой настройку карточек аналитики." },
+    { target: '[data-tour="analytics-settings"]', title: "Настройка карточек", text: "Здесь меняется порядок и видимость аналитических карточек.", taskId: "analytics-open-settings", completion: "target-click", task: "Открой настройку карточек аналитики." },
   ],
   education: [
     { target: '[data-tour="education-module"]', title: "Модули обучения", text: "Открывай модуль, смотри уроки и отмечай то, что уже изучено." },
-    { target: '[data-tour="education-continue"]', title: "Продолжить", text: "Кнопка переносит к следующему непройденному уроку активного модуля.", taskId: "education-continue", rewardXp: 5, rewardTitle: "Обучение: открыт урок", completion: "target-click", task: "Нажми «Продолжить»." },
+    { target: '[data-tour="education-continue"]', title: "Продолжить", text: "Кнопка переносит к следующему непройденному уроку активного модуля.", taskId: "education-continue", completion: "target-click", task: "Нажми «Продолжить»." },
   ],
   lectures: [
     { target: '[data-tour="lectures-filter"]', title: "Фильтр лекций", text: "Отфильтруй лекции по теме, чтобы быстрее найти нужный разбор." },
-    { target: '[data-tour="lecture-card"]', title: "Карточка лекции", text: "Открой лекцию, отметь просмотр и продолжай обучение.", taskId: "lectures-open-card", rewardXp: 5, rewardTitle: "Обучение: открыта лекция", completion: "target-click", task: "Открой любую лекцию." },
+    { target: '[data-tour="lecture-card"]', title: "Карточка лекции", text: "Открой лекцию, отметь просмотр и продолжай обучение.", taskId: "lectures-open-card", completion: "target-click", task: "Открой любую лекцию." },
   ],
   calculators: [
     { target: '[data-tour="calculator-card"]', title: "Калькуляторы", text: "Инструменты открываются по карточкам и ведут на связанные страницы. Это ознакомительный шаг, чтобы не уводить тебя из приложения во время обучения." },
   ],
   community: [
-    { target: '[data-tour="community-feed"]', title: "Сообщество", text: "Здесь будет лента, рейтинг и челленджи для дисциплины.", taskId: "community-open-feed", rewardXp: 5, rewardTitle: "Обучение: открыт блок сообщества", completion: "target-click", task: "Нажми на блок сообщества." },
+    { target: '[data-tour="community-feed"]', title: "Сообщество", text: "Здесь будет лента, рейтинг и челленджи для дисциплины.", taskId: "community-open-feed", completion: "target-click", task: "Нажми на блок сообщества." },
   ],
   profile: [
     { target: '[data-tour="profile-card"]', title: "Твой профиль", text: "Здесь видны имя, Telegram, роли и источник профиля." },
-    { target: '[data-tour="profile-edit"]', title: "Редактирование", text: "Открой профиль, если нужно изменить данные, цель, питание или замеры.", taskId: "profile-open-edit", rewardXp: 5, rewardTitle: "Обучение: открыт профиль", completion: "target-click", task: "Открой редактирование профиля." },
+    { target: '[data-tour="profile-edit"]', title: "Редактирование", text: "Открой профиль, если нужно изменить данные, цель, питание или замеры.", taskId: "profile-open-edit", completion: "target-click", task: "Открой редактирование профиля." },
     { target: '[data-tour="profile-start-tour"]', title: "Обучение в любой момент", text: "Эта кнопка запускает интерактивное обучение заново. Баллы за уже выполненные задания при повторе не начисляются." },
   ],
 };
@@ -5076,14 +5082,31 @@ function getOnlyPumpTourCompletedKey(profile = DEFAULT_PROFILE) {
   return `onlypump_tour_completed_${profile?.id || profile?.telegram_id || "local"}`;
 }
 
+function getOnlyPumpTourProfileKeys(prefix, profile = DEFAULT_PROFILE) {
+  const keys = new Set();
+  const addToken = (value) => {
+    const token = String(value || "").trim();
+    if (token) keys.add(`${prefix}_${token}`);
+  };
+  addToken(profile?.id);
+  addToken(profile?.telegram_id);
+  addToken(profile?.telegramId);
+  if (!keys.size) keys.add(`${prefix}_local`);
+  return Array.from(keys);
+}
+
 function getOnlyPumpTourAwardsKey(profile = DEFAULT_PROFILE) {
   return `onlypump_tour_awards_${profile?.id || profile?.telegram_id || "local"}`;
 }
 
 function readOnlyPumpTourSeen(profile = DEFAULT_PROFILE) {
   try {
-    const parsed = JSON.parse(localStorage.getItem(getOnlyPumpTourCacheKey(profile)) || "{}");
-    return parsed && typeof parsed === "object" ? parsed : {};
+    const keys = getOnlyPumpTourProfileKeys("onlypump_tour_seen", profile);
+    keys.push(getOnlyPumpTourCacheKey(profile));
+    return Array.from(new Set(keys)).reduce((result, key) => {
+      const parsed = JSON.parse(localStorage.getItem(key) || "{}");
+      return parsed && typeof parsed === "object" ? { ...result, ...parsed } : result;
+    }, {});
   } catch (error) {
     return {};
   }
@@ -5092,13 +5115,18 @@ function readOnlyPumpTourSeen(profile = DEFAULT_PROFILE) {
 function markOnlyPumpTourScreenSeen(profile = DEFAULT_PROFILE, screen) {
   try {
     const seen = readOnlyPumpTourSeen(profile);
-    localStorage.setItem(getOnlyPumpTourCacheKey(profile), JSON.stringify({ ...seen, [screen]: true }));
+    const nextSeen = JSON.stringify({ ...seen, [screen]: true });
+    const keys = getOnlyPumpTourProfileKeys("onlypump_tour_seen", profile);
+    keys.push(getOnlyPumpTourCacheKey(profile));
+    Array.from(new Set(keys)).forEach(key => localStorage.setItem(key, nextSeen));
   } catch (error) {}
 }
 
 function readOnlyPumpTourCompleted(profile = DEFAULT_PROFILE) {
   try {
-    return localStorage.getItem(getOnlyPumpTourCompletedKey(profile)) === "1";
+    const keys = getOnlyPumpTourProfileKeys("onlypump_tour_completed", profile);
+    keys.push(getOnlyPumpTourCompletedKey(profile));
+    return keys.some(key => localStorage.getItem(key) === "1");
   } catch (error) {
     return false;
   }
@@ -5106,7 +5134,9 @@ function readOnlyPumpTourCompleted(profile = DEFAULT_PROFILE) {
 
 function markOnlyPumpTourCompleted(profile = DEFAULT_PROFILE) {
   try {
-    localStorage.setItem(getOnlyPumpTourCompletedKey(profile), "1");
+    const keys = getOnlyPumpTourProfileKeys("onlypump_tour_completed", profile);
+    keys.push(getOnlyPumpTourCompletedKey(profile));
+    Array.from(new Set(keys)).forEach(key => localStorage.setItem(key, "1"));
   } catch (error) {}
 }
 
@@ -5120,14 +5150,17 @@ function normalizeOnlyPumpTourAwards(values = []) {
   if (!Array.isArray(values)) return [];
   const seen = new Set();
   return values
-    .map(item => ({
-      id: String(item?.id || "").trim(),
-      title: String(item?.title || "Задание обучения").trim(),
-      xp: Math.max(0, Math.round(Number(item?.xp || 0))),
-      earnedAt: item?.earnedAt || item?.earned_at || new Date().toISOString(),
-    }))
+    .map(item => {
+      const id = String(item?.id || "").trim();
+      const award = ONLYPUMP_TOUR_XP_AWARDS[id];
+      if (!award) return null;
+      return {
+        ...award,
+        earnedAt: item?.earnedAt || item?.earned_at || new Date().toISOString(),
+      };
+    })
     .filter(item => {
-      if (!item.id || !item.xp || seen.has(item.id)) return false;
+      if (!item || !item.id || !item.xp || seen.has(item.id)) return false;
       seen.add(item.id);
       return true;
     });
@@ -5135,7 +5168,16 @@ function normalizeOnlyPumpTourAwards(values = []) {
 
 function readOnlyPumpTourAwards(profile = DEFAULT_PROFILE) {
   try {
-    return normalizeOnlyPumpTourAwards(JSON.parse(localStorage.getItem(getOnlyPumpTourAwardsKey(profile)) || "[]"));
+    const keys = getOnlyPumpTourProfileKeys("onlypump_tour_awards", profile);
+    keys.push(getOnlyPumpTourAwardsKey(profile));
+    return normalizeOnlyPumpTourAwards(Array.from(new Set(keys)).flatMap(key => {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        return [];
+      }
+    }));
   } catch (error) {
     return [];
   }
@@ -5143,7 +5185,10 @@ function readOnlyPumpTourAwards(profile = DEFAULT_PROFILE) {
 
 function writeOnlyPumpTourAwards(profile = DEFAULT_PROFILE, awards = []) {
   try {
-    localStorage.setItem(getOnlyPumpTourAwardsKey(profile), JSON.stringify(normalizeOnlyPumpTourAwards(awards)));
+    const nextAwards = JSON.stringify(normalizeOnlyPumpTourAwards(awards));
+    const keys = getOnlyPumpTourProfileKeys("onlypump_tour_awards", profile);
+    keys.push(getOnlyPumpTourAwardsKey(profile));
+    Array.from(new Set(keys)).forEach(key => localStorage.setItem(key, nextAwards));
   } catch (error) {}
 }
 
@@ -22064,19 +22109,18 @@ function OnlyPumpPlatform() {
     measurementSignature: JSON.stringify(measurements || {}),
   }), [homeWidgets, measurements, nutritionDay, workouts]);
 
-  const awardTourTask = useCallback((step) => {
-    if (!step?.taskId || !step.rewardXp) return false;
+  const awardTourXp = useCallback((awardId) => {
+    const award = ONLYPUMP_TOUR_XP_AWARDS[awardId];
+    if (!award) return false;
     let awarded = false;
     setTourAwards(prev => {
       const current = normalizeOnlyPumpTourAwards(prev);
-      if (current.some(item => item.id === step.taskId)) return current;
+      if (current.some(item => item.id === award.id)) return current;
       awarded = true;
       const next = normalizeOnlyPumpTourAwards([
         ...current,
         {
-          id: step.taskId,
-          title: step.rewardTitle || step.task || step.title || "Задание обучения",
-          xp: step.rewardXp,
+          ...award,
           earnedAt: new Date().toISOString(),
         },
       ]);
@@ -22101,8 +22145,9 @@ function OnlyPumpPlatform() {
 	    if (profileWelcomeKey) {
 	      try { localStorage.setItem(profileWelcomeKey, "1"); } catch (error) {}
 	    }
+      markOnlyPumpTourCompleted(profile || DEFAULT_PROFILE);
 	    setProfileWelcomeOpen(false);
-	  }, [profileWelcomeKey]);
+	  }, [profile, profileWelcomeKey]);
 
 	  const startInteractiveTour = useCallback((screen = "home", options = {}) => {
 	    const nextScreen = onlyPumpTourDefinitions[screen] ? screen : "home";
@@ -22125,10 +22170,7 @@ function OnlyPumpPlatform() {
 	    });
 	  }, [profile]);
 
-	  const nextTourStep = useCallback((stepForReward = null) => {
-      if (stepForReward?.taskId && (!stepForReward.completion || stepForReward.completion === "target-click")) {
-        awardTourTask(stepForReward);
-      }
+  const nextTourStep = useCallback(() => {
 	    setTourState(prev => {
 	      const steps = onlyPumpTourDefinitions[prev.screen] || [];
 	      if (prev.stepIndex < steps.length - 1) {
@@ -22136,6 +22178,7 @@ function OnlyPumpPlatform() {
 	        return { ...prev, stepIndex: prev.stepIndex + 1 };
 	      }
 	      if (prev.screen) markOnlyPumpTourScreenSeen(profile || DEFAULT_PROFILE, prev.screen);
+        if (prev.screen === "home") awardTourXp("home-tour-completed");
         if (prev.full) {
           const currentIndex = onlyPumpTourScreens.indexOf(prev.screen);
           const nextScreen = onlyPumpTourScreens.slice(currentIndex + 1).find(screen => (onlyPumpTourDefinitions[screen] || []).length);
@@ -22144,16 +22187,17 @@ function OnlyPumpPlatform() {
             tourTaskSnapshotRef.current = null;
             return { ...prev, screen: nextScreen, stepIndex: 0 };
           }
+          awardTourXp("full-tour-completed");
         }
         markOnlyPumpTourCompleted(profile || DEFAULT_PROFILE);
 	      return { active: false, screen: activeRef.current || "home", stepIndex: 0, force: false, full: false };
 	    });
-	  }, [awardTourTask, profile, setActive]);
+	  }, [awardTourXp, profile, setActive]);
 
   const handleTourTargetAction = useCallback((step) => {
     if (!step) return;
     if (step.taskId && step.completion && step.completion !== "target-click") return;
-    nextTourStep(step);
+    nextTourStep();
   }, [nextTourStep]);
 
 	  const skipTour = useCallback(() => {
@@ -22174,7 +22218,6 @@ function OnlyPumpPlatform() {
     if (!tourState.active || !activeTourStep?.taskId) return;
     if (!activeTourStep.completion || activeTourStep.completion === "target-click") return;
     if (!isTourTaskComplete(activeTourStep)) return;
-    awardTourTask(activeTourStep);
     const timerId = window.setTimeout(() => nextTourStep(), 360);
     return () => window.clearTimeout(timerId);
   }, [
@@ -22186,7 +22229,6 @@ function OnlyPumpPlatform() {
     workouts.length,
     JSON.stringify(nutritionDay?.meals || []),
     JSON.stringify(measurements || {}),
-    awardTourTask,
     isTourTaskComplete,
     nextTourStep,
   ]);
@@ -22207,6 +22249,11 @@ function OnlyPumpPlatform() {
 	    if (profile.onboarding_completed !== true) return undefined;
 	    if (tourState.active) return undefined;
       if (readOnlyPumpTourCompleted(profile || DEFAULT_PROFILE)) return undefined;
+      const seenScreens = readOnlyPumpTourSeen(profile || DEFAULT_PROFILE);
+      if (seenScreens.home) {
+        markOnlyPumpTourCompleted(profile || DEFAULT_PROFILE);
+        return undefined;
+      }
 	    const steps = onlyPumpTourDefinitions.home || [];
 	    if (!steps.length) return undefined;
 	    const timerId = window.setTimeout(() => {
