@@ -5060,6 +5060,7 @@ const onlyPumpTourDefinitions = {
     { target: '[data-tour="home-edit-widgets"]', title: "Настрой вид", text: "Эта кнопка включает настройку карточек главной: можно менять состав и порядок виджетов.", taskId: "home-open-widget-settings", completion: "target-click", task: "Нажми «Настроить вид»." },
     { target: '[data-tour="home-add-widget"]', title: "Открой список", text: "Теперь открой список доступных виджетов.", taskId: "home-open-widget-list", completion: "target-click", task: "Нажми «Добавить виджет»." },
     { target: '[data-tour="home-widget-option"]', title: "Добавь виджет", text: "Выбери любой виджет из списка.", taskId: "home-add-widget", completion: "home-widget-added", task: "Выбери любой виджет из списка." },
+    { title: "Главная готова", text: "Теперь ты умеешь выбирать день и настраивать виджеты главной под себя." },
   ],
   nutrition: [
     { target: '[data-tour="nutrition-calendar"]', title: "День питания", text: "Выбирай дату, чтобы видеть и заполнять питание именно за этот день." },
@@ -5069,49 +5070,60 @@ const onlyPumpTourDefinitions = {
     { target: '[data-tour="nutrition-breakfast-choice"]', title: "Выбери завтрак", text: "Теперь выбери приём пищи. Для первого задания подойдёт завтрак.", taskId: "nutrition-choose-breakfast", completion: "target-click", task: "Нажми «Завтрак»." },
     { target: '[data-tour="nutrition-food-option"]', title: "Выбери продукт", text: "Открой любой продукт из списка. После этого появится карточка порции.", taskId: "nutrition-pick-food", completion: "target-click", task: "Нажми на любой продукт." },
     { target: '[data-tour="nutrition-food-save"]', title: "Добавь продукт", text: "Подтверди добавление. Я продолжу, когда питание за день реально изменится.", taskId: "nutrition-add-food", completion: "nutrition-food-added", task: "Нажми «Добавить»." },
+    { title: "Питание готово", text: "Теперь ты умеешь добавлять продукты в дневник. Так же можно заполнить остальные приёмы пищи или внести день вручную." },
   ],
   workouts: [
     { target: '[data-tour="workouts-programs"]', title: "Доступные программы", text: "Здесь находятся готовые и выданные программы тренировок." },
     { target: '[data-tour="workouts-add"]', title: "Новая тренировка", text: "Эта кнопка открывает создание активной, запланированной или выполненной тренировки." },
     { target: '[data-tour="workouts-calendar"]', title: "Неделя тренировок", text: "Календарь помогает быстро перейти к тренировкам выбранного дня." },
     { target: '[data-tour="workouts-add"]', title: "Открой создание", text: "Нажми плюс, чтобы открыть меню новой тренировки.", taskId: "workouts-open-add", completion: "target-click", task: "Нажми плюс тренировок." },
-    { target: '[data-tour="workouts-start-empty"]', title: "Начни пустую", text: "Выбери пустую тренировку. Далее останется подтвердить название.", taskId: "workouts-pick-empty", completion: "target-click", task: "Нажми «Начать пустую тренировку»." },
-    { target: '[data-tour="workouts-title-confirm"]', title: "Подтверди тренировку", text: "Название можно оставить стандартным. Я продолжу, когда тренировка появится в дневнике.", taskId: "workouts-start-empty", completion: "workout-created", task: "Нажми «Продолжить»." },
+    { target: '[data-tour="workouts-start-empty"]', title: "Начни пустую", text: "Выбери пустую тренировку. Далее можно оставить стандартное название или ввести своё.", taskId: "workouts-pick-empty", completion: "target-click", task: "Нажми «Начать пустую тренировку»." },
+    { target: '[data-tour="workouts-title-input"]', title: "Назови тренировку", text: "Можно оставить поле пустым: тогда приложение само поставит название «Новая тренировка»." },
+    { target: '[data-tour="workouts-title-confirm"]', title: "Подтверди тренировку", text: "Подтверди название и переходи к выбору типа тренировки.", taskId: "workouts-confirm-title", completion: "target-click", task: "Нажми «Продолжить»." },
+    { target: '[data-tour="workouts-type-strength"]', title: "Выбери тип", text: "Для первого задания выбери силовую тренировку: в ней есть упражнения, подходы, вес и повторы.", taskId: "workouts-pick-strength-type", completion: "workout-created", task: "Нажми «Силовая»." },
     { target: '[data-tour="workouts-add-exercise"]', title: "Добавь упражнение", text: "Открой базу упражнений из экрана тренировки.", taskId: "workouts-open-exercise-base", completion: "target-click", task: "Нажми плюс упражнения." },
     { target: '[data-tour="workouts-exercise-option"]', title: "Выбери упражнение", text: "Отметь любое упражнение из базы. Оно добавится в список выбранных.", taskId: "workouts-pick-exercise", completion: "target-click", task: "Выбери упражнение." },
     { target: '[data-tour="workouts-add-selected-exercises"]', title: "Подтверди добавление", text: "Теперь добавь выбранное упражнение в тренировку. Я продолжу, когда оно появится на экране.", taskId: "workouts-add-exercise-to-workout", completion: "workout-exercise-added", task: "Нажми «Добавить упражнение»." },
     { target: '[data-tour="workouts-open-exercise"]', title: "Открой упражнение", text: "Нажми на добавленное упражнение, чтобы перейти к подходам.", taskId: "workouts-open-exercise", completion: "target-click", task: "Открой упражнение." },
     { target: '[data-tour="workouts-add-set"]', title: "Добавь подход", text: "Открой упражнение и добавь рабочий подход. Я продолжу, когда подход появится в тренировке.", taskId: "workouts-add-set", completion: "workout-set-added", task: "Добавь подход." },
+    { title: "Готово", text: "Теперь ты умеешь создавать тренировку и добавлять подходы. Дальше создай остальные упражнения и выполни тренировку." },
   ],
   progress: [
     { target: '[data-tour="progress-calendar"]', title: "Неделя прогресса", text: "Замеры и цель можно смотреть и менять по выбранной дате." },
     { target: '[data-tour="progress-strength"]', title: "Силовой прогресс", text: "Сюда подтягиваются упражнения, подходы, вес и повторы из тренировок." },
     { target: '[data-tour="progress-measurements"]', title: "Задание прогресса", text: "Измени любой замер: вес, талию или другой параметр. Я продолжу после сохранения изменения на экране.", taskId: "progress-update-measurement", completion: "measurement-updated", task: "Обнови вес или талию." },
+    { title: "Прогресс готов", text: "Теперь ты знаешь, где обновлять замеры и смотреть силовую динамику." },
   ],
   analytics: [
     { target: '[data-tour="analytics-period"]', title: "Период аналитики", text: "Переключай день, неделю, месяц и год, чтобы смотреть динамику без потери контекста." },
     { target: '[data-tour="analytics-add-card"]', title: "Карточки аналитики", text: "Добавляй нужные карточки: шаги, сон, вода, нагрузка, питание и трекеры." },
     { target: '[data-tour="analytics-open-graph"]', title: "График", text: "Открой график карточки: внутри можно листать период и смотреть динамику.", taskId: "analytics-open-graph", completion: "target-click", task: "Открой любой график аналитики." },
     { target: '[data-tour="analytics-settings"]', title: "Настройка карточек", text: "Здесь меняется порядок и видимость аналитических карточек.", taskId: "analytics-open-settings", completion: "target-click", task: "Открой настройку карточек аналитики." },
+    { title: "Аналитика готова", text: "Теперь ты умеешь менять период, открывать графики и настраивать карточки анализа." },
   ],
   education: [
     { target: '[data-tour="education-module"]', title: "Модули обучения", text: "Открывай модуль, смотри уроки и отмечай то, что уже изучено." },
     { target: '[data-tour="education-continue"]', title: "Продолжить", text: "Кнопка переносит к следующему непройденному уроку активного модуля.", taskId: "education-continue", completion: "target-click", task: "Нажми «Продолжить»." },
+    { title: "Обучение готово", text: "Теперь ты знаешь, где продолжать уроки и отмечать изученное." },
   ],
   lectures: [
     { target: '[data-tour="lectures-filter"]', title: "Фильтр лекций", text: "Отфильтруй лекции по теме, чтобы быстрее найти нужный разбор." },
     { target: '[data-tour="lecture-card"]', title: "Карточка лекции", text: "Открой лекцию, отметь просмотр и продолжай обучение.", taskId: "lectures-open-card", completion: "target-click", task: "Открой любую лекцию." },
+    { title: "Лекции готовы", text: "Теперь ты умеешь находить нужную лекцию и открывать разбор." },
   ],
   calculators: [
     { target: '[data-tour="calculator-card"]', title: "Калькуляторы", text: "Инструменты открываются по карточкам и ведут на связанные страницы. Это ознакомительный шаг, чтобы не уводить тебя из приложения во время обучения." },
+    { title: "Калькуляторы готовы", text: "Теперь ты знаешь, где находятся быстрые инструменты расчёта." },
   ],
   community: [
     { target: '[data-tour="community-feed"]', title: "Сообщество", text: "Здесь будет лента, рейтинг и челленджи для дисциплины.", taskId: "community-open-feed", completion: "target-click", task: "Нажми на блок сообщества." },
+    { title: "Сообщество готово", text: "Теперь ты знаешь, где будет лента, рейтинг и челленджи." },
   ],
   profile: [
     { target: '[data-tour="profile-card"]', title: "Твой профиль", text: "Здесь видны имя, Telegram, роли и источник профиля." },
     { target: '[data-tour="profile-edit"]', title: "Редактирование", text: "Открой профиль, если нужно изменить данные, цель, питание или замеры.", taskId: "profile-open-edit", completion: "target-click", task: "Открой редактирование профиля." },
     { target: '[data-tour="profile-start-tour"]', title: "Обучение в любой момент", text: "Эта кнопка запускает интерактивное обучение заново. Баллы за уже выполненные задания при повторе не начисляются." },
+    { title: "Личный кабинет готов", text: "Теперь ты знаешь, где менять профиль, смотреть роли и запускать обучение заново." },
   ],
 };
 
@@ -5267,7 +5279,7 @@ function getTourCardStyle(targetRect, compact = false) {
   const viewportWidth = window.innerWidth || 390;
   const viewportHeight = window.innerHeight || 740;
   const margin = 12;
-  const width = Math.min(compact ? 252 : 340, viewportWidth - margin * 2);
+  const width = Math.min(compact ? 228 : 340, viewportWidth - margin * 2);
   if (!targetRect) {
     if (compact) {
       return {
@@ -5280,10 +5292,14 @@ function getTourCardStyle(targetRect, compact = false) {
   }
   const left = Math.max(margin, Math.min(viewportWidth - width - margin, targetRect.left + targetRect.width / 2 - width / 2));
   if (compact) {
-    const estimatedHeight = 118;
-    const topZone = Math.max(margin, Math.min(86, viewportHeight - estimatedHeight - margin));
-    const bottomZone = Math.max(margin, viewportHeight - estimatedHeight - margin);
-    const top = targetRect.top > viewportHeight * 0.45 ? topZone : bottomZone;
+    const estimatedHeight = 96;
+    const spaceAbove = targetRect.top - margin;
+    const spaceBelow = viewportHeight - targetRect.bottom - margin;
+    const top = spaceAbove >= estimatedHeight + 18
+      ? Math.max(margin, targetRect.top - estimatedHeight - 12)
+      : spaceBelow >= estimatedHeight + 18
+        ? Math.min(viewportHeight - estimatedHeight - margin, targetRect.bottom + 12)
+        : Math.max(margin, viewportHeight - estimatedHeight - margin);
     return { left, top, width };
   }
   const belowTop = targetRect.bottom + 10;
@@ -5294,9 +5310,14 @@ function getTourCardStyle(targetRect, compact = false) {
 
 function InteractiveTourOverlay({ step, stepIndex, totalSteps, onNext, onSkip, onTargetAction }) {
   const [targetRect, setTargetRect] = useState(null);
+  const [actionWarning, setActionWarning] = useState(null);
   const targetElementRef = useRef(null);
   const targetClickTimerRef = useRef(null);
   const lastTargetClickRef = useRef(0);
+
+  useEffect(() => {
+    setActionWarning(null);
+  }, [stepIndex, step?.taskId]);
 
   useEffect(() => {
     if (!step?.target) {
@@ -5372,8 +5393,19 @@ function InteractiveTourOverlay({ step, stepIndex, totalSteps, onNext, onSkip, o
   if (!step) return null;
   const isLast = stepIndex >= totalSteps - 1;
   const isStateTask = Boolean(step.taskId && step.completion && step.completion !== "target-click");
+  const isClickTask = Boolean(step.taskId && step.completion === "target-click");
   const cardStyle = getTourCardStyle(targetRect, isStateTask);
   const showBodyText = Boolean(step.text && !isStateTask);
+  const handleNextClick = () => {
+    if (isClickTask) {
+      setActionWarning({
+        id: Date.now(),
+        text: `${step.task || "Нажми подсвеченную кнопку"}. Либо пропусти обучение.`,
+      });
+      return;
+    }
+    onNext?.(step);
+  };
 
   return <div className="pointer-events-none fixed inset-0 z-[244]" data-no-edge-back="true">
     {targetRect && <div
@@ -5397,9 +5429,12 @@ function InteractiveTourOverlay({ step, stepIndex, totalSteps, onNext, onSkip, o
       {step.task && <div className={`${isStateTask ? "mt-2 rounded-xl px-3 py-2 text-[11px] leading-4" : "mt-3 rounded-2xl p-3 text-xs leading-5"} onlypump-tour-task font-black`}>
         <div>{step.task}</div>
       </div>}
+      {actionWarning && <div key={actionWarning.id} className="mt-2 rounded-2xl border border-red-400/45 bg-red-500/12 px-3 py-2 text-[11px] font-black leading-4 text-red-200">
+        {actionWarning.text}
+      </div>}
       <div className={`${isStateTask ? "mt-2 justify-start" : "mt-4 justify-between"} flex items-center gap-2`}>
         <button type="button" onClick={onSkip} className="rounded-full px-3 py-2 text-xs font-black" style={{ color: "var(--onlypump-muted)" }}>Пропустить</button>
-        {!isStateTask ? <button type="button" onClick={() => onNext?.(step)} className="rounded-full bg-red-500 px-4 py-2.5 text-xs font-black text-black">
+        {!isStateTask ? <button type="button" onClick={handleNextClick} className="rounded-full bg-red-500 px-4 py-2.5 text-xs font-black text-black">
           {isLast ? "Понял" : "Далее"}
         </button> : null}
       </div>
@@ -8337,9 +8372,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [programSettingsSheet, setProgramSettingsSheet] = useState(null);
   const [programBuilderSheet, setProgramBuilderSheet] = useState(null);
+  const [programShareSheet, setProgramShareSheet] = useState(null);
   const [customTrainingPrograms, setCustomTrainingPrograms] = useState([]);
   const [programBuilderExercisePicker, setProgramBuilderExercisePicker] = useState(null);
   const [programBuilderTargetPicker, setProgramBuilderTargetPicker] = useState(null);
+  const [programShareTargetPicker, setProgramShareTargetPicker] = useState(null);
   const [programBuilderExerciseSearch, setProgramBuilderExerciseSearch] = useState("");
   const [programBuilderExerciseGroup, setProgramBuilderExerciseGroup] = useState("Все");
   const [programSaving, setProgramSaving] = useState(false);
@@ -8765,6 +8802,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         workoutCount: Number(row.workoutCount || row.workout_count || row.days.length),
         progressionType: row.progressionType || row.progression_type || "double_progression",
         isUserCreated: row.isUserCreated ?? row.is_user_created ?? true,
+        creatorProfileId: row.creatorProfileId || row.creator_profile_id || null,
+        createdByRole: row.createdByRole || row.created_by_role || "",
+        visibilityScope: row.visibilityScope || row.visibility_scope || "private",
+        targetProfileIds: Array.isArray(row.targetProfileIds || row.target_profile_ids) ? (row.targetProfileIds || row.target_profile_ids).map(String).filter(Boolean) : [],
+        isPublic: Boolean(row.isPublic ?? row.is_public ?? false),
       };
     }
     const templateKey = row.template_key || row.templateKey || row.id || `program-${Date.now()}`;
@@ -8832,10 +8874,18 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       workoutCount: Number(row.workout_count || row.workoutCount || days.length || 1),
       progressionType: row.progression_type || row.progressionType || "double_progression",
       visibilityScope: row.visibility_scope || row.visibilityScope || "all",
+      targetProfileIds: Array.isArray(row.target_profile_ids || row.targetProfileIds) ? (row.target_profile_ids || row.targetProfileIds).map(String).filter(Boolean) : [],
+      creatorProfileId: row.creator_profile_id || row.creatorProfileId || null,
+      createdByRole: row.created_by_role || row.createdByRole || "",
+      isPublic: Boolean(row.is_public ?? row.isPublic ?? false),
       isUserCreated: Boolean(row.is_user_created || row.isUserCreated),
       days,
     };
   };
+
+  const normalizeProgramTargetProfileIds = (value) => Array.isArray(value)
+    ? value.map(String).map(item => item.trim()).filter(Boolean)
+    : String(value || "").split(/[,\s]+/).map(item => item.trim()).filter(Boolean);
 
   const programTemplateStorageKey = () => `onlypump-custom-programs-${profile?.id || profile?.telegram_id || "demo"}`;
 
@@ -8855,17 +8905,33 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const getProgramBuilderShareOptions = () => {
     if (profileHasRole(profile, "owner")) {
       return [
-        { id: "all", label: "Всем пользователям" },
-        { id: "students", label: "Ученикам" },
-        { id: "selected", label: "Выборочно" },
         { id: "private", label: "Только мне" },
+        { id: "selected", label: "Выборочно" },
+        { id: "students", label: "Всем ученикам" },
+        { id: "all", label: "Всем пользователям" },
       ];
     }
     return [
-      { id: "trainer_students", label: "Моим ученикам" },
-      { id: "selected", label: "Выборочно" },
       { id: "private", label: "Только мне" },
+      { id: "selected", label: "Выбранным ученикам" },
+      { id: "trainer_students", label: "Всем моим ученикам" },
     ];
+  };
+
+  const getProgramVisibilityLabel = (program = {}) => {
+    const scope = program.visibilityScope || program.visibility_scope || (program.isPublic ? "all" : "private");
+    const targetCount = normalizeProgramTargetProfileIds(program.targetProfileIds || program.target_profile_ids).length;
+    if (scope === "all") return "доступна всем";
+    if (scope === "students") return "доступна ученикам";
+    if (scope === "trainer_students") return "доступна моим ученикам";
+    if (scope === "selected") return targetCount ? `выбрано: ${targetCount}` : "выборочно";
+    return "только мне";
+  };
+
+  const canShareProgramTemplate = (program = {}) => {
+    if (!canCreateProgramTemplates || !program?.isUserCreated) return false;
+    if (profileHasRole(profile, "owner")) return true;
+    return String(program.creatorProfileId || program.creator_profile_id || "") === String(profile?.id || "");
   };
 
   const getProgramBuilderOffsetDays = (pattern, index, cycleLength) => {
@@ -8895,7 +8961,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       audience: "unisex",
       focus: "",
       description: "",
-      visibilityScope: profileHasRole(profile, "owner") ? "all" : "trainer_students",
+      visibilityScope: "private",
       targetProfileIdsText: "",
       targetProfileIds: [],
       targetProfileLabels: [],
@@ -9051,7 +9117,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         visibility_scope: draft.visibilityScope,
         target_profile_ids: Array.isArray(draft.targetProfileIds) && draft.targetProfileIds.length
           ? draft.targetProfileIds
-          : String(draft.targetProfileIdsText || "").split(/[,\s]+/).map(item => item.trim()).filter(Boolean),
+          : normalizeProgramTargetProfileIds(draft.targetProfileIdsText),
       },
       workouts: (draft.days || []).map((day, dayIndex) => ({
         template_workout_key: `${templateKey}-day-${dayIndex + 1}`,
@@ -9128,6 +9194,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           workout_count: payload.program.workout_count,
           progression_type: payload.program.progression_type,
           visibility_scope: payload.program.visibility_scope,
+          is_public: payload.program.visibility_scope !== "private",
+          target_profile_ids: payload.program.target_profile_ids,
+          creator_profile_id: profile?.id || null,
+          created_by_role: profileHasRole(profile, "owner") ? "owner" : "trainer",
           is_user_created: true,
           program_template_workouts: payload.workouts.map((day, index) => ({ ...day, sort_order: index + 1, program_template_exercises: day.exercises.map((exercise, exerciseIndex) => ({ ...exercise, sort_order: exerciseIndex + 1, program_exercise_alternatives: exercise.alternatives })) })),
         });
@@ -9144,6 +9214,80 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     } catch (error) {
       console.error("Program template save error", error);
       updateProgramBuilderDraft({ error: "Не удалось сохранить программу." });
+    } finally {
+      setProgramSaving(false);
+    }
+  };
+
+  const openProgramShareSheet = (program, event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if (!canShareProgramTemplate(program)) return;
+    setProgramShareSheet({
+      program,
+      draft: {
+        visibilityScope: program.visibilityScope || program.visibility_scope || "private",
+        targetProfileIds: normalizeProgramTargetProfileIds(program.targetProfileIds || program.target_profile_ids),
+        targetProfileLabels: [],
+        error: "",
+      },
+    });
+  };
+
+  const updateProgramShareDraft = (patcher) => {
+    setProgramShareSheet(prev => {
+      if (!prev) return prev;
+      const nextDraft = typeof patcher === "function" ? patcher(prev.draft) : { ...prev.draft, ...patcher };
+      return { ...prev, draft: nextDraft };
+    });
+  };
+
+  const applyProgramTemplateUpdate = (updatedProgram) => {
+    if (!updatedProgram?.id) return;
+    setCustomTrainingPrograms(prev => {
+      const next = prev.map(program => program.id === updatedProgram.id ? { ...program, ...updatedProgram } : program);
+      const exists = next.some(program => program.id === updatedProgram.id);
+      const finalPrograms = exists ? next : [updatedProgram, ...next];
+      writeLocalProgramTemplates(finalPrograms);
+      return finalPrograms;
+    });
+    setProgramSettingsSheet(prev => prev?.program?.id === updatedProgram.id ? { ...prev, program: { ...prev.program, ...updatedProgram } } : prev);
+    setProgramShareSheet(prev => prev?.program?.id === updatedProgram.id ? { ...prev, program: { ...prev.program, ...updatedProgram } } : prev);
+  };
+
+  const saveProgramShareSettings = async () => {
+    if (!programShareSheet?.program || programSaving) return;
+    const { program, draft } = programShareSheet;
+    const visibilityScope = draft.visibilityScope || "private";
+    const targetProfileIds = visibilityScope === "selected" ? normalizeProgramTargetProfileIds(draft.targetProfileIds) : [];
+    if (visibilityScope === "selected" && !targetProfileIds.length) {
+      updateProgramShareDraft({ error: "Выбери хотя бы одного получателя." });
+      return;
+    }
+    const optimisticProgram = {
+      ...program,
+      visibilityScope,
+      targetProfileIds,
+      isPublic: visibilityScope !== "private",
+    };
+    setProgramSaving(true);
+    try {
+      if (canUseWorkoutApi) {
+        const result = await callWorkoutsApi("share_program_template", {
+          program_template_id: program.remoteProgramTemplateId || program.program_template_id || null,
+          template_key: program.templateKey || program.template_key || program.id,
+          visibility_scope: visibilityScope,
+          target_profile_ids: targetProfileIds,
+        });
+        const updatedProgram = mapProgramTemplateRowToProgram(result.program_template || result.template || {});
+        if (updatedProgram?.days?.length) applyProgramTemplateUpdate(updatedProgram);
+      } else {
+        applyProgramTemplateUpdate(optimisticProgram);
+      }
+      setProgramShareSheet(null);
+    } catch (error) {
+      console.error("Program share error", error);
+      updateProgramShareDraft({ error: "Не удалось обновить доступ к программе." });
     } finally {
       setProgramSaving(false);
     }
@@ -13563,6 +13707,8 @@ const toggleExerciseMeasurementSetting = (field) => {
   useAppBackLayer("workouts-program-builder-picker", Boolean(programBuilderExercisePicker), () => setProgramBuilderExercisePicker(null), 154);
   useAppBackLayer("workouts-program-builder-target-picker", Boolean(programBuilderTargetPicker), () => setProgramBuilderTargetPicker(null), 154);
   useAppBackLayer("workouts-program-builder", Boolean(programBuilderSheet), () => setProgramBuilderSheet(null), 153);
+  useAppBackLayer("workouts-program-share-target-picker", Boolean(programShareTargetPicker), () => setProgramShareTargetPicker(null), 153);
+  useAppBackLayer("workouts-program-share", Boolean(programShareSheet), () => setProgramShareSheet(null), 152);
   useAppBackLayer("workouts-program-settings", Boolean(programSettingsSheet), () => setProgramSettingsSheet(null), 151);
   useAppBackLayer("workouts-templates", isTemplatesOpen, () => setIsTemplatesOpen(false), 145);
   useAppBackLayer("workouts-title-prompt", Boolean(workoutTitlePrompt), () => setWorkoutTitlePrompt(null), 143);
@@ -14910,6 +15056,7 @@ const toggleExerciseMeasurementSetting = (field) => {
         <label className="mt-5 block">
           <span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название</span>
           <input
+            data-tour="workouts-title-input"
             autoFocus
             value={workoutTitlePrompt.title}
             onChange={(e) => setWorkoutTitlePrompt(prev => ({ ...prev, title: e.target.value }))}
@@ -14939,6 +15086,7 @@ const toggleExerciseMeasurementSetting = (field) => {
           {workoutTypeDefinitions.map(type => <button
             key={type.id}
             type="button"
+            data-tour={type.id === "strength" ? "workouts-type-strength" : undefined}
             onClick={() => createWorkoutFromTypePicker(type.id)}
             className="flex items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left transition active:scale-[0.98] hover:bg-white/[0.07]"
           >
@@ -15161,7 +15309,9 @@ const toggleExerciseMeasurementSetting = (field) => {
           {canCreateProgramTemplates && <button type="button" onClick={openProgramBuilder} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-500 text-black shadow-lg shadow-red-500/20 transition active:scale-95"><Plus size={22}/></button>}
         </div>
         <div className="mt-5 space-y-3">
-          {visibleTrainingPrograms.map(program => <button key={program.id} onClick={() => openProgramSettings(program)} className="w-full rounded-[24px] border border-white/10 bg-white/[0.04] p-4 text-left transition active:scale-[0.99] hover:border-red-500/40 hover:bg-red-500/10">
+          {visibleTrainingPrograms.map(program => {
+            const canShareProgram = canShareProgramTemplate(program);
+            return <div key={program.id} role="button" tabIndex={0} onClick={() => openProgramSettings(program)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") openProgramSettings(program); }} className="w-full cursor-pointer rounded-[24px] border border-white/10 bg-white/[0.04] p-4 text-left transition active:scale-[0.99] hover:border-red-500/40 hover:bg-red-500/10">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="break-words text-[22px] font-black leading-tight tracking-[-0.04em]">{program.title}</div>
@@ -15169,9 +15319,13 @@ const toggleExerciseMeasurementSetting = (field) => {
                   <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-red-300">{program.audience}</span>
                   <span className="rounded-full bg-white/[0.07] px-2.5 py-1 text-zinc-400">{program.focus}</span>
                   {program.isUserCreated && <span className="rounded-full bg-white/[0.07] px-2.5 py-1 text-zinc-400">моя</span>}
+                  {program.isUserCreated && <span className="rounded-full bg-white/[0.07] px-2.5 py-1 text-zinc-400">{getProgramVisibilityLabel(program)}</span>}
                 </div>
               </div>
-              <span className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-black text-black">Настроить</span>
+              <div className="flex shrink-0 flex-col items-end gap-2">
+                <span className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-black">Настроить</span>
+                {canShareProgram && <button type="button" onClick={(event) => openProgramShareSheet(program, event)} className="rounded-full bg-red-500/15 px-3 py-1.5 text-xs font-black text-red-300 transition active:scale-95 hover:bg-red-500/25">Поделиться</button>}
+              </div>
             </div>
             <p className="mt-3 text-sm leading-6 text-zinc-500">{program.description}</p>
             <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
@@ -15188,7 +15342,8 @@ const toggleExerciseMeasurementSetting = (field) => {
                 <div className="mt-1 text-xs text-zinc-600">{formatDuration(day.durationMinutes)} · {(day.exercises || []).reduce((sum, exercise) => sum + getProgramExerciseSetsCount(exercise), 0)} подходов</div>
               </div>)}
             </div>
-          </button>)}
+          </div>;
+          })}
         </div>
 	      </BottomSheetPanel>
 	    </div>}
@@ -15201,7 +15356,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	      const totalSets = getProgramBuilderTotalSets(draft);
 	      const shareOptions = getProgramBuilderShareOptions();
 	      const chooseShareOption = (option) => {
-	        if (["selected", "students", "trainer_students"].includes(option.id)) {
+	        if (option.id === "selected") {
 	          setProgramBuilderTargetPicker({ mode: option.id });
 	          return;
 	        }
@@ -15261,7 +15416,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Акцент</span><input value={draft.focus} onChange={(e) => updateProgramBuilderDraft({ focus: e.target.value })} placeholder="Например: плечи, ягодицы, сила" className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/></label>
 	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Описание</span><textarea value={draft.description} onChange={(e) => updateProgramBuilderDraft({ description: e.target.value })} rows="4" className="mt-2 w-full resize-none rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold leading-6 outline-none ring-1 ring-white/10"/></label>
 	              <div><div className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Кому доступна</div><div className="mt-2 grid grid-cols-1 gap-2">{shareOptions.map(option => <button key={option.id} type="button" onClick={() => chooseShareOption(option)} className={`rounded-2xl px-4 py-3 text-left text-sm font-black transition ${draft.visibilityScope === option.id ? "bg-red-500 text-black" : "bg-white/[0.05] text-zinc-300"}`}>{option.label}</button>)}</div></div>
-	              {["selected", "students", "trainer_students"].includes(draft.visibilityScope) && <button type="button" onClick={() => setProgramBuilderTargetPicker({ mode: draft.visibilityScope })} className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-bold text-zinc-300 transition hover:bg-white/[0.08]">
+	              {draft.visibilityScope === "selected" && <button type="button" onClick={() => setProgramBuilderTargetPicker({ mode: draft.visibilityScope })} className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-bold text-zinc-300 transition hover:bg-white/[0.08]">
 	                {Array.isArray(draft.targetProfileLabels) && draft.targetProfileLabels.length ? `Выбрано: ${draft.targetProfileLabels.join(", ")}` : "Выбрать пользователей по имени или нику"}
 	              </button>}
 	            </>}
@@ -15352,6 +15507,69 @@ const toggleExerciseMeasurementSetting = (field) => {
 	      }}
 	    />}
 
+	    {programShareSheet && (() => {
+	      const { program, draft } = programShareSheet;
+	      const shareOptions = getProgramBuilderShareOptions();
+	      const chooseShareOption = (option) => {
+	        if (option.id === "selected") {
+	          setProgramShareTargetPicker({ mode: "selected" });
+	          return;
+	        }
+	        updateProgramShareDraft({ visibilityScope: option.id, targetProfileIds: [], targetProfileLabels: [], error: "" });
+	      };
+	      return <div onClick={() => !programSaving && setProgramShareSheet(null)} className="onlypump-modal-layer fixed inset-0 z-[158] flex items-end bg-black/60 p-3 backdrop-blur-sm">
+	        <BottomSheetPanel onClose={() => !programSaving && setProgramShareSheet(null)} onClick={(e) => e.stopPropagation()} className="mx-auto flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-[430px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+	          <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
+	          <div className="flex items-start justify-between gap-3">
+	            <button disabled={programSaving} type="button" onClick={() => setProgramShareSheet(null)} className="mt-1 shrink-0 text-sm font-black text-zinc-400 disabled:opacity-40">Отмена</button>
+	            <div className="min-w-0 text-center">
+	              <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Доступ</p>
+	              <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">Поделиться программой</h2>
+	            </div>
+	            <button disabled={programSaving} type="button" onClick={() => setProgramShareSheet(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300 disabled:opacity-40">×</button>
+	          </div>
+	          <div className="onlypump-sheet-list mt-5 flex-1 space-y-4 overflow-y-auto pr-1 pb-3 onlypump-scrollbar-none" data-no-sheet-drag="true">
+	            <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
+	              <p className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Программа</p>
+	              <h3 className="mt-2 break-words text-xl font-black tracking-[-0.03em]">{program.title}</h3>
+	              <p className="mt-2 text-sm leading-6 text-zinc-500">Можно хранить как личную заготовку, а позже открыть конкретному ученику или группе.</p>
+	            </div>
+	            {draft.error && <p className="rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{draft.error}</p>}
+	            <div>
+	              <div className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Кому доступна</div>
+	              <div className="mt-2 grid grid-cols-1 gap-2">
+	                {shareOptions.map(option => <button key={option.id} type="button" onClick={() => chooseShareOption(option)} className={`rounded-2xl px-4 py-3 text-left text-sm font-black transition ${draft.visibilityScope === option.id ? "bg-red-500 text-black" : "bg-white/[0.05] text-zinc-300 hover:bg-white/[0.08]"}`}>{option.label}</button>)}
+	              </div>
+	            </div>
+	            {draft.visibilityScope === "selected" && <button type="button" onClick={() => setProgramShareTargetPicker({ mode: "selected" })} className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-bold text-zinc-300 transition hover:bg-white/[0.08]">
+	              {Array.isArray(draft.targetProfileLabels) && draft.targetProfileLabels.length ? `Выбрано: ${draft.targetProfileLabels.join(", ")}` : normalizeProgramTargetProfileIds(draft.targetProfileIds).length ? `Выбрано: ${normalizeProgramTargetProfileIds(draft.targetProfileIds).length}` : "Выбрать пользователей по имени или нику"}
+	            </button>}
+	          </div>
+	          <div className="mt-4 pb-[var(--onlypump-safe-bottom)]">
+	            <button disabled={programSaving} onClick={saveProgramShareSettings} className="h-12 w-full rounded-full bg-red-500 font-black text-black transition active:scale-[0.98] disabled:opacity-60">{programSaving ? "Сохраняю..." : "Сохранить доступ"}</button>
+	          </div>
+	        </BottomSheetPanel>
+	      </div>;
+	    })()}
+
+	    {programShareTargetPicker && <ProgramTargetPickerSheet
+	      mode={programShareTargetPicker.mode}
+	      profile={profile}
+	      telegramInitData={telegramInitData}
+	      selectedIds={programShareSheet?.draft?.targetProfileIds || []}
+	      zIndex={160}
+	      onClose={() => setProgramShareTargetPicker(null)}
+	      onSave={({ ids, labels }) => {
+	        updateProgramShareDraft({
+	          visibilityScope: "selected",
+	          targetProfileIds: ids,
+	          targetProfileLabels: labels,
+	          error: "",
+	        });
+	        setProgramShareTargetPicker(null);
+	      }}
+	    />}
+
 	    {programSettingsSheet && (() => {
 	      const { program, draft } = programSettingsSheet;
 	      const bounds = getProgramDurationBounds(program);
@@ -15372,6 +15590,11 @@ const toggleExerciseMeasurementSetting = (field) => {
 	            <div className="rounded-[24px] border border-red-500/20 bg-red-500/10 p-4">
 	              <p className="text-sm leading-6 text-zinc-300">Запиши фактический вес и повторы. Когда дойдёшь до верхней границы повторений, ONLYPUMP повысит вес и вернёт повторы к нижней границе. Если день не задался — просто запиши факт, будущий план адаптируется.</p>
 	            </div>
+	            {canShareProgramTemplate(program) && <button type="button" onClick={(event) => openProgramShareSheet(program, event)} className="w-full rounded-[24px] border border-white/10 bg-white/[0.04] px-4 py-4 text-left transition active:scale-[0.99] hover:border-red-500/40 hover:bg-red-500/10">
+	              <span className="block text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Доступ</span>
+	              <span className="mt-1 block text-lg font-black">Поделиться с учеником</span>
+	              <span className="mt-1 block text-sm leading-5 text-zinc-500">Сейчас: {getProgramVisibilityLabel(program)}.</span>
+	            </button>}
 
 	            <div className="rounded-[24px] bg-white/[0.04] p-4">
 	              <div className="flex items-center justify-between gap-3">
@@ -20421,7 +20644,7 @@ function InviteLimitPickerSheet({ value = 100, onSave, onClose }) {
   </div>;
 }
 
-function ProgramTargetPickerSheet({ mode = "selected", profile = DEFAULT_PROFILE, telegramInitData = "", selectedIds = [], onSave, onClose }) {
+function ProgramTargetPickerSheet({ mode = "selected", profile = DEFAULT_PROFILE, telegramInitData = "", selectedIds = [], zIndex = 157, onSave, onClose }) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -20490,7 +20713,7 @@ function ProgramTargetPickerSheet({ mode = "selected", profile = DEFAULT_PROFILE
     onSave?.({ ids, labels });
   };
 
-  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[157] flex items-end bg-black/60 p-3 backdrop-blur-sm">
+  return <div onClick={onClose} style={{ zIndex }} className="onlypump-modal-layer fixed inset-0 flex items-end bg-black/60 p-3 backdrop-blur-sm">
     <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="mx-auto flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-[460px] flex-col rounded-[34px] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
       <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
       <div className="flex items-start justify-between gap-3">
