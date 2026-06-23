@@ -364,14 +364,27 @@
       border-color: rgba(17, 24, 39, 0.14) !important;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
     }
+    .onlypump-program-settings-sheet input,
+    .onlypump-program-settings-sheet select,
+    .onlypump-program-settings-sheet textarea {
+      font-size: 16px !important;
+      -webkit-text-size-adjust: 100%;
+    }
+    .onlypump-program-builder-short-field > span {
+      min-height: 2.35rem;
+      display: flex;
+      align-items: flex-end;
+    }
     .theme-light .onlypump-program-settings-sheet input,
-    .theme-light .onlypump-program-settings-sheet select {
+    .theme-light .onlypump-program-settings-sheet select,
+    .theme-light .onlypump-program-settings-sheet textarea {
       border: 1px solid rgba(15, 23, 42, 0.16) !important;
       background-color: rgba(249, 250, 251, 0.98) !important;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.78);
     }
     .theme-light .onlypump-program-settings-sheet input:focus,
-    .theme-light .onlypump-program-settings-sheet select:focus {
+    .theme-light .onlypump-program-settings-sheet select:focus,
+    .theme-light .onlypump-program-settings-sheet textarea:focus {
       border-color: rgba(239, 68, 68, 0.55) !important;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.78), 0 0 0 1px rgba(239, 68, 68, 0.18);
     }
@@ -14550,8 +14563,8 @@ const toggleExerciseMeasurementSetting = (field) => {
 	            {draft.step === "meta" && <>
 	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название программы</span><input value={draft.title} onChange={(e) => updateProgramBuilderDraft({ title: e.target.value, error: "" })} placeholder="Например: Верх сила" className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10"/></label>
 	              <div className="grid grid-cols-2 gap-3">
-	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Длительность, недель</span><input inputMode="numeric" value={draft.durationWeeks} onChange={(e) => updateProgramBuilderDraft({ durationWeeks: clampProgramNumber(e.target.value, 1, 52) })} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
-	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Тренировок</span><input inputMode="numeric" value={draft.workoutCount} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, workoutCount: clampProgramNumber(e.target.value, 1, 20) }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+                <label className="onlypump-program-builder-short-field block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Длительность, недель</span><input inputMode="numeric" value={draft.durationWeeks} onChange={(e) => updateProgramBuilderDraft({ durationWeeks: clampProgramNumber(e.target.value, 1, 52) })} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
+                <label className="onlypump-program-builder-short-field block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Тренировок</span><input inputMode="numeric" value={draft.workoutCount} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, workoutCount: clampProgramNumber(e.target.value, 1, 20) }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-center font-black outline-none ring-1 ring-white/10"/></label>
 	              </div>
 	              <div className="grid grid-cols-2 gap-3">
 	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Периодичность</span><select value={draft.schedulePattern} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, schedulePattern: e.target.value }))} className="mt-2 w-full rounded-2xl bg-black/30 px-4 py-3 text-sm font-bold outline-none ring-1 ring-white/10">{programBuilderScheduleOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
