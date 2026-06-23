@@ -4511,6 +4511,14 @@ const PUMP_XP_LEVELS = [
 
 const PUMP_XP_RULE_GROUPS = [
   {
+    title: "Интерактивное обучение",
+    items: [
+      "Учебные задания дают +5-10 PUMP XP",
+      "Баллы за каждое учебное задание начисляются только один раз",
+      "Повторное обучение из личного кабинета баллы не дублирует",
+    ],
+  },
+  {
     title: "Тренировка",
     items: [
       "Запланировал тренировку: +1",
@@ -4643,6 +4651,7 @@ const calculatePumpXp = ({
   personalTrackers = [],
   measurements = {},
   profile = DEFAULT_PROFILE,
+  tutorialAwards = [],
 } = {}) => {
   const workoutMap = {};
   workouts.forEach(workout => {
@@ -4863,6 +4872,13 @@ const calculatePumpXp = ({
     bonusItems.push({ title: "Первые шаги", xp: 10 });
   }
 
+  (Array.isArray(tutorialAwards) ? tutorialAwards : []).forEach(award => {
+    const xp = Math.max(0, Math.round(Number(award?.xp || 0)));
+    if (!award?.id || !xp) return;
+    totalXp += xp;
+    bonusItems.push({ title: award.title || "Задание обучения", xp });
+  });
+
   const lastSeven = dateRange.slice(-7);
   if (lastSeven.length === 7) {
     const possible = lastSeven.length * 3 + lastSeven.reduce((sum, dateKey) => sum + ((workoutMap[dateKey] || []).length ? 1 : 0), 0);
@@ -5000,54 +5016,68 @@ const onlyPumpTourDefinitions = {
   home: [
     { target: '[data-tour="home-calendar"]', title: "Календарь недели", text: "Здесь выбирается день. Главная, питание, сон, шаги и трекеры подстраиваются под выбранную дату." },
     { target: '[data-tour="home-level"]', title: "Уровень", text: "Нажми на Lvl, чтобы увидеть PUMP XP, шкалу уровня и правила начисления баллов." },
-    { target: '[data-tour="home-edit-widgets"]', title: "Настрой вид", text: "Эта кнопка включает настройку карточек главной: можно менять состав и порядок виджетов." },
-    { target: '[data-tour="home-edit-widgets"]', title: "Первое задание", text: "Включи настройку вида, затем добавь свой виджет или персональный трекер.", task: "Добавь виджет на главную." },
+    { target: '[data-tour="home-edit-widgets"]', title: "Настрой вид", text: "Эта кнопка включает настройку карточек главной: можно менять состав и порядок виджетов.", taskId: "home-open-widget-settings", rewardXp: 5, rewardTitle: "Обучение: настройка главной", completion: "target-click", task: "Нажми «Настроить вид»." },
+    { target: '[data-tour="home-add-widget"]', title: "Открой список", text: "Теперь открой список доступных виджетов.", taskId: "home-open-widget-list", rewardXp: 5, rewardTitle: "Обучение: открыт список виджетов", completion: "target-click", task: "Нажми «Добавить виджет»." },
+    { target: '[data-tour="home-widget-option"]', title: "Добавь виджет", text: "Выбери любой блок. Подсказка не мешает экрану: можно действовать прямо под ней.", taskId: "home-add-widget", rewardXp: 10, rewardTitle: "Обучение: добавлен виджет", completion: "home-widget-added", task: "Выбери любой виджет из списка." },
   ],
   nutrition: [
     { target: '[data-tour="nutrition-calendar"]', title: "День питания", text: "Выбирай дату, чтобы видеть и заполнять питание именно за этот день." },
     { target: '[data-tour="nutrition-manual"]', title: "Быстрый ручной ввод", text: "Если не хочешь искать продукт, можно быстро внести питание вручную." },
     { target: '[data-tour="nutrition-add"]', title: "Добавить еду", text: "Плюс открывает выбор приема пищи и базу продуктов." },
-    { target: '[data-tour="nutrition-add"]', title: "Первое задание", text: "Открой добавление еды, выбери завтрак и добавь любой продукт. Так день начнет считаться в аналитике.", task: "Добавь продукт в завтрак." },
+    { target: '[data-tour="nutrition-add"]', title: "Открой добавление", text: "Сначала нажми плюс рядом с приёмами пищи.", taskId: "nutrition-open-add", rewardXp: 5, rewardTitle: "Обучение: открыто добавление еды", completion: "target-click", task: "Нажми плюс питания." },
+    { target: '[data-tour="nutrition-breakfast-choice"]', title: "Выбери завтрак", text: "Теперь выбери приём пищи. Для первого задания подойдёт завтрак.", taskId: "nutrition-choose-breakfast", rewardXp: 5, rewardTitle: "Обучение: выбран завтрак", completion: "target-click", task: "Нажми «Завтрак»." },
+    { target: '[data-tour="nutrition-food-option"]', title: "Выбери продукт", text: "Открой любой продукт из списка. После этого появится карточка порции.", taskId: "nutrition-pick-food", rewardXp: 5, rewardTitle: "Обучение: выбран продукт", completion: "target-click", task: "Нажми на любой продукт." },
+    { target: '[data-tour="nutrition-food-save"]', title: "Добавь продукт", text: "Подтверди добавление. Я продолжу, когда питание за день реально изменится.", taskId: "nutrition-add-food", rewardXp: 10, rewardTitle: "Обучение: добавлена еда", completion: "nutrition-food-added", task: "Нажми «Добавить»." },
   ],
   workouts: [
     { target: '[data-tour="workouts-programs"]', title: "Доступные программы", text: "Здесь находятся готовые и выданные программы тренировок." },
     { target: '[data-tour="workouts-add"]', title: "Новая тренировка", text: "Эта кнопка открывает создание активной, запланированной или выполненной тренировки." },
     { target: '[data-tour="workouts-calendar"]', title: "Неделя тренировок", text: "Календарь помогает быстро перейти к тренировкам выбранного дня." },
-    { target: '[data-tour="workouts-add"]', title: "Первое задание", text: "Нажми плюс и выбери «Начать пустую тренировку», чтобы начать дневник с нуля.", task: "Начни пустую тренировку." },
+    { target: '[data-tour="workouts-add"]', title: "Открой создание", text: "Нажми плюс, чтобы открыть меню новой тренировки.", taskId: "workouts-open-add", rewardXp: 5, rewardTitle: "Обучение: открыто меню тренировок", completion: "target-click", task: "Нажми плюс тренировок." },
+    { target: '[data-tour="workouts-start-empty"]', title: "Начни пустую", text: "Выбери пустую тренировку. Далее останется подтвердить название.", taskId: "workouts-pick-empty", rewardXp: 5, rewardTitle: "Обучение: выбран старт тренировки", completion: "target-click", task: "Нажми «Начать пустую тренировку»." },
+    { target: '[data-tour="workouts-title-confirm"]', title: "Подтверди тренировку", text: "Название можно оставить стандартным. Я продолжу, когда тренировка появится в дневнике.", taskId: "workouts-start-empty", rewardXp: 10, rewardTitle: "Обучение: создана тренировка", completion: "workout-created", task: "Нажми «Продолжить»." },
   ],
   progress: [
     { target: '[data-tour="progress-calendar"]', title: "Неделя прогресса", text: "Замеры и цель можно смотреть и менять по выбранной дате." },
     { target: '[data-tour="progress-strength"]', title: "Силовой прогресс", text: "Сюда подтягиваются упражнения, подходы, вес и повторы из тренировок." },
-    { target: '[data-tour="progress-measurements"]', title: "Первое задание", text: "Заполни актуальные замеры, чтобы графики и цели стали точнее.", task: "Обнови вес или талию." },
+    { target: '[data-tour="progress-measurements"]', title: "Задание прогресса", text: "Измени любой замер: вес, талию или другой параметр. Я продолжу после сохранения изменения на экране.", taskId: "progress-update-measurement", rewardXp: 10, rewardTitle: "Обучение: обновлены замеры", completion: "measurement-updated", task: "Обнови вес или талию." },
   ],
   analytics: [
     { target: '[data-tour="analytics-period"]', title: "Период аналитики", text: "Переключай день, неделю, месяц и год, чтобы смотреть динамику без потери контекста." },
     { target: '[data-tour="analytics-add-card"]', title: "Карточки аналитики", text: "Добавляй нужные карточки: шаги, сон, вода, нагрузка, питание и трекеры." },
-    { target: '[data-tour="analytics-settings"]', title: "Настройка карточек", text: "Здесь меняется порядок и видимость аналитических карточек." },
+    { target: '[data-tour="analytics-settings"]', title: "Настройка карточек", text: "Здесь меняется порядок и видимость аналитических карточек.", taskId: "analytics-open-settings", rewardXp: 5, rewardTitle: "Обучение: открыта настройка аналитики", completion: "target-click", task: "Открой настройку карточек аналитики." },
   ],
   education: [
     { target: '[data-tour="education-module"]', title: "Модули обучения", text: "Открывай модуль, смотри уроки и отмечай то, что уже изучено." },
-    { target: '[data-tour="education-continue"]', title: "Продолжить", text: "Кнопка переносит к следующему непройденному уроку активного модуля." },
+    { target: '[data-tour="education-continue"]', title: "Продолжить", text: "Кнопка переносит к следующему непройденному уроку активного модуля.", taskId: "education-continue", rewardXp: 5, rewardTitle: "Обучение: открыт урок", completion: "target-click", task: "Нажми «Продолжить»." },
   ],
   lectures: [
     { target: '[data-tour="lectures-filter"]', title: "Фильтр лекций", text: "Отфильтруй лекции по теме, чтобы быстрее найти нужный разбор." },
-    { target: '[data-tour="lecture-card"]', title: "Карточка лекции", text: "Открой лекцию, отметь просмотр и продолжай обучение." },
+    { target: '[data-tour="lecture-card"]', title: "Карточка лекции", text: "Открой лекцию, отметь просмотр и продолжай обучение.", taskId: "lectures-open-card", rewardXp: 5, rewardTitle: "Обучение: открыта лекция", completion: "target-click", task: "Открой любую лекцию." },
   ],
   calculators: [
-    { target: '[data-tour="calculator-card"]', title: "Калькуляторы", text: "Инструменты открываются по карточкам и ведут на связанные страницы." },
+    { target: '[data-tour="calculator-card"]', title: "Калькуляторы", text: "Инструменты открываются по карточкам и ведут на связанные страницы. Это ознакомительный шаг, чтобы не уводить тебя из приложения во время обучения." },
   ],
   community: [
-    { target: '[data-tour="community-feed"]', title: "Сообщество", text: "Здесь будет лента, рейтинг и челленджи для дисциплины." },
+    { target: '[data-tour="community-feed"]', title: "Сообщество", text: "Здесь будет лента, рейтинг и челленджи для дисциплины.", taskId: "community-open-feed", rewardXp: 5, rewardTitle: "Обучение: открыт блок сообщества", completion: "target-click", task: "Нажми на блок сообщества." },
   ],
   profile: [
     { target: '[data-tour="profile-card"]', title: "Твой профиль", text: "Здесь видны имя, Telegram, роли и источник профиля." },
-    { target: '[data-tour="profile-edit"]', title: "Редактирование", text: "Открой профиль, если нужно изменить данные, цель, питание или замеры." },
-    { target: '[data-tour="profile-start-tour"]', title: "Обучение в любой момент", text: "Эта кнопка запускает интерактивное обучение заново.", task: "Вернись сюда, если захочешь повторить подсказки." },
+    { target: '[data-tour="profile-edit"]', title: "Редактирование", text: "Открой профиль, если нужно изменить данные, цель, питание или замеры.", taskId: "profile-open-edit", rewardXp: 5, rewardTitle: "Обучение: открыт профиль", completion: "target-click", task: "Открой редактирование профиля." },
+    { target: '[data-tour="profile-start-tour"]', title: "Обучение в любой момент", text: "Эта кнопка запускает интерактивное обучение заново. Баллы за уже выполненные задания при повторе не начисляются." },
   ],
 };
 
 function getOnlyPumpTourCacheKey(profile = DEFAULT_PROFILE) {
   return `onlypump_tour_seen_${profile?.id || profile?.telegram_id || "local"}`;
+}
+
+function getOnlyPumpTourCompletedKey(profile = DEFAULT_PROFILE) {
+  return `onlypump_tour_completed_${profile?.id || profile?.telegram_id || "local"}`;
+}
+
+function getOnlyPumpTourAwardsKey(profile = DEFAULT_PROFILE) {
+  return `onlypump_tour_awards_${profile?.id || profile?.telegram_id || "local"}`;
 }
 
 function readOnlyPumpTourSeen(profile = DEFAULT_PROFILE) {
@@ -5066,9 +5096,54 @@ function markOnlyPumpTourScreenSeen(profile = DEFAULT_PROFILE, screen) {
   } catch (error) {}
 }
 
+function readOnlyPumpTourCompleted(profile = DEFAULT_PROFILE) {
+  try {
+    return localStorage.getItem(getOnlyPumpTourCompletedKey(profile)) === "1";
+  } catch (error) {
+    return false;
+  }
+}
+
+function markOnlyPumpTourCompleted(profile = DEFAULT_PROFILE) {
+  try {
+    localStorage.setItem(getOnlyPumpTourCompletedKey(profile), "1");
+  } catch (error) {}
+}
+
 function resetOnlyPumpTourSeen(profile = DEFAULT_PROFILE) {
   try {
     localStorage.removeItem(getOnlyPumpTourCacheKey(profile));
+  } catch (error) {}
+}
+
+function normalizeOnlyPumpTourAwards(values = []) {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set();
+  return values
+    .map(item => ({
+      id: String(item?.id || "").trim(),
+      title: String(item?.title || "Задание обучения").trim(),
+      xp: Math.max(0, Math.round(Number(item?.xp || 0))),
+      earnedAt: item?.earnedAt || item?.earned_at || new Date().toISOString(),
+    }))
+    .filter(item => {
+      if (!item.id || !item.xp || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+}
+
+function readOnlyPumpTourAwards(profile = DEFAULT_PROFILE) {
+  try {
+    return normalizeOnlyPumpTourAwards(JSON.parse(localStorage.getItem(getOnlyPumpTourAwardsKey(profile)) || "[]"));
+  } catch (error) {
+    return [];
+  }
+}
+
+function writeOnlyPumpTourAwards(profile = DEFAULT_PROFILE, awards = []) {
+  try {
+    localStorage.setItem(getOnlyPumpTourAwardsKey(profile), JSON.stringify(normalizeOnlyPumpTourAwards(awards)));
   } catch (error) {}
 }
 
@@ -5163,7 +5238,7 @@ function InteractiveTourOverlay({ step, stepIndex, totalSteps, onNext, onSkip, o
       lastTargetClickRef.current = now;
       window.clearTimeout(targetClickTimerRef.current);
       targetClickTimerRef.current = window.setTimeout(() => {
-        onTargetAction();
+        onTargetAction(step);
       }, 420);
     };
     document.addEventListener("click", handleDocumentClick, true);
@@ -5175,6 +5250,7 @@ function InteractiveTourOverlay({ step, stepIndex, totalSteps, onNext, onSkip, o
 
   if (!step) return null;
   const isLast = stepIndex >= totalSteps - 1;
+  const isStateTask = Boolean(step.taskId && step.completion && step.completion !== "target-click");
   const cardStyle = getTourCardStyle(targetRect);
 
   return <div className="pointer-events-none fixed inset-0 z-[244]" data-no-edge-back="true">
@@ -5196,11 +5272,14 @@ function InteractiveTourOverlay({ step, stepIndex, totalSteps, onNext, onSkip, o
         <button type="button" onClick={onSkip} className="onlypump-tour-close flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg font-black">×</button>
       </div>
       <p className="onlypump-tour-copy mt-2 text-xs font-semibold leading-5">{step.text}</p>
-      {step.task && <div className="onlypump-tour-task mt-3 rounded-2xl p-3 text-xs font-black leading-5">{step.task}</div>}
+      {step.task && <div className="onlypump-tour-task mt-3 rounded-2xl p-3 text-xs font-black leading-5">
+        <div>{step.task}</div>
+        {step.rewardXp ? <div className="mt-1 text-[10px] uppercase tracking-[0.16em] opacity-80">+{step.rewardXp} PUMP XP один раз</div> : null}
+      </div>}
       <div className="mt-4 flex items-center justify-between gap-2">
         <button type="button" onClick={onSkip} className="rounded-full px-3 py-2 text-xs font-black" style={{ color: "var(--onlypump-muted)" }}>Пропустить</button>
-        <button type="button" onClick={onNext} className="rounded-full bg-red-500 px-4 py-2.5 text-xs font-black text-black">
-          {isLast ? "Понял" : "Далее"}
+        <button type="button" disabled={isStateTask} onClick={() => onNext?.(step)} className={`rounded-full px-4 py-2.5 text-xs font-black ${isStateTask ? "bg-white/10 text-zinc-500" : "bg-red-500 text-black"}`}>
+          {isStateTask ? "Жду действие" : isLast ? "Понял" : "Далее"}
         </button>
       </div>
     </div>
@@ -7083,7 +7162,7 @@ function HomeWidgetSettingsModal({ enabledWidgets, personalTrackerCount = 0, onA
       </div>
 
       <div className="onlypump-list-55 mt-6 space-y-2 overflow-y-auto pr-1">
-        {availableWidgets.length ? availableWidgets.map(widget => <button key={widget.id} type="button" onClick={() => onAdd(widget.id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-4 text-left transition hover:bg-white/[0.08]">
+        {availableWidgets.length ? availableWidgets.map((widget, index) => <button key={widget.id} type="button" data-tour={index === 0 ? "home-widget-option" : undefined} onClick={() => onAdd(widget.id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-4 text-left transition hover:bg-white/[0.08]">
           <div>
             <h3 className="text-sm font-semibold">{widget.label}</h3>
             <p className="mt-1 text-xs text-zinc-500">{widget.description}</p>
@@ -14645,7 +14724,7 @@ const toggleExerciseMeasurementSetting = (field) => {
         </label>
         <div className="mt-5 grid grid-cols-2 gap-3 pb-[var(--onlypump-safe-bottom)]">
           <button onClick={() => setWorkoutTitlePrompt(null)} className="h-12 rounded-full bg-white/8 font-black text-zinc-200">Отмена</button>
-          <button onClick={confirmWorkoutTitlePrompt} className="h-12 rounded-full bg-red-500 font-black text-black">Продолжить</button>
+          <button data-tour="workouts-title-confirm" onClick={confirmWorkoutTitlePrompt} className="h-12 rounded-full bg-red-500 font-black text-black">Продолжить</button>
         </div>
       </BottomSheetPanel>
     </div>}
@@ -16612,9 +16691,9 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
     }
   };
 
-  const renderFoodButton = (foodItem, source = "") => {
+  const renderFoodButton = (foodItem, source = "", index = 0) => {
     const foodCard = snapshotFoodFromPayload(foodItem || {});
-    return <button key={`${source}-${foodCard.key}`} onClick={() => openFoodDraft(foodCard)} className="w-full rounded-2xl bg-white/[0.04] p-4 text-left transition active:scale-[0.99] hover:bg-white/[0.07]">
+    return <button key={`${source}-${foodCard.key}`} data-tour={index === 0 ? "nutrition-food-option" : undefined} onClick={() => openFoodDraft(foodCard)} className="w-full rounded-2xl bg-white/[0.04] p-4 text-left transition active:scale-[0.99] hover:bg-white/[0.07]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="break-words text-base font-black text-zinc-100">{foodCard.name}</div>
@@ -16720,7 +16799,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
           <button onClick={() => setMealChoiceOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
         </div>
         <div className="mt-5 space-y-2">
-          {nutritionMealTypes.map(meal => <button key={meal.type} onClick={() => openFoodPicker(meal.type)} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">{meal.title}</button>)}
+          {nutritionMealTypes.map(meal => <button key={meal.type} data-tour={meal.type === "breakfast" ? "nutrition-breakfast-choice" : undefined} onClick={() => openFoodPicker(meal.type)} className="w-full rounded-2xl px-4 py-4 text-left text-[17px] font-semibold transition hover:bg-white/8">{meal.title}</button>)}
           <button onClick={() => setMealChoiceOpen(false)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-zinc-500 hover:bg-white/8">Отмена</button>
         </div>
       </BottomSheetPanel>
@@ -16749,7 +16828,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
             ].map(([id, label]) => <button key={id} onClick={() => setActiveEyeballTab(id)} className={`h-10 rounded-full text-xs font-black ${activeEyeballTab === id ? "bg-white text-black" : "bg-white/[0.06] text-zinc-400"}`}>{label}</button>)}
           </div>
           <div className="mt-5 flex-1 overflow-y-auto pr-1 onlypump-scrollbar-none">
-            <div className="space-y-2">{filteredFoods.length ? filteredFoods.map(item => renderFoodButton(item, activeEyeballTab)) : <div className="rounded-3xl bg-white/[0.04] p-8 text-center text-sm text-zinc-500">
+            <div className="space-y-2">{filteredFoods.length ? filteredFoods.map((item, index) => renderFoodButton(item, activeEyeballTab, index)) : <div className="rounded-3xl bg-white/[0.04] p-8 text-center text-sm text-zinc-500">
               {foodSearch.trim()
                 ? "Ничего не найдено. Попробуй другое название."
                 : activeEyeballTab === "recent"
@@ -16846,7 +16925,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
         <div className="mt-5 grid grid-cols-[48px_1fr_1fr] gap-3 pb-[var(--onlypump-safe-bottom)]">
           <button disabled={pendingFavoriteKeys.includes(foodDraft.food.key)} onClick={() => toggleFavorite(foodDraft.food)} className={`flex h-12 items-center justify-center rounded-full transition disabled:opacity-60 ${favoriteKeys.has(foodDraft.food.key) ? "bg-red-500 text-black" : "bg-white/8 text-zinc-200"}`}><Star size={20}/></button>
           <button onClick={() => setFoodDraft(null)} className="h-12 rounded-full bg-white/8 font-black text-zinc-200">Отмена</button>
-          <button disabled={Boolean(pendingFoodAction)} onClick={saveFoodDraft} className="h-12 rounded-full bg-red-500 font-black text-black transition disabled:opacity-60">{pendingFoodAction ? "Сохраняю..." : foodDraft.mode === "edit" ? "Сохранить" : "Добавить"}</button>
+          <button data-tour="nutrition-food-save" disabled={Boolean(pendingFoodAction)} onClick={saveFoodDraft} className="h-12 rounded-full bg-red-500 font-black text-black transition disabled:opacity-60">{pendingFoodAction ? "Сохраняю..." : foodDraft.mode === "edit" ? "Сохранить" : "Добавить"}</button>
         </div>
       </BottomSheetPanel>
     </div>}
@@ -21478,7 +21557,9 @@ function OnlyPumpPlatform() {
 	  const [pumpXpLevelUp, setPumpXpLevelUp] = useState(null);
 	  const [profileWelcomeOpen, setProfileWelcomeOpen] = useState(false);
 	  const [profileWelcomeKey, setProfileWelcomeKey] = useState("");
-	  const [tourState, setTourState] = useState({ active: false, screen: "home", stepIndex: 0, force: false });
+	  const [tourAwards, setTourAwards] = useState(() => readOnlyPumpTourAwards(DEFAULT_PROFILE));
+	  const [tourState, setTourState] = useState({ active: false, screen: "home", stepIndex: 0, force: false, full: false });
+	  const tourTaskSnapshotRef = useRef(null);
 
   const activeTheme = useMemo(
     () => profileWantsLightTheme(profile || DEFAULT_PROFILE, new Date(themeTick)) ? "light" : "dark",
@@ -21945,6 +22026,11 @@ function OnlyPumpPlatform() {
     return { ok: true, ...localDay };
   }, [globalSelectedDateKey, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, profile, profileStatus, telegramInitData]);
 
+  useEffect(() => {
+    if (!profile) return;
+    setTourAwards(readOnlyPumpTourAwards(profile || DEFAULT_PROFILE));
+  }, [profile?.id, profile?.telegram_id]);
+
   const nutritionMeals = useMemo(() => deriveHomeMealsFromNutritionDay(nutritionDay), [nutritionDay]);
 	  const pumpXpSummary = useMemo(() => calculatePumpXp({
 	    workouts,
@@ -21956,10 +22042,51 @@ function OnlyPumpPlatform() {
     personalTrackers,
     measurements,
 	    profile: profile || DEFAULT_PROFILE,
-	  }), [workouts, nutritionDay, nutritionMarkedDateKeys, nutritionGoal, healthLog, healthLogs, personalTrackers, measurements, profile]);
+    tutorialAwards: tourAwards,
+	  }), [workouts, nutritionDay, nutritionMarkedDateKeys, nutritionGoal, healthLog, healthLogs, personalTrackers, measurements, profile, tourAwards]);
 
 	  const activeTourSteps = onlyPumpTourDefinitions[tourState.screen] || [];
 	  const activeTourStep = tourState.active ? activeTourSteps[tourState.stepIndex] : null;
+
+  const getTourTaskSnapshot = useCallback(() => ({
+    homeWidgetCount: normalizeHomeWidgetsOrder(homeWidgets, []).length,
+    nutritionFoodCount: (nutritionDay?.meals || []).reduce((sum, meal) => sum + (meal.items || []).length, 0),
+    workoutCount: workouts.length,
+    measurementSignature: JSON.stringify(measurements || {}),
+  }), [homeWidgets, measurements, nutritionDay, workouts]);
+
+  const awardTourTask = useCallback((step) => {
+    if (!step?.taskId || !step.rewardXp) return false;
+    let awarded = false;
+    setTourAwards(prev => {
+      const current = normalizeOnlyPumpTourAwards(prev);
+      if (current.some(item => item.id === step.taskId)) return current;
+      awarded = true;
+      const next = normalizeOnlyPumpTourAwards([
+        ...current,
+        {
+          id: step.taskId,
+          title: step.rewardTitle || step.task || step.title || "Задание обучения",
+          xp: step.rewardXp,
+          earnedAt: new Date().toISOString(),
+        },
+      ]);
+      writeOnlyPumpTourAwards(profile || DEFAULT_PROFILE, next);
+      return next;
+    });
+    return awarded;
+  }, [profile]);
+
+  const isTourTaskComplete = useCallback((step) => {
+    if (!step?.completion || step.completion === "target-click") return false;
+    const snapshot = tourTaskSnapshotRef.current || getTourTaskSnapshot();
+    const current = getTourTaskSnapshot();
+    if (step.completion === "home-widget-added") return current.homeWidgetCount > Number(snapshot.homeWidgetCount || 0);
+    if (step.completion === "nutrition-food-added") return current.nutritionFoodCount > Number(snapshot.nutritionFoodCount || 0);
+    if (step.completion === "workout-created") return current.workoutCount > Number(snapshot.workoutCount || 0);
+    if (step.completion === "measurement-updated") return current.measurementSignature !== snapshot.measurementSignature;
+    return false;
+  }, [getTourTaskSnapshot]);
 
 	  const closeProfileWelcome = useCallback(() => {
 	    if (profileWelcomeKey) {
@@ -21976,32 +22103,84 @@ function OnlyPumpPlatform() {
 	    }
 	    setProfileWelcomeOpen(false);
 	    setActive(nextScreen, { replace: true });
-	    setTourState({ active: true, screen: nextScreen, stepIndex: 0, force: Boolean(options.force || options.reset) });
+      markOnlyPumpTourCompleted(profile || DEFAULT_PROFILE);
+	    tourTaskSnapshotRef.current = null;
+	    setTourState({ active: true, screen: nextScreen, stepIndex: 0, force: Boolean(options.force || options.reset), full: options.full !== false });
 	  }, [profile, profileWelcomeKey, setActive]);
 
 	  const finishTourScreen = useCallback(() => {
 	    setTourState(prev => {
 	      if (prev.screen) markOnlyPumpTourScreenSeen(profile || DEFAULT_PROFILE, prev.screen);
-	      return { active: false, screen: activeRef.current || "home", stepIndex: 0, force: false };
+	      markOnlyPumpTourCompleted(profile || DEFAULT_PROFILE);
+	      return { active: false, screen: activeRef.current || "home", stepIndex: 0, force: false, full: false };
 	    });
 	  }, [profile]);
 
-	  const nextTourStep = useCallback(() => {
+	  const nextTourStep = useCallback((stepForReward = null) => {
+      if (stepForReward?.taskId && (!stepForReward.completion || stepForReward.completion === "target-click")) {
+        awardTourTask(stepForReward);
+      }
 	    setTourState(prev => {
 	      const steps = onlyPumpTourDefinitions[prev.screen] || [];
 	      if (prev.stepIndex < steps.length - 1) {
+	        tourTaskSnapshotRef.current = null;
 	        return { ...prev, stepIndex: prev.stepIndex + 1 };
 	      }
 	      if (prev.screen) markOnlyPumpTourScreenSeen(profile || DEFAULT_PROFILE, prev.screen);
-	      return { active: false, screen: activeRef.current || "home", stepIndex: 0, force: false };
+        if (prev.full) {
+          const currentIndex = onlyPumpTourScreens.indexOf(prev.screen);
+          const nextScreen = onlyPumpTourScreens.slice(currentIndex + 1).find(screen => (onlyPumpTourDefinitions[screen] || []).length);
+          if (nextScreen) {
+            setActive(nextScreen, { replace: true });
+            tourTaskSnapshotRef.current = null;
+            return { ...prev, screen: nextScreen, stepIndex: 0 };
+          }
+        }
+        markOnlyPumpTourCompleted(profile || DEFAULT_PROFILE);
+	      return { active: false, screen: activeRef.current || "home", stepIndex: 0, force: false, full: false };
 	    });
-	  }, [profile]);
+	  }, [awardTourTask, profile, setActive]);
+
+  const handleTourTargetAction = useCallback((step) => {
+    if (!step) return;
+    if (step.taskId && step.completion && step.completion !== "target-click") return;
+    nextTourStep(step);
+  }, [nextTourStep]);
 
 	  const skipTour = useCallback(() => {
 	    finishTourScreen();
 	  }, [finishTourScreen]);
 
 	  useAppBackLayer("interactive-tour", tourState.active, skipTour, 244);
+
+  useEffect(() => {
+    if (!tourState.active || !activeTourStep?.taskId) {
+      tourTaskSnapshotRef.current = null;
+      return;
+    }
+    tourTaskSnapshotRef.current = getTourTaskSnapshot();
+  }, [tourState.active, tourState.screen, tourState.stepIndex]);
+
+  useEffect(() => {
+    if (!tourState.active || !activeTourStep?.taskId) return;
+    if (!activeTourStep.completion || activeTourStep.completion === "target-click") return;
+    if (!isTourTaskComplete(activeTourStep)) return;
+    awardTourTask(activeTourStep);
+    const timerId = window.setTimeout(() => nextTourStep(), 360);
+    return () => window.clearTimeout(timerId);
+  }, [
+    tourState.active,
+    tourState.screen,
+    tourState.stepIndex,
+    activeTourStep?.taskId,
+    homeWidgets.length,
+    workouts.length,
+    JSON.stringify(nutritionDay?.meals || []),
+    JSON.stringify(measurements || {}),
+    awardTourTask,
+    isTourTaskComplete,
+    nextTourStep,
+  ]);
 
 	  useEffect(() => {
 	    if (!profile || appLoading || profileLoading || accessGateStatus) return;
@@ -22018,15 +22197,16 @@ function OnlyPumpPlatform() {
 	    if (!profile || appLoading || profileLoading || accessGateStatus || profileWelcomeOpen) return undefined;
 	    if (profile.onboarding_completed !== true) return undefined;
 	    if (tourState.active) return undefined;
-	    const steps = onlyPumpTourDefinitions[active] || [];
+      if (readOnlyPumpTourCompleted(profile || DEFAULT_PROFILE)) return undefined;
+	    const steps = onlyPumpTourDefinitions.home || [];
 	    if (!steps.length) return undefined;
-	    const seen = readOnlyPumpTourSeen(profile || DEFAULT_PROFILE);
-	    if (seen[active]) return undefined;
 	    const timerId = window.setTimeout(() => {
-	      setTourState({ active: true, screen: active, stepIndex: 0, force: false });
-	    }, 520);
+        setActive("home", { replace: true });
+        markOnlyPumpTourCompleted(profile || DEFAULT_PROFILE);
+	      setTourState({ active: true, screen: "home", stepIndex: 0, force: false, full: true });
+	    }, 620);
 	    return () => window.clearTimeout(timerId);
-	  }, [active, profile?.id, profile?.telegram_id, profile?.onboarding_completed, appLoading, profileLoading, accessGateStatus, profileWelcomeOpen, tourState.active]);
+	  }, [profile?.id, profile?.telegram_id, profile?.onboarding_completed, appLoading, profileLoading, accessGateStatus, profileWelcomeOpen, tourState.active, setActive]);
 
 	  useEffect(() => {
 	    if (!profile || appLoading || profileLoading || accessGateStatus) return;
@@ -22281,7 +22461,7 @@ function OnlyPumpPlatform() {
     progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} onProgressProfileSaved={handleProgressProfileSaved}/>,
     analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} nutritionDay={nutritionDay} healthLog={healthLog} healthLogs={healthLogs} personalTrackers={personalTrackers} healthSaving={healthSaving} healthRefreshing={healthRefreshing} profileSaving={profileSaving} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} analyticsIntent={analyticsIntent} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onSaveAnalyticsCardSettings={handleSaveAnalyticsCardSettings} onOpenNutrition={() => setActive("nutrition")} onOpenProgress={() => setActive("progress")}/>,
     community: <CommunityPage/>,
-	    profile: <ProfilePage profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings} onStartTutorial={() => startInteractiveTour("home", { reset: true, force: true })}/>,
+	    profile: <ProfilePage profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings} onStartTutorial={() => startInteractiveTour("home", { force: true, full: true })}/>,
 	  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, personalTrackers, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, pumpXpSummary, handleNutritionAction, handleSaveProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog, startInteractiveTour]);
 
   if (appLoading || profileLoading) {
@@ -22310,8 +22490,8 @@ function OnlyPumpPlatform() {
 	    <PumpXpToast key={pumpXpToast?.id || "pump-xp-toast"} toast={pumpXpToast} pumpXp={pumpXpSummary} onClose={() => setPumpXpToast(null)} onOpen={() => setPumpXpDetailsOpen(true)}/>
 	    <PumpXpLevelUpModal levelUp={pumpXpLevelUp} pumpXp={pumpXpSummary} onClose={() => setPumpXpLevelUp(null)} onOpenDetails={() => { setPumpXpLevelUp(null); setPumpXpDetailsOpen(true); }}/>
 	    {pumpXpDetailsOpen && <PumpXpDetailSheet pumpXp={pumpXpSummary} onClose={() => setPumpXpDetailsOpen(false)}/>}
-	    {profileWelcomeOpen && <ProfileWelcomeSheet profile={profile || DEFAULT_PROFILE} pumpXp={pumpXpSummary} onClose={closeProfileWelcome} onStartTour={() => startInteractiveTour("home", { reset: true, force: true })}/>}
-	    {tourState.active && <InteractiveTourOverlay step={activeTourStep} stepIndex={tourState.stepIndex} totalSteps={activeTourSteps.length} onNext={nextTourStep} onSkip={skipTour} onTargetAction={nextTourStep}/>}
+	    {profileWelcomeOpen && <ProfileWelcomeSheet profile={profile || DEFAULT_PROFILE} pumpXp={pumpXpSummary} onClose={closeProfileWelcome} onStartTour={() => startInteractiveTour("home", { force: true, full: true })}/>}
+	    {tourState.active && <InteractiveTourOverlay step={activeTourStep} stepIndex={tourState.stepIndex} totalSteps={activeTourSteps.length} onNext={nextTourStep} onSkip={skipTour} onTargetAction={handleTourTargetAction}/>}
 	    <FloatingNavMenu active={active} setActive={setActive}/>
 	  </div>;
 }
