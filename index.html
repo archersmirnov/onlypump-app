@@ -3860,7 +3860,18 @@ const programBuilderAudienceOptions = [
   { id: "female", label: "Женская" },
   { id: "unisex", label: "Унисекс" },
 ];
-const clampProgramNumber = (value, min, max) => Math.min(max, Math.max(min, Number(value || min)));
+const sanitizeProgramIntegerInput = (value) => String(value ?? "").replace(/[^\d]/g, "");
+const sanitizeProgramDecimalInput = (value) => {
+  const normalized = String(value ?? "").replace(",", ".").replace(/[^\d.]/g, "");
+  const [first, ...rest] = normalized.split(".");
+  return rest.length ? `${first}.${rest.join("")}` : first;
+};
+const getProgramNumber = (value, fallback = 0) => {
+  if (value === "" || value === null || value === undefined) return fallback;
+  const number = Number(String(value).replace(",", "."));
+  return Number.isFinite(number) ? number : fallback;
+};
+const clampProgramNumber = (value, min, max, fallback = min) => Math.min(max, Math.max(min, getProgramNumber(value, fallback)));
 const getProgramDurationBounds = (program = {}) => ({
   min: Number(program.minDurationWeeks || program.min_duration_weeks || 4),
   max: Number(program.maxDurationWeeks || program.max_duration_weeks || 16),
@@ -9391,9 +9402,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const ensureProgramBuilderDays = (draft) => {
-    const workoutCount = Math.max(1, Math.min(20, Number(draft.workoutCount || 1)));
+    const rawWorkoutCount = draft.workoutCount;
     const current = Array.isArray(draft.days) ? draft.days : [];
-    const nextDays = Array.from({ length: workoutCount }, (_, index) => {
+    const nextCount = rawWorkoutCount === ""
+      ? Math.max(1, current.length || 1)
+      : clampProgramNumber(rawWorkoutCount, 1, 20, current.length || 1);
+    const nextDays = Array.from({ length: nextCount }, (_, index) => {
       const previous = current[index] || {};
       return {
         id: previous.id || `builder-day-${Date.now()}-${index}`,
@@ -9403,7 +9417,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         exercises: Array.isArray(previous.exercises) ? previous.exercises : [],
       };
     });
-    return { ...draft, workoutCount, days: nextDays, activeDayIndex: Math.min(Number(draft.activeDayIndex || 0), workoutCount - 1) };
+    return {
+      ...draft,
+      workoutCount: rawWorkoutCount === "" ? "" : nextCount,
+      days: nextDays,
+      activeDayIndex: Math.min(Number(draft.activeDayIndex || 0), nextCount - 1),
+    };
   };
 
   const updateProgramBuilderDraft = (patcher) => {
@@ -9514,6 +9533,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const buildProgramTemplatePayloadFromDraft = (draft) => {
     const templateKey = draft.templateKey || `custom-program-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const workoutCount = clampProgramNumber(draft.workoutCount, 1, 20, (draft.days || []).length || 1);
+    const durationWeeks = clampProgramNumber(draft.durationWeeks, 1, 52, 8);
+    const cycleLengthDays = clampProgramNumber(draft.cycleLengthDays, 1, 20, 7);
     return {
       program: {
         program_template_id: draft.remoteProgramTemplateId || null,
@@ -9523,14 +9545,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         goal: draft.focus.trim(),
         focus: draft.focus.trim(),
         audience: programBuilderAudienceOptions.find(option => option.id === draft.audience)?.label || "Унисекс",
-        default_duration_weeks: Number(draft.durationWeeks || 8),
+        default_duration_weeks: durationWeeks,
         min_duration_weeks: 1,
         max_duration_weeks: 52,
         default_difficulty: "intermediate",
-        workouts_per_week: Number(draft.workoutCount || 1),
+        workouts_per_week: workoutCount,
         schedule_pattern: draft.schedulePattern,
-        cycle_length_days: Number(draft.cycleLengthDays || 7),
-        workout_count: Number(draft.workoutCount || 1),
+        cycle_length_days: cycleLengthDays,
+        workout_count: workoutCount,
         progression_type: draft.progressionType,
         visibility_scope: draft.visibilityScope,
         target_profile_ids: Array.isArray(draft.targetProfileIds) && draft.targetProfileIds.length
@@ -9545,36 +9567,75 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         workout_type: "strength",
         offset_days: day.offsetDays,
         duration_minutes: Number(day.durationMinutes || 0),
-        exercises: (day.exercises || []).map((exercise, exerciseIndex) => ({
-          template_exercise_key: `${templateKey}-day-${dayIndex + 1}-exercise-${exerciseIndex + 1}`,
-          exercise_name: exercise.name,
-          muscle_group: exercise.muscleGroup,
-          target_sets: Number(exercise.targetSets || 3),
-          rep_min: Number(exercise.repMin || 8),
-          rep_max: Number(exercise.repMax || 12),
-          target_weight: Number(exercise.targetWeight || 0),
-          target_reps: Number(exercise.repMin || 8),
-          measurement_mode: exercise.measurementMode || "weight_reps",
-          progression_mode: exercise.progressionMode || draft.progressionType || "double_progression",
-          progression_weight_step: Number(exercise.progressionWeightStep || 2.5),
-          progression_rep_step: Number(exercise.progressionRepStep || 1),
-          deload_weight_steps: Number(exercise.deloadWeightSteps || 1),
-          regression_threshold_sessions: Number(exercise.regressionThresholdSessions || 2),
-          rest_seconds: Number(exercise.restSeconds || 120),
-          rest_after_seconds: Number(exercise.restAfterSeconds || 0),
-          rir: exercise.rir === "" ? null : Number(exercise.rir),
-          rpe: exercise.rpe === "" ? null : Number(exercise.rpe),
-          tempo: exercise.tempo,
-          notes: exercise.note,
-          alternatives: String(exercise.alternativesText ?? (exercise.alternatives || []).join(", "))
-            .split(",")
-            .map(item => item.trim())
-            .filter(Boolean)
-            .map(name => ({ exercise_name: name })),
-        })),
+        exercises: (day.exercises || []).map((exercise, exerciseIndex) => {
+          const repMin = clampProgramNumber(exercise.repMin, 1, 999, 8);
+          const repMax = Math.max(repMin, clampProgramNumber(exercise.repMax, 1, 999, 12));
+          return {
+            template_exercise_key: `${templateKey}-day-${dayIndex + 1}-exercise-${exerciseIndex + 1}`,
+            exercise_name: exercise.name,
+            muscle_group: exercise.muscleGroup,
+            target_sets: clampProgramNumber(exercise.targetSets, 1, 99, 3),
+            rep_min: repMin,
+            rep_max: repMax,
+            target_weight: getProgramNumber(exercise.targetWeight, 0),
+            target_reps: repMin,
+            measurement_mode: exercise.measurementMode || "weight_reps",
+            progression_mode: exercise.progressionMode || draft.progressionType || "double_progression",
+            progression_weight_step: getProgramNumber(exercise.progressionWeightStep, 2.5),
+            progression_rep_step: clampProgramNumber(exercise.progressionRepStep, 1, 99, 1),
+            deload_weight_steps: clampProgramNumber(exercise.deloadWeightSteps, 0, 99, 1),
+            regression_threshold_sessions: clampProgramNumber(exercise.regressionThresholdSessions, 1, 99, 2),
+            rest_seconds: clampProgramNumber(exercise.restSeconds, 0, 9999, 120),
+            rest_after_seconds: clampProgramNumber(exercise.restAfterSeconds, 0, 9999, 0),
+            rir: exercise.rir === "" ? null : getProgramNumber(exercise.rir, null),
+            rpe: exercise.rpe === "" ? null : getProgramNumber(exercise.rpe, null),
+            tempo: exercise.tempo,
+            notes: exercise.note,
+            alternatives: String(exercise.alternativesText ?? (exercise.alternatives || []).join(", "))
+              .split(",")
+              .map(item => item.trim())
+              .filter(Boolean)
+              .map(name => ({ exercise_name: name })),
+          };
+        }),
       })),
     };
   };
+
+  const buildLocalProgramFromPayload = (payload) => mapProgramTemplateRowToProgram({
+    template_key: payload.program.template_key,
+    name: payload.program.name,
+    description: payload.program.description,
+    goal: payload.program.goal,
+    audience: payload.program.audience,
+    focus: payload.program.focus,
+    default_duration_weeks: payload.program.default_duration_weeks,
+    min_duration_weeks: payload.program.min_duration_weeks,
+    max_duration_weeks: payload.program.max_duration_weeks,
+    default_difficulty: payload.program.default_difficulty,
+    workouts_per_week: payload.program.workouts_per_week,
+    schedule_pattern: payload.program.schedule_pattern,
+    cycle_length_days: payload.program.cycle_length_days,
+    workout_count: payload.program.workout_count,
+    progression_type: payload.program.progression_type,
+    visibility_scope: payload.program.visibility_scope,
+    is_public: payload.program.visibility_scope !== "private",
+    target_profile_ids: payload.program.target_profile_ids,
+    creator_profile_id: profile?.id || null,
+    created_by_role: profileHasRole(profile, "owner") ? "owner" : "trainer",
+    is_user_created: true,
+    program_template_workouts: payload.workouts.map((day, index) => ({
+      ...day,
+      sort_order: index + 1,
+      program_template_exercises: (day.exercises || []).map((exercise, exerciseIndex) => ({
+        ...exercise,
+        sort_order: exerciseIndex + 1,
+        program_exercise_alternatives: exercise.alternatives,
+      })),
+    })),
+  });
+
+  const buildLocalProgramFromDraft = (draft) => buildLocalProgramFromPayload(buildProgramTemplatePayloadFromDraft(draft));
 
   const getProgramBuilderAutosaveSignature = (draft = {}) => JSON.stringify({
     title: draft.title || "",
@@ -9611,6 +9672,22 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     })),
   });
 
+  const persistProgramTemplatePayload = async (action, payload) => {
+    try {
+      return await callWorkoutsApi(action, payload);
+    } catch (error) {
+      if (action === "save_program_template" && payload?.program?.template_key) {
+        try {
+          console.warn("Program template save fell back to update", error);
+          return await callWorkoutsApi("update_program_template", payload);
+        } catch (updateError) {
+          console.error("Program template update fallback error", updateError);
+        }
+      }
+      throw error;
+    }
+  };
+
   const saveProgramBuilder = async (draft, options = {}) => {
     const { autosave = false, allowEmptyExercises = false, stayOpen = false } = options;
     const title = String(draft.title || "").trim();
@@ -9624,38 +9701,17 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return null;
     }
     const payload = buildProgramTemplatePayloadFromDraft({ ...draft, title, error: "" });
+    const localProgram = buildLocalProgramFromPayload(payload);
+    if (localProgram?.days?.length) applyProgramTemplateUpdate(localProgram);
     setProgramSaving(true);
     try {
       let savedProgram = null;
       if (canUseWorkoutApi) {
         const action = draft.remoteProgramTemplateId ? "update_program_template" : "save_program_template";
-        const result = await callWorkoutsApi(action, payload);
+        const result = await persistProgramTemplatePayload(action, payload);
         savedProgram = mapProgramTemplateRowToProgram(result.program_template || result.template);
       } else {
-        savedProgram = mapProgramTemplateRowToProgram({
-          id: payload.program.template_key,
-          template_key: payload.program.template_key,
-          name: payload.program.name,
-          description: payload.program.description,
-          goal: payload.program.goal,
-          audience: payload.program.audience,
-          focus: payload.program.focus,
-          default_duration_weeks: payload.program.default_duration_weeks,
-          min_duration_weeks: payload.program.min_duration_weeks,
-          max_duration_weeks: payload.program.max_duration_weeks,
-          default_difficulty: payload.program.default_difficulty,
-          schedule_pattern: payload.program.schedule_pattern,
-          cycle_length_days: payload.program.cycle_length_days,
-          workout_count: payload.program.workout_count,
-          progression_type: payload.program.progression_type,
-          visibility_scope: payload.program.visibility_scope,
-          is_public: payload.program.visibility_scope !== "private",
-          target_profile_ids: payload.program.target_profile_ids,
-          creator_profile_id: profile?.id || null,
-          created_by_role: profileHasRole(profile, "owner") ? "owner" : "trainer",
-          is_user_created: true,
-          program_template_workouts: payload.workouts.map((day, index) => ({ ...day, sort_order: index + 1, program_template_exercises: day.exercises.map((exercise, exerciseIndex) => ({ ...exercise, sort_order: exerciseIndex + 1, program_exercise_alternatives: exercise.alternatives })) })),
-        });
+        savedProgram = localProgram;
       }
       if (savedProgram?.days?.length) {
         setCustomTrainingPrograms(prev => {
@@ -9670,7 +9726,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           ...prev,
           draft: {
             ...prev.draft,
-            remoteProgramTemplateId: savedProgram.remoteProgramTemplateId || savedProgram.id || prev.draft.remoteProgramTemplateId,
+            remoteProgramTemplateId: savedProgram.remoteProgramTemplateId || prev.draft.remoteProgramTemplateId,
             templateKey: savedProgram.templateKey || prev.draft.templateKey || savedProgram.id,
             error: "",
           },
@@ -9683,8 +9739,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return savedProgram;
     } catch (error) {
       console.error("Program template save error", error);
-      if (!autosave) updateProgramBuilderDraft({ error: "Не удалось сохранить программу." });
-      return null;
+      if (localProgram?.days?.length) applyProgramTemplateUpdate(localProgram);
+      const message = onlyPumpApiErrorMessage(error, "Не удалось синхронизировать программу. Локально она сохранена в доступных программах.");
+      if (!autosave) updateProgramBuilderDraft({ error: message });
+      return localProgram;
     } finally {
       setProgramSaving(false);
     }
@@ -9908,10 +9966,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const getProgramProgressionTarget = (setting, sequenceIndex = 0, seed = {}) => {
-    const repMin = Number(setting.repMin || 8);
-    const repMax = Math.max(repMin, Number(setting.repMax || 12));
-    const repStep = Math.max(1, Number(setting.progressionRepStep || 1));
-    const weightStep = Number(setting.progressionWeightStep || 0);
+    const repMin = clampProgramNumber(setting.repMin, 1, 999, 8);
+    const repMax = Math.max(repMin, clampProgramNumber(setting.repMax, 1, 999, 12));
+    const repStep = clampProgramNumber(setting.progressionRepStep, 1, 99, 1);
+    const weightStep = getProgramNumber(setting.progressionWeightStep, 0);
     const startReps = Number(seed.reps || repMin);
     const startWeight = Number(seed.weight ?? setting.targetWeight ?? 0);
     const rangeSize = Math.max(1, Math.floor((repMax - repMin) / repStep) + 1);
@@ -9927,7 +9985,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const settingKey = makeProgramTemplateExerciseKey(program.id, dayIndex, exerciseIndex);
     const setting = draft.exerciseSettings[settingKey] || getProgramExerciseDefaultSettings(program, dayIndex, exercise, exerciseIndex, draft.difficulty);
     const target = getProgramProgressionTarget(setting, sequenceIndex);
-    const sets = Array.from({ length: Math.max(1, Number(setting.targetSets || 3)) }, () => [target.weight, target.reps]);
+    const plannedSetsCount = clampProgramNumber(setting.targetSets, 1, 99, 3);
+    const plannedRepMin = clampProgramNumber(setting.repMin, 1, 999, 8);
+    const plannedRepMax = Math.max(plannedRepMin, clampProgramNumber(setting.repMax, 1, 999, 12));
+    const plannedRepStep = clampProgramNumber(setting.progressionRepStep, 1, 99, 1);
+    const plannedWeightStep = getProgramNumber(setting.progressionWeightStep, 0);
+    const plannedRegressionThreshold = clampProgramNumber(setting.regressionThresholdSessions, 1, 99, 2);
+    const plannedRestSeconds = clampProgramNumber(setting.restSeconds, 0, 9999, 120);
+    const plannedRestAfterSeconds = clampProgramNumber(setting.restAfterSeconds, 0, 9999, 0);
+    const sets = Array.from({ length: plannedSetsCount }, () => [target.weight, target.reps]);
     const base = makeExercise(exerciseIndex + 1, setting.selectedExerciseName, setting.muscleGroup || exercise.muscleGroup, sets, false, {
       ...exercise,
       name: setting.selectedExerciseName,
@@ -9942,27 +10008,27 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       userProgramExerciseSettingClientId: setting.clientId,
       programTemplateExerciseId: null,
       programTemplateExerciseKey: settingKey,
-      plannedSets: setting.targetSets,
-      plannedRepMin: setting.repMin,
-      plannedRepMax: setting.repMax,
+      plannedSets: plannedSetsCount,
+      plannedRepMin,
+      plannedRepMax,
       plannedWeight: target.weight,
       plannedReps: target.reps,
       progressionState: {
         mode: setting.progressionMode,
-        repMin: setting.repMin,
-        repMax: setting.repMax,
-        repStep: setting.progressionRepStep,
-        weightStep: setting.progressionWeightStep,
-        regressionThresholdSessions: setting.regressionThresholdSessions,
+        repMin: plannedRepMin,
+        repMax: plannedRepMax,
+        repStep: plannedRepStep,
+        weightStep: plannedWeightStep,
+        regressionThresholdSessions: plannedRegressionThreshold,
         sequenceIndex,
         planMode: draft.planMode,
         difficulty: draft.difficulty,
         missedSessions: 0,
       },
-      restSeconds: Number(setting.restSeconds ?? 120),
-      restAfterSeconds: Number(setting.restAfterSeconds ?? 0),
-      rir: setting.rir === "" ? null : Number(setting.rir),
-      rpe: setting.rpe === "" ? null : Number(setting.rpe),
+      restSeconds: plannedRestSeconds,
+      restAfterSeconds: plannedRestAfterSeconds,
+      rir: setting.rir === "" ? null : getProgramNumber(setting.rir, null),
+      rpe: setting.rpe === "" ? null : getProgramNumber(setting.rpe, null),
       tempo: setting.tempo || "",
       sets: base.sets.map(set => ({
         ...set,
@@ -9970,10 +10036,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         reps: target.reps,
         weightValue: target.weight,
         repsValue: target.reps,
-        restSeconds: Number(setting.restSeconds ?? set.restSeconds ?? 120),
-        restAfterSeconds: Number(setting.restAfterSeconds ?? set.restAfterSeconds ?? 0),
-        rir: setting.rir === "" ? null : Number(setting.rir),
-        rpe: setting.rpe === "" ? null : Number(setting.rpe),
+        restSeconds: plannedRestSeconds,
+        restAfterSeconds: plannedRestAfterSeconds,
+        rir: setting.rir === "" ? null : getProgramNumber(setting.rir, null),
+        rpe: setting.rpe === "" ? null : getProgramNumber(setting.rpe, null),
         status: "pending",
         isCompleted: false,
       })),
@@ -9983,7 +10049,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const buildProgramPlanWorkouts = (program, draft) => {
     const occurrenceByKey = {};
     const workoutsToCreate = [];
-    const totalPlanDays = Math.max(1, Number(draft.durationWeeks || 1) * 7);
+    const totalPlanDays = clampProgramNumber(draft.durationWeeks, 1, 52, 1) * 7;
     const cycleLengthDays = Math.max(1, Math.min(20, Number(program.cycleLengthDays || program.cycle_length_days || 7)));
     const cycleCount = Math.max(1, Math.ceil(totalPlanDays / cycleLengthDays));
     for (let cycleIndex = 0; cycleIndex < cycleCount; cycleIndex += 1) {
@@ -10033,14 +10099,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     template_exercise_key: setting.templateExerciseKey,
     selected_exercise_library_id: setting.selectedExerciseLibraryId,
     selected_exercise_name: setting.selectedExerciseName,
-    target_sets: Number(setting.targetSets || 3),
-    rep_min: Number(setting.repMin || 8),
-    rep_max: Number(setting.repMax || 12),
-    progression_weight_step: Number(setting.progressionWeightStep || 2.5),
-    progression_rep_step: Number(setting.progressionRepStep || 1),
+    target_sets: clampProgramNumber(setting.targetSets, 1, 99, 3),
+    rep_min: clampProgramNumber(setting.repMin, 1, 999, 8),
+    rep_max: Math.max(clampProgramNumber(setting.repMin, 1, 999, 8), clampProgramNumber(setting.repMax, 1, 999, 12)),
+    progression_weight_step: getProgramNumber(setting.progressionWeightStep, 2.5),
+    progression_rep_step: clampProgramNumber(setting.progressionRepStep, 1, 99, 1),
     progression_mode: setting.progressionMode || "double_progression",
-    deload_weight_steps: Number(setting.deloadWeightSteps || 1),
-    regression_threshold_sessions: Number(setting.regressionThresholdSessions || 2),
+    deload_weight_steps: clampProgramNumber(setting.deloadWeightSteps, 0, 99, 1),
+    regression_threshold_sessions: clampProgramNumber(setting.regressionThresholdSessions, 1, 99, 2),
     measurement_mode: setting.measurementMode || "weight_reps",
   }));
 
@@ -10059,7 +10125,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       template_key: program.templateKey || program.template_key || program.id,
       name: program.title,
       started_at: draft.startedAt,
-      duration_weeks: Number(draft.durationWeeks || 1),
+      duration_weeks: clampProgramNumber(draft.durationWeeks, 1, 52, 1),
       difficulty: draft.difficulty,
       plan_mode: draft.planMode,
       status: "active",
@@ -15923,12 +15989,16 @@ const toggleExerciseMeasurementSetting = (field) => {
 	      const closeBuilder = () => !programSaving && setProgramBuilderSheet(null);
 	      const goToMetaNext = async () => {
 	        blurProgramBuilderFocus();
-	        if (!String(draft.title || "").trim()) {
+	        const title = String(draft.title || "").trim();
+	        if (!title) {
 	          updateProgramBuilderDraft({ error: "Введите название программы." });
 	          return;
 	        }
-	        saveProgramBuilder(draft, { autosave: true, allowEmptyExercises: true, stayOpen: true });
-	        updateProgramBuilderDraft(prev => ({ ...prev, step: "day", activeDayIndex: 0, error: "" }));
+	        const templateKey = draft.templateKey || `custom-program-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+	        const nextDraft = ensureProgramBuilderDays({ ...draft, title, templateKey, error: "" });
+	        applyProgramTemplateUpdate(buildLocalProgramFromDraft(nextDraft));
+	        saveProgramBuilder(nextDraft, { autosave: true, allowEmptyExercises: true, stayOpen: true });
+	        updateProgramBuilderDraft(prev => ({ ...prev, ...nextDraft, step: "day", activeDayIndex: 0, error: "" }));
 	      };
 	      const goDayBack = () => {
 	        blurProgramBuilderFocus();
@@ -15940,7 +16010,9 @@ const toggleExerciseMeasurementSetting = (field) => {
 	      };
 	      const goDayNext = async () => {
 	        blurProgramBuilderFocus();
-	        saveProgramBuilder(draft, { autosave: true, allowEmptyExercises: true, stayOpen: true });
+	        const nextDraft = ensureProgramBuilderDays({ ...draft, error: "" });
+	        applyProgramTemplateUpdate(buildLocalProgramFromDraft(nextDraft));
+	        saveProgramBuilder(nextDraft, { autosave: true, allowEmptyExercises: true, stayOpen: true });
 	        if (activeDayIndex >= (draft.days || []).length - 1) {
 	          updateProgramBuilderDraft(prev => ({ ...prev, step: "summary", error: "" }));
 	          return;
@@ -15965,12 +16037,12 @@ const toggleExerciseMeasurementSetting = (field) => {
 	            {draft.step === "meta" && <>
 	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название программы</span><input value={draft.title} onChange={(e) => updateProgramBuilderDraft({ title: e.target.value, error: "" })} placeholder="Например: Верх сила" className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 font-bold outline-none"/></label>
 	              <div className="grid grid-cols-2 gap-3">
-	                <label className="onlypump-program-builder-short-field block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Длительность, недель</span><input inputMode="numeric" value={draft.durationWeeks} onChange={(e) => updateProgramBuilderDraft({ durationWeeks: clampProgramNumber(e.target.value, 1, 52) })} className="onlypump-program-field onlypump-program-number-field mt-2 w-full rounded-2xl px-4 text-center font-black outline-none"/></label>
-	                <label className="onlypump-program-builder-short-field block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Тренировок</span><input inputMode="numeric" value={draft.workoutCount} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, workoutCount: clampProgramNumber(e.target.value, 1, 20) }))} className="onlypump-program-field onlypump-program-number-field mt-2 w-full rounded-2xl px-4 text-center font-black outline-none"/></label>
+	                <label className="onlypump-program-builder-short-field block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Длительность, недель</span><input inputMode="numeric" value={draft.durationWeeks} onChange={(e) => updateProgramBuilderDraft({ durationWeeks: sanitizeProgramIntegerInput(e.target.value) })} onBlur={() => updateProgramBuilderDraft(prev => ({ ...prev, durationWeeks: clampProgramNumber(prev.durationWeeks, 1, 52, 8) }))} className="onlypump-program-field onlypump-program-number-field mt-2 w-full rounded-2xl px-4 text-center font-black outline-none"/></label>
+	                <label className="onlypump-program-builder-short-field block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Тренировок</span><input inputMode="numeric" value={draft.workoutCount} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, workoutCount: sanitizeProgramIntegerInput(e.target.value) }))} onBlur={() => updateProgramBuilderDraft(prev => ({ ...prev, workoutCount: clampProgramNumber(prev.workoutCount, 1, 20, 3) }))} className="onlypump-program-field onlypump-program-number-field mt-2 w-full rounded-2xl px-4 text-center font-black outline-none"/></label>
 	              </div>
 	              <div className="grid grid-cols-2 gap-3">
 	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Периодичность</span><select value={draft.schedulePattern} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, schedulePattern: e.target.value }))} className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 font-bold outline-none">{programBuilderScheduleOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
-	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Цикл, дней</span><input inputMode="numeric" value={draft.cycleLengthDays} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, cycleLengthDays: clampProgramNumber(e.target.value, 1, 20) }))} className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 text-center font-black outline-none"/></label>
+	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Цикл, дней</span><input inputMode="numeric" value={draft.cycleLengthDays} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, cycleLengthDays: sanitizeProgramIntegerInput(e.target.value) }))} onBlur={() => updateProgramBuilderDraft(prev => ({ ...prev, cycleLengthDays: clampProgramNumber(prev.cycleLengthDays, 1, 20, 7) }))} className="onlypump-program-field onlypump-program-number-field mt-2 w-full rounded-2xl px-4 text-center font-black outline-none"/></label>
 	              </div>
 	              <div className="grid grid-cols-2 gap-3">
 	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Прогрессия</span><select value={draft.progressionType} onChange={(e) => updateProgramBuilderDraft({ progressionType: e.target.value })} className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 font-bold outline-none">{programBuilderProgressionOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
@@ -15996,14 +16068,14 @@ const toggleExerciseMeasurementSetting = (field) => {
 	                {(activeDay.exercises || []).map((exercise) => <div key={exercise.id} className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
 	                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="break-words font-black">{exercise.name}</h3><p className="mt-1 text-xs font-semibold text-red-300">{exercise.muscleGroup}</p></div><button type="button" onClick={() => removeProgramBuilderExercise(activeDayIndex, exercise.id)} className="shrink-0 rounded-full bg-white/8 px-3 py-2 text-xs font-black text-red-300">Удалить</button></div>
 	                  <div className="mt-3 grid grid-cols-3 gap-2">
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Подх.</span><input inputMode="numeric" value={exercise.targetSets} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { targetSets: Math.max(1, Number(e.target.value || 1)) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">От</span><input inputMode="numeric" value={exercise.repMin} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { repMin: Math.max(1, Number(e.target.value || 1)), repMax: Math.max(Number(e.target.value || 1), Number(exercise.repMax || 1)) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">До</span><input inputMode="numeric" value={exercise.repMax} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { repMax: Math.max(Number(exercise.repMin || 1), Number(e.target.value || exercise.repMin || 1)) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Подх.</span><input inputMode="numeric" value={exercise.targetSets} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { targetSets: sanitizeProgramIntegerInput(e.target.value) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">От</span><input inputMode="numeric" value={exercise.repMin} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { repMin: sanitizeProgramIntegerInput(e.target.value) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">До</span><input inputMode="numeric" value={exercise.repMax} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { repMax: sanitizeProgramIntegerInput(e.target.value) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
 	                  </div>
 	                  <div className="mt-3 grid grid-cols-3 gap-2">
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Вес +</span><input inputMode="decimal" value={exercise.progressionWeightStep} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { progressionWeightStep: Number(String(e.target.value).replace(",", ".") || 0) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Отдых</span><input inputMode="numeric" value={exercise.restSeconds} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { restSeconds: Math.max(0, Number(e.target.value || 0)) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
-	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">После</span><input inputMode="numeric" value={exercise.restAfterSeconds} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { restAfterSeconds: Math.max(0, Number(e.target.value || 0)) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Вес +</span><input inputMode="decimal" value={exercise.progressionWeightStep} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { progressionWeightStep: sanitizeProgramDecimalInput(e.target.value) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Отдых</span><input inputMode="numeric" value={exercise.restSeconds} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { restSeconds: sanitizeProgramIntegerInput(e.target.value) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
+	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">После</span><input inputMode="numeric" value={exercise.restAfterSeconds} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { restAfterSeconds: sanitizeProgramIntegerInput(e.target.value) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
 	                  </div>
 	                  <div className="mt-3 grid grid-cols-3 gap-2">
 	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">RIR</span><input inputMode="decimal" value={exercise.rir} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { rir: e.target.value })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
@@ -16233,29 +16305,29 @@ const toggleExerciseMeasurementSetting = (field) => {
 	                    <div className="mt-3 grid grid-cols-3 gap-2">
 	                      <label className="block">
 	                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Подх.</span>
-	                        <input inputMode="numeric" value={setting.targetSets} onChange={(e) => updateProgramExerciseSetting(settingKey, { targetSets: Math.max(1, Number(e.target.value || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
+	                        <input inputMode="numeric" value={setting.targetSets} onChange={(e) => updateProgramExerciseSetting(settingKey, { targetSets: sanitizeProgramIntegerInput(e.target.value) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
 	                      </label>
 	                      <label className="block">
 	                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Мин</span>
-	                        <input inputMode="numeric" value={setting.repMin} onChange={(e) => updateProgramExerciseSetting(settingKey, { repMin: Math.max(1, Number(e.target.value || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
+	                        <input inputMode="numeric" value={setting.repMin} onChange={(e) => updateProgramExerciseSetting(settingKey, { repMin: sanitizeProgramIntegerInput(e.target.value) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
 	                      </label>
 	                      <label className="block">
 	                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Макс</span>
-	                        <input inputMode="numeric" value={setting.repMax} onChange={(e) => updateProgramExerciseSetting(settingKey, { repMax: Math.max(Number(setting.repMin || 1), Number(e.target.value || setting.repMin || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
+	                        <input inputMode="numeric" value={setting.repMax} onChange={(e) => updateProgramExerciseSetting(settingKey, { repMax: sanitizeProgramIntegerInput(e.target.value) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
 	                      </label>
 	                    </div>
 	                    <div className="mt-3 grid grid-cols-3 gap-2">
 	                      <label className="block">
 	                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Вес +</span>
-	                        <input inputMode="decimal" value={setting.progressionWeightStep} onChange={(e) => updateProgramExerciseSetting(settingKey, { progressionWeightStep: Number(String(e.target.value).replace(",", ".") || 0) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
+	                        <input inputMode="decimal" value={setting.progressionWeightStep} onChange={(e) => updateProgramExerciseSetting(settingKey, { progressionWeightStep: sanitizeProgramDecimalInput(e.target.value) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
 	                      </label>
 	                      <label className="block">
 	                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Повт. +</span>
-	                        <input inputMode="numeric" value={setting.progressionRepStep} onChange={(e) => updateProgramExerciseSetting(settingKey, { progressionRepStep: Math.max(1, Number(e.target.value || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
+	                        <input inputMode="numeric" value={setting.progressionRepStep} onChange={(e) => updateProgramExerciseSetting(settingKey, { progressionRepStep: sanitizeProgramIntegerInput(e.target.value) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
 	                      </label>
 	                      <label className="block">
 	                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Регресс</span>
-	                        <input inputMode="numeric" value={setting.regressionThresholdSessions} onChange={(e) => updateProgramExerciseSetting(settingKey, { regressionThresholdSessions: Math.max(1, Number(e.target.value || 1)) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
+	                        <input inputMode="numeric" value={setting.regressionThresholdSessions} onChange={(e) => updateProgramExerciseSetting(settingKey, { regressionThresholdSessions: sanitizeProgramIntegerInput(e.target.value) })} className="mt-1 w-full rounded-2xl bg-black/30 px-3 py-3 text-center font-black outline-none ring-1 ring-white/10" />
 	                      </label>
 	                    </div>
 	                  </div>;
