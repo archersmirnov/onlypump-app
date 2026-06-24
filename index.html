@@ -6022,11 +6022,12 @@ function MiniBars() {
 
 function DesktopSidebar({ active, setActive, profile }) {
   const displayName = getProfileDisplayName(profile);
+  const subscriptionLabel = formatProfileSubscriptionLabel(profile);
 
   return <aside className="hidden w-64 shrink-0 border-r border-white/10 bg-zinc-950/95 p-7 lg:block">
     <button onClick={() => setActive("home")} className="mb-10 text-left"><div className="text-3xl font-black tracking-tight">ONLY<span className="text-red-500">PUMP</span></div><div className="mt-1 text-xs uppercase tracking-[0.18em] text-zinc-500">фитнес-платформа</div></button>
     <nav className="space-y-2">{nav.map(({ icon: Icon, label, id }) => <button key={id} data-tour={`nav-${id}`} onClick={() => setActive(id)} className={`flex w-full items-center gap-4 rounded-lg px-4 py-3 text-left text-sm ${active === id ? "onlypump-side-menu-active bg-white/8 text-red-500" : "text-zinc-400 hover:bg-white/5 hover:text-white"}`}><Icon size={18}/><span>{label}</span></button>)}</nav>
-    <div className="mt-16 flex items-center gap-3"><div className="h-11 w-11 rounded-full border border-red-500/50 bg-[url('https://images.unsplash.com/photo-1568602471122-7832951cc4c5?q=80&w=200&auto=format&fit=crop')] bg-cover"/><div><div className="break-words text-sm">{displayName}</div><div className="text-xs text-zinc-500">Тариф: <span className="text-red-500">PREMIUM</span></div></div></div>
+    <div className="mt-16 flex items-center gap-3"><div className="h-11 w-11 rounded-full border border-red-500/50 bg-[url('https://images.unsplash.com/photo-1568602471122-7832951cc4c5?q=80&w=200&auto=format&fit=crop')] bg-cover"/><div className="min-w-0"><div className="break-words text-sm">{displayName}</div><div className="text-xs text-zinc-500">Подписка: <span className="text-red-500">{subscriptionLabel}</span></div></div></div>
   </aside>;
 }
 
@@ -22974,6 +22975,13 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
     : "заполните профиль";
   const subscriptionLabel = formatProfileSubscriptionLabel(profile);
   const unitSystemLabel = normalizeWeightUnit(profile?.default_weight_unit || DEFAULT_PROFILE.default_weight_unit) === "lb" ? "Британская" : "Метрическая";
+  const accessStatus = normalizeAccessStatus(profile?.access_status);
+  const accessBadgeLabel = accessStatus === "allowed" ? subscriptionLabel : getAccessStatusLabel(accessStatus);
+  const accessBadgeClass = accessStatus === "allowed"
+    ? "bg-red-500/10 text-red-300"
+    : accessStatus === "blocked"
+    ? "bg-red-500/10 text-red-300"
+    : "bg-amber-500/10 text-amber-300";
 
   const toggleLightTheme = async (enabled) => {
     setThemeError("");
@@ -22992,34 +23000,123 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
     if (ok === false) setResetError("Не удалось сбросить настройки профиля. Попробуй еще раз.");
   };
 
-	  return <div className="profile-screen"><Header title="Личный кабинет" subtitle="Профиль, тариф, подписка, настройки, доступы и история платежей."/><PageGrid>
-	    <Card data-tour="profile-card" className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p><p className="mt-3 rounded-full bg-white/8 px-3 py-1 text-xs font-black text-zinc-300">{getProfileRoleLabels(profile)}</p></Card>
-	    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? formatAgeRu(calculatedAge) : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profileWeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profileHeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profileActivityLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Питание</span><span>{profileNutritionLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profileUsesPalmNutrition(profile) ? "ладони" : (profile.manual_nutrition_targets_enabled ? "ручной" : "авто")}{!profileUsesPalmNutrition(profile) && profile.high_protein_enabled ? " · белок+" : ""}{!profileUsesPalmNutrition(profile) && profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><Button data-tour="profile-edit" onClick={() => setEditOpen(true)} className="w-full bg-white/8">Редактировать</Button><Button onClick={() => setQuizOpen(true)} className="w-full bg-red-500/10 text-red-300 hover:bg-red-500/15">Пройти квиз</Button></div></Card>
-    <Card className="p-5"><CreditCard className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Подписка</h2><p className="mt-2 text-zinc-400">{subscriptionLabel}</p><Button className="mt-5 w-full bg-white/8">Управлять</Button></Card>
-    <Card className="p-5"><ShieldCheck className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Доступы</h2><p className="mt-2 text-zinc-400">Все модули открыты</p></Card>
-    {canOpenAccessPanel && <Card className="p-5 xl:col-span-2"><Users className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Пользователи и ученики</h2><p className="mt-2 text-zinc-400">{profileHasRole(profile, "owner") ? "Инвайт-ссылки, пользователи и ученики." : profileHasRole(profile, "admin") ? "Блокировка, разблокировка и удаление пользователей." : "Аналитика твоих учеников."}</p><Button onClick={() => setAccessPanelOpen(true)} className="mt-5 w-full bg-white/8">Открыть управление</Button></Card>}
-	    <Card className="p-5 xl:col-span-2"><Settings className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Настройки</h2>
-	      {[
-	        { label: "Уведомления", value: "скоро", onClick: () => setSettingsThinkingOpen(true) },
-	        { label: "Единицы измерения", value: unitSystemLabel, onClick: () => setUnitSettingsOpen(true) },
-	        { label: "Интеграции", value: "скоро", onClick: () => setSettingsThinkingOpen(true) },
-	        { label: "Безопасность", value: "скоро", onClick: () => setSettingsThinkingOpen(true) },
-	      ].map(item => <button key={item.label} type="button" onClick={item.onClick} className="mt-3 flex w-full items-center justify-between gap-3 rounded-lg bg-white/[0.03] p-3 text-left text-sm transition active:scale-[0.99] hover:bg-white/[0.06]">
-	        <span>{item.label}</span>
-	        <span className="text-xs font-bold text-zinc-500">{item.value}</span>
-	      </button>)}
-	      <div className="mt-5 border-t border-white/10 pt-5">
-	        <ProfileToggle label="Светлая тема" description={`Режим: ${lightThemeEnabled ? lightThemeSchedule : "выключена"}`} checked={lightThemeEnabled} onChange={toggleLightTheme}/>
-	        <Button onClick={() => setThemeOpen(true)} className="mt-3 w-full bg-white/8">Настроить темы</Button>
-	        {themeError && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{themeError}</p>}
-	      </div>
-		      <div className="mt-5 border-t border-white/10 pt-5">
-		        <Button data-tour="profile-start-tour" onClick={() => setTutorialPickerOpen(true)} className="mb-3 w-full bg-white/8">Пройти обучение</Button>
-		        <Button onClick={resetProfileSettings} disabled={profileSaving} className="w-full bg-red-500/10 text-red-300 hover:bg-red-500/15 disabled:opacity-50">Сбросить настройки профиля</Button>
-	        <p className="mt-2 text-xs leading-5 text-zinc-500">Откроет первичное заполнение заново. Тренировки, питание, замеры, доступ и имя не удаляются.</p>
-	        {resetError && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{resetError}</p>}
-	      </div>
-	    </Card>
+  const profileGoalLabel = profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal;
+  const nutritionModeLabel = profileUsesPalmNutrition(profile)
+    ? "ладони"
+    : `${profile.manual_nutrition_targets_enabled ? "ручной" : "авто"}${profile.high_protein_enabled ? " · белок+" : ""}${profile.higher_fat_enabled ? " · жиры+" : ""}`;
+  const accessPanelDescription = profileHasRole(profile, "owner")
+    ? "Инвайт-ссылки, пользователи и ученики"
+    : profileHasRole(profile, "admin")
+    ? "Пользователи, блокировки и роли"
+    : "Ученики и их аналитика";
+  const profileFacts = [
+    { label: "Возраст", value: calculatedAge ? formatAgeRu(calculatedAge) : "не указан" },
+    { label: "Вес", value: profileWeightLabel },
+    { label: "Рост", value: profileHeightLabel },
+    { label: "Жир", value: profile.body_fat_percent ? `${profile.body_fat_percent}%` : "нет данных" },
+    { label: "Активность", value: profileActivityLabel },
+    { label: "Цель", value: profileGoalLabel },
+    { label: "Питание", value: profileNutritionLabel },
+    { label: "Режим", value: nutritionModeLabel },
+  ];
+
+  const SettingsSection = ({ title, children }) => <section className="space-y-3">
+    <p className="px-1 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">{title}</p>
+    <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.04] shadow-2xl shadow-black/20 backdrop-blur">
+      {children}
+    </div>
+  </section>;
+
+  const SettingsRow = ({ icon: Icon, title, subtitle, value, onClick, danger = false, disabled = false, dataTour, children }) => {
+    const Cmp = onClick ? "button" : "div";
+    const rowProps = onClick ? { type: "button", onClick, disabled } : {};
+    return <Cmp
+      {...rowProps}
+      data-tour={dataTour}
+      className={`group flex w-full items-center gap-4 border-b border-white/10 px-4 py-4 text-left last:border-b-0 sm:px-5 ${onClick ? "transition active:scale-[0.995] hover:bg-white/[0.045]" : ""} ${disabled ? "opacity-60" : ""}`}
+    >
+      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${danger ? "bg-red-500/10 text-red-400" : "bg-white/[0.06] text-zinc-400"}`}>
+        {Icon && <Icon size={21}/>}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={`block break-words text-base font-black leading-tight ${danger ? "text-red-400" : "text-zinc-100"}`}>{title}</span>
+        {subtitle && <span className="mt-1 block break-words text-sm leading-5 text-zinc-500">{subtitle}</span>}
+      </span>
+      {children || <span className="flex shrink-0 items-center gap-2 text-right text-sm font-bold text-zinc-500">
+        {value && <span className="max-w-[120px] truncate sm:max-w-[220px]">{value}</span>}
+        {onClick && <ChevronRight size={20} className="text-zinc-500 transition group-hover:text-red-400"/>}
+      </span>}
+    </Cmp>;
+  };
+
+  const LightThemeSwitch = () => <button
+    type="button"
+    onClick={() => toggleLightTheme(!lightThemeEnabled)}
+    disabled={themeSaving}
+    className={`relative h-8 w-14 shrink-0 rounded-full transition ${lightThemeEnabled ? "bg-red-500" : "bg-zinc-800"} ${themeSaving ? "opacity-60" : ""}`}
+    aria-label="Светлая тема"
+  >
+    <span className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow-lg transition ${lightThemeEnabled ? "left-7" : "left-1"}`}/>
+  </button>;
+
+  return <div className="profile-screen">
+    <Header title="Личный кабинет" subtitle="Профиль, подписка, настройки и доступы."/>
+    <div className="mx-auto mt-8 max-w-4xl space-y-7">
+      <Card data-tour="profile-card" className="rounded-[32px] p-5 md:p-6">
+        <div className="flex items-start gap-4">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[24px] bg-gradient-to-br from-red-500 to-red-700 text-2xl font-black text-black shadow-2xl shadow-red-500/20">
+            {displayName.slice(0, 1).toUpperCase() || "O"}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="break-words text-2xl font-black tracking-[-0.04em]">{displayName}</h2>
+              <span className={`rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-[0.12em] ${accessBadgeClass}`}>{accessBadgeLabel}</span>
+            </div>
+            <p className="mt-1 break-words text-sm text-zinc-500">{telegramLabel}</p>
+            <p className="mt-2 inline-flex max-w-full rounded-full bg-white/[0.08] px-3 py-1 text-xs font-black text-zinc-300">{getProfileRoleLabels(profile)}</p>
+            <p className="mt-2 break-words text-xs text-zinc-600">{profileSource}</p>
+          </div>
+        </div>
+        <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+          {profileFacts.map(item => <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-zinc-500">{item.label}</p>
+            <p className="mt-1 break-words text-sm font-black text-zinc-100">{item.value}</p>
+          </div>)}
+        </div>
+      </Card>
+
+      <SettingsSection title="Аккаунт">
+        <SettingsRow icon={User} title="Профиль" subtitle={`${calculatedAge ? formatAgeRu(calculatedAge) : "возраст не указан"} · ${profileWeightLabel} · ${profileHeightLabel}`} onClick={() => setEditOpen(true)} dataTour="profile-edit"/>
+        <SettingsRow icon={Target} title="Стартовый квиз" subtitle="Пошагово обновить личные данные и цели" onClick={() => setQuizOpen(true)}/>
+        <SettingsRow icon={CreditCard} title="Подписка" subtitle={subscriptionLabel} value=""/>
+        <SettingsRow icon={ShieldCheck} title="Доступы" subtitle={`Статус: ${getAccessStatusLabel(accessStatus)}`} value=""/>
+      </SettingsSection>
+
+      {canOpenAccessPanel && <SettingsSection title="Управление">
+        <SettingsRow icon={Users} title="Пользователи и ученики" subtitle={accessPanelDescription} onClick={() => setAccessPanelOpen(true)}/>
+      </SettingsSection>}
+
+      <SettingsSection title="Настройки">
+        <SettingsRow icon={Moon} title="Светлая тема" subtitle={`Режим: ${lightThemeEnabled ? lightThemeSchedule : "выключена"}`}>
+          <LightThemeSwitch/>
+        </SettingsRow>
+        <SettingsRow icon={Settings} title="Настроить темы" subtitle="Расписание светлой и темной темы" onClick={() => setThemeOpen(true)}/>
+        <SettingsRow icon={Ruler} title="Единицы измерения" subtitle="Метрическая или британская система" value={unitSystemLabel} onClick={() => setUnitSettingsOpen(true)}/>
+        <SettingsRow icon={Bell} title="Уведомления" subtitle="Пока в разработке" value="скоро" onClick={() => setSettingsThinkingOpen(true)}/>
+        <SettingsRow icon={Share2} title="Интеграции" subtitle="Пока в разработке" value="скоро" onClick={() => setSettingsThinkingOpen(true)}/>
+        <SettingsRow icon={ShieldCheck} title="Безопасность" subtitle="Пока в разработке" value="скоро" onClick={() => setSettingsThinkingOpen(true)}/>
+      </SettingsSection>
+      {themeError && <p className="rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{themeError}</p>}
+
+      <SettingsSection title="Обучение">
+        <SettingsRow icon={BookOpen} title="Пройти обучение" subtitle="Выбрать обучение по экрану или повторить сценарий" onClick={() => setTutorialPickerOpen(true)} dataTour="profile-start-tour"/>
+      </SettingsSection>
+
+      <SettingsSection title="Опасная зона">
+        <SettingsRow icon={Settings} title="Сбросить настройки профиля" subtitle="Тренировки, питание, замеры, доступ и имя не удаляются" danger disabled={profileSaving} onClick={resetProfileSettings}/>
+      </SettingsSection>
+      {resetError && <p className="rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{resetError}</p>}
+    </div>
     {editOpen && <ProfileEditSheet profile={profile} saving={profileSaving} onClose={() => setEditOpen(false)} onSave={onSaveProfile}/>}
     {quizOpen && <ProfileQuizSheet profile={profile} saving={profileSaving} onClose={() => setQuizOpen(false)} onSave={onSaveProfileQuiz || onSaveProfile}/>}
     {themeOpen && <ThemeSettingsSheet profile={profile} saving={themeSaving} onClose={() => setThemeOpen(false)} onSave={onSaveThemeSettings}/>}
@@ -23027,7 +23124,7 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
     {unitSettingsOpen && <UnitSystemSheet profile={profile} saving={profileSaving} onClose={() => setUnitSettingsOpen(false)} onSave={onSaveProfile}/>}
     {accessPanelOpen && <ProfileAccessPanelSheet profile={profile} telegramInitData={telegramInitData} onClose={() => setAccessPanelOpen(false)}/>}
     {tutorialPickerOpen && <TutorialPickerSheet profile={profile} onClose={() => setTutorialPickerOpen(false)} onStartTour={onStartTutorial}/>}
-  </PageGrid></div>;
+  </div>;
 }
 
 function PageGrid({ children }) {
