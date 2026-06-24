@@ -1386,7 +1386,7 @@ function buildFallbackProfile(overrides = {}) {
     theme_updated_at: overrides.theme_updated_at || DEFAULT_PROFILE.theme_updated_at,
     analytics_cards_order: normalizeProfileStringArray(overrides.analytics_cards_order, DEFAULT_PROFILE.analytics_cards_order),
     analytics_cards_hidden: normalizeProfileStringArray(overrides.analytics_cards_hidden, DEFAULT_PROFILE.analytics_cards_hidden),
-    home_widgets_order: normalizeProfileJsonArray(overrides.home_widgets_order, DEFAULT_PROFILE.home_widgets_order),
+    home_widgets_order: normalizeHomeWidgetsStorageValue(overrides.home_widgets_order, DEFAULT_PROFILE.home_widgets_order),
     personal_trackers: normalizeProfileJsonArray(overrides.personal_trackers, DEFAULT_PROFILE.personal_trackers),
     tutorial_completed_screens: normalizeOnlyPumpTourScreens(overrides.tutorial_completed_screens || DEFAULT_PROFILE.tutorial_completed_screens),
     tutorial_skipped_screens: normalizeOnlyPumpTourScreens(overrides.tutorial_skipped_screens || DEFAULT_PROFILE.tutorial_skipped_screens),
@@ -1476,7 +1476,7 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
     theme_updated_at: record.theme_updated_at || fallback.theme_updated_at || null,
     analytics_cards_order: normalizeProfileStringArray(record.analytics_cards_order, fallback.analytics_cards_order || DEFAULT_PROFILE.analytics_cards_order),
     analytics_cards_hidden: normalizeProfileStringArray(record.analytics_cards_hidden, fallback.analytics_cards_hidden || DEFAULT_PROFILE.analytics_cards_hidden),
-    home_widgets_order: normalizeProfileJsonArray(record.home_widgets_order, fallback.home_widgets_order ?? DEFAULT_PROFILE.home_widgets_order),
+    home_widgets_order: normalizeHomeWidgetsStorageValue(record.home_widgets_order, fallback.home_widgets_order ?? DEFAULT_PROFILE.home_widgets_order),
     personal_trackers: normalizeProfileJsonArray(record.personal_trackers, fallback.personal_trackers ?? DEFAULT_PROFILE.personal_trackers),
     tutorial_completed_screens: normalizeOnlyPumpTourScreens(record.tutorial_completed_screens ?? fallback.tutorial_completed_screens ?? DEFAULT_PROFILE.tutorial_completed_screens),
     tutorial_skipped_screens: normalizeOnlyPumpTourScreens(record.tutorial_skipped_screens ?? fallback.tutorial_skipped_screens ?? DEFAULT_PROFILE.tutorial_skipped_screens),
@@ -2064,6 +2064,37 @@ const getHomeWidgetsCacheKey = (profile = DEFAULT_PROFILE) => `onlypump_home_wid
 const getPersonalTrackerCacheKey = (profile = DEFAULT_PROFILE) => `onlypump_personal_trackers_${profile?.telegram_id || profile?.id || "local"}`;
 const getPumpXpSnapshotCacheKey = (profile = DEFAULT_PROFILE) => `onlypump_pump_xp_snapshot_${profile?.telegram_id || profile?.id || "local"}`;
 
+const HOME_LAYOUT_MOBILE = "mobile";
+const HOME_LAYOUT_DESKTOP = "desktop";
+
+const getOnlyPumpHomeLayoutMode = () => {
+  if (typeof window === "undefined" || !window.matchMedia) return HOME_LAYOUT_MOBILE;
+  return window.matchMedia("(min-width: 1024px), (orientation: landscape) and (min-width: 760px)").matches
+    ? HOME_LAYOUT_DESKTOP
+    : HOME_LAYOUT_MOBILE;
+};
+
+function useOnlyPumpHomeLayoutMode() {
+  const [mode, setMode] = useState(getOnlyPumpHomeLayoutMode);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return undefined;
+    const query = window.matchMedia("(min-width: 1024px), (orientation: landscape) and (min-width: 760px)");
+    const update = () => setMode(getOnlyPumpHomeLayoutMode());
+    update();
+    query.addEventListener?.("change", update);
+    query.addListener?.(update);
+    window.addEventListener("orientationchange", update);
+    window.addEventListener("resize", update);
+    return () => {
+      query.removeEventListener?.("change", update);
+      query.removeListener?.(update);
+      window.removeEventListener("orientationchange", update);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+  return mode;
+}
+
 const normalizePersonalTrackerEntry = (entry = {}) => ({
   value: profileNonNegativeNumber(entry.value, 0),
   done: parseProfileBoolean(entry.done, false),
@@ -2291,22 +2322,76 @@ function normalizeHomeWidgetsOrder(value, fallback = defaultHomeWidgets) {
   return enforceHomeWidgetRules(cleaned);
 }
 
-function readCachedHomeWidgetsForProfile(profile = DEFAULT_PROFILE) {
+function parseHomeWidgetsStorageValue(value, fallback = null) {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return fallback;
+    try {
+      return JSON.parse(trimmed);
+    } catch (error) {
+      return fallback;
+    }
+  }
+  return value;
+}
+
+function normalizeHomeWidgetsStorageValue(value, fallback = defaultHomeWidgets) {
+  const parsed = parseHomeWidgetsStorageValue(value, null);
+  const fallbackParsed = parseHomeWidgetsStorageValue(fallback, defaultHomeWidgets);
+  const fallbackMobile = Array.isArray(fallbackParsed)
+    ? fallbackParsed
+    : (fallbackParsed?.mobile || defaultHomeWidgets);
+  const fallbackDesktop = Array.isArray(fallbackParsed)
+    ? fallbackParsed
+    : (fallbackParsed?.desktop || fallbackMobile || defaultHomeWidgets);
+  if (Array.isArray(parsed)) {
+    const normalized = normalizeHomeWidgetsOrder(parsed, defaultHomeWidgets);
+    return { mobile: normalized, desktop: normalized };
+  }
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    return {
+      mobile: normalizeHomeWidgetsOrder(parsed.mobile, fallbackMobile),
+      desktop: normalizeHomeWidgetsOrder(parsed.desktop, fallbackDesktop),
+    };
+  }
+  return {
+    mobile: normalizeHomeWidgetsOrder(fallbackMobile, defaultHomeWidgets),
+    desktop: normalizeHomeWidgetsOrder(fallbackDesktop, defaultHomeWidgets),
+  };
+}
+
+function homeWidgetsForLayout(value, layoutMode = HOME_LAYOUT_MOBILE, fallback = defaultHomeWidgets) {
+  const normalized = normalizeHomeWidgetsStorageValue(value, fallback);
+  return normalizeHomeWidgetsOrder(normalized[layoutMode] || normalized.mobile || defaultHomeWidgets, defaultHomeWidgets);
+}
+
+function homeWidgetsStorageWithLayout(value, layoutMode = HOME_LAYOUT_MOBILE, widgets = []) {
+  const normalized = normalizeHomeWidgetsStorageValue(value, defaultHomeWidgets);
+  return {
+    ...normalized,
+    [layoutMode]: normalizeHomeWidgetsOrder(widgets, defaultHomeWidgets),
+  };
+}
+
+function readCachedHomeWidgetsForProfile(profile = DEFAULT_PROFILE, layoutMode = getOnlyPumpHomeLayoutMode()) {
   try {
     const profileKey = getHomeWidgetsCacheKey(profile);
     const saved = localStorage.getItem(profileKey) || localStorage.getItem("onlypump-home-widgets");
     if (!saved) return enforceHomeWidgetRules(defaultHomeWidgets);
-    return normalizeHomeWidgetsOrder(JSON.parse(saved), defaultHomeWidgets);
+    return homeWidgetsForLayout(JSON.parse(saved), layoutMode, defaultHomeWidgets);
   } catch (error) {
     console.log("Home widgets cache error", error);
     return enforceHomeWidgetRules(defaultHomeWidgets);
   }
 }
 
-function writeCachedHomeWidgetsForProfile(profile = DEFAULT_PROFILE, widgets = []) {
+function writeCachedHomeWidgetsForProfile(profile = DEFAULT_PROFILE, widgets = [], layoutMode = getOnlyPumpHomeLayoutMode()) {
   try {
-    const normalized = normalizeHomeWidgetsOrder(widgets, []);
-    localStorage.setItem(getHomeWidgetsCacheKey(profile), JSON.stringify(normalized));
+    const profileKey = getHomeWidgetsCacheKey(profile);
+    const previous = localStorage.getItem(profileKey) || localStorage.getItem("onlypump-home-widgets");
+    const normalized = homeWidgetsStorageWithLayout(previous ? JSON.parse(previous) : profile?.home_widgets_order, layoutMode, widgets);
+    localStorage.setItem(profileKey, JSON.stringify(normalized));
     localStorage.setItem("onlypump-home-widgets", JSON.stringify(normalized));
   } catch (error) {
     console.log("Home widgets cache error", error);
@@ -4770,6 +4855,21 @@ const pumpXpTrackerScoreForDay = (trackers = [], dateKey) => trackers.reduce((be
   return Math.max(best, Math.min(5, score));
 }, 0);
 
+const calculateFilledActivityStreak = (dateKeys = [], todayKey = formatDateKey(new Date())) => {
+  const filled = new Set(normalizeNutritionFilledDateKeys(dateKeys).filter(key => key <= todayKey));
+  if (!filled.size) return 0;
+  let cursor = parseDateKeyLocal(todayKey);
+  if (!filled.has(todayKey)) cursor = addLocalDaysToDate(cursor, -1);
+  let streak = 0;
+  while (streak < 730) {
+    const key = formatDateKey(cursor);
+    if (!filled.has(key)) break;
+    streak += 1;
+    cursor = addLocalDaysToDate(cursor, -1);
+  }
+  return streak;
+};
+
 const calculatePumpXp = ({
   workouts = [],
   nutritionDay = null,
@@ -4808,7 +4908,10 @@ const calculatePumpXp = ({
   });
 
   const trackerDateKeys = [];
-  personalTrackers.forEach(tracker => Object.keys(tracker.entries || {}).forEach(dateKey => trackerDateKeys.push(dateKey)));
+  personalTrackers.forEach(tracker => Object.entries(tracker.entries || {}).forEach(([dateKey, entry]) => {
+    const normalizedEntry = normalizePersonalTrackerEntry(entry);
+    if (normalizedEntry.done || profileNonNegativeNumber(normalizedEntry.value, 0) > 0 || String(normalizedEntry.note || "").trim()) trackerDateKeys.push(dateKey);
+  }));
   const knownDates = [
     ...Object.keys(workoutMap),
     ...nutritionKeys,
@@ -4949,14 +5052,7 @@ const calculatePumpXp = ({
     }
   });
 
-  const currentStreak = (() => {
-    let streak = 0;
-    for (let index = mainDoneFlags.length - 1; index >= 0; index -= 1) {
-      if (!mainDoneFlags[index]) break;
-      streak += 1;
-    }
-    return streak;
-  })();
+  const currentStreak = calculateFilledActivityStreak(knownDates, todayKey);
 
   const anyWeight = profileNumber(measurements?.weight ?? profile?.weight_kg) > 0;
   const measurementValues = [
@@ -5671,7 +5767,6 @@ function DesktopSidebar({ active, setActive, profile }) {
   return <aside className="hidden w-64 shrink-0 border-r border-white/10 bg-zinc-950/95 p-7 lg:block">
     <button onClick={() => setActive("home")} className="mb-10 text-left"><div className="text-3xl font-black tracking-tight">ONLY<span className="text-red-500">PUMP</span></div><div className="mt-1 text-xs uppercase tracking-[0.18em] text-zinc-500">фитнес-платформа</div></button>
     <nav className="space-y-2">{nav.map(({ icon: Icon, label, id }) => <button key={id} data-tour={`nav-${id}`} onClick={() => setActive(id)} className={`flex w-full items-center gap-4 rounded-lg px-4 py-3 text-left text-sm ${active === id ? "onlypump-side-menu-active bg-white/8 text-red-500" : "text-zinc-400 hover:bg-white/5 hover:text-white"}`}><Icon size={18}/><span>{label}</span></button>)}</nav>
-    <Card className="mt-16 p-5"><div className="text-2xl font-black text-red-500">1PM</div><div className="mt-1 text-sm font-bold">ПЕРСОНАЛЬНЫЙ КОУЧИНГ</div><p className="mt-3 text-xs leading-5 text-zinc-500">Программа, питание и поддержка 24/7</p><Button className="mt-5 w-full bg-gradient-to-r from-red-700 to-red-500">Подробнее</Button></Card>
     <div className="mt-16 flex items-center gap-3"><div className="h-11 w-11 rounded-full border border-red-500/50 bg-[url('https://images.unsplash.com/photo-1568602471122-7832951cc4c5?q=80&w=200&auto=format&fit=crop')] bg-cover"/><div><div className="break-words text-sm">{displayName}</div><div className="text-xs text-zinc-500">Тариф: <span className="text-red-500">PREMIUM</span></div></div></div>
   </aside>;
 }
@@ -5702,10 +5797,6 @@ function FloatingNavMenu({ active, setActive }) {
             <span>{label}</span>
           </button>)}
         </nav>
-        <div className="mt-6 rounded-3xl border border-white/10 bg-black/25 p-4">
-          <div className="text-lg font-black text-red-500">1PM</div>
-          <p className="mt-1 text-xs text-zinc-400">Персональный коучинг 24/7</p>
-        </div>
       </aside>
     </div>
     <button
@@ -6160,15 +6251,22 @@ function InlineDateDataCard({ context = "home", dateKey, nutritionTotals, nutrit
 }
 
 function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSelect, markedDateKeys = [], historyByDate = {}, className = "", markerClassName = "bg-red-500" }) {
-  const [startOffset, setStartOffset] = useState(-3);
+  const layoutMode = useOnlyPumpHomeLayoutMode();
+  const visibleDays = layoutMode === HOME_LAYOUT_DESKTOP ? 14 : 7;
+  const [startOffset, setStartOffset] = useState(() => visibleDays === 14 ? -6 : -3);
   const [dragX, setDragX] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
   const dragRef = useRef(null);
   const suppressCalendarClickRef = useRef(false);
   const suppressResetRef = useRef(null);
   useAppBackLayer(`calendar-history-${title}`, historyOpen, () => setHistoryOpen(false), 130);
+  useEffect(() => {
+    setStartOffset(visibleDays === 14 ? -6 : -3);
+    setDragX(0);
+    dragRef.current = null;
+  }, [visibleDays]);
   const todayKey = formatDateKey(new Date());
-  const days = Array.from({ length: 7 }, (_, i) => {
+  const days = Array.from({ length: visibleDays }, (_, i) => {
     const date = addDays(startOffset + i);
     const key = formatDateKey(date);
     return { date, key };
@@ -6196,7 +6294,8 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
       drag.hasDragged = true;
       suppressCalendarClickRef.current = true;
     }
-    const dayWidth = 46;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const dayWidth = Math.max(36, rect.width / Math.max(1, visibleDays));
     const steps = Math.trunc(rawDx / dayWidth);
 
     if (steps !== 0) {
@@ -6229,7 +6328,7 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
     <button type="button" onClick={() => setHistoryOpen(true)} className="mb-4 flex w-full items-center justify-between gap-3 rounded-2xl text-left transition hover:bg-white/[0.035]">
       <div className="px-1 py-1">
         <h2 className="text-base font-semibold">{title}</h2>
-        <p className="mt-1 text-xs text-zinc-500">Неделя на экране. Перетаскивай кружки вправо или влево — шаг равен одному дню.</p>
+        <p className="mt-1 text-xs text-zinc-500">{visibleDays === 14 ? "Две недели на экране." : "Неделя на экране."} Перетаскивай кружки вправо или влево — шаг равен одному дню.</p>
       </div>
       <CalendarDays className="mr-1 shrink-0 text-zinc-500" size={18}/>
     </button>
@@ -6243,15 +6342,20 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
       onPointerCancel={endCalendarDrag}
     >
       <div
-        className="grid grid-cols-7 gap-2 will-change-transform"
-        style={{ transform: `translate3d(${dragX}px,0,0)`, transition: dragRef.current ? 'none' : 'transform 180ms ease' }}
+        className="grid gap-2 will-change-transform"
+        style={{
+          gridTemplateColumns: `repeat(${visibleDays}, minmax(0, 1fr))`,
+          transform: `translate3d(${dragX}px,0,0)`,
+          transition: dragRef.current ? 'none' : 'transform 180ms ease',
+        }}
       >
         {days.map(({ date, key }) => {
           const selected = selectedDateKey === key;
           const isToday = todayKey === key;
           const marked = markedDateKeys.includes(key);
+          const circleSizeClass = visibleDays === 14 ? "h-10 w-10 sm:h-11 sm:w-11 xl:h-14 xl:w-14" : "h-11 w-11 sm:h-14 sm:w-14";
           return <button key={key} type="button" onClick={() => { if (suppressCalendarClickRef.current) return; onSelect?.(key); }} className="min-w-0 text-center touch-manipulation">
-            <div className={`mx-auto flex h-11 w-11 flex-col items-center justify-center rounded-full border transition sm:h-14 sm:w-14 ${selected ? "border-red-500 bg-red-500 text-black" : isToday ? "border-red-500/50 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-red-500/40 hover:bg-white/[0.07]"}`}>
+            <div className={`mx-auto flex ${circleSizeClass} flex-col items-center justify-center rounded-full border transition ${selected ? "border-red-500 bg-red-500 text-black" : isToday ? "border-red-500/50 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-red-500/40 hover:bg-white/[0.07]"}`}>
               <span className="text-[8px] uppercase leading-none sm:text-[10px]">{date.toLocaleDateString('ru-RU', { weekday: 'short' })}</span>
               <span className="mt-1 text-sm font-semibold leading-none sm:text-xl">{date.getDate()}</span>
             </div>
@@ -18881,10 +18985,11 @@ const shiftAnalyticsPeriodDate = (selectedDateKey, period, amount) => {
   return formatDateKey(addLocalDaysToDate(date, amount));
 };
 
-const analyticsPeriodItems = (period, selectedDateKey) => {
+const analyticsPeriodItems = (period, selectedDateKey, visibleCount = 7) => {
   const selected = parseDateKeyLocal(selectedDateKey);
-  return Array.from({ length: 7 }, (_, index) => {
-    const offset = index - 3;
+  const centerIndex = Math.floor(Math.max(1, visibleCount) / 2);
+  return Array.from({ length: visibleCount }, (_, index) => {
+    const offset = index - centerIndex;
     if (period === "year") {
       const date = new Date(selected.getFullYear() + offset, 0, 1);
       return { key: formatDateKey(date), label: String(date.getFullYear()), sub: "", active: offset === 0 };
@@ -18905,7 +19010,9 @@ const analyticsPeriodItems = (period, selectedDateKey) => {
 
 function AnalyticsPeriodCalendar({ period, selectedDateKey, onSelect }) {
   const dragRef = useRef(null);
-  const items = analyticsPeriodItems(period, selectedDateKey);
+  const layoutMode = useOnlyPumpHomeLayoutMode();
+  const visibleItems = layoutMode === HOME_LAYOUT_DESKTOP ? 14 : 7;
+  const items = analyticsPeriodItems(period, selectedDateKey, visibleItems);
   const startDrag = (event) => {
     dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY };
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -18926,7 +19033,7 @@ function AnalyticsPeriodCalendar({ period, selectedDateKey, onSelect }) {
       </div>
       <CalendarDays className="text-red-400" size={22}/>
     </div>
-    <div className="grid grid-cols-7 gap-2" onPointerDown={startDrag} onPointerUp={endDrag} onPointerCancel={() => { dragRef.current = null; }}>
+    <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${visibleItems}, minmax(0, 1fr))` }} onPointerDown={startDrag} onPointerUp={endDrag} onPointerCancel={() => { dragRef.current = null; }}>
       {items.map(item => <button
         key={`${period}-${item.key}`}
         type="button"
@@ -21887,7 +21994,7 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
 	    <Card data-tour="profile-card" className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p><p className="mt-3 rounded-full bg-white/8 px-3 py-1 text-xs font-black text-zinc-300">{getProfileRoleLabels(profile)}</p></Card>
 	    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? formatAgeRu(calculatedAge) : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profileWeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profileHeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profileActivityLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Питание</span><span>{profileNutritionLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profileUsesPalmNutrition(profile) ? "ладони" : (profile.manual_nutrition_targets_enabled ? "ручной" : "авто")}{!profileUsesPalmNutrition(profile) && profile.high_protein_enabled ? " · белок+" : ""}{!profileUsesPalmNutrition(profile) && profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><Button data-tour="profile-edit" onClick={() => setEditOpen(true)} className="mt-5 w-full bg-white/8">Редактировать</Button></Card>
     <Card className="p-5"><CreditCard className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Подписка</h2><p className="mt-2 text-zinc-400">{subscriptionLabel}</p><Button className="mt-5 w-full bg-white/8">Управлять</Button></Card>
-    <Card className="p-5"><ShieldCheck className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Доступы</h2><p className="mt-2 text-zinc-400">Все модули открыты</p><div className="mt-5 flex gap-2 text-xs text-zinc-500"><Lock size={14}/> 1PM bonus locked</div></Card>
+    <Card className="p-5"><ShieldCheck className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Доступы</h2><p className="mt-2 text-zinc-400">Все модули открыты</p></Card>
     {canOpenAccessPanel && <Card className="p-5 xl:col-span-2"><Users className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Пользователи и ученики</h2><p className="mt-2 text-zinc-400">{profileHasRole(profile, "owner") ? "Инвайт-ссылки, пользователи и ученики." : profileHasRole(profile, "admin") ? "Блокировка, разблокировка и удаление пользователей." : "Аналитика твоих учеников."}</p><Button onClick={() => setAccessPanelOpen(true)} className="mt-5 w-full bg-white/8">Открыть управление</Button></Card>}
 	    <Card className="p-5 xl:col-span-2"><Settings className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Настройки</h2>
 	      {[
@@ -22089,6 +22196,7 @@ function OnlyPumpPlatform() {
   const [accessRefreshing, setAccessRefreshing] = useState(false);
   const backLayerCount = useBackLayerCount();
   const [globalSelectedDateKey, setGlobalSelectedDateKey] = useState(formatDateKey(new Date()));
+  const homeLayoutMode = useOnlyPumpHomeLayoutMode();
   const [workouts, setWorkouts] = useState([]);
   const [workoutsRefreshing, setWorkoutsRefreshing] = useState(false);
   const [nutritionGoal, setNutritionGoal] = useState(initialNutritionGoal);
@@ -22308,7 +22416,7 @@ function OnlyPumpPlatform() {
   const [themeTick, setThemeTick] = useState(() => Date.now());
   const [profileStatus, setProfileStatus] = useState("local");
   const [lectureItems, setLectureItems] = useState(initialLectures);
-  const [homeWidgets, setHomeWidgets] = useState(() => readCachedHomeWidgetsForProfile(DEFAULT_PROFILE));
+  const [homeWidgets, setHomeWidgets] = useState(() => readCachedHomeWidgetsForProfile(DEFAULT_PROFILE, getOnlyPumpHomeLayoutMode()));
   const [personalTrackers, setPersonalTrackers] = useState(() => readCachedPersonalTrackersForProfile(profile || DEFAULT_PROFILE));
   const [personalTrackersOwnerKey, setPersonalTrackersOwnerKey] = useState(() => getPersonalTrackerCacheKey(profile || DEFAULT_PROFILE));
 	  const [homeStateReady, setHomeStateReady] = useState(false);
@@ -22493,16 +22601,19 @@ function OnlyPumpPlatform() {
 
   const handleSaveHomeState = useCallback(async (widgets = homeWidgets, trackers = personalTrackers, localVersion = homeStateLocalVersionRef.current) => {
     if (!profile) return false;
+    const normalizedWidgets = normalizeHomeWidgetsOrder(widgets, []);
+    const normalizedTrackers = normalizePersonalTrackersState(trackers, []);
+    const widgetsStorage = homeWidgetsStorageWithLayout(profile?.home_widgets_order, homeLayoutMode, normalizedWidgets);
     const payload = {
-      home_widgets_order: normalizeHomeWidgetsOrder(widgets, []),
-      personal_trackers: normalizePersonalTrackersState(trackers, []),
+      home_widgets_order: widgetsStorage,
+      personal_trackers: normalizedTrackers,
     };
     if (localVersion !== homeStateLocalVersionRef.current) {
       console.log("Home state stale save skipped", { localVersion, currentVersion: homeStateLocalVersionRef.current });
       return true;
     }
 
-    writeCachedHomeWidgetsForProfile(profile, payload.home_widgets_order);
+    writeCachedHomeWidgetsForProfile(profile, normalizedWidgets, homeLayoutMode);
     writeCachedPersonalTrackersForProfile(profile, payload.personal_trackers);
     setProfile(prev => normalizeProfileRecord({
       ...(prev || profile || DEFAULT_PROFILE),
@@ -22514,7 +22625,7 @@ function OnlyPumpPlatform() {
     if (!(profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id)) return true;
 
     try {
-      console.log("Saving home state", { widgets: payload.home_widgets_order.length, trackers: payload.personal_trackers.length });
+      console.log("Saving home state", { layout: homeLayoutMode, widgets: normalizedWidgets.length, trackers: payload.personal_trackers.length });
       const result = await callOnlyPumpProfileApi(telegramInitData, "update_home_state", payload);
       if (localVersion !== homeStateLocalVersionRef.current) {
         console.log("Home state stale save ignored", { localVersion, currentVersion: homeStateLocalVersionRef.current });
@@ -22522,13 +22633,13 @@ function OnlyPumpPlatform() {
       }
       setProfile(prev => normalizeProfileRecord(result.profile || { ...(prev || profile || DEFAULT_PROFILE), ...payload }, prev || profile || DEFAULT_PROFILE));
       setProfileStatus("verified");
-      console.log("Home state saved", { widgets: payload.home_widgets_order.length, trackers: payload.personal_trackers.length });
+      console.log("Home state saved", { layout: homeLayoutMode, widgets: normalizedWidgets.length, trackers: payload.personal_trackers.length });
       return true;
     } catch (error) {
       console.error("onlypump-profile-api home state error:", error);
       return false;
     }
-  }, [homeWidgets, personalTrackers, profile, profileStatus, telegramInitData]);
+  }, [homeLayoutMode, homeWidgets, personalTrackers, profile, profileStatus, telegramInitData]);
 
   const handleResetProfileSettings = useCallback(async () => {
     const resetLocalProfile = normalizeProfileRecord({
@@ -23305,10 +23416,10 @@ function OnlyPumpPlatform() {
     if (!profile) return;
     const key = getPersonalTrackerCacheKey(profile || DEFAULT_PROFILE);
     setPersonalTrackersOwnerKey(key);
-    const cachedWidgets = readCachedHomeWidgetsForProfile(profile || DEFAULT_PROFILE);
+    const cachedWidgets = readCachedHomeWidgetsForProfile(profile || DEFAULT_PROFILE, homeLayoutMode);
     const cachedTrackers = readCachedPersonalTrackersForProfile(profile || DEFAULT_PROFILE);
-    const remoteWidgets = Array.isArray(profile.home_widgets_order)
-      ? normalizeHomeWidgetsOrder(profile.home_widgets_order, [])
+    const remoteWidgets = profile.home_widgets_order
+      ? homeWidgetsForLayout(profile.home_widgets_order, homeLayoutMode, cachedWidgets)
       : cachedWidgets;
     const remoteTrackers = Array.isArray(profile.personal_trackers)
       ? normalizePersonalTrackersState(profile.personal_trackers, [])
@@ -23316,7 +23427,7 @@ function OnlyPumpPlatform() {
     setHomeWidgets(remoteWidgets);
     setPersonalTrackers(remoteTrackers);
     setHomeStateReady(true);
-  }, [profile?.id, profile?.telegram_id, profile?.home_state_updated_at, JSON.stringify(profile?.home_widgets_order || null), JSON.stringify(profile?.personal_trackers || null)]);
+  }, [homeLayoutMode, profile?.id, profile?.telegram_id, profile?.home_state_updated_at, JSON.stringify(profile?.home_widgets_order || null), JSON.stringify(profile?.personal_trackers || null)]);
 
   useEffect(() => {
     if (!profile || !homeStateReady) return;
@@ -23326,14 +23437,14 @@ function OnlyPumpPlatform() {
     const normalizedTrackers = normalizePersonalTrackersState(personalTrackers, []);
     const localVersion = homeStateLocalVersionRef.current + 1;
     homeStateLocalVersionRef.current = localVersion;
-    writeCachedHomeWidgetsForProfile(profile || DEFAULT_PROFILE, normalizedWidgets);
+    writeCachedHomeWidgetsForProfile(profile || DEFAULT_PROFILE, normalizedWidgets, homeLayoutMode);
     writeCachedPersonalTrackersForProfile(profile || DEFAULT_PROFILE, normalizedTrackers);
     window.clearTimeout(homeStateSaveTimerRef.current);
     homeStateSaveTimerRef.current = window.setTimeout(() => {
       handleSaveHomeState(normalizedWidgets, normalizedTrackers, localVersion);
     }, 700);
     return () => window.clearTimeout(homeStateSaveTimerRef.current);
-  }, [homeStateReady, JSON.stringify(homeWidgets), JSON.stringify(personalTrackers), personalTrackersOwnerKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData]);
+  }, [homeLayoutMode, homeStateReady, JSON.stringify(homeWidgets), JSON.stringify(personalTrackers), personalTrackersOwnerKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData]);
 
   const page = useMemo(() => ({
     home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionDay={nutritionDay} nutritionMarkedDateKeys={nutritionMarkedDateKeys} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} personalTrackers={personalTrackers} setPersonalTrackers={setPersonalTrackers} profile={profile} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} profileSaving={profileSaving} pumpXpSummary={pumpXpSummary} onOpenPumpXpDetails={() => setPumpXpDetailsOpen(true)} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onOpenAnalytics={openAnalyticsType}/>,
