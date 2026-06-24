@@ -446,6 +446,13 @@
     .onlypump-program-field::placeholder {
       color: rgba(148, 163, 184, 0.72);
     }
+    .onlypump-program-number-field {
+      height: 48px;
+      min-height: 48px;
+      line-height: 48px !important;
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+    }
     .onlypump-program-chip {
       border: 1px solid rgba(255, 255, 255, 0.10);
     }
@@ -849,7 +856,7 @@ function initTelegramWebApp() {
 }
 
 const telegramWebApp = initTelegramWebApp();
-const ONLYPUMP_FRONTEND_BUILD = "workouts-table-rescue-20260624-04";
+const ONLYPUMP_FRONTEND_BUILD = "analytics-program-hotfix-20260624-01";
 console.log("ONLYPUMP START");
 console.log("ONLYPUMP BUILD", ONLYPUMP_FRONTEND_BUILD);
 console.log("Telegram object exists", Boolean(telegramWebApp || window.Telegram?.WebApp));
@@ -9621,7 +9628,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     try {
       let savedProgram = null;
       if (canUseWorkoutApi) {
-        const action = draft.remoteProgramTemplateId || draft.templateKey ? "update_program_template" : "save_program_template";
+        const action = draft.remoteProgramTemplateId ? "update_program_template" : "save_program_template";
         const result = await callWorkoutsApi(action, payload);
         savedProgram = mapProgramTemplateRowToProgram(result.program_template || result.template);
       } else {
@@ -9676,7 +9683,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return savedProgram;
     } catch (error) {
       console.error("Program template save error", error);
-      updateProgramBuilderDraft({ error: autosave ? "Черновик пока не сохранился. Попробуй ещё раз." : "Не удалось сохранить программу." });
+      if (!autosave) updateProgramBuilderDraft({ error: "Не удалось сохранить программу." });
       return null;
     } finally {
       setProgramSaving(false);
@@ -15920,8 +15927,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	          updateProgramBuilderDraft({ error: "Введите название программы." });
 	          return;
 	        }
-	        const savedProgram = await saveProgramBuilder(draft, { autosave: true, allowEmptyExercises: true, stayOpen: true });
-	        if (!savedProgram) return;
+	        saveProgramBuilder(draft, { autosave: true, allowEmptyExercises: true, stayOpen: true });
 	        updateProgramBuilderDraft(prev => ({ ...prev, step: "day", activeDayIndex: 0, error: "" }));
 	      };
 	      const goDayBack = () => {
@@ -15934,8 +15940,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	      };
 	      const goDayNext = async () => {
 	        blurProgramBuilderFocus();
-	        const savedProgram = await saveProgramBuilder(draft, { autosave: true, allowEmptyExercises: true, stayOpen: true });
-	        if (!savedProgram) return;
+	        saveProgramBuilder(draft, { autosave: true, allowEmptyExercises: true, stayOpen: true });
 	        if (activeDayIndex >= (draft.days || []).length - 1) {
 	          updateProgramBuilderDraft(prev => ({ ...prev, step: "summary", error: "" }));
 	          return;
@@ -15960,8 +15965,8 @@ const toggleExerciseMeasurementSetting = (field) => {
 	            {draft.step === "meta" && <>
 	              <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Название программы</span><input value={draft.title} onChange={(e) => updateProgramBuilderDraft({ title: e.target.value, error: "" })} placeholder="Например: Верх сила" className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 font-bold outline-none"/></label>
 	              <div className="grid grid-cols-2 gap-3">
-                <label className="onlypump-program-builder-short-field block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Длительность, недель</span><input inputMode="numeric" value={draft.durationWeeks} onChange={(e) => updateProgramBuilderDraft({ durationWeeks: clampProgramNumber(e.target.value, 1, 52) })} className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 text-center font-black outline-none"/></label>
-                <label className="onlypump-program-builder-short-field block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Тренировок</span><input inputMode="numeric" value={draft.workoutCount} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, workoutCount: clampProgramNumber(e.target.value, 1, 20) }))} className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 text-center font-black outline-none"/></label>
+	                <label className="onlypump-program-builder-short-field block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Длительность, недель</span><input inputMode="numeric" value={draft.durationWeeks} onChange={(e) => updateProgramBuilderDraft({ durationWeeks: clampProgramNumber(e.target.value, 1, 52) })} className="onlypump-program-field onlypump-program-number-field mt-2 w-full rounded-2xl px-4 text-center font-black outline-none"/></label>
+	                <label className="onlypump-program-builder-short-field block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Тренировок</span><input inputMode="numeric" value={draft.workoutCount} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, workoutCount: clampProgramNumber(e.target.value, 1, 20) }))} className="onlypump-program-field onlypump-program-number-field mt-2 w-full rounded-2xl px-4 text-center font-black outline-none"/></label>
 	              </div>
 	              <div className="grid grid-cols-2 gap-3">
 	                <label className="block"><span className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Периодичность</span><select value={draft.schedulePattern} onChange={(e) => updateProgramBuilderDraft(prev => ({ ...prev, schedulePattern: e.target.value }))} className="onlypump-program-field mt-2 w-full rounded-2xl px-4 py-3 font-bold outline-none">{programBuilderScheduleOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
@@ -19192,47 +19197,71 @@ const shiftAnalyticsPeriodDate = (selectedDateKey, period, amount) => {
   return formatDateKey(addLocalDaysToDate(date, amount));
 };
 
-const analyticsPeriodItems = (period, selectedDateKey, visibleCount = 7) => {
-  const selected = parseDateKeyLocal(selectedDateKey);
+const analyticsPeriodSelectionKey = (period, dateKey = formatDateKey(new Date())) => {
+  const selected = parseDateKeyLocal(dateKey);
+  if (period === "year") return formatDateKey(new Date(selected.getFullYear(), 0, 1));
+  if (period === "month") return formatDateKey(new Date(selected.getFullYear(), selected.getMonth(), 1));
+  if (period === "week") return analyticsPeriodRange("week", dateKey).startKey;
+  return formatDateKey(selected);
+};
+
+const analyticsPeriodItems = (period, anchorDateKey, visibleCount = 7, startOffset = null, selectedDateKey = anchorDateKey) => {
+  const anchor = parseDateKeyLocal(anchorDateKey);
   const centerIndex = Math.floor(Math.max(1, visibleCount) / 2);
+  const baseOffset = Number.isFinite(Number(startOffset)) ? Number(startOffset) : -centerIndex;
+  const selectedKey = analyticsPeriodSelectionKey(period, selectedDateKey);
   return Array.from({ length: visibleCount }, (_, index) => {
-    const offset = index - centerIndex;
+    const offset = baseOffset + index;
     if (period === "year") {
-      const date = new Date(selected.getFullYear() + offset, 0, 1);
-      return { key: formatDateKey(date), label: String(date.getFullYear()), sub: "", active: offset === 0 };
+      const date = new Date(anchor.getFullYear() + offset, 0, 1);
+      const key = formatDateKey(date);
+      return { key, label: String(date.getFullYear()), sub: "", active: key === selectedKey };
     }
     if (period === "month") {
-      const date = new Date(selected.getFullYear(), selected.getMonth() + offset, 1);
-      return { key: formatDateKey(date), label: date.toLocaleDateString("ru-RU", { month: "short" }).replace(".", ""), sub: String(date.getFullYear()), active: offset === 0 };
+      const date = new Date(anchor.getFullYear(), anchor.getMonth() + offset, 1);
+      const key = formatDateKey(date);
+      return { key, label: date.toLocaleDateString("ru-RU", { month: "short" }).replace(".", ""), sub: String(date.getFullYear()), active: key === selectedKey };
     }
     if (period === "week") {
-      const date = addLocalDaysToDate(selected, offset * 7);
+      const date = addLocalDaysToDate(anchor, offset * 7);
       const range = analyticsPeriodRange("week", formatDateKey(date));
-      return { key: range.startKey, label: String(range.weekIndex).padStart(2, "0"), sub: "", active: offset === 0 };
+      return { key: range.startKey, label: String(range.weekIndex).padStart(2, "0"), sub: "", active: range.startKey === selectedKey };
     }
-    const date = addLocalDaysToDate(selected, offset);
-    return { key: formatDateKey(date), label: String(date.getDate()), sub: date.toLocaleDateString("ru-RU", { weekday: "short" }).replace(".", ""), active: offset === 0 };
+    const date = addLocalDaysToDate(anchor, offset);
+    const key = formatDateKey(date);
+    return { key, label: String(date.getDate()), sub: date.toLocaleDateString("ru-RU", { weekday: "short" }).replace(".", ""), active: key === selectedKey };
   });
 };
 
 function AnalyticsPeriodCalendar({ period, selectedDateKey, onSelect }) {
   const dragRef = useRef(null);
+  const suppressAnalyticsCalendarClickRef = useRef(false);
+  const suppressResetRef = useRef(null);
   const [dragX, setDragX] = useState(0);
   const layoutMode = useOnlyPumpHomeLayoutMode();
   const visibleItems = layoutMode === HOME_LAYOUT_DESKTOP ? 14 : 7;
-  const items = analyticsPeriodItems(period, selectedDateKey, visibleItems);
   const todayKey = formatDateKey(new Date());
+  const [startOffset, setStartOffset] = useState(() => visibleItems === 14 ? -6 : -3);
+  useEffect(() => {
+    setStartOffset(visibleItems === 14 ? -6 : -3);
+    setDragX(0);
+    dragRef.current = null;
+  }, [visibleItems, period]);
+  const items = analyticsPeriodItems(period, todayKey, visibleItems, startOffset, selectedDateKey);
+  const currentPeriodKey = analyticsPeriodSelectionKey(period, todayKey);
   const range = analyticsPeriodRange(period, selectedDateKey);
   const startDrag = (event) => {
+    clearTimeout(suppressResetRef.current);
     dragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      hasDragged: false,
       swiping: false,
       targetKey: event.target?.closest?.("[data-analytics-period-key]")?.dataset?.analyticsPeriodKey || "",
-      currentKey: selectedDateKey,
     };
     setDragX(0);
+    suppressAnalyticsCalendarClickRef.current = false;
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
   const moveDrag = (event) => {
@@ -19245,15 +19274,15 @@ function AnalyticsPeriodCalendar({ period, selectedDateKey, onSelect }) {
     if (!drag.swiping && (absX < 22 || absX < absY * 1.45)) return;
     if (absY > 48 && absY > absX * 1.2) return;
     drag.swiping = true;
+    drag.hasDragged = true;
+    suppressAnalyticsCalendarClickRef.current = true;
     const rect = event.currentTarget.getBoundingClientRect();
     const itemWidth = Math.max(36, rect.width / Math.max(1, visibleItems));
     const steps = Math.trunc(dx / itemWidth);
     if (steps !== 0) {
-      const nextKey = shiftAnalyticsPeriodDate(drag.currentKey || selectedDateKey, period, -steps);
-      drag.currentKey = nextKey;
       drag.startX += steps * itemWidth;
       setDragX(dx - steps * itemWidth);
-      onSelect(nextKey);
+      setStartOffset(prev => prev - steps);
     } else {
       setDragX(dx);
     }
@@ -19262,9 +19291,19 @@ function AnalyticsPeriodCalendar({ period, selectedDateKey, onSelect }) {
   const endDrag = (event) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
+    const wasDragged = drag.hasDragged || drag.swiping;
+    const targetKey = drag.targetKey;
     dragRef.current = null;
     setDragX(0);
-    if (!drag.swiping && drag.targetKey) onSelect(drag.targetKey);
+    if (!wasDragged && targetKey) {
+      suppressAnalyticsCalendarClickRef.current = false;
+      onSelect(targetKey);
+      return;
+    }
+    clearTimeout(suppressResetRef.current);
+    suppressResetRef.current = setTimeout(() => {
+      suppressAnalyticsCalendarClickRef.current = false;
+    }, 120);
   };
   const getCircleText = (item) => {
     if (period === "day") return { top: item.sub, main: item.label };
@@ -19294,14 +19333,14 @@ function AnalyticsPeriodCalendar({ period, selectedDateKey, onSelect }) {
       onPointerCancel={() => { dragRef.current = null; setDragX(0); }}
     >
       {items.map(item => {
-        const isToday = period === "day" && item.key === todayKey;
+        const isToday = item.key === currentPeriodKey;
         const text = getCircleText(item);
         const circleSizeClass = visibleItems === 14 ? "h-10 w-10 sm:h-11 sm:w-11 xl:h-14 xl:w-14" : "h-11 w-11 sm:h-14 sm:w-14";
         return <button
         key={`${period}-${item.key}`}
         type="button"
         data-analytics-period-key={item.key}
-        onClick={(event) => { if (event.detail === 0) onSelect(item.key); }}
+        onClick={(event) => { if (event.detail !== 0 || suppressAnalyticsCalendarClickRef.current) return; onSelect(item.key); }}
         className="min-w-0 text-center touch-manipulation"
       >
         <div className={`mx-auto flex ${circleSizeClass} flex-col items-center justify-center rounded-full border transition ${item.active ? "border-red-500 bg-red-500 text-black" : isToday ? "border-red-500/50 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-red-500/40 hover:bg-white/[0.07]"}`}>
