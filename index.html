@@ -707,6 +707,7 @@
   {
     "imports": {
       "react": "https://esm.sh/react@18.3.1",
+      "react-dom": "https://esm.sh/react-dom@18.3.1?external=react",
       "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
       "lucide-react": "https://esm.sh/lucide-react@0.469.0?external=react"
     }
@@ -774,6 +775,7 @@
   <div id="root"></div>
   <script type="text/babel" data-type="module" data-presets="onlypump-classic">
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import {
   Home, Dumbbell, Apple, Calculator, GraduationCap, PlaySquare, TrendingUp,
@@ -20701,8 +20703,8 @@ function BirthDatePickerSheet({ value, onSave, onClose }) {
   const columnClass = "onlypump-scrollbar-none max-h-72 min-w-0 flex-1 overflow-y-auto rounded-2xl bg-white/[0.035] p-2";
   const optionClass = (active) => `block w-full rounded-xl px-2 py-3 text-center text-sm font-semibold transition ${active ? "bg-red-500 text-black" : "text-zinc-300 hover:bg-white/[0.08]"}`;
 
-  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[185] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-    <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[245] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} priority={245} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -20732,6 +20734,7 @@ function BirthDatePickerSheet({ value, onSave, onClose }) {
 
 function BirthDateField({ value, onChange, required = false }) {
   const [open, setOpen] = useState(false);
+  const picker = open ? <BirthDatePickerSheet value={value} onSave={onChange} onClose={() => setOpen(false)}/> : null;
   return <>
     <button
       type="button"
@@ -20741,7 +20744,7 @@ function BirthDateField({ value, onChange, required = false }) {
       <span className="block text-xs font-bold text-zinc-500">Дата рождения{required ? " *" : ""}</span>
       <span className={`mt-2 block text-base font-semibold ${value ? "text-zinc-100" : "text-zinc-600"}`}>{formatBirthDateDisplay(value)}</span>
     </button>
-    {open && <BirthDatePickerSheet value={value} onSave={onChange} onClose={() => setOpen(false)}/>}
+    {picker && typeof document !== "undefined" && document.body ? createPortal(picker, document.body) : picker}
   </>;
 }
 
