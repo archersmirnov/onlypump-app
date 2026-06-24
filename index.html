@@ -2081,6 +2081,51 @@ const getPersonalTrackerCacheKey = (profile = DEFAULT_PROFILE) => `onlypump_pers
 const getPumpXpSnapshotCacheKey = (profile = DEFAULT_PROFILE) => `onlypump_pump_xp_snapshot_${profile?.telegram_id || profile?.id || "local"}`;
 const getPumpXpDailyAwardsCacheKey = (profile = DEFAULT_PROFILE) => `onlypump_pump_xp_daily_awards_${profile?.telegram_id || profile?.id || "local"}`;
 
+const buildPumpXpSnapshot = (summary = EMPTY_PUMP_XP_SUMMARY) => ({
+  totalXp: Math.max(0, Math.round(Number(summary?.totalXp || 0))),
+  level: Math.max(1, Math.round(Number(summary?.level?.current?.level || 1))),
+  dailyKeys: (Array.isArray(summary?.daily) ? summary.daily : []).map(item => `${item.dateKey || ""}:${Math.round(Number(item.xp || 0))}:${item.label || ""}`),
+  bonusKeys: (Array.isArray(summary?.bonuses) ? summary.bonuses : []).map(item => `${item.title || ""}:${Math.round(Number(item.xp || 0))}`),
+  updatedAt: new Date().toISOString(),
+});
+
+const readPumpXpSnapshot = (profile = DEFAULT_PROFILE) => {
+  try {
+    const raw = localStorage.getItem(getPumpXpSnapshotCacheKey(profile));
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+const writePumpXpSnapshot = (profile = DEFAULT_PROFILE, summary = EMPTY_PUMP_XP_SUMMARY) => {
+  const snapshot = buildPumpXpSnapshot(summary);
+  try {
+    localStorage.setItem(getPumpXpSnapshotCacheKey(profile), JSON.stringify(snapshot));
+  } catch (error) {}
+  return snapshot;
+};
+
+const getPumpXpDeltaReason = (previousSnapshot = {}, summary = EMPTY_PUMP_XP_SUMMARY, delta = 0) => {
+  const safeDelta = Math.max(0, Math.round(Number(delta || 0)));
+  const previousBonuses = new Set(Array.isArray(previousSnapshot?.bonusKeys) ? previousSnapshot.bonusKeys : []);
+  const newBonus = (Array.isArray(summary?.bonuses) ? summary.bonuses : []).find(item => {
+    const xp = Math.round(Number(item.xp || 0));
+    return xp > 0 && (!safeDelta || xp <= safeDelta) && !previousBonuses.has(`${item.title || ""}:${xp}`);
+  });
+  if (newBonus?.title) return `${newBonus.title}: +${Math.round(Number(newBonus.xp || 0))}`;
+
+  const previousDaily = new Set(Array.isArray(previousSnapshot?.dailyKeys) ? previousSnapshot.dailyKeys : []);
+  const newDaily = (Array.isArray(summary?.daily) ? summary.daily : []).find(item => {
+    const xp = Math.round(Number(item.xp || 0));
+    return xp > 0 && (!safeDelta || xp <= safeDelta) && !previousDaily.has(`${item.dateKey || ""}:${xp}:${item.label || ""}`);
+  });
+  if (newDaily?.label) return `${formatCycleCardDate(newDaily.dateKey)}: ${newDaily.label}`;
+
+  return "За стабильный процесс";
+};
+
 const readPumpXpDailyAwardsShown = (profile = DEFAULT_PROFILE) => {
   try {
     const raw = localStorage.getItem(getPumpXpDailyAwardsCacheKey(profile));
@@ -22964,15 +23009,6 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
     : `${normalizeThemeTime(profile?.light_theme_start_time, DEFAULT_PROFILE.light_theme_start_time)} - ${normalizeThemeTime(profile?.light_theme_end_time, DEFAULT_PROFILE.light_theme_end_time)}`;
   const profileWeightLabel = formatOptionalMetric(profile?.weight_kg, "кг");
   const profileHeightLabel = formatOptionalMetric(profile?.height_cm, "см");
-  const profileSteps = profileNonNegativeNumber(profile?.steps_per_day, DEFAULT_PROFILE.steps_per_day);
-  const profileWorkouts = profileNonNegativeNumber(profile?.workouts_per_week, DEFAULT_PROFILE.workouts_per_week);
-  const profileActivityLabel = `${profileSteps.toLocaleString("ru-RU")} шагов · ${profileWorkouts} тр/нед`;
-  const hasNutritionTargets = Boolean(profile?.onboarding_completed) && [profile?.calories_target, profile?.protein_target, profile?.fat_target, profile?.carbs_target].every(hasPositiveMetric);
-  const profileNutritionLabel = profileUsesPalmNutrition(profile)
-    ? "ладони"
-    : hasNutritionTargets
-    ? `${profile.calories_target} / ${profile.protein_target} / ${profile.fat_target} / ${profile.carbs_target}`
-    : "заполните профиль";
   const subscriptionLabel = formatProfileSubscriptionLabel(profile);
   const unitSystemLabel = normalizeWeightUnit(profile?.default_weight_unit || DEFAULT_PROFILE.default_weight_unit) === "lb" ? "Британская" : "Метрическая";
   const accessStatus = normalizeAccessStatus(profile?.access_status);
@@ -23000,25 +23036,11 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
     if (ok === false) setResetError("Не удалось сбросить настройки профиля. Попробуй еще раз.");
   };
 
-  const profileGoalLabel = profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal;
-  const nutritionModeLabel = profileUsesPalmNutrition(profile)
-    ? "ладони"
-    : `${profile.manual_nutrition_targets_enabled ? "ручной" : "авто"}${profile.high_protein_enabled ? " · белок+" : ""}${profile.higher_fat_enabled ? " · жиры+" : ""}`;
   const accessPanelDescription = profileHasRole(profile, "owner")
     ? "Инвайт-ссылки, пользователи и ученики"
     : profileHasRole(profile, "admin")
     ? "Пользователи, блокировки и роли"
     : "Ученики и их аналитика";
-  const profileFacts = [
-    { label: "Возраст", value: calculatedAge ? formatAgeRu(calculatedAge) : "не указан" },
-    { label: "Вес", value: profileWeightLabel },
-    { label: "Рост", value: profileHeightLabel },
-    { label: "Жир", value: profile.body_fat_percent ? `${profile.body_fat_percent}%` : "нет данных" },
-    { label: "Активность", value: profileActivityLabel },
-    { label: "Цель", value: profileGoalLabel },
-    { label: "Питание", value: profileNutritionLabel },
-    { label: "Режим", value: nutritionModeLabel },
-  ];
 
   const SettingsSection = ({ title, children }) => <section className="space-y-3">
     <p className="px-1 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">{title}</p>
@@ -23076,12 +23098,6 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
             <p className="mt-2 inline-flex max-w-full rounded-full bg-white/[0.08] px-3 py-1 text-xs font-black text-zinc-300">{getProfileRoleLabels(profile)}</p>
             <p className="mt-2 break-words text-xs text-zinc-600">{profileSource}</p>
           </div>
-        </div>
-        <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-          {profileFacts.map(item => <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
-            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-zinc-500">{item.label}</p>
-            <p className="mt-1 break-words text-sm font-black text-zinc-100">{item.value}</p>
-          </div>)}
         </div>
       </Card>
 
@@ -23582,6 +23598,9 @@ function OnlyPumpPlatform() {
 	  const [tourAwards, setTourAwards] = useState(() => readOnlyPumpTourAwards(DEFAULT_PROFILE));
 	  const [tourState, setTourState] = useState({ active: false, screen: "home", stepIndex: 0, force: false, full: false });
 	  const tourTaskSnapshotRef = useRef(null);
+	  const pumpXpProfileSnapshotKeyRef = useRef("");
+	  const pumpXpLastSelectedDateRef = useRef(globalSelectedDateKey);
+	  const pumpXpMuteDateRef = useRef("");
 
   const activeTheme = useMemo(
     () => profileWantsLightTheme(profile || DEFAULT_PROFILE, new Date(themeTick)) ? "light" : "dark",
@@ -24392,50 +24411,66 @@ function OnlyPumpPlatform() {
 	    return () => window.clearTimeout(timerId);
 	  }, [profile?.id, profile?.telegram_id, profile?.onboarding_completed, appLoading, profileLoading, accessGateStatus, profileWelcomeOpen, tourState.active, setActive]);
 
-		  useEffect(() => {
-		    if (!profile || appLoading || profileLoading || accessGateStatus) return;
-	    const activeProfile = profile || DEFAULT_PROFILE;
-	    const key = getPumpXpSnapshotCacheKey(activeProfile);
-	    let previousSnapshot = null;
-	    try { previousSnapshot = JSON.parse(localStorage.getItem(key) || "null"); } catch (error) {}
+			  useEffect(() => {
+			    if (!profile || appLoading || profileLoading || accessGateStatus) return;
+		    const activeProfile = profile || DEFAULT_PROFILE;
+		    const snapshotKey = getPumpXpSnapshotCacheKey(activeProfile);
+		    const selectedDateChanged = pumpXpLastSelectedDateRef.current !== globalSelectedDateKey;
+		    if (selectedDateChanged) {
+		      pumpXpLastSelectedDateRef.current = globalSelectedDateKey;
+		      pumpXpMuteDateRef.current = globalSelectedDateKey;
+		    }
+		    const previousProfileSnapshotKey = pumpXpProfileSnapshotKeyRef.current;
+		    const profileChanged = Boolean(previousProfileSnapshotKey) && previousProfileSnapshotKey !== snapshotKey;
+		    if (!previousProfileSnapshotKey || profileChanged) pumpXpProfileSnapshotKeyRef.current = snapshotKey;
+		    const selectedNutritionReady = !nutritionDay?.date || nutritionDay.date === globalSelectedDateKey;
+		    const selectedHealthDate = healthLog?.log_date || healthLog?.date || "";
+		    const selectedHealthReady = !selectedHealthDate || selectedHealthDate === globalSelectedDateKey;
+		    const isRefreshingSelectedDay = workoutsRefreshing || nutritionRefreshing || healthRefreshing || !selectedNutritionReady || !selectedHealthReady;
+		    if (isRefreshingSelectedDay) return;
 
-	    const todayKey = formatDateKey(new Date());
-	    const yesterdayKey = formatDateKey(addLocalDaysToDate(parseDateKeyLocal(todayKey), -1));
-	    const dailyAwardsShown = readPumpXpDailyAwardsShown(activeProfile);
-	    const yesterdayAward = (pumpXpSummary.daily || []).find(item => item.dateKey === yesterdayKey && Number(item.xp || 0) > 0);
-	    const hasShownYesterday = Boolean(dailyAwardsShown[yesterdayKey]);
+		    const previousSnapshot = readPumpXpSnapshot(activeProfile);
+		    const isMutedDateRefresh = pumpXpMuteDateRef.current === globalSelectedDateKey;
+		    if (!previousSnapshot || profileChanged || isMutedDateRefresh) {
+		      writePumpXpSnapshot(activeProfile, pumpXpSummary);
+		      if (isMutedDateRefresh) pumpXpMuteDateRef.current = "";
+		      return;
+		    }
 
-	    if (yesterdayAward && !hasShownYesterday) {
-	      const delta = Math.max(0, Math.round(Number(yesterdayAward.xp || 0)));
-	      if (delta > 0) {
-	        setPumpXpToast({
-	          id: `daily-${yesterdayKey}-${Date.now()}`,
-	          delta,
-	          reason: `Итоги ${formatCycleCardDate(yesterdayKey)}: ${yesterdayAward.label || "полезные действия"}`,
-	        });
-	        const previousLevel = getPumpXpLevel(Number(previousSnapshot?.totalXp || 0)).current.level;
-	        const currentLevel = pumpXpSummary.level.current.level;
-	        if (currentLevel > previousLevel) {
-	          setPumpXpLevelUp({ level: pumpXpSummary.level.current, previousLevel });
-	        }
-	      }
-	      writePumpXpDailyAwardsShown(activeProfile, {
-	        ...dailyAwardsShown,
-	        [yesterdayKey]: {
-	          xp: delta,
-	          shownAt: new Date().toISOString(),
-	          label: yesterdayAward.label || "",
-	        },
-	      });
-	    }
-
-	    const currentSnapshot = {
-	      totalXp: pumpXpSummary.totalXp,
-	      level: pumpXpSummary.level.current.level,
-	      updatedAt: new Date().toISOString(),
-	    };
-	    try { localStorage.setItem(key, JSON.stringify(currentSnapshot)); } catch (error) {}
-	  }, [profile?.id, profile?.telegram_id, appLoading, profileLoading, accessGateStatus, themeTick, pumpXpSummary.totalXp, pumpXpSummary.level.current.level, JSON.stringify(pumpXpSummary.daily || [])]);
+		    const previousTotal = Math.max(0, Math.round(Number(previousSnapshot.totalXp || 0)));
+		    const currentTotal = Math.max(0, Math.round(Number(pumpXpSummary.totalXp || 0)));
+		    const delta = currentTotal - previousTotal;
+		    if (delta > 0) {
+		      setPumpXpToast({
+		        id: `pump-xp-${currentTotal}-${Date.now()}`,
+		        delta,
+		        reason: getPumpXpDeltaReason(previousSnapshot, pumpXpSummary, delta),
+		      });
+		      const previousLevel = getPumpXpLevel(previousTotal).current.level;
+		      const currentLevel = pumpXpSummary.level.current.level;
+		      if (currentLevel > previousLevel) {
+		        setPumpXpLevelUp({ level: pumpXpSummary.level.current, previousLevel });
+		      }
+		    }
+		    writePumpXpSnapshot(activeProfile, pumpXpSummary);
+		  }, [
+		    profile?.id,
+		    profile?.telegram_id,
+		    appLoading,
+		    profileLoading,
+		    accessGateStatus,
+		    globalSelectedDateKey,
+		    workoutsRefreshing,
+		    nutritionRefreshing,
+		    healthRefreshing,
+		    nutritionDay?.date,
+		    healthLog?.log_date,
+		    healthLog?.date,
+		    pumpXpSummary.totalXp,
+		    pumpXpSummary.level.current.level,
+		    JSON.stringify(pumpXpSummary.daily || []),
+		    JSON.stringify(pumpXpSummary.bonuses || []),
+		  ]);
 
   const refreshAccessStatus = useCallback(async () => {
     if (!hasOnlyPumpRemoteAuth(telegramInitData)) return false;
