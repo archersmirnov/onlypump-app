@@ -4851,6 +4851,61 @@ const PUMP_XP_LEVELS = [
 const ONLYPUMP_TOUR_XP_AWARDS = {
   "home-tour-completed": { id: "home-tour-completed", title: "Обучение на главной", xp: 5 },
   "full-tour-completed": { id: "full-tour-completed", title: "Полное обучение ONLYPUMP", xp: 10 },
+  "onboarding-required-completed": { id: "onboarding-required-completed", title: "Анкета: обязательные пункты", xp: 40 },
+  "onboarding-without-measurements": { id: "onboarding-without-measurements", title: "Анкета: без замеров", xp: 60 },
+  "onboarding-full-completed": { id: "onboarding-full-completed", title: "Анкета: полное заполнение", xp: 100 },
+};
+
+const ONBOARDING_QUESTIONNAIRE_AWARD_IDS = [
+  "onboarding-required-completed",
+  "onboarding-without-measurements",
+  "onboarding-full-completed",
+];
+
+const ONBOARDING_QUESTIONNAIRE_MEASUREMENT_KEYS = [
+  "shoulders_cm",
+  "chest_cm",
+  "biceps_cm",
+  "abdomen_cm",
+  "hips_cm",
+  "glutes_cm",
+  "thigh_cm",
+  "calf_cm",
+];
+
+const getBestOnboardingQuestionnaireAward = (awards = []) => normalizeOnlyPumpTourAwards(awards)
+  .filter(award => ONBOARDING_QUESTIONNAIRE_AWARD_IDS.includes(award.id))
+  .sort((first, second) => Number(second.xp || 0) - Number(first.xp || 0))[0] || null;
+
+const getOnboardingQuestionnaireAwardId = (payload = {}) => {
+  const requiredComplete = Boolean(
+    String(payload.display_name || "").trim() &&
+    payload.sex &&
+    calculateProfileAge(payload.birth_date) &&
+    profileNumber(payload.height_cm) > 0 &&
+    profileNumber(payload.weight_kg) > 0 &&
+    profileNonNegativeNumber(payload.steps_per_day, null) != null &&
+    profileNonNegativeNumber(payload.workouts_per_week, null) != null &&
+    normalizeNutritionTrackingMode(payload.nutrition_tracking_mode || DEFAULT_PROFILE.nutrition_tracking_mode) &&
+    payload.goal_type
+  );
+  if (!requiredComplete) return "";
+
+  const fullMeasurements = ONBOARDING_QUESTIONNAIRE_MEASUREMENT_KEYS
+    .every(key => profileNumber(payload[key]) > 0);
+  if (fullMeasurements) return "onboarding-full-completed";
+
+  const hasExpandedData = Boolean(
+    String(payload.email || "").trim() ||
+    profileNumber(payload.neck_cm) > 0 ||
+    profileNumber(payload.waist_cm) > 0 ||
+    profileNumber(payload.target_weight_kg) > 0 ||
+    parseProfileBoolean(payload.high_protein_enabled) ||
+    parseProfileBoolean(payload.higher_fat_enabled) ||
+    parseProfileBoolean(payload.manual_nutrition_targets_enabled) ||
+    ONBOARDING_QUESTIONNAIRE_MEASUREMENT_KEYS.some(key => profileNumber(payload[key]) > 0)
+  );
+  return hasExpandedData ? "onboarding-without-measurements" : "onboarding-required-completed";
 };
 
 const normalizeOnlyPumpTourScreens = (values = []) => {
@@ -4872,8 +4927,12 @@ const profileTutorialHasBeenDismissed = (profile = DEFAULT_PROFILE) => Boolean(
 
 const PUMP_XP_RULE_GROUPS = [
   {
-    title: "Интерактивное обучение",
+    title: "Старт и обучение",
     items: [
+      "Анкета: только обязательные пункты: +40 PUMP XP",
+      "Анкета: без замеров: +60 PUMP XP",
+      "Анкета: полное заполнение с замерами: +100 PUMP XP",
+      "За анкету учитывается только лучшая награда, максимум 100 PUMP XP один раз",
       "Прошёл обучение на главной: +5 PUMP XP",
       "Прошёл обучение на всех экранах: +10 PUMP XP",
       "Баллы за обучение начисляются только один раз",
@@ -5248,7 +5307,17 @@ const calculatePumpXp = ({
     bonusItems.push({ title: "Первые шаги", xp: 10 });
   }
 
-  normalizeOnlyPumpTourAwards(tutorialAwards).forEach(award => {
+  const derivedOnboardingAwardId = profile?.onboarding_completed ? getOnboardingQuestionnaireAwardId(profile) : "";
+  const derivedOnboardingAward = ONLYPUMP_TOUR_XP_AWARDS[derivedOnboardingAwardId];
+  const pumpXpTutorialAwards = normalizeOnlyPumpTourAwards([
+    ...normalizeOnlyPumpTourAwards(tutorialAwards),
+    ...(derivedOnboardingAward ? [{
+      ...derivedOnboardingAward,
+      earnedAt: profile?.onboarding_completed_at || profile?.profile_updated_at || new Date().toISOString(),
+    }] : []),
+  ]);
+
+  pumpXpTutorialAwards.forEach(award => {
     const xp = Math.max(0, Math.round(Number(award?.xp || 0)));
     if (!award?.id || !xp) return;
     totalXp += xp;
@@ -5541,7 +5610,7 @@ function resetOnlyPumpTourSeen(profile = DEFAULT_PROFILE) {
 function normalizeOnlyPumpTourAwards(values = []) {
   if (!Array.isArray(values)) return [];
   const seen = new Set();
-  return values
+  const normalized = values
     .map(item => {
       const id = String(item?.id || "").trim();
       const award = ONLYPUMP_TOUR_XP_AWARDS[id];
@@ -5556,6 +5625,13 @@ function normalizeOnlyPumpTourAwards(values = []) {
       seen.add(item.id);
       return true;
     });
+  const onboardingAwards = normalized.filter(item => ONBOARDING_QUESTIONNAIRE_AWARD_IDS.includes(item.id));
+  if (!onboardingAwards.length) return normalized;
+  const bestOnboardingAward = [...onboardingAwards].sort((first, second) => Number(second.xp || 0) - Number(first.xp || 0))[0];
+  return [
+    ...normalized.filter(item => !ONBOARDING_QUESTIONNAIRE_AWARD_IDS.includes(item.id)),
+    bestOnboardingAward,
+  ];
 }
 
 function readOnlyPumpTourAwards(profile = DEFAULT_PROFILE) {
@@ -21091,7 +21167,7 @@ function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving, onCan
         <h2 className="mt-3 text-2xl font-black tracking-[-0.04em] text-zinc-100">Твой помощник</h2>
         <p className="mt-3 text-sm leading-6 text-zinc-300">Не AI, но тоже умный. Сегодня я помогу тебе разобраться в приложении ONLY PUMP и получить свою первую награду.</p>
       </div>
-      <p className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-sm leading-6 text-zinc-500">Квиз займет пару минут. Необязательные поля можно пропустить и заполнить позже.</p>
+      <p className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-sm leading-6 text-zinc-500">Квиз займет пару минут. Необязательные поля можно пропустить и заполнить позже. За анкету можно получить до 100 PUMP XP один раз: 40 за обязательные пункты, 60 за расширенное заполнение без замеров, 100 за полную анкету с замерами.</p>
     </div>;
     if (step.id === "name") return <ProfileInput label="Имя" value={draft.display_name} onChange={(value) => set("display_name", value)} placeholder="Например: Артур" required/>;
     if (step.id === "email") return <div className="space-y-3">
@@ -22714,7 +22790,7 @@ function ProfileAccessPanelSheet({ profile = DEFAULT_PROFILE, telegramInitData =
 
 }
 
-function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onSaveProfile, profileSaving = false, onSaveThemeSettings, themeSaving = false, onResetProfile, onStartTutorial }) {
+function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onSaveProfile, onSaveProfileQuiz, profileSaving = false, onSaveThemeSettings, themeSaving = false, onResetProfile, onStartTutorial }) {
   const displayName = getProfileDisplayName(profile);
   const telegramLabel = profile?.telegram_username ? `@${profile.telegram_username}` : profile?.email ? profile.email : profile?.telegram_id ? `ID ${profile.telegram_id}` : "Обычная web-версия";
   const profileSource = profileStatus === "verified" ? "Supabase: аккаунт проверен" : profileStatus === "loaded" ? "Supabase: профиль загружен" : profileStatus === "created" ? "Supabase: профиль создан" : "Локальный fallback";
@@ -22794,7 +22870,7 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
 	      </div>
 	    </Card>
     {editOpen && <ProfileEditSheet profile={profile} saving={profileSaving} onClose={() => setEditOpen(false)} onSave={onSaveProfile}/>}
-    {quizOpen && <ProfileQuizSheet profile={profile} saving={profileSaving} onClose={() => setQuizOpen(false)} onSave={onSaveProfile}/>}
+    {quizOpen && <ProfileQuizSheet profile={profile} saving={profileSaving} onClose={() => setQuizOpen(false)} onSave={onSaveProfileQuiz || onSaveProfile}/>}
     {themeOpen && <ThemeSettingsSheet profile={profile} saving={themeSaving} onClose={() => setThemeOpen(false)} onSave={onSaveThemeSettings}/>}
     {settingsThinkingOpen && <SettingsThinkingModal onClose={() => setSettingsThinkingOpen(false)}/>}
     {unitSettingsOpen && <UnitSystemSheet profile={profile} saving={profileSaving} onClose={() => setUnitSettingsOpen(false)} onSave={onSaveProfile}/>}
@@ -23853,6 +23929,54 @@ function OnlyPumpPlatform() {
     }
   }, [applyProfileState, profile, profileStatus, telegramInitData]);
 
+  const completeOnboardingProfile = useCallback(async (payload = {}) => {
+    const result = await handleSaveProfile(payload, "complete_onboarding");
+    if (isOnlyPumpSaveFailure(result)) return result;
+
+    const awardId = getOnboardingQuestionnaireAwardId(payload);
+    const award = ONLYPUMP_TOUR_XP_AWARDS[awardId];
+    if (!award) return result;
+
+    const baseProfile = profile || DEFAULT_PROFILE;
+    const currentAwards = readOnlyPumpTourAwards(baseProfile);
+    const currentBestAward = getBestOnboardingQuestionnaireAward(currentAwards);
+    if (currentBestAward && Number(currentBestAward.xp || 0) >= Number(award.xp || 0)) return result;
+
+    const awardWithDate = {
+      ...award,
+      earnedAt: new Date().toISOString(),
+    };
+    const nextAwards = normalizeOnlyPumpTourAwards([...currentAwards, awardWithDate]);
+    const optimisticProfile = applyProfileState({
+      ...baseProfile,
+      ...payload,
+      onboarding_completed: true,
+      tutorial_awards: nextAwards,
+      source: baseProfile.source || "fallback",
+    }, {
+      updateNutritionDay: true,
+      nutritionTargetsFromDate: formatDateKey(new Date()),
+    });
+    setTourAwards(nextAwards);
+    writeOnlyPumpTourAwards(optimisticProfile || baseProfile, nextAwards);
+
+    if (!(profileStatus === "verified" && profileHasTestAccess(baseProfile) && hasOnlyPumpRemoteAuth(telegramInitData) && baseProfile?.id)) return result;
+
+    try {
+      const saved = await callOnlyPumpProfileApi(telegramInitData, "update_tutorial_state", {
+        event: "complete_onboarding",
+        tutorial_awards: [awardWithDate],
+      });
+      if (saved.profile) {
+        const savedProfile = applyProfileState(saved.profile);
+        setTourAwards(readOnlyPumpTourAwards(savedProfile || saved.profile));
+      }
+    } catch (error) {
+      console.error("onlypump-profile-api onboarding award error:", error);
+    }
+    return result;
+  }, [applyProfileState, globalSelectedDateKey, handleSaveProfile, profile, profileStatus, telegramInitData]);
+
   const isTourTaskComplete = useCallback((step) => {
     if (!step?.completion || step.completion === "target-click") return false;
     const snapshot = tourTaskSnapshotRef.current || getTourTaskSnapshot();
@@ -24307,8 +24431,8 @@ function OnlyPumpPlatform() {
     progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} onProgressProfileSaved={handleProgressProfileSaved}/>,
     analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} nutritionDay={nutritionDay} healthLog={healthLog} healthLogs={healthLogs} personalTrackers={personalTrackers} healthSaving={healthSaving} healthRefreshing={healthRefreshing} profileSaving={profileSaving} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} analyticsIntent={analyticsIntent} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onSaveAnalyticsCardSettings={handleSaveAnalyticsCardSettings} onOpenNutrition={() => setActive("nutrition")} onOpenProgress={() => setActive("progress")}/>,
     community: <CommunityPage/>,
-	    profile: <ProfilePage profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings} onStartTutorial={(screen = "home", options = {}) => startInteractiveTour(screen, { force: true, ...options })}/>,
-	  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, personalTrackers, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, pumpXpSummary, handleNutritionAction, handleSaveProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog, startInteractiveTour]);
+	    profile: <ProfilePage profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} onSaveProfileQuiz={completeOnboardingProfile} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings} onStartTutorial={(screen = "home", options = {}) => startInteractiveTour(screen, { force: true, ...options })}/>,
+	  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, personalTrackers, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, pumpXpSummary, handleNutritionAction, handleSaveProfile, completeOnboardingProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog, startInteractiveTour]);
 
   if (appLoading || profileLoading) {
     return <LoadingScreen theme={activeTheme}/>;
@@ -24336,7 +24460,7 @@ function OnlyPumpPlatform() {
   }
 
   if (profileStatus === "verified" && profile && profile.onboarding_completed !== true) {
-    return <OnboardingScreen profile={profile} saving={profileSaving} onComplete={(payload) => handleSaveProfile(payload, "complete_onboarding")}/>;
+    return <OnboardingScreen profile={profile} saving={profileSaving} onComplete={completeOnboardingProfile}/>;
   }
 
   return <div className={`onlypump-app-shell theme-${activeTheme} bg-black text-zinc-100 selection:bg-red-500/30`}>
