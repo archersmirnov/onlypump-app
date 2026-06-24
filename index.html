@@ -2063,6 +2063,23 @@ const getPersonalTrackerAccent = (tracker = {}) => personalTrackerAccents[getPer
 const getHomeWidgetsCacheKey = (profile = DEFAULT_PROFILE) => `onlypump_home_widgets_${profile?.telegram_id || profile?.id || "local"}`;
 const getPersonalTrackerCacheKey = (profile = DEFAULT_PROFILE) => `onlypump_personal_trackers_${profile?.telegram_id || profile?.id || "local"}`;
 const getPumpXpSnapshotCacheKey = (profile = DEFAULT_PROFILE) => `onlypump_pump_xp_snapshot_${profile?.telegram_id || profile?.id || "local"}`;
+const getPumpXpDailyAwardsCacheKey = (profile = DEFAULT_PROFILE) => `onlypump_pump_xp_daily_awards_${profile?.telegram_id || profile?.id || "local"}`;
+
+const readPumpXpDailyAwardsShown = (profile = DEFAULT_PROFILE) => {
+  try {
+    const raw = localStorage.getItem(getPumpXpDailyAwardsCacheKey(profile));
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+};
+
+const writePumpXpDailyAwardsShown = (profile = DEFAULT_PROFILE, value = {}) => {
+  try {
+    localStorage.setItem(getPumpXpDailyAwardsCacheKey(profile), JSON.stringify(value || {}));
+  } catch (error) {}
+};
 
 const HOME_LAYOUT_MOBILE = "mobile";
 const HOME_LAYOUT_DESKTOP = "desktop";
@@ -2538,6 +2555,16 @@ const upsertHealthLogList = (logs = [], log) => {
   const normalized = normalizeHealthLog(log, log?.log_date || log?.date);
   const filtered = logs.filter(item => (item.log_date || item.date) !== normalized.log_date);
   return [...filtered, normalized].sort((a, b) => String(a.log_date || a.date).localeCompare(String(b.log_date || b.date)));
+};
+
+const mergeHealthLogLists = (...sources) => {
+  const byDate = new Map();
+  sources.flat().filter(Boolean).forEach(log => {
+    const normalized = normalizeHealthLog(log, log?.log_date || log?.date);
+    const key = normalized.log_date || normalized.date;
+    if (key) byDate.set(key, normalized);
+  });
+  return Array.from(byDate.values()).sort((a, b) => String(a.log_date || a.date).localeCompare(String(b.log_date || b.date)));
 };
 
 const formatSleepDuration = (minutes) => {
@@ -4753,17 +4780,18 @@ const PUMP_XP_RULE_GROUPS = [
       "Лимит: 15 PUMP XP в день плюс бонусы серии",
     ],
   },
-  {
-    title: "Сон и шаги",
-    items: [
-      "Заполнил сон: +3",
-      "Попал в целевой диапазон сна: +5",
-      "3 дня подряд нормального сна: +3",
-      "50% цели шагов: +1",
-      "100% цели шагов: +5 суммарно",
-      "7 дней подряд 80%+ цели шагов: +5, 100%+ цели: +10",
-    ],
-  },
+	  {
+	    title: "Сон и шаги",
+	    items: [
+	      "Заполнил сон: +3",
+	      "Попал в целевой диапазон сна: +5",
+	      "3 дня подряд нормального сна: +3",
+	      "50% цели шагов: +1",
+	      "100% цели шагов: +5 суммарно",
+	      "7 дней подряд 80%+ цели шагов: +5, 100%+ цели: +10",
+	      "Итоговая всплывашка за день показывается один раз при первом заходе на следующий день",
+	    ],
+	  },
   {
     title: "Свой трекер",
     items: [
@@ -4873,6 +4901,7 @@ const calculateFilledActivityStreak = (dateKeys = [], todayKey = formatDateKey(n
 const calculatePumpXp = ({
   workouts = [],
   nutritionDay = null,
+  nutritionDays = [],
   nutritionMarkedDateKeys = [],
   nutritionGoal = initialNutritionGoal,
   healthLog = null,
@@ -4892,13 +4921,14 @@ const calculatePumpXp = ({
 
   const nutritionKeys = new Set(normalizeNutritionFilledDateKeys(nutritionMarkedDateKeys));
   const nutritionDetails = {};
-  if (nutritionDayHasFood(nutritionDay)) {
-    const key = pumpXpDateKey(nutritionDay.date || nutritionDay.log_date);
+  [...(Array.isArray(nutritionDays) ? nutritionDays : []), nutritionDay].filter(Boolean).forEach(day => {
+    if (!nutritionDayHasFood(day)) return;
+    const key = pumpXpDateKey(day.date || day.log_date);
     if (key) {
       nutritionKeys.add(key);
-      nutritionDetails[key] = nutritionDay;
+      nutritionDetails[key] = day;
     }
-  }
+  });
 
   const healthMap = {};
   [...healthLogs, healthLog].filter(Boolean).forEach(log => {
@@ -6277,8 +6307,10 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
     dragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
+      startY: event.clientY,
       lastX: event.clientX,
       hasDragged: false,
+      targetKey: event.target?.closest?.("[data-calendar-date-key]")?.dataset?.calendarDateKey || "",
     };
     setDragX(0);
     suppressCalendarClickRef.current = false;
@@ -6290,7 +6322,12 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
     if (!drag || drag.pointerId !== event.pointerId) return;
 
     const rawDx = event.clientX - drag.startX;
-    if (Math.abs(rawDx) > 10) {
+    const rawDy = event.clientY - drag.startY;
+    const absX = Math.abs(rawDx);
+    const absY = Math.abs(rawDy);
+    if (!drag.hasDragged && (absX < 22 || absX < absY * 1.45)) return;
+    if (absY > 48 && absY > absX * 1.2) return;
+    if (absX > 18) {
       drag.hasDragged = true;
       suppressCalendarClickRef.current = true;
     }
@@ -6312,14 +6349,18 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
   const endCalendarDrag = (event) => {
     if (dragRef.current?.pointerId === event.pointerId) {
       const wasDragged = dragRef.current.hasDragged;
+      const targetKey = dragRef.current.targetKey;
       dragRef.current = null;
       setDragX(0);
-      if (wasDragged) {
-        clearTimeout(suppressResetRef.current);
-        suppressResetRef.current = setTimeout(() => {
-          suppressCalendarClickRef.current = false;
-        }, 0);
+      if (!wasDragged && targetKey) {
+        suppressCalendarClickRef.current = false;
+        onSelect?.(targetKey);
+        return;
       }
+      clearTimeout(suppressResetRef.current);
+      suppressResetRef.current = setTimeout(() => {
+        suppressCalendarClickRef.current = false;
+      }, 120);
     }
   };
 
@@ -6354,7 +6395,7 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
           const isToday = todayKey === key;
           const marked = markedDateKeys.includes(key);
           const circleSizeClass = visibleDays === 14 ? "h-10 w-10 sm:h-11 sm:w-11 xl:h-14 xl:w-14" : "h-11 w-11 sm:h-14 sm:w-14";
-          return <button key={key} type="button" onClick={() => { if (suppressCalendarClickRef.current) return; onSelect?.(key); }} className="min-w-0 text-center touch-manipulation">
+          return <button key={key} type="button" data-calendar-date-key={key} onClick={(event) => { if (event.detail !== 0 || suppressCalendarClickRef.current) return; onSelect?.(key); }} className="min-w-0 text-center touch-manipulation">
             <div className={`mx-auto flex ${circleSizeClass} flex-col items-center justify-center rounded-full border transition ${selected ? "border-red-500 bg-red-500 text-black" : isToday ? "border-red-500/50 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-red-500/40 hover:bg-white/[0.07]"}`}>
               <span className="text-[8px] uppercase leading-none sm:text-[10px]">{date.toLocaleDateString('ru-RU', { weekday: 'short' })}</span>
               <span className="mt-1 text-sm font-semibold leading-none sm:text-xl">{date.getDate()}</span>
@@ -19010,12 +19051,46 @@ const analyticsPeriodItems = (period, selectedDateKey, visibleCount = 7) => {
 
 function AnalyticsPeriodCalendar({ period, selectedDateKey, onSelect }) {
   const dragRef = useRef(null);
+  const [dragX, setDragX] = useState(0);
   const layoutMode = useOnlyPumpHomeLayoutMode();
   const visibleItems = layoutMode === HOME_LAYOUT_DESKTOP ? 14 : 7;
   const items = analyticsPeriodItems(period, selectedDateKey, visibleItems);
+  const todayKey = formatDateKey(new Date());
   const startDrag = (event) => {
-    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY };
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      swiping: false,
+      targetKey: event.target?.closest?.("[data-analytics-period-key]")?.dataset?.analyticsPeriodKey || "",
+      currentKey: selectedDateKey,
+    };
+    setDragX(0);
     event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const moveDrag = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (!drag.swiping && (absX < 22 || absX < absY * 1.45)) return;
+    if (absY > 48 && absY > absX * 1.2) return;
+    drag.swiping = true;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const itemWidth = Math.max(36, rect.width / Math.max(1, visibleItems));
+    const steps = Math.trunc(dx / itemWidth);
+    if (steps !== 0) {
+      const nextKey = shiftAnalyticsPeriodDate(drag.currentKey || selectedDateKey, period, -steps);
+      drag.currentKey = nextKey;
+      drag.startX += steps * itemWidth;
+      setDragX(dx - steps * itemWidth);
+      onSelect(nextKey);
+    } else {
+      setDragX(dx);
+    }
+    event.preventDefault();
   };
   const endDrag = (event) => {
     const drag = dragRef.current;
@@ -19023,7 +19098,12 @@ function AnalyticsPeriodCalendar({ period, selectedDateKey, onSelect }) {
     dragRef.current = null;
     const dx = event.clientX - drag.startX;
     const dy = Math.abs(event.clientY - drag.startY);
-    if (Math.abs(dx) > 64 && dy < 42) onSelect(shiftAnalyticsPeriodDate(selectedDateKey, period, dx < 0 ? 1 : -1));
+    setDragX(0);
+    if (drag.swiping && Math.abs(dx) > 64 && dy < 46) {
+      onSelect(shiftAnalyticsPeriodDate(drag.currentKey || selectedDateKey, period, dx < 0 ? 1 : -1));
+      return;
+    }
+    if (!drag.swiping && drag.targetKey) onSelect(drag.targetKey);
   };
   return <div data-calendar-swipe="true" className="rounded-[28px] border border-white/10 bg-white/[0.035] p-4">
     <div className="mb-4 flex items-center justify-between">
@@ -19033,16 +19113,36 @@ function AnalyticsPeriodCalendar({ period, selectedDateKey, onSelect }) {
       </div>
       <CalendarDays className="text-red-400" size={22}/>
     </div>
-    <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${visibleItems}, minmax(0, 1fr))` }} onPointerDown={startDrag} onPointerUp={endDrag} onPointerCancel={() => { dragRef.current = null; }}>
-      {items.map(item => <button
+    <div className="overflow-hidden">
+    <div
+      className="grid gap-2 touch-pan-y select-none will-change-transform"
+      style={{
+        gridTemplateColumns: `repeat(${visibleItems}, minmax(0, 1fr))`,
+        transform: `translate3d(${dragX}px,0,0)`,
+        transition: dragRef.current ? "none" : "transform 180ms ease",
+      }}
+      onPointerDown={startDrag}
+      onPointerMove={moveDrag}
+      onPointerUp={endDrag}
+      onPointerCancel={() => { dragRef.current = null; setDragX(0); }}
+    >
+      {items.map(item => {
+        const isToday = period === "day" && item.key === todayKey;
+        const circleSizeClass = visibleItems === 14 ? "h-10 w-10 sm:h-11 sm:w-11 xl:h-14 xl:w-14" : "h-11 w-11 sm:h-14 sm:w-14";
+        return <button
         key={`${period}-${item.key}`}
         type="button"
-        onClick={() => onSelect(item.key)}
-        className={`aspect-square rounded-full text-center transition active:scale-95 ${item.active ? "bg-red-500 text-black shadow-lg shadow-red-500/25" : "bg-white/[0.06] text-zinc-300"}`}
+        data-analytics-period-key={item.key}
+        onClick={(event) => { if (event.detail === 0) onSelect(item.key); }}
+        className="min-w-0 text-center touch-manipulation"
       >
-        <span className="block text-[13px] font-black leading-none">{item.label}</span>
-        {item.sub && <span className={`mt-1 block text-[9px] font-bold leading-none ${item.active ? "text-black/55" : "text-zinc-500"}`}>{item.sub}</span>}
-      </button>)}
+        <div className={`mx-auto flex ${circleSizeClass} flex-col items-center justify-center rounded-full border transition ${item.active ? "border-red-500 bg-red-500 text-black shadow-lg shadow-red-500/20" : isToday ? "border-red-500/50 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-red-500/40 hover:bg-white/[0.07]"}`}>
+          <span className="block text-sm font-black leading-none sm:text-base">{item.label}</span>
+          {item.sub && <span className={`mt-1 block max-w-full truncate px-1 text-[8px] font-bold leading-none sm:text-[9px] ${item.active ? "text-black/55" : "text-zinc-500"}`}>{item.sub}</span>}
+        </div>
+      </button>;
+      })}
+    </div>
     </div>
   </div>;
 }
@@ -22734,14 +22834,15 @@ function OnlyPumpPlatform() {
     }
     setHealthRefreshing(true);
     try {
-      const result = await callOnlyPumpProfileApi(initData, "load_health_log", { date: dateKey });
-      const nextLog = normalizeHealthLog(result.health_log || result.log || {}, dateKey);
-      const nextLogs = Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [];
-      setHealthLog(nextLog);
-      setHealthLogs(nextLogs.length ? nextLogs : upsertHealthLogList(healthLogs, nextLog));
-      writeCachedHealthForProfile(activeProfile, dateKey, nextLog);
-      writeCachedHealthLogsForProfile(activeProfile, nextLogs.length ? nextLogs : upsertHealthLogList(cachedLogs, nextLog));
-      return nextLog;
+	      const result = await callOnlyPumpProfileApi(initData, "load_health_log", { date: dateKey });
+	      const nextLog = normalizeHealthLog(result.health_log || result.log || {}, dateKey);
+	      const nextLogs = Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [];
+	      const mergedLogs = mergeHealthLogLists(cachedLogs, healthLogs, nextLogs, nextLog);
+	      setHealthLog(nextLog);
+	      setHealthLogs(mergedLogs);
+	      writeCachedHealthForProfile(activeProfile, dateKey, nextLog);
+	      writeCachedHealthLogsForProfile(activeProfile, mergedLogs);
+	      return nextLog;
     } catch (error) {
       console.error("onlypump-profile-api health error:", error);
       setHealthLog(prev => cachedLog || ((prev?.log_date === dateKey || prev?.date === dateKey) ? prev : buildLocalHealthLog(dateKey)));
@@ -22756,26 +22857,28 @@ function OnlyPumpPlatform() {
     const currentDateLog = (healthLog?.log_date || healthLog?.date) === dateKey
       ? healthLog
       : healthLogs.find(log => (log.log_date || log.date) === dateKey);
-    const optimisticLog = normalizeHealthLog({ ...(currentDateLog || buildLocalHealthLog(dateKey)), ...payload, date: dateKey, log_date: dateKey }, dateKey);
-    setHealthLog(optimisticLog);
-    setHealthLogs(prev => upsertHealthLogList(prev, optimisticLog));
-    if (profile) {
-      writeCachedHealthForProfile(profile, dateKey, optimisticLog);
-      writeCachedHealthLogsForProfile(profile, upsertHealthLogList(healthLogs, optimisticLog));
-    }
+	    const optimisticLog = normalizeHealthLog({ ...(currentDateLog || buildLocalHealthLog(dateKey)), ...payload, date: dateKey, log_date: dateKey }, dateKey);
+	    const optimisticLogs = mergeHealthLogLists(healthLogs, optimisticLog);
+	    setHealthLog(optimisticLog);
+	    setHealthLogs(prev => mergeHealthLogLists(prev, optimisticLog));
+	    if (profile) {
+	      writeCachedHealthForProfile(profile, dateKey, optimisticLog);
+	      writeCachedHealthLogsForProfile(profile, optimisticLogs);
+	    }
 
     if (!(profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id)) return true;
 
     setHealthSaving(true);
     try {
-      const result = await callOnlyPumpProfileApi(telegramInitData, "save_health_log", { ...payload, date: dateKey, log_date: dateKey });
-      const savedLog = normalizeHealthLog(result.health_log || result.log || optimisticLog, dateKey);
-      const logs = Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : null;
-      setHealthLog(savedLog);
-      setHealthLogs(prev => logs?.length ? logs : upsertHealthLogList(prev, savedLog));
-      writeCachedHealthForProfile(profile, dateKey, savedLog);
-      writeCachedHealthLogsForProfile(profile, logs?.length ? logs : upsertHealthLogList(healthLogs, savedLog));
-      return true;
+	      const result = await callOnlyPumpProfileApi(telegramInitData, "save_health_log", { ...payload, date: dateKey, log_date: dateKey });
+	      const savedLog = normalizeHealthLog(result.health_log || result.log || optimisticLog, dateKey);
+	      const logs = Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : null;
+	      const mergedLogs = mergeHealthLogLists(healthLogs, logs || [], savedLog);
+	      setHealthLog(savedLog);
+	      setHealthLogs(prev => mergeHealthLogLists(prev, logs || [], savedLog));
+	      writeCachedHealthForProfile(profile, dateKey, savedLog);
+	      writeCachedHealthLogsForProfile(profile, mergedLogs);
+	      return true;
     } catch (error) {
       console.error("onlypump-profile-api health save error:", error);
       return false;
@@ -22905,9 +23008,19 @@ function OnlyPumpPlatform() {
   }, [profile?.id, profile?.telegram_id]);
 
   const nutritionMeals = useMemo(() => deriveHomeMealsFromNutritionDay(nutritionDay), [nutritionDay]);
+  const pumpXpNutritionDays = useMemo(() => {
+    const byDate = new Map();
+    normalizeNutritionFilledDateKeys(nutritionMarkedDateKeys).forEach(dateKey => {
+      const cachedDay = profile ? readCachedNutritionForProfile(profile, dateKey) : null;
+      if (cachedDay) byDate.set(dateKey, normalizeNutritionDay(cachedDay, dateKey, nutritionGoal));
+    });
+    if (nutritionDay?.date) byDate.set(nutritionDay.date, normalizeNutritionDay(nutritionDay, nutritionDay.date, nutritionGoal));
+    return Array.from(byDate.values());
+  }, [profile?.id, profile?.telegram_id, JSON.stringify(nutritionMarkedDateKeys), nutritionDay, nutritionGoal]);
 	  const pumpXpSummary = useMemo(() => calculatePumpXp({
 	    workouts,
 	    nutritionDay,
+    nutritionDays: pumpXpNutritionDays,
     nutritionMarkedDateKeys,
     nutritionGoal,
     healthLog,
@@ -22916,7 +23029,7 @@ function OnlyPumpPlatform() {
     measurements,
 	    profile: profile || DEFAULT_PROFILE,
     tutorialAwards: tourAwards,
-	  }), [workouts, nutritionDay, nutritionMarkedDateKeys, nutritionGoal, healthLog, healthLogs, personalTrackers, measurements, profile, tourAwards]);
+	  }), [workouts, nutritionDay, pumpXpNutritionDays, nutritionMarkedDateKeys, nutritionGoal, healthLog, healthLogs, personalTrackers, measurements, profile, tourAwards]);
 
 	  const activeTourSteps = onlyPumpTourDefinitions[tourState.screen] || [];
 	  const activeTourStep = tourState.active ? activeTourSteps[tourState.stepIndex] : null;
@@ -23162,43 +23275,50 @@ function OnlyPumpPlatform() {
 	    return () => window.clearTimeout(timerId);
 	  }, [profile?.id, profile?.telegram_id, profile?.onboarding_completed, appLoading, profileLoading, accessGateStatus, profileWelcomeOpen, tourState.active, setActive]);
 
-	  useEffect(() => {
-	    if (!profile || appLoading || profileLoading || accessGateStatus) return;
-    const key = getPumpXpSnapshotCacheKey(profile || DEFAULT_PROFILE);
-    let previous = null;
-    try {
-      previous = JSON.parse(localStorage.getItem(key) || "null");
-    } catch (error) {
-      previous = null;
-    }
-    const currentSnapshot = {
-      totalXp: pumpXpSummary.totalXp,
-      level: pumpXpSummary.level.current.level,
-      updatedAt: new Date().toISOString(),
-    };
-    if (!previous || !Number.isFinite(Number(previous.totalXp))) {
-      try { localStorage.setItem(key, JSON.stringify(currentSnapshot)); } catch (error) {}
-      return;
-    }
+		  useEffect(() => {
+		    if (!profile || appLoading || profileLoading || accessGateStatus) return;
+	    const activeProfile = profile || DEFAULT_PROFILE;
+	    const key = getPumpXpSnapshotCacheKey(activeProfile);
+	    let previousSnapshot = null;
+	    try { previousSnapshot = JSON.parse(localStorage.getItem(key) || "null"); } catch (error) {}
 
-    const previousXp = Math.max(0, Number(previous.totalXp || 0));
-    const previousLevel = Math.max(1, Number(previous.level || getPumpXpLevel(previousXp).current.level));
-    const delta = pumpXpSummary.totalXp - previousXp;
-    if (delta > 0) {
-      setPumpXpToast({
-        id: `${Date.now()}-${delta}`,
-        delta,
-        reason: "ONLYPUMP учёл новые полезные действия",
-      });
-      if (pumpXpSummary.level.current.level > previousLevel) {
-        setPumpXpLevelUp({
-          id: `${Date.now()}-${pumpXpSummary.level.current.level}`,
-          level: pumpXpSummary.level.current,
-        });
-      }
-    }
-    try { localStorage.setItem(key, JSON.stringify(currentSnapshot)); } catch (error) {}
-  }, [profile?.id, profile?.telegram_id, appLoading, profileLoading, accessGateStatus, pumpXpSummary.totalXp, pumpXpSummary.level.current.level]);
+	    const todayKey = formatDateKey(new Date());
+	    const yesterdayKey = formatDateKey(addLocalDaysToDate(parseDateKeyLocal(todayKey), -1));
+	    const dailyAwardsShown = readPumpXpDailyAwardsShown(activeProfile);
+	    const yesterdayAward = (pumpXpSummary.daily || []).find(item => item.dateKey === yesterdayKey && Number(item.xp || 0) > 0);
+	    const hasShownYesterday = Boolean(dailyAwardsShown[yesterdayKey]);
+
+	    if (yesterdayAward && !hasShownYesterday) {
+	      const delta = Math.max(0, Math.round(Number(yesterdayAward.xp || 0)));
+	      if (delta > 0) {
+	        setPumpXpToast({
+	          id: `daily-${yesterdayKey}-${Date.now()}`,
+	          delta,
+	          reason: `Итоги ${formatCycleCardDate(yesterdayKey)}: ${yesterdayAward.label || "полезные действия"}`,
+	        });
+	        const previousLevel = getPumpXpLevel(Number(previousSnapshot?.totalXp || 0)).current.level;
+	        const currentLevel = pumpXpSummary.level.current.level;
+	        if (currentLevel > previousLevel) {
+	          setPumpXpLevelUp({ level: pumpXpSummary.level.current, previousLevel });
+	        }
+	      }
+	      writePumpXpDailyAwardsShown(activeProfile, {
+	        ...dailyAwardsShown,
+	        [yesterdayKey]: {
+	          xp: delta,
+	          shownAt: new Date().toISOString(),
+	          label: yesterdayAward.label || "",
+	        },
+	      });
+	    }
+
+	    const currentSnapshot = {
+	      totalXp: pumpXpSummary.totalXp,
+	      level: pumpXpSummary.level.current.level,
+	      updatedAt: new Date().toISOString(),
+	    };
+	    try { localStorage.setItem(key, JSON.stringify(currentSnapshot)); } catch (error) {}
+	  }, [profile?.id, profile?.telegram_id, appLoading, profileLoading, accessGateStatus, themeTick, pumpXpSummary.totalXp, pumpXpSummary.level.current.level, JSON.stringify(pumpXpSummary.daily || [])]);
 
   const refreshAccessStatus = useCallback(async () => {
     if (!hasOnlyPumpRemoteAuth(telegramInitData)) return false;
