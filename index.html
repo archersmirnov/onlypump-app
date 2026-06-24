@@ -295,6 +295,32 @@
       border: 1px solid rgba(239, 68, 68, 0.36);
       background: rgba(239, 68, 68, 0.16);
     }
+    .onlypump-quiz-ruler-horizontal,
+    .onlypump-quiz-ruler-vertical {
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      scrollbar-width: none;
+    }
+    .onlypump-quiz-ruler-horizontal {
+      scroll-snap-type: x mandatory;
+      touch-action: pan-x;
+      mask-image: linear-gradient(to right, transparent 0%, #000 18%, #000 82%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 18%, #000 82%, transparent 100%);
+    }
+    .onlypump-quiz-ruler-vertical {
+      scroll-snap-type: y mandatory;
+      touch-action: pan-y;
+      mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%);
+    }
+    .onlypump-quiz-ruler-horizontal::-webkit-scrollbar,
+    .onlypump-quiz-ruler-vertical::-webkit-scrollbar {
+      display: none;
+    }
+    .onlypump-quiz-ruler-item {
+      scroll-snap-align: center;
+      scroll-snap-stop: always;
+    }
     .onlypump-list-50 {
       max-height: calc(var(--onlypump-app-height) * 0.5);
     }
@@ -21159,9 +21185,19 @@ const onboardingQuizSteps = [
     why: "Возраст нужен для точного расчета стартовых целей и нагрузки.",
   },
   {
+    id: "height",
+    title: "Рост",
+    why: "Рост нужен для расчета процента жира, базового обмена и стартовых целей. Выбери значение вертикальной рулеткой.",
+  },
+  {
+    id: "weight",
+    title: "Вес",
+    why: "Вес нужен для расчета питания, нагрузки и прогресса. Выбери значение горизонтальной рулеткой.",
+  },
+  {
     id: "body_start",
     title: "Стартовые параметры",
-    why: "Рост, вес, шея и талия помогают определить примерный процент жира. Шею и талию можно пропустить и заполнить позже.",
+    why: "Проверь введенные рост и вес. Шея и талия помогают точнее определить примерный процент жира, но их можно пропустить и заполнить позже.",
   },
   {
     id: "steps",
@@ -21217,14 +21253,187 @@ const onboardingQuizSteps = [
   },
 ];
 
+const buildQuizRulerValues = (min, max, step = 1) => {
+  const length = Math.max(1, Math.floor((max - min) / step) + 1);
+  return Array.from({ length }, (_, index) => min + index * step);
+};
+
+const getQuizRulerValue = (value, fallback, min, max, step = 1) => {
+  const raw = profileNumber(value, fallback);
+  const rounded = Math.round(raw / step) * step;
+  return Math.max(min, Math.min(max, rounded));
+};
+
+function QuizHorizontalRuler({ label, value, onChange, min = 35, max = 200, fallback = 70, unit = "кг" }) {
+  const itemWidth = 42;
+  const values = useMemo(() => buildQuizRulerValues(min, max), [min, max]);
+  const selectedValue = getQuizRulerValue(value, fallback, min, max);
+  const selectedIndex = Math.max(0, values.findIndex(item => item === selectedValue));
+  const scrollRef = useRef(null);
+  const settleTimerRef = useRef(null);
+
+  const scrollToIndex = useCallback((index, behavior = "auto") => {
+    const node = scrollRef.current;
+    if (!node) return;
+    node.scrollTo({ left: Math.max(0, index) * itemWidth, behavior });
+  }, [itemWidth]);
+
+  const commitCenteredValue = useCallback((behavior = "smooth") => {
+    const node = scrollRef.current;
+    if (!node || !values.length) return;
+    const nextIndex = Math.max(0, Math.min(values.length - 1, Math.round(node.scrollLeft / itemWidth)));
+    const nextValue = values[nextIndex];
+    scrollToIndex(nextIndex, behavior);
+    if (nextValue !== selectedValue) onChange(nextValue);
+  }, [itemWidth, onChange, scrollToIndex, selectedValue, values]);
+
+  const handleScroll = () => {
+    window.clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = window.setTimeout(() => commitCenteredValue("smooth"), 120);
+  };
+
+  useEffect(() => {
+    const id = window.setTimeout(() => scrollToIndex(selectedIndex, "auto"), 0);
+    return () => {
+      window.clearTimeout(id);
+      window.clearTimeout(settleTimerRef.current);
+    };
+  }, [scrollToIndex, selectedIndex]);
+
+  return <div className="rounded-[2rem] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-5 shadow-2xl shadow-black/10">
+    <p className="text-center text-xs font-black uppercase tracking-[0.18em] text-[var(--onlypump-muted)]">{label}</p>
+    <div className="mt-4 flex items-end justify-center gap-2 text-red-500">
+      <span className="text-6xl font-black leading-none tracking-[-0.06em]">{selectedValue}</span>
+      <span className="pb-2 text-2xl font-black">{unit}</span>
+    </div>
+    <div className="relative mt-5 h-28 overflow-hidden">
+      <div className="pointer-events-none absolute left-1/2 top-9 z-20 h-20 w-1 -translate-x-1/2 rounded-full bg-red-500 shadow-[0_0_18px_rgba(239,68,68,0.35)]" />
+      <div
+        ref={scrollRef}
+        data-no-sheet-drag="true"
+        className="onlypump-quiz-ruler-horizontal absolute inset-x-0 bottom-0 top-0 flex items-end overflow-x-auto"
+        onWheelCapture={(event) => event.stopPropagation()}
+        onTouchStartCapture={(event) => event.stopPropagation()}
+        onTouchMoveCapture={(event) => event.stopPropagation()}
+        onPointerDownCapture={(event) => event.stopPropagation()}
+        onScroll={handleScroll}
+      >
+        <div aria-hidden="true" style={{ flex: `0 0 calc(50% - ${itemWidth / 2}px)` }} />
+        {values.map((item, index) => {
+          const selected = item === selectedValue;
+          const major = item % 5 === 0;
+          return <button
+            key={item}
+            type="button"
+            className="onlypump-quiz-ruler-item flex h-full shrink-0 flex-col items-center justify-end gap-3 pb-2 text-center"
+            style={{ width: `${itemWidth}px`, flexBasis: `${itemWidth}px` }}
+            onClick={() => {
+              onChange(item);
+              scrollToIndex(index, "smooth");
+            }}
+          >
+            <span className={`text-sm font-black transition ${selected ? "scale-110 text-red-500" : major ? "text-[var(--onlypump-text)]" : "text-[var(--onlypump-faint)]"}`}>{item}</span>
+            <span className={`w-px rounded-full transition ${selected ? "h-16 bg-red-500" : major ? "h-11 bg-[var(--onlypump-muted)]" : "h-7 bg-zinc-500/60"}`} />
+          </button>;
+        })}
+        <div aria-hidden="true" style={{ flex: `0 0 calc(50% - ${itemWidth / 2}px)` }} />
+      </div>
+    </div>
+  </div>;
+}
+
+function QuizVerticalRuler({ label, value, onChange, min = 120, max = 220, fallback = 170, unit = "см" }) {
+  const itemHeight = 38;
+  const values = useMemo(() => buildQuizRulerValues(min, max), [min, max]);
+  const selectedValue = getQuizRulerValue(value, fallback, min, max);
+  const selectedIndex = Math.max(0, values.findIndex(item => item === selectedValue));
+  const scrollRef = useRef(null);
+  const settleTimerRef = useRef(null);
+
+  const scrollToIndex = useCallback((index, behavior = "auto") => {
+    const node = scrollRef.current;
+    if (!node) return;
+    node.scrollTo({ top: Math.max(0, index) * itemHeight, behavior });
+  }, [itemHeight]);
+
+  const commitCenteredValue = useCallback((behavior = "smooth") => {
+    const node = scrollRef.current;
+    if (!node || !values.length) return;
+    const nextIndex = Math.max(0, Math.min(values.length - 1, Math.round(node.scrollTop / itemHeight)));
+    const nextValue = values[nextIndex];
+    scrollToIndex(nextIndex, behavior);
+    if (nextValue !== selectedValue) onChange(nextValue);
+  }, [itemHeight, onChange, scrollToIndex, selectedValue, values]);
+
+  const handleScroll = () => {
+    window.clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = window.setTimeout(() => commitCenteredValue("smooth"), 120);
+  };
+
+  useEffect(() => {
+    const id = window.setTimeout(() => scrollToIndex(selectedIndex, "auto"), 0);
+    return () => {
+      window.clearTimeout(id);
+      window.clearTimeout(settleTimerRef.current);
+    };
+  }, [scrollToIndex, selectedIndex]);
+
+  return <div className="rounded-[2rem] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-5 shadow-2xl shadow-black/10">
+    <p className="text-center text-xs font-black uppercase tracking-[0.18em] text-[var(--onlypump-muted)]">{label}</p>
+    <div className="mt-4 flex items-end justify-center gap-2 text-red-500">
+      <span className="text-6xl font-black leading-none tracking-[-0.06em]">{selectedValue}</span>
+      <span className="pb-2 text-2xl font-black">{unit}</span>
+    </div>
+    <div className="relative mx-auto mt-5 h-72 max-w-[260px] overflow-hidden">
+      <div className="pointer-events-none absolute left-8 right-8 top-1/2 z-20 h-1 -translate-y-1/2 rounded-full bg-red-500 shadow-[0_0_18px_rgba(239,68,68,0.35)]" />
+      <div
+        ref={scrollRef}
+        data-no-sheet-drag="true"
+        className="onlypump-quiz-ruler-vertical absolute inset-0 overflow-y-auto px-4"
+        onWheelCapture={(event) => event.stopPropagation()}
+        onTouchStartCapture={(event) => event.stopPropagation()}
+        onTouchMoveCapture={(event) => event.stopPropagation()}
+        onPointerDownCapture={(event) => event.stopPropagation()}
+        onScroll={handleScroll}
+      >
+        <div aria-hidden="true" style={{ height: `calc(50% - ${itemHeight / 2}px)` }} />
+        {values.map((item, index) => {
+          const selected = item === selectedValue;
+          const major = item % 5 === 0;
+          return <button
+            key={item}
+            type="button"
+            className="onlypump-quiz-ruler-item grid w-full grid-cols-[1fr_auto_1fr] items-center gap-4 text-center"
+            style={{ height: `${itemHeight}px` }}
+            onClick={() => {
+              onChange(item);
+              scrollToIndex(index, "smooth");
+            }}
+          >
+            <span className={`justify-self-end rounded-full transition ${selected ? "h-1 w-12 bg-red-500" : major ? "h-px w-9 bg-[var(--onlypump-muted)]" : "h-px w-5 bg-zinc-500/60"}`} />
+            <span className={`text-base font-black transition ${selected ? "scale-110 text-red-500" : major ? "text-[var(--onlypump-text)]" : "text-[var(--onlypump-faint)]"}`}>{item}</span>
+            <span className={`justify-self-start rounded-full transition ${selected ? "h-1 w-12 bg-red-500" : major ? "h-px w-9 bg-[var(--onlypump-muted)]" : "h-px w-5 bg-zinc-500/60"}`} />
+          </button>;
+        })}
+        <div aria-hidden="true" style={{ height: `calc(50% - ${itemHeight / 2}px)` }} />
+      </div>
+    </div>
+  </div>;
+}
+
 function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving, onCancel = null, embedded = false }) {
-  const [draft, setDraft] = useState(() => ({
-    ...profileDraftFromProfile(profile),
-    calories_target: "",
-    protein_target: "",
-    fat_target: "",
-    carbs_target: "",
-  }));
+  const [draft, setDraft] = useState(() => {
+    const initialDraft = profileDraftFromProfile(profile);
+    return {
+      ...initialDraft,
+      height_cm: initialDraft.height_cm || 170,
+      weight_kg: initialDraft.weight_kg || 70,
+      calories_target: "",
+      protein_target: "",
+      fat_target: "",
+      carbs_target: "",
+    };
+  });
   const [stepIndex, setStepIndex] = useState(0);
   const [error, setError] = useState("");
   const step = onboardingQuizSteps[stepIndex] || onboardingQuizSteps[0];
@@ -21260,6 +21469,8 @@ function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving, onCan
     if (stepId === "name" && !String(draft.display_name || "").trim()) return "Введи имя, чтобы продолжить.";
     if (stepId === "sex" && !draft.sex) return "Выбери пол, чтобы расчет был корректным.";
     if (stepId === "birth_date" && !calculateProfileAge(draft.birth_date)) return "Выбери дату рождения.";
+    if (stepId === "height" && !profileNumber(draft.height_cm)) return "Выбери рост.";
+    if (stepId === "weight" && !profileNumber(draft.weight_kg)) return "Выбери вес.";
     if (stepId === "body_start") {
       if (!profileNumber(draft.height_cm)) return "Введи рост.";
       if (!profileNumber(draft.weight_kg)) return "Введи вес.";
@@ -21381,6 +21592,14 @@ function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving, onCan
         <span className="text-xs font-bold text-zinc-500">Возраст</span>
         <div className="mt-2 text-base font-semibold text-zinc-100">{calculatedAge ? formatAgeRu(calculatedAge) : "Появится после выбора даты"}</div>
       </div>
+    </div>;
+    if (step.id === "height") return <div className="space-y-4">
+      <QuizVerticalRuler label="Рост" value={draft.height_cm} onChange={(value) => set("height_cm", value)} fallback={170} unit="см"/>
+      <p className="rounded-2xl border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)] p-3 text-sm leading-6 text-[var(--onlypump-muted)]">Стартовое значение 170 см. Прокрути шкалу вверх или вниз, чтобы выбрать свой рост.</p>
+    </div>;
+    if (step.id === "weight") return <div className="space-y-4">
+      <QuizHorizontalRuler label="Вес" value={draft.weight_kg} onChange={(value) => set("weight_kg", value)} fallback={70} unit="кг"/>
+      <p className="rounded-2xl border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)] p-3 text-sm leading-6 text-[var(--onlypump-muted)]">Стартовое значение 70 кг. Прокрути линейку вправо или влево, чтобы выбрать свой вес.</p>
     </div>;
     if (step.id === "body_start") return <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
