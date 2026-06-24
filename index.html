@@ -1760,6 +1760,10 @@ const profileDraftFromProfile = (profile = DEFAULT_PROFILE) => ({
   fat_target: profile.fat_target || "",
   carbs_target: profile.carbs_target || "",
   default_weight_unit: normalizeWeightUnit(profile.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
+  light_theme_enabled: parseProfileBoolean(profile.light_theme_enabled, DEFAULT_PROFILE.light_theme_enabled),
+  light_theme_always: parseProfileBoolean(profile.light_theme_always, DEFAULT_PROFILE.light_theme_always),
+  light_theme_start_time: normalizeThemeTime(profile.light_theme_start_time, DEFAULT_PROFILE.light_theme_start_time),
+  light_theme_end_time: normalizeThemeTime(profile.light_theme_end_time, DEFAULT_PROFILE.light_theme_end_time),
   nutrition_targets_error: "",
 });
 
@@ -1804,6 +1808,7 @@ const profilePayloadFromDraft = (draft = {}, currentDate = formatDateKey(new Dat
     goal_intensity_percent: normalizeGoalIntensityPercent(draft.goal_type, draft.goal_intensity_percent ?? draft.deficit_percent),
     target_weight_kg: profileNumber(draft.target_weight_kg),
     default_weight_unit: normalizeWeightUnit(draft.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
+    ...buildThemeSettingsPayload(draft),
     ...targets,
     measurement_date: currentDate,
     current_date: currentDate,
@@ -18236,7 +18241,28 @@ function CalculatorsPage() {
   return <><Header title="Калькуляторы" subtitle="Все инструменты ONLYPUMP с привязанными ссылками на реальные страницы сайта."/><MasonryGrid className="mt-8 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{calculators.map(({ icon: Icon, title, desc, href, tag }, index) => <a key={title} data-tour={index === 0 ? "calculator-card" : undefined} href={href} target="_blank" rel="noreferrer"><Card className="h-full p-6 transition hover:-translate-y-1 hover:border-red-500/60 hover:bg-red-500/5"><div className="flex items-start justify-between"><Icon className="text-red-500" size={28}/><ExternalLink size={16} className="text-zinc-500"/></div><h2 className="mt-6 text-xl font-semibold">{title}</h2><p className="mt-2 break-words text-sm text-zinc-400">{desc}</p><p className="mt-5 rounded-lg bg-white/5 px-3 py-2 text-xs text-zinc-500">{tag}</p></Card></a>)}</MasonryGrid></>;
 }
 
+function UnderConstructionPage({ title = "Раздел", subtitle = "Этот раздел пока готовится." }) {
+  const [mascotFailed, setMascotFailed] = useState(false);
+  return <section className="flex min-h-[calc(var(--onlypump-app-height)-var(--onlypump-safe-top)-var(--onlypump-safe-bottom)-3rem)] items-center justify-center px-2 py-8 sm:py-10">
+    <div className="w-full max-w-2xl text-center">
+      <div className="mx-auto flex min-h-[360px] flex-col items-center justify-center rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 shadow-2xl shadow-black/30 sm:min-h-[460px] sm:p-10">
+        <p className="text-xs font-black uppercase tracking-[0.22em] text-red-400">{title}</p>
+        {!mascotFailed ? <img
+          src="./assets/mascot/loader-think.gif"
+          alt="ONLYPUMP thinking mascot"
+          className="mt-6 h-auto w-[190px] max-w-full sm:w-[260px]"
+          onError={() => setMascotFailed(true)}
+        /> : <div className="mt-6 flex h-[190px] w-[190px] items-center justify-center rounded-full bg-red-500/15 text-4xl font-black text-red-500 ring-1 ring-red-500/30 sm:h-[260px] sm:w-[260px]">OP</div>}
+        <h1 className="mt-7 text-3xl font-black tracking-[-0.04em] text-zinc-100 sm:text-5xl">{subtitle}</h1>
+        <p className="mt-5 max-w-md text-sm font-semibold leading-6 text-zinc-500 sm:text-base">Думаю, как здесь все расположить</p>
+      </div>
+    </div>
+  </section>;
+}
+
 function EducationPage() {
+  return <UnderConstructionPage title="Обучение" subtitle="Обучение скоро появится"/>;
+
   const initialEducationData = [
     {
       id: 1,
@@ -18688,6 +18714,8 @@ const initialLectures = [
 ];
 
 function LecturesPage({ lectureItems, setLectureItems }) {
+  return <UnderConstructionPage title="Лекции" subtitle="Лекции скоро появятся"/>;
+
   const safeLectureItems = lectureItems || [];
   const [activeLecture, setActiveLecture] = useState(null);
   const [lectureFilter, setLectureFilter] = useState("Все");
@@ -20699,11 +20727,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
 }
 
 function CommunityPage() {
-  return <><Header title="Сообщество" subtitle="Чат, челленджи, разборы участников и рейтинг дисциплины."/><PageGrid>
-    <Card data-tour="community-feed" className="p-5 xl:col-span-2"><h2 className="text-xl font-semibold">Лента сообщества</h2>{["Антон закрыл неделю без пропусков", "Мария улучшила сон на 42 минуты", "Разбор техники: присед и румынская тяга"].map(x=><div key={x} className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4"><MessageCircle className="inline text-red-500" size={18}/> <span className="ml-2">{x}</span></div>)}</Card>
-    <Card className="p-5"><Trophy className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Рейтинг</h2>{["Артур", "Антон", "Мария", "Илья"].map((x,i)=><div key={x} className="mt-4 flex justify-between"><span>{i+1}. {x}</span><span className="text-red-500">{2450-i*180}</span></div>)}</Card>
-    <Card className="p-5"><h2 className="text-xl font-semibold">Челлендж</h2><p className="mt-3 text-zinc-400">14 дней без пропуска трекинга питания.</p><div className="mt-6"><Progress value={64}/></div></Card>
-  </PageGrid></>;
+  return <UnderConstructionPage title="Сообщество" subtitle="Сообщество скоро появится"/>;
 }
 
 function ProfileInput({ label, value, onChange, type = "text", placeholder = "", required = false }) {
@@ -20968,6 +20992,11 @@ const onboardingQuizSteps = [
     why: "Сначала быстро пройдем стартовую настройку. Я объясню, зачем нужен каждый шаг, а в конце ты получишь свою первую награду.",
   },
   {
+    id: "theme",
+    title: "Выбери тему",
+    why: "Сначала выбери, как тебе комфортнее пользоваться ONLY PUMP. Тему можно будет поменять позже в личном кабинете.",
+  },
+  {
     id: "name",
     title: "Как тебя называть?",
     why: "Имя будет видно в профиле, аналитике, уведомлениях и личном кабинете.",
@@ -21168,6 +21197,33 @@ function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving, onCan
         <p className="mt-3 text-sm leading-6 text-zinc-300">Не AI, но тоже умный. Сегодня я помогу тебе разобраться в приложении ONLY PUMP и получить свою первую награду.</p>
       </div>
       <p className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-sm leading-6 text-zinc-500">Квиз займет пару минут. Необязательные поля можно пропустить и заполнить позже. За анкету можно получить до 100 PUMP XP один раз: 40 за обязательные пункты, 60 за расширенное заполнение без замеров, 100 за полную анкету с замерами.</p>
+    </div>;
+    if (step.id === "theme") return <div className="grid gap-3 sm:grid-cols-2">
+      {optionCard({
+        active: !parseProfileBoolean(draft.light_theme_enabled),
+        title: "Темная",
+        description: "Контрастный режим для Telegram и вечернего использования.",
+        onClick: () => setDraft(prev => ({
+          ...prev,
+          light_theme_enabled: false,
+          light_theme_always: false,
+          light_theme_start_time: DEFAULT_PROFILE.light_theme_start_time,
+          light_theme_end_time: DEFAULT_PROFILE.light_theme_end_time,
+        })),
+      })}
+      {optionCard({
+        active: parseProfileBoolean(draft.light_theme_enabled),
+        title: "Светлая",
+        description: "Светлый режим включится постоянно. Расписание можно настроить позже.",
+        onClick: () => setDraft(prev => ({
+          ...prev,
+          light_theme_enabled: true,
+          light_theme_always: true,
+          light_theme_start_time: "00:00",
+          light_theme_end_time: "00:00",
+        })),
+      })}
+      <p className="sm:col-span-2 rounded-2xl border border-white/10 bg-white/[0.035] p-3 text-sm leading-6 text-zinc-500">Выбор сохранится в профиле и будет одинаковым в Telegram и браузере.</p>
     </div>;
     if (step.id === "name") return <ProfileInput label="Имя" value={draft.display_name} onChange={(value) => set("display_name", value)} placeholder="Например: Артур" required/>;
     if (step.id === "email") return <div className="space-y-3">
