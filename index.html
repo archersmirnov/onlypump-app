@@ -21564,7 +21564,6 @@ function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving, onCan
         <h2 className="mt-3 text-2xl font-black tracking-[-0.04em] text-zinc-100">Твой помощник</h2>
         <p className="mt-3 text-sm leading-6 text-zinc-300">Не AI, но тоже умный. Сегодня я помогу тебе разобраться в приложении ONLY PUMP и получить свою первую награду.</p>
       </div>
-      <p className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-sm leading-6 text-zinc-500">Квиз займет пару минут. Необязательные поля можно пропустить и заполнить позже. За анкету можно получить до 100 PUMP XP один раз: 40 за обязательные пункты, 60 за расширенное заполнение без замеров, 100 за полную анкету с замерами.</p>
     </div>;
     if (step.id === "theme") return <div className="grid gap-3 sm:grid-cols-2">
       {optionCard({
@@ -21715,7 +21714,6 @@ function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving, onCan
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <div className="text-3xl font-black tracking-tight">ONLY<span className="text-red-500">PUMP</span></div>
-          <p className="mt-2 text-sm text-zinc-500">Первичная настройка профиля в формате квиза</p>
         </div>
         {onCancel && <button type="button" onClick={onCancel} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/8 text-xl font-black text-zinc-300">×</button>}
       </div>
