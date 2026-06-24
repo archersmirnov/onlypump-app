@@ -849,7 +849,7 @@ function initTelegramWebApp() {
 }
 
 const telegramWebApp = initTelegramWebApp();
-const ONLYPUMP_FRONTEND_BUILD = "workouts-profile-restore-20260624-03";
+const ONLYPUMP_FRONTEND_BUILD = "workouts-table-rescue-20260624-04";
 console.log("ONLYPUMP START");
 console.log("ONLYPUMP BUILD", ONLYPUMP_FRONTEND_BUILD);
 console.log("Telegram object exists", Boolean(telegramWebApp || window.Telegram?.WebApp));
@@ -4526,6 +4526,88 @@ const writeCachedWorkoutsForProfile = (profile, workouts = [], options = {}) => 
     });
   } catch (error) {
     console.log("Workouts cache error", error);
+  }
+};
+
+const ONLYPUMP_OWNER_TELEGRAM_USERNAME = "archer_ss";
+const ONLYPUMP_OWNER_WEB_EMAIL_ALIASES = new Set(["archer_s@bk.ru"]);
+
+const isOnlyPumpOwnerAliasProfile = (profile = {}) => {
+  const username = String(profile?.telegram_username || profile?.telegramUsername || "").replace(/^@/, "").trim().toLowerCase();
+  const email = String(profile?.email || "").trim().toLowerCase();
+  return username === ONLYPUMP_OWNER_TELEGRAM_USERNAME || ONLYPUMP_OWNER_WEB_EMAIL_ALIASES.has(email);
+};
+
+const collectWorkoutRescueProfileIds = async (client, profile = {}) => {
+  const ids = new Set();
+  const addId = (value) => {
+    const text = String(value || "").trim();
+    if (text) ids.add(text);
+  };
+  addId(profile?.id);
+
+  const addMatches = async (column, value) => {
+    const text = String(value || "").trim();
+    if (!text) return;
+    try {
+      const { data, error } = await client.from("profiles").select("id").eq(column, text).limit(20);
+      if (error) throw error;
+      (data || []).forEach((item) => addId(item?.id));
+    } catch (error) {
+      console.warn("Workout rescue profile lookup failed", { column, error });
+    }
+  };
+
+  await addMatches("telegram_id", profile?.telegram_id || profile?.telegramId);
+  await addMatches("telegram_username", String(profile?.telegram_username || profile?.telegramUsername || "").replace(/^@/, "").trim());
+  await addMatches("email", String(profile?.email || "").trim().toLowerCase());
+  await addMatches("auth_user_id", profile?.auth_user_id || profile?.authUserId);
+  if (isOnlyPumpOwnerAliasProfile(profile)) {
+    await addMatches("telegram_username", ONLYPUMP_OWNER_TELEGRAM_USERNAME);
+  }
+  return Array.from(ids);
+};
+
+const loadWorkoutsFromSupabaseTables = async (profile = {}, fallbackDateKey = formatDateKey(new Date())) => {
+  try {
+    const client = createOnlyPumpSupabaseClient();
+    if (!client || !profile?.id) return [];
+    const linkedProfileIds = await collectWorkoutRescueProfileIds(client, profile);
+    if (!linkedProfileIds.length) return [];
+    console.warn("Workouts table rescue started", {
+      requested_profile_id: profile?.id,
+      linked_profile_ids: linkedProfileIds,
+    });
+    const { data: workoutRows, error: workoutsError } = await client
+      .from("workouts")
+      .select("*")
+      .in("profile_id", linkedProfileIds)
+      .order("workout_date", { ascending: false });
+    if (workoutsError) throw workoutsError;
+    const workoutIds = (workoutRows || []).map((item) => item.id).filter(Boolean);
+    const { data: exerciseRows, error: exercisesError } = workoutIds.length
+      ? await client.from("workout_exercises").select("*").in("workout_id", workoutIds).order("exercise_order", { ascending: true })
+      : { data: [], error: null };
+    if (exercisesError) throw exercisesError;
+    const exerciseIds = (exerciseRows || []).map((item) => item.id).filter(Boolean);
+    const { data: setRows, error: setsError } = exerciseIds.length
+      ? await client.from("workout_sets").select("*").in("workout_exercise_id", exerciseIds).order("set_order", { ascending: true })
+      : { data: [], error: null };
+    if (setsError) throw setsError;
+    const rescued = buildWorkoutsTreeFromApiResponse({
+      workouts: workoutRows || [],
+      workout_exercises: exerciseRows || [],
+      workout_sets: setRows || [],
+    }, fallbackDateKey);
+    console.warn("Workouts table rescue loaded", {
+      requested_profile_id: profile?.id,
+      linked_profile_ids: linkedProfileIds,
+      workouts: rescued.length,
+    });
+    return rescued;
+  } catch (error) {
+    console.error("Workouts table rescue error", error);
+    return [];
   }
 };
 
@@ -11806,12 +11888,44 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     } catch (error) {
       logSupabaseWorkoutError({ action: "load", error });
       loadedWorkoutProfileRef.current = null;
+      const rescued = await loadWorkoutsFromSupabaseTables(profile, selectedDateKey);
+      if (rescued.length) {
+        console.warn("Workouts restored from Supabase tables inside WorkoutsPage", {
+          requested_profile_id: profile?.id,
+          restored_count: rescued.length,
+        });
+        writeCachedWorkoutsForProfile(profile, rescued, { skipEmpty: true });
+        setWorkouts(rescued);
+        return rescued;
+      }
       return null;
     }
     const loadedWorkouts = buildWorkoutTreeFromApi(result);
     syncStaleLoadedWorkoutTotals(loadedWorkouts);
     const mergedWorkouts = mergeLoadedWorkoutsWithDirtyState(loadedWorkouts);
     const fallbackWorkouts = Array.isArray(workoutsRef.current) ? workoutsRef.current : [];
+    if (!mergedWorkouts.length) {
+      const responseProfile = result?.profile ? normalizeProfileRecord(result.profile, profile || DEFAULT_PROFILE) : profile;
+      const rescued = await loadWorkoutsFromSupabaseTables(responseProfile || profile, selectedDateKey);
+      if (rescued.length) {
+        console.warn("Workouts restored from Supabase tables after empty API load", {
+          requested_profile_id: profile?.id,
+          response_profile_id: responseProfile?.id,
+          restored_count: rescued.length,
+        });
+        writeCachedWorkoutsForProfile(profile, rescued, { skipEmpty: true });
+        if (responseProfile?.id || responseProfile?.telegram_id) {
+          writeCachedWorkoutsForProfile(responseProfile, rescued, { skipEmpty: true });
+        }
+        setWorkouts(rescued);
+        setSelectedWorkout(prev => {
+          const targetSupabaseId = selectedSupabaseId || prev?.supabaseId;
+          if (!preserveSelected || !targetSupabaseId) return null;
+          return rescued.find(workout => workout.supabaseId === targetSupabaseId) || null;
+        });
+        return rescued;
+      }
+    }
     if (!mergedWorkouts.length && fallbackWorkouts.length) {
       const responseProfile = result?.profile ? normalizeProfileRecord(result.profile, profile || DEFAULT_PROFILE) : profile;
       console.warn("Workouts load returned empty; preserving current workouts", {
@@ -22547,6 +22661,22 @@ function OnlyPumpPlatform() {
           response_telegram_id: responseProfile?.telegram_id,
         });
       }
+      if (!loaded.length) {
+        const rescued = await loadWorkoutsFromSupabaseTables(responseProfile || activeProfile, globalSelectedDateKey);
+        if (rescued.length) {
+          console.warn("Workouts restored from Supabase tables", {
+            requested_profile_id: activeProfile?.id,
+            response_profile_id: responseProfile?.id,
+            restored_count: rescued.length,
+          });
+          setWorkouts(rescued);
+          writeCachedWorkoutsForProfile(activeProfile, rescued, { skipEmpty: true });
+          if (responseProfile?.id || responseProfile?.telegram_id) {
+            writeCachedWorkoutsForProfile(responseProfile, rescued, { skipEmpty: true });
+          }
+          return rescued;
+        }
+      }
       if (!loaded.length && cached.length) {
         console.warn("Workouts load returned empty; preserving cached workouts", {
           requested_profile_id: activeProfile?.id,
@@ -22567,6 +22697,16 @@ function OnlyPumpPlatform() {
       return loaded;
     } catch (error) {
       console.error("Supabase workout error", { action: "load", error });
+      const rescued = await loadWorkoutsFromSupabaseTables(activeProfile, globalSelectedDateKey);
+      if (rescued.length) {
+        console.warn("Workouts restored from Supabase tables after API error", {
+          requested_profile_id: activeProfile?.id,
+          restored_count: rescued.length,
+        });
+        setWorkouts(rescued);
+        writeCachedWorkoutsForProfile(activeProfile, rescued, { skipEmpty: true });
+        return rescued;
+      }
       return cached;
     } finally {
       setWorkoutsRefreshing(false);
