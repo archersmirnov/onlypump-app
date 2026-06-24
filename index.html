@@ -20870,7 +20870,104 @@ function ProfileFormFields({ draft, setDraft, showManualTargets = true, onBirthD
   </div>;
 }
 
-function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving }) {
+const onboardingMeasurementFields = [
+  { key: "shoulders_cm", label: "Плечи, см" },
+  { key: "chest_cm", label: "Грудь, см" },
+  { key: "biceps_cm", label: "Бицепс, см" },
+  { key: "abdomen_cm", label: "Живот, см" },
+  { key: "hips_cm", label: "Бедра, см" },
+  { key: "glutes_cm", label: "Ягодицы, см" },
+  { key: "thigh_cm", label: "Бедро, см" },
+  { key: "calf_cm", label: "Голень, см" },
+];
+
+const onboardingQuizSteps = [
+  {
+    id: "welcome",
+    title: "Добро пожаловать",
+    why: "Сначала быстро пройдем стартовую настройку. Я объясню, зачем нужен каждый шаг, а в конце ты получишь свою первую награду.",
+  },
+  {
+    id: "name",
+    title: "Как тебя называть?",
+    why: "Имя будет видно в профиле, аналитике, уведомлениях и личном кабинете.",
+  },
+  {
+    id: "email",
+    title: "Почта для браузера",
+    why: "Почта нужна, чтобы позже входить в этот же аккаунт через браузер на компьютере.",
+    optional: true,
+  },
+  {
+    id: "sex",
+    title: "Пол",
+    why: "Пол влияет на расчет процента жира, порций, калорий и часть рекомендаций.",
+  },
+  {
+    id: "birth_date",
+    title: "Дата рождения",
+    why: "Возраст нужен для точного расчета стартовых целей и нагрузки.",
+  },
+  {
+    id: "body_start",
+    title: "Стартовые параметры",
+    why: "Рост, вес, шея и талия помогают определить примерный процент жира. Шею и талию можно пропустить и заполнить позже.",
+  },
+  {
+    id: "steps",
+    title: "Шаги",
+    why: "Цель по шагам помогает оценить повседневную активность и точнее считать питание.",
+  },
+  {
+    id: "workouts",
+    title: "Тренировки",
+    why: "Количество тренировок в неделю помогает выбрать адекватный уровень нагрузки.",
+  },
+  {
+    id: "goal",
+    title: "Цель",
+    why: "Цель определяет направление: снижать вес, набирать массу, держать форму или менять композицию тела.",
+  },
+  {
+    id: "target_weight",
+    title: "Целевой вес",
+    why: "Целевой вес помогает видеть ориентир, но его можно изменить в любой момент.",
+    optional: true,
+  },
+  {
+    id: "nutrition_mode",
+    title: "Как считать питание?",
+    why: "Можно считать классические калории и КБЖУ или вести питание проще — через ладони.",
+  },
+  {
+    id: "protein",
+    title: "Белок",
+    why: "Белок помогает сохранять и строить мышцы. Если хочешь более высокий ориентир, включи повышенную норму.",
+  },
+  {
+    id: "fat",
+    title: "Жиры",
+    why: "Жиры нужны для гормональной системы и нормального самочувствия. Здесь можно выбрать чуть более жирный рацион.",
+  },
+  {
+    id: "measurements",
+    title: "Замеры",
+    why: "Замеры помогают видеть прогресс даже тогда, когда вес стоит на месте. Этот шаг можно пропустить и заполнить позже.",
+    optional: true,
+  },
+  {
+    id: "summary",
+    title: "Итоги расчета",
+    why: "Проверь стартовый процент жира и расчет КБЖУ. Это база для питания, графиков и будущей аналитики.",
+  },
+  {
+    id: "manual_targets",
+    title: "КБЖУ вручную",
+    why: "Если у тебя уже есть свои цели по калориям, белкам, жирам и углеводам, их можно указать вручную. Если нет, оставь автоматический расчет.",
+  },
+];
+
+function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving, onCancel = null, embedded = false }) {
   const [draft, setDraft] = useState(() => ({
     ...profileDraftFromProfile(profile),
     calories_target: "",
@@ -20878,12 +20975,62 @@ function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving }) {
     fat_target: "",
     carbs_target: "",
   }));
+  const [stepIndex, setStepIndex] = useState(0);
   const [error, setError] = useState("");
+  const step = onboardingQuizSteps[stepIndex] || onboardingQuizSteps[0];
+  const isLastStep = stepIndex >= onboardingQuizSteps.length - 1;
+  const progressPercent = Math.round(((stepIndex + 1) / onboardingQuizSteps.length) * 100);
+  const calculatedAge = calculateProfileAge(draft.birth_date);
+  const calculatedBodyFat = calculateProfileBodyFat(draft);
+  const bodyFatIssue = calculatedBodyFat == null ? getProfileBodyFatIssue(draft) : "";
+  const nutritionTrackingMode = normalizeNutritionTrackingMode(draft.nutrition_tracking_mode || DEFAULT_PROFILE.nutrition_tracking_mode);
+  const calculatedTargets = calculateProfileNutritionTargets(draft);
+  const manualTargetsEnabled = parseProfileBoolean(draft.manual_nutrition_targets_enabled);
+  const targetValues = {
+    calories_target: manualTargetsEnabled ? normalizeManualTargetValue(draft.calories_target, calculatedTargets.calories_target) : calculatedTargets.calories_target,
+    protein_target: manualTargetsEnabled ? normalizeManualTargetValue(draft.protein_target, calculatedTargets.protein_target) : calculatedTargets.protein_target,
+    fat_target: manualTargetsEnabled ? normalizeManualTargetValue(draft.fat_target, calculatedTargets.fat_target) : calculatedTargets.fat_target,
+    carbs_target: manualTargetsEnabled ? normalizeManualTargetValue(draft.carbs_target, calculatedTargets.carbs_target) : calculatedTargets.carbs_target,
+  };
+  const targetInputValue = (key) => manualTargetsEnabled ? (draft[key] ?? "") : calculatedTargets[key];
+  const setManualTarget = (key, value) => setDraft(prev => updateManualNutritionDraft(prev, key, value));
+  const resetManualTargets = () => setDraft(prev => ({
+    ...prev,
+    manual_nutrition_targets_enabled: false,
+    nutrition_targets_error: "",
+    calories_target: "",
+    protein_target: "",
+    fat_target: "",
+    carbs_target: "",
+  }));
+  const set = (key, value) => setDraft(prev => ({ ...prev, [key]: value }));
   const canSubmit = draft.display_name && draft.sex && calculateProfileAge(draft.birth_date) && profileNumber(draft.height_cm) && profileNumber(draft.weight_kg) && draft.goal_type;
+
+  const stepError = (stepId = step.id) => {
+    if (stepId === "name" && !String(draft.display_name || "").trim()) return "Введи имя, чтобы продолжить.";
+    if (stepId === "sex" && !draft.sex) return "Выбери пол, чтобы расчет был корректным.";
+    if (stepId === "birth_date" && !calculateProfileAge(draft.birth_date)) return "Выбери дату рождения.";
+    if (stepId === "body_start") {
+      if (!profileNumber(draft.height_cm)) return "Введи рост.";
+      if (!profileNumber(draft.weight_kg)) return "Введи вес.";
+    }
+    if (stepId === "steps" && (String(draft.steps_per_day ?? "").trim() === "" || profileNonNegativeNumber(draft.steps_per_day, null) == null)) return "Укажи цель по шагам.";
+    if (stepId === "workouts" && (String(draft.workouts_per_week ?? "").trim() === "" || profileNonNegativeNumber(draft.workouts_per_week, null) == null)) return "Укажи количество тренировок в неделю.";
+    if (stepId === "goal" && !draft.goal_type) return "Выбери цель.";
+    if (stepId === "nutrition_mode" && !nutritionTrackingMode) return "Выбери способ учета питания.";
+    return "";
+  };
+
+  const firstIncompleteStepIndex = () => {
+    const index = onboardingQuizSteps.findIndex(item => stepError(item.id));
+    return index < 0 ? 0 : index;
+  };
 
   const submit = async () => {
     if (!canSubmit) {
-      setError("Заполни имя, пол, дату рождения, рост, вес и цель.");
+      const missingIndex = firstIncompleteStepIndex();
+      setStepIndex(missingIndex);
+      setError(stepError(onboardingQuizSteps[missingIndex]?.id) || "Заполни имя, пол, дату рождения, рост, вес и цель.");
       return;
     }
     const manualConflict = getManualNutritionConflict(draft);
@@ -20896,18 +21043,191 @@ function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving }) {
     if (isOnlyPumpSaveFailure(ok)) setError(onlyPumpSaveFailureMessage(ok, "Не удалось сохранить профиль. Проверь подключение и попробуй еще раз."));
   };
 
-  return <div className="onboarding-screen onlypump-app-shell overflow-y-auto bg-black px-4 py-6 text-zinc-100" style={{ paddingTop: "calc(var(--onlypump-safe-top) + var(--onlypump-telegram-main-top-offset) + 1.5rem)", paddingBottom: "calc(var(--onlypump-safe-bottom) + 1.5rem)" }}>
-    <div className="mx-auto max-w-3xl">
-      <div className="mb-6">
-        <div className="text-3xl font-black tracking-tight">ONLY<span className="text-red-500">PUMP</span></div>
-        <p className="mt-2 text-sm text-zinc-500">Первичная настройка профиля</p>
+  const goNext = async () => {
+    const currentError = stepError(step.id);
+    if (currentError) {
+      setError(currentError);
+      return;
+    }
+    setError("");
+    if (isLastStep) {
+      await submit();
+      return;
+    }
+    setStepIndex(prev => Math.min(prev + 1, onboardingQuizSteps.length - 1));
+  };
+
+  const skipStep = async () => {
+    setError("");
+    if (isLastStep) {
+      await submit();
+      return;
+    }
+    setStepIndex(prev => Math.min(prev + 1, onboardingQuizSteps.length - 1));
+  };
+
+  const optionCard = ({ active, title, description, onClick }) => <button
+    type="button"
+    onClick={onClick}
+    className={`w-full rounded-3xl border p-4 text-left transition ${active ? "border-red-500 bg-red-500/10 text-zinc-100" : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-white/20"}`}
+  >
+    <span className="block text-lg font-black">{title}</span>
+    {description && <span className="mt-2 block text-sm leading-6 text-zinc-500">{description}</span>}
+  </button>;
+
+  const renderStep = () => {
+    if (step.id === "welcome") return <div className="space-y-4">
+      <img
+        src="./assets/mascot/hello-artur.gif"
+        alt="Артур приветствует"
+        className="mx-auto h-40 max-w-full object-contain sm:h-52"
+      />
+      <div className="rounded-[2rem] border border-red-500/20 bg-red-500/10 p-5">
+        <p className="text-sm font-black uppercase tracking-[0.18em] text-red-300">Привет, я Артур</p>
+        <h2 className="mt-3 text-2xl font-black tracking-[-0.04em] text-zinc-100">Твой помощник</h2>
+        <p className="mt-3 text-sm leading-6 text-zinc-300">Не AI, но тоже умный. Сегодня я помогу тебе разобраться в приложении ONLY PUMP и получить свою первую награду.</p>
+      </div>
+      <p className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-sm leading-6 text-zinc-500">Квиз займет пару минут. Необязательные поля можно пропустить и заполнить позже.</p>
+    </div>;
+    if (step.id === "name") return <ProfileInput label="Имя" value={draft.display_name} onChange={(value) => set("display_name", value)} placeholder="Например: Артур" required/>;
+    if (step.id === "email") return <div className="space-y-3">
+      <ProfileInput label="Почта" type="email" value={draft.email} onChange={(value) => set("email", value)} placeholder="you@example.com"/>
+      <p className="rounded-2xl border border-white/10 bg-white/[0.035] p-3 text-sm leading-6 text-zinc-500">Можно пропустить и добавить почту позже в профиле. Telegram Mini App продолжит работать без нее.</p>
+    </div>;
+    if (step.id === "sex") return <div className="grid gap-3 sm:grid-cols-2">
+      {optionCard({ active: draft.sex === "male", title: "Мужчина", description: "Расчеты будут использовать мужские формулы.", onClick: () => set("sex", "male") })}
+      {optionCard({ active: draft.sex === "female", title: "Женщина", description: "Расчеты будут использовать женские формулы.", onClick: () => set("sex", "female") })}
+    </div>;
+    if (step.id === "birth_date") return <div className="space-y-3">
+      <BirthDateField value={draft.birth_date} onChange={(value) => set("birth_date", value)} required/>
+      <div className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3">
+        <span className="text-xs font-bold text-zinc-500">Возраст</span>
+        <div className="mt-2 text-base font-semibold text-zinc-100">{calculatedAge ? formatAgeRu(calculatedAge) : "Появится после выбора даты"}</div>
+      </div>
+    </div>;
+    if (step.id === "body_start") return <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ProfileInput label="Рост, см" type="number" value={draft.height_cm} onChange={(value) => set("height_cm", value)} required/>
+        <ProfileInput label="Вес, кг" type="number" value={draft.weight_kg} onChange={(value) => set("weight_kg", value)} required/>
+        <ProfileInput label="Шея, см" type="number" value={draft.neck_cm} onChange={(value) => set("neck_cm", value)} placeholder="Можно позже"/>
+        <ProfileInput label="Талия, см" type="number" value={draft.waist_cm} onChange={(value) => set("waist_cm", value)} placeholder="Можно позже"/>
+      </div>
+      <div className={`rounded-2xl p-4 text-sm leading-6 ${calculatedBodyFat == null ? "border border-red-500/20 bg-red-500/10 text-red-200" : "border border-white/10 bg-white/[0.035] text-zinc-400"}`}>
+        <b className="block text-zinc-100">Процент жира: {calculatedBodyFat == null ? "пока не рассчитан" : `${calculatedBodyFat}%`}</b>
+        <span>{calculatedBodyFat == null ? `Если хочешь расчет точнее, добавь замеры. ${bodyFatIssue}` : "Это приблизительная оценка, которая поможет стартовой аналитике."}</span>
+      </div>
+    </div>;
+    if (step.id === "steps") return <ProfileInput label="Среднее количество шагов в день" type="number" value={draft.steps_per_day} onChange={(value) => set("steps_per_day", value)} required/>;
+    if (step.id === "workouts") return <ProfileInput label="Тренировок в неделю" type="number" value={draft.workouts_per_week} onChange={(value) => set("workouts_per_week", value)} required/>;
+    if (step.id === "goal") return <div className="grid gap-3">
+      {Object.entries(profileGoalTypeLabels).map(([value, label]) => optionCard({
+        active: draft.goal_type === value,
+        title: label,
+        onClick: () => set("goal_type", value),
+      }))}
+    </div>;
+    if (step.id === "target_weight") return <div className="space-y-3">
+      <ProfileInput label="Целевой вес, кг" type="number" value={draft.target_weight_kg} onChange={(value) => set("target_weight_kg", value)} placeholder="Можно оставить пустым"/>
+      <p className="rounded-2xl border border-white/10 bg-white/[0.035] p-3 text-sm leading-6 text-zinc-500">Это ориентир, а не жесткое обязательство. Его можно изменить позже.</p>
+    </div>;
+    if (step.id === "nutrition_mode") return <div className="grid gap-3 sm:grid-cols-2">
+      {optionCard({ active: nutritionTrackingMode === "calories", title: "Считать калории", description: "Классический учет калорий, белков, жиров и углеводов.", onClick: () => set("nutrition_tracking_mode", "calories") })}
+      {optionCard({ active: nutritionTrackingMode === "palms", title: "Считать в ладонях", description: "Более простой учет порциями. Калории будут считаться внутри аналитики.", onClick: () => set("nutrition_tracking_mode", "palms") })}
+    </div>;
+    if (step.id === "protein") return <div className="space-y-4">
+      <ProfileToggle
+        label="Повышенное количество белка"
+        description="Если включить, белок будет считаться примерно как 2.5 г на кг веса. Это может подойти при похудении, рекомпозиции или высокой нагрузке."
+        checked={parseProfileBoolean(draft.high_protein_enabled)}
+        onChange={(value) => set("high_protein_enabled", value)}
+      />
+      <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-sm leading-6 text-zinc-500">
+        Сейчас расчет белка: <b className="text-zinc-100">{calculatedTargets.protein_target} г</b> в день.
+      </div>
+    </div>;
+    if (step.id === "fat") return <div className="space-y-4">
+      <ProfileToggle
+        label="Больше жиров"
+        description="Если включить, жиры будут считаться примерно как 1 г на кг веса. Это делает рацион мягче для тех, кому сложно держать низкие жиры."
+        checked={parseProfileBoolean(draft.higher_fat_enabled)}
+        onChange={(value) => set("higher_fat_enabled", value)}
+      />
+      <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-sm leading-6 text-zinc-500">
+        Сейчас расчет жиров: <b className="text-zinc-100">{calculatedTargets.fat_target} г</b> в день.
+      </div>
+    </div>;
+    if (step.id === "measurements") return <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        {onboardingMeasurementFields.map(field => <ProfileInput key={field.key} label={field.label} type="number" value={draft[field.key]} onChange={(value) => set(field.key, value)}/>)}
+      </div>
+      <p className="rounded-2xl border border-white/10 bg-white/[0.035] p-3 text-sm leading-6 text-zinc-500">Если сейчас нет сантиметра под рукой, спокойно пропусти. Замеры можно добавить в профиле или прогрессе.</p>
+    </div>;
+    if (step.id === "summary") return <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl bg-black/30 p-4">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-red-300">Процент жира</p>
+          <div className="mt-3 text-4xl font-black">{calculatedBodyFat == null ? "—" : `${calculatedBodyFat}%`}</div>
+          <p className="mt-3 text-xs leading-5 text-zinc-500">{calculatedBodyFat == null ? bodyFatIssue : "Приблизительная оценка по формуле US Navy."}</p>
+        </div>
+        <div className="rounded-2xl bg-black/30 p-4">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-red-300">КБЖУ</p>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs">
+            <div className="rounded-xl bg-white/[0.04] p-2"><span className="block text-zinc-500">Ккал</span><b>{targetValues.calories_target}</b></div>
+            <div className="rounded-xl bg-white/[0.04] p-2"><span className="block text-zinc-500">Белки</span><b>{targetValues.protein_target}</b></div>
+            <div className="rounded-xl bg-white/[0.04] p-2"><span className="block text-zinc-500">Жиры</span><b>{targetValues.fat_target}</b></div>
+            <div className="rounded-xl bg-white/[0.04] p-2"><span className="block text-zinc-500">Углеводы</span><b>{targetValues.carbs_target}</b></div>
+          </div>
+          <p className="mt-3 text-xs leading-5 text-zinc-500">{nutritionTrackingMode === "palms" ? "В питании ты будешь видеть ладони, но калории сохранятся для аналитики." : "Эти значения будут стартовой нормой питания."}</p>
+        </div>
+      </div>
+    </div>;
+    if (step.id === "manual_targets") return <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+        <div>
+          <p className="text-sm font-black text-zinc-100">{manualTargetsEnabled ? "Ручной расчет включен" : "Авторасчет включен"}</p>
+          <p className="mt-1 text-xs leading-5 text-zinc-500">Начни менять любое поле, если хочешь задать свои значения.</p>
+        </div>
+        {manualTargetsEnabled && <button type="button" onClick={resetManualTargets} className="shrink-0 text-xs font-black text-red-300">Вернуть авто</button>}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <ProfileInput label="Калории" type="number" value={targetInputValue("calories_target")} onChange={(value) => setManualTarget("calories_target", value)}/>
+        <ProfileInput label="Белки" type="number" value={targetInputValue("protein_target")} onChange={(value) => setManualTarget("protein_target", value)}/>
+        <ProfileInput label="Жиры" type="number" value={targetInputValue("fat_target")} onChange={(value) => setManualTarget("fat_target", value)}/>
+        <ProfileInput label="Углеводы" type="number" value={targetInputValue("carbs_target")} onChange={(value) => setManualTarget("carbs_target", value)}/>
+      </div>
+      {getManualNutritionConflict(draft) && <p className="rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{getManualNutritionConflict(draft)}</p>}
+    </div>;
+    return null;
+  };
+
+  return <div className={embedded ? "onboarding-screen w-full text-zinc-100" : "onboarding-screen onlypump-app-shell overflow-y-auto bg-black px-4 py-6 text-zinc-100"} style={embedded ? undefined : { paddingTop: "calc(var(--onlypump-safe-top) + var(--onlypump-telegram-main-top-offset) + 1.5rem)", paddingBottom: "calc(var(--onlypump-safe-bottom) + 1.5rem)" }}>
+    <div className="mx-auto max-w-2xl">
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <div className="text-3xl font-black tracking-tight">ONLY<span className="text-red-500">PUMP</span></div>
+          <p className="mt-2 text-sm text-zinc-500">Первичная настройка профиля в формате квиза</p>
+        </div>
+        {onCancel && <button type="button" onClick={onCancel} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/8 text-xl font-black text-zinc-300">×</button>}
       </div>
       <Card className="p-5 sm:p-7">
-        <h1 className="text-2xl font-black tracking-[-0.03em]">Расскажем системе, с чего ты стартуешь</h1>
-        <p className="mt-2 text-sm leading-6 text-zinc-500">Эти данные нужны для стартового процента жира, целей КБЖУ, главной и будущей аналитики прогресса.</p>
-        <div className="mt-6"><ProfileFormFields draft={draft} setDraft={setDraft} showManualTargets={false}/></div>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-red-400">Шаг {stepIndex + 1} из {onboardingQuizSteps.length}</p>
+            <h1 className="mt-2 text-3xl font-black tracking-[-0.04em]">{step.title}</h1>
+          </div>
+          <span className="rounded-full bg-white/[0.06] px-3 py-1 text-xs font-black text-zinc-400">{progressPercent}%</span>
+        </div>
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/[0.08]">
+          <div className="h-full rounded-full bg-gradient-to-r from-red-700 to-red-400 transition-all" style={{ width: `${progressPercent}%` }}/>
+        </div>
+        <p className="mt-5 rounded-3xl border border-white/10 bg-white/[0.035] p-4 text-sm leading-6 text-zinc-400">{step.why}</p>
+        <div className="mt-6">{renderStep()}</div>
         {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
-        <Button onClick={submit} disabled={saving} className="mt-6 w-full bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить и начать"}</Button>
+        <div className="mt-6 flex items-center gap-3">
+          <Button onClick={() => stepIndex === 0 ? null : setStepIndex(prev => Math.max(0, prev - 1))} disabled={saving || stepIndex === 0} className="flex-1 bg-white/8 text-zinc-300 disabled:opacity-40">Назад</Button>
+          {step.optional && <Button onClick={skipStep} disabled={saving} className="flex-1 bg-white/8 text-zinc-300 disabled:opacity-50">Заполнить позже</Button>}
+          <Button onClick={goNext} disabled={saving} className="flex-[1.4] bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Сохраняю..." : isLastStep ? "Сохранить" : step.id === "welcome" ? "Начать" : "Далее"}</Button>
+        </div>
       </Card>
     </div>
   </div>;
@@ -21095,6 +21415,20 @@ function ProfileEditSheet({ profile, onClose, onSave, saving }) {
         <Button onClick={onClose} className="flex-1 bg-white/8">Отмена</Button>
         <Button onClick={async () => { const ok = await submit(); if (!isOnlyPumpSaveFailure(ok)) onClose(); }} disabled={saving} className="flex-1 bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
       </div>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function ProfileQuizSheet({ profile, onClose, onSave, saving }) {
+  const complete = async (payload) => {
+    const ok = await onSave?.(payload);
+    if (!isOnlyPumpSaveFailure(ok)) onClose?.();
+    return ok;
+  };
+
+  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[185] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} priority={185} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-3xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem] sm:p-6" style={{ maxHeight: "calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 1rem)" }}>
+      <OnboardingScreen profile={profile} saving={saving} onComplete={complete} onCancel={onClose} embedded/>
     </BottomSheetPanel>
   </div>;
 }
@@ -22382,6 +22716,7 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
   const profileSource = profileStatus === "verified" ? "Supabase: аккаунт проверен" : profileStatus === "loaded" ? "Supabase: профиль загружен" : profileStatus === "created" ? "Supabase: профиль создан" : "Локальный fallback";
   const calculatedAge = calculateProfileAge(profile?.birth_date);
   const [editOpen, setEditOpen] = useState(false);
+  const [quizOpen, setQuizOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const [settingsThinkingOpen, setSettingsThinkingOpen] = useState(false);
   const [unitSettingsOpen, setUnitSettingsOpen] = useState(false);
@@ -22428,7 +22763,7 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
 
 	  return <div className="profile-screen"><Header title="Личный кабинет" subtitle="Профиль, тариф, подписка, настройки, доступы и история платежей."/><PageGrid>
 	    <Card data-tour="profile-card" className="p-5"><User className="text-red-500"/><h2 className="mt-5 break-words text-xl font-semibold">{displayName}</h2><p className="mt-2 text-zinc-400">Тариф: PREMIUM</p><p className="mt-1 break-words text-zinc-500">{telegramLabel}</p><p className="mt-1 text-xs text-zinc-600">{profileSource}</p><p className="mt-3 rounded-full bg-white/8 px-3 py-1 text-xs font-black text-zinc-300">{getProfileRoleLabels(profile)}</p></Card>
-	    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? formatAgeRu(calculatedAge) : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profileWeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profileHeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profileActivityLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Питание</span><span>{profileNutritionLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profileUsesPalmNutrition(profile) ? "ладони" : (profile.manual_nutrition_targets_enabled ? "ручной" : "авто")}{!profileUsesPalmNutrition(profile) && profile.high_protein_enabled ? " · белок+" : ""}{!profileUsesPalmNutrition(profile) && profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><Button data-tour="profile-edit" onClick={() => setEditOpen(true)} className="mt-5 w-full bg-white/8">Редактировать</Button></Card>
+	    <Card className="p-5"><Scale className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Профиль</h2><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-zinc-500">Возраст</span><span>{calculatedAge ? formatAgeRu(calculatedAge) : "не указан"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Вес</span><span>{profileWeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Рост</span><span>{profileHeightLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Жир</span><span>{profile.body_fat_percent ? `${profile.body_fat_percent}%` : "недостаточно данных"}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Активность</span><span className="text-right">{profileActivityLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Цель</span><span className="text-right">{profileGoalTypeLabels[profile.goal_type] || profile.goal || DEFAULT_PROFILE.goal}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Питание</span><span>{profileNutritionLabel}</span></div><div className="flex justify-between gap-3"><span className="text-zinc-500">Режим</span><span className="text-right">{profileUsesPalmNutrition(profile) ? "ладони" : (profile.manual_nutrition_targets_enabled ? "ручной" : "авто")}{!profileUsesPalmNutrition(profile) && profile.high_protein_enabled ? " · белок+" : ""}{!profileUsesPalmNutrition(profile) && profile.higher_fat_enabled ? " · жиры+" : ""}</span></div></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><Button data-tour="profile-edit" onClick={() => setEditOpen(true)} className="w-full bg-white/8">Редактировать</Button><Button onClick={() => setQuizOpen(true)} className="w-full bg-red-500/10 text-red-300 hover:bg-red-500/15">Пройти квиз</Button></div></Card>
     <Card className="p-5"><CreditCard className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Подписка</h2><p className="mt-2 text-zinc-400">{subscriptionLabel}</p><Button className="mt-5 w-full bg-white/8">Управлять</Button></Card>
     <Card className="p-5"><ShieldCheck className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Доступы</h2><p className="mt-2 text-zinc-400">Все модули открыты</p></Card>
     {canOpenAccessPanel && <Card className="p-5 xl:col-span-2"><Users className="text-red-500"/><h2 className="mt-5 text-xl font-semibold">Пользователи и ученики</h2><p className="mt-2 text-zinc-400">{profileHasRole(profile, "owner") ? "Инвайт-ссылки, пользователи и ученики." : profileHasRole(profile, "admin") ? "Блокировка, разблокировка и удаление пользователей." : "Аналитика твоих учеников."}</p><Button onClick={() => setAccessPanelOpen(true)} className="mt-5 w-full bg-white/8">Открыть управление</Button></Card>}
@@ -22455,6 +22790,7 @@ function ProfilePage({ profile = DEFAULT_PROFILE, profileStatus = "local", teleg
 	      </div>
 	    </Card>
     {editOpen && <ProfileEditSheet profile={profile} saving={profileSaving} onClose={() => setEditOpen(false)} onSave={onSaveProfile}/>}
+    {quizOpen && <ProfileQuizSheet profile={profile} saving={profileSaving} onClose={() => setQuizOpen(false)} onSave={onSaveProfile}/>}
     {themeOpen && <ThemeSettingsSheet profile={profile} saving={themeSaving} onClose={() => setThemeOpen(false)} onSave={onSaveThemeSettings}/>}
     {settingsThinkingOpen && <SettingsThinkingModal onClose={() => setSettingsThinkingOpen(false)}/>}
     {unitSettingsOpen && <UnitSystemSheet profile={profile} saving={profileSaving} onClose={() => setUnitSettingsOpen(false)} onSave={onSaveProfile}/>}
