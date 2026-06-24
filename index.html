@@ -20681,7 +20681,7 @@ function formatBirthDateDisplay(dateKey) {
   return `${day}/${month}/${year}`;
 }
 
-function BirthDatePickerSheet({ value, onSave, onClose }) {
+function BirthDatePickerSheet({ value, onSave, onClose, placement = "sheet" }) {
   const currentYear = new Date().getFullYear();
   const fallbackDate = parseDateKeyLocal(value || `${currentYear - 30}-01-01`);
   const [day, setDay] = useState(Number.isNaN(fallbackDate.getTime()) ? 1 : fallbackDate.getDate());
@@ -20703,8 +20703,9 @@ function BirthDatePickerSheet({ value, onSave, onClose }) {
   const columnClass = "onlypump-scrollbar-none max-h-72 min-w-0 flex-1 overflow-y-auto rounded-2xl bg-white/[0.035] p-2";
   const optionClass = (active) => `block w-full rounded-xl px-2 py-3 text-center text-sm font-semibold transition ${active ? "bg-red-500 text-black" : "text-zinc-300 hover:bg-white/[0.08]"}`;
 
-  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[245] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-    <BottomSheetPanel onClose={onClose} priority={245} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+  const centered = placement === "center";
+  return <div onClick={onClose} className={`onlypump-modal-layer fixed inset-0 z-[245] flex justify-center bg-black/70 p-0 backdrop-blur-sm ${centered ? "items-center p-4" : "items-end sm:items-center sm:p-4"}`}>
+    <BottomSheetPanel onClose={onClose} priority={245} onClick={(event) => event.stopPropagation()} className={`onlypump-bottom-sheet w-full max-w-md overflow-hidden border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl ${centered ? "rounded-[2rem]" : "rounded-t-[2rem] sm:rounded-[2rem]"}`}>
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -20732,9 +20733,9 @@ function BirthDatePickerSheet({ value, onSave, onClose }) {
   </div>;
 }
 
-function BirthDateField({ value, onChange, required = false }) {
+function BirthDateField({ value, onChange, required = false, pickerPlacement = "sheet" }) {
   const [open, setOpen] = useState(false);
-  const picker = open ? <BirthDatePickerSheet value={value} onSave={onChange} onClose={() => setOpen(false)}/> : null;
+  const picker = open ? <BirthDatePickerSheet value={value} onSave={onChange} onClose={() => setOpen(false)} placement={pickerPlacement}/> : null;
   return <>
     <button
       type="button"
@@ -21102,7 +21103,7 @@ function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving, onCan
       {optionCard({ active: draft.sex === "female", title: "Женщина", description: "Расчеты будут использовать женские формулы.", onClick: () => set("sex", "female") })}
     </div>;
     if (step.id === "birth_date") return <div className="space-y-3">
-      <BirthDateField value={draft.birth_date} onChange={(value) => set("birth_date", value)} required/>
+      <BirthDateField value={draft.birth_date} onChange={(value) => set("birth_date", value)} required pickerPlacement="center"/>
       <div className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3">
         <span className="text-xs font-bold text-zinc-500">Возраст</span>
         <div className="mt-2 text-base font-semibold text-zinc-100">{calculatedAge ? formatAgeRu(calculatedAge) : "Появится после выбора даты"}</div>
