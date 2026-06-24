@@ -9537,6 +9537,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const durationWeeks = clampProgramNumber(draft.durationWeeks, 1, 52, 8);
     const cycleLengthDays = clampProgramNumber(draft.cycleLengthDays, 1, 20, 7);
     return {
+      profile_id: profile?.id || null,
       program: {
         program_template_id: draft.remoteProgramTemplateId || null,
         template_key: templateKey,
@@ -9688,6 +9689,30 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }
   };
 
+  const loadProgramTemplatesFromApi = async ({ fallbackLocal = true } = {}) => {
+    if (!canUseWorkoutApi) {
+      const cached = readLocalProgramTemplates();
+      setCustomTrainingPrograms(cached);
+      return cached;
+    }
+    try {
+      const result = await callWorkoutsApi("load_program_templates", { profile_id: profile?.id || null });
+      const rows = readApiArray(result, "program_templates", ["templates"]);
+      const mapped = rows.map(mapProgramTemplateRowToProgram).filter(program => program.isUserCreated);
+      setCustomTrainingPrograms(mapped);
+      writeLocalProgramTemplates(mapped);
+      return mapped;
+    } catch (error) {
+      console.error("Program templates load error", error);
+      if (fallbackLocal) {
+        const cached = readLocalProgramTemplates();
+        setCustomTrainingPrograms(cached);
+        return cached;
+      }
+      throw error;
+    }
+  };
+
   const saveProgramBuilder = async (draft, options = {}) => {
     const { autosave = false, allowEmptyExercises = false, stayOpen = false } = options;
     const title = String(draft.title || "").trim();
@@ -9703,7 +9728,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const payload = buildProgramTemplatePayloadFromDraft({ ...draft, title, error: "" });
     const localProgram = buildLocalProgramFromPayload(payload);
     if (localProgram?.days?.length) applyProgramTemplateUpdate(localProgram);
-    setProgramSaving(true);
+    if (!autosave) setProgramSaving(true);
     try {
       let savedProgram = null;
       if (canUseWorkoutApi) {
@@ -9711,6 +9736,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         const result = await persistProgramTemplatePayload(action, payload);
         savedProgram = mapProgramTemplateRowToProgram(result.program_template || result.template);
       } else {
+        const localOnlyMessage = "Программа сохранена только на этом устройстве: нет активной синхронизации аккаунта. Войди в аккаунт или открой через Telegram и сохрани ещё раз.";
+        updateProgramBuilderDraft({ error: localOnlyMessage });
+        if (!autosave) throw new Error(localOnlyMessage);
+        console.warn("Program template saved locally only:", { canUseWorkoutApi, profileId: profile?.id, hasRemoteAuth: hasOnlyPumpRemoteAuth(telegramInitData) });
         savedProgram = localProgram;
       }
       if (savedProgram?.days?.length) {
@@ -9731,6 +9760,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             error: "",
           },
         } : prev);
+        if (canUseWorkoutApi) loadProgramTemplatesFromApi({ fallbackLocal: false }).catch(error => console.error("Program templates refresh error", error));
       }
       if (!autosave && !stayOpen) {
         setProgramBuilderSheet(null);
@@ -9740,11 +9770,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     } catch (error) {
       console.error("Program template save error", error);
       if (localProgram?.days?.length) applyProgramTemplateUpdate(localProgram);
-      const message = onlyPumpApiErrorMessage(error, "Не удалось синхронизировать программу. Локально она сохранена в доступных программах.");
-      if (!autosave) updateProgramBuilderDraft({ error: message });
+      const message = onlyPumpApiErrorMessage(error, "Не удалось синхронизировать программу. Локальная копия сохранена, но в аккаунте её пока нет.");
+      updateProgramBuilderDraft({ error: message });
       return localProgram;
     } finally {
-      setProgramSaving(false);
+      if (!autosave) setProgramSaving(false);
     }
   };
 
@@ -9801,6 +9831,23 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setProgramShareSheet(prev => prev?.program?.id === updatedProgram.id ? { ...prev, program: { ...prev.program, ...updatedProgram } } : prev);
   };
 
+  useEffect(() => {
+    const draft = programBuilderSheet?.draft;
+    if (!draft?.templateKey || !String(draft.title || "").trim()) return undefined;
+    const timeoutId = window.setTimeout(() => {
+      try {
+        applyProgramTemplateUpdate(buildLocalProgramFromDraft({
+          ...draft,
+          title: String(draft.title || "").trim(),
+          error: "",
+        }));
+      } catch (error) {
+        console.warn("Program builder local draft save error", error);
+      }
+    }, 150);
+    return () => window.clearTimeout(timeoutId);
+  }, [programBuilderSheet?.draft]);
+
   const saveProgramShareSettings = async () => {
     if (!programShareSheet?.program || programSaving) return;
     const { program, draft } = programShareSheet;
@@ -9820,6 +9867,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     try {
       if (canUseWorkoutApi) {
         const result = await callWorkoutsApi("share_program_template", {
+          profile_id: profile?.id || null,
           program_template_id: program.remoteProgramTemplateId || program.program_template_id || null,
           template_key: program.templateKey || program.template_key || program.id,
           visibility_scope: visibilityScope,
@@ -9827,6 +9875,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         });
         const updatedProgram = mapProgramTemplateRowToProgram(result.program_template || result.template || {});
         if (updatedProgram?.days?.length) applyProgramTemplateUpdate(updatedProgram);
+        loadProgramTemplatesFromApi({ fallbackLocal: false }).catch(error => console.error("Program templates refresh error", error));
       } else {
         applyProgramTemplateUpdate(optimisticProgram);
       }
@@ -10633,15 +10682,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   useEffect(() => {
     setCustomTrainingPrograms(readLocalProgramTemplates());
-    if (!canUseWorkoutApi) return;
+    if (!canUseWorkoutApi) return undefined;
     let cancelled = false;
-    callWorkoutsApi("load_program_templates", {})
-      .then(result => {
+    loadProgramTemplatesFromApi()
+      .then(mapped => {
         if (cancelled) return;
-        const rows = readApiArray(result, "program_templates", ["templates"]);
-        const mapped = rows.map(mapProgramTemplateRowToProgram).filter(program => program.isUserCreated);
-        setCustomTrainingPrograms(mapped);
-        writeLocalProgramTemplates(mapped);
+        if (Array.isArray(mapped)) setCustomTrainingPrograms(mapped);
       })
       .catch(error => {
         console.error("Program templates load error", error);
@@ -14391,14 +14437,25 @@ const toggleExerciseMeasurementSetting = (field) => {
       .filter(section => section.exercises.length);
   }, [exerciseSearch, selectedExerciseGroup, exerciseGroups, availableExerciseItems]);
 
+  const programBuilderListPreview = useMemo(() => {
+    const draft = programBuilderSheet?.draft;
+    if (!draft?.templateKey || !String(draft.title || "").trim()) return null;
+    try {
+      return buildLocalProgramFromDraft({ ...draft, title: String(draft.title || "").trim(), error: "" });
+    } catch (error) {
+      console.warn("Program builder list preview error", error);
+      return null;
+    }
+  }, [programBuilderSheet?.draft]);
+
   const visibleTrainingPrograms = useMemo(() => {
     const byId = new Map();
-    [...availableTrainingPrograms, ...customTrainingPrograms].forEach(program => {
+    [...availableTrainingPrograms, ...customTrainingPrograms, programBuilderListPreview].filter(Boolean).forEach(program => {
       if (!program?.id || byId.has(program.id)) return;
       byId.set(program.id, program);
     });
     return Array.from(byId.values());
-  }, [customTrainingPrograms]);
+  }, [customTrainingPrograms, programBuilderListPreview]);
 
   const canCreateProgramTemplates = profileHasAnyRole(profile, ["owner", "trainer"]);
   const programBuilderExerciseItems = useMemo(() => {
