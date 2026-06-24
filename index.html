@@ -849,7 +849,9 @@ function initTelegramWebApp() {
 }
 
 const telegramWebApp = initTelegramWebApp();
+const ONLYPUMP_FRONTEND_BUILD = "workouts-profile-restore-20260624-03";
 console.log("ONLYPUMP START");
+console.log("ONLYPUMP BUILD", ONLYPUMP_FRONTEND_BUILD);
 console.log("Telegram object exists", Boolean(telegramWebApp || window.Telegram?.WebApp));
 
 document.addEventListener("focusin", (event) => {
@@ -4485,26 +4487,43 @@ const buildWorkoutsTreeFromApiResponse = (result, fallbackDateKey = formatDateKe
   }, index, fallbackDateKey));
 };
 
-const getWorkoutsCacheKey = (profile) => {
-  const telegramId = profile?.telegram_id || profile?.telegramId || profile?.id || "local";
-  return `onlypump_workouts_cache_${telegramId}`;
+const getWorkoutsCacheKeys = (profile) => {
+  const keys = [
+    profile?.telegram_id,
+    profile?.telegramId,
+    profile?.id,
+    profile?.email ? `email_${String(profile.email).trim().toLowerCase()}` : "",
+    "local",
+  ].filter(Boolean).map((value) => `onlypump_workouts_cache_${String(value)}`);
+  return Array.from(new Set(keys));
 };
+
+const getWorkoutsCacheKey = (profile) => getWorkoutsCacheKeys(profile)[0] || "onlypump_workouts_cache_local";
 
 const readCachedWorkoutsForProfile = (profile) => {
   try {
-    const raw = localStorage.getItem(getWorkoutsCacheKey(profile));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    for (const key of getWorkoutsCacheKeys(profile)) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) {
+        return parsed;
+      }
+    }
+    return [];
   } catch (error) {
     console.log("Workouts cache error", error);
     return [];
   }
 };
 
-const writeCachedWorkoutsForProfile = (profile, workouts = []) => {
+const writeCachedWorkoutsForProfile = (profile, workouts = [], options = {}) => {
   try {
-    localStorage.setItem(getWorkoutsCacheKey(profile), JSON.stringify(workouts));
+    if (!Array.isArray(workouts)) return;
+    if (!workouts.length && options.skipEmpty) return;
+    getWorkoutsCacheKeys(profile).forEach((key) => {
+      localStorage.setItem(key, JSON.stringify(workouts));
+    });
   } catch (error) {
     console.log("Workouts cache error", error);
   }
@@ -11792,9 +11811,23 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const loadedWorkouts = buildWorkoutTreeFromApi(result);
     syncStaleLoadedWorkoutTotals(loadedWorkouts);
     const mergedWorkouts = mergeLoadedWorkoutsWithDirtyState(loadedWorkouts);
+    const fallbackWorkouts = Array.isArray(workoutsRef.current) ? workoutsRef.current : [];
+    if (!mergedWorkouts.length && fallbackWorkouts.length) {
+      const responseProfile = result?.profile ? normalizeProfileRecord(result.profile, profile || DEFAULT_PROFILE) : profile;
+      console.warn("Workouts load returned empty; preserving current workouts", {
+        requested_profile_id: profile?.id,
+        response_profile_id: responseProfile?.id,
+        current_count: fallbackWorkouts.length,
+      });
+      writeCachedWorkoutsForProfile(profile, fallbackWorkouts, { skipEmpty: true });
+      if (responseProfile?.id || responseProfile?.telegram_id) {
+        writeCachedWorkoutsForProfile(responseProfile, fallbackWorkouts, { skipEmpty: true });
+      }
+      return fallbackWorkouts;
+    }
     if (result?.profile) {
       const responseProfile = normalizeProfileRecord(result.profile, profile || DEFAULT_PROFILE);
-      writeCachedWorkoutsForProfile(responseProfile, mergedWorkouts);
+      writeCachedWorkoutsForProfile(responseProfile, mergedWorkouts, { skipEmpty: !mergedWorkouts.length });
       if (String(responseProfile.id || "") !== String(profile?.id || "")) {
         console.log("Workouts loaded for canonical profile", {
           requested_profile_id: profile?.id,
@@ -11803,7 +11836,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         });
       }
     }
-    writeCachedWorkoutsForProfile(profile, mergedWorkouts);
+    writeCachedWorkoutsForProfile(profile, mergedWorkouts, { skipEmpty: !mergedWorkouts.length });
     setWorkouts(mergedWorkouts);
     setSelectedWorkout(prev => {
       const targetSupabaseId = selectedSupabaseId || prev?.supabaseId;
@@ -22500,7 +22533,13 @@ function OnlyPumpPlatform() {
       const result = await callOnlyPumpWorkoutsApi(initData, "load", { profile_id: activeProfile.id });
       const loaded = buildWorkoutsTreeFromApiResponse(result, globalSelectedDateKey);
       const responseProfile = result?.profile ? normalizeProfileRecord(result.profile, activeProfile) : activeProfile;
-      console.log("Workouts loaded", loaded);
+      console.log("Workouts load result", {
+        requested_profile_id: activeProfile?.id,
+        response_profile_id: responseProfile?.id,
+        response_telegram_id: responseProfile?.telegram_id,
+        remote_count: loaded.length,
+        cache_count: cached.length,
+      });
       if (String(responseProfile?.id || "") !== String(activeProfile?.id || "")) {
         console.log("Workouts loaded for canonical profile", {
           requested_profile_id: activeProfile?.id,
@@ -22508,11 +22547,23 @@ function OnlyPumpPlatform() {
           response_telegram_id: responseProfile?.telegram_id,
         });
       }
-      setWorkouts(loaded);
-      writeCachedWorkoutsForProfile(activeProfile, loaded);
-      if (responseProfile?.id || responseProfile?.telegram_id) {
-        writeCachedWorkoutsForProfile(responseProfile, loaded);
+      if (!loaded.length && cached.length) {
+        console.warn("Workouts load returned empty; preserving cached workouts", {
+          requested_profile_id: activeProfile?.id,
+          response_profile_id: responseProfile?.id,
+          cached_count: cached.length,
+        });
+        if (responseProfile?.id || responseProfile?.telegram_id) {
+          writeCachedWorkoutsForProfile(responseProfile, cached, { skipEmpty: true });
+        }
+        return cached;
       }
+      setWorkouts(loaded);
+      writeCachedWorkoutsForProfile(activeProfile, loaded, { skipEmpty: !loaded.length });
+      if (responseProfile?.id || responseProfile?.telegram_id) {
+        writeCachedWorkoutsForProfile(responseProfile, loaded, { skipEmpty: !loaded.length });
+      }
+      console.log("Workouts loaded", loaded);
       return loaded;
     } catch (error) {
       console.error("Supabase workout error", { action: "load", error });
