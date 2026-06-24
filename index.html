@@ -1510,6 +1510,33 @@ async function callOnlyPumpProfileApi(initData, action, payload = {}) {
   return result;
 }
 
+function onlyPumpApiErrorMessage(error, fallback = "Не удалось выполнить действие.") {
+  const payload = error?.payload || error?.data || {};
+  const message = payload?.error || payload?.message || error?.message || (typeof error === "string" ? error : "");
+  return String(message || fallback);
+}
+
+function profileSaveErrorMessage(error, fallback = "Не удалось сохранить профиль. Попробуй еще раз.") {
+  const message = onlyPumpApiErrorMessage(error, fallback);
+  if (/nutrition_tracking_mode/i.test(message)) {
+    return `${message}. В Supabase не применена миграция nutrition_palms_mode или не обновился schema cache.`;
+  }
+  if (/auth_user_id|email|schema cache|column/i.test(message)) {
+    return `${message}. Проверь миграции profiles_web_auth/nutrition_palms_mode в Supabase и перезапусти Edge Function.`;
+  }
+  return message;
+}
+
+function isOnlyPumpSaveFailure(result) {
+  return result === false || result?.ok === false;
+}
+
+function onlyPumpSaveFailureMessage(result, fallback) {
+  if (result && typeof result === "object" && result.error) return String(result.error);
+  if (typeof window !== "undefined" && window.__ONLYPUMP_LAST_PROFILE_SAVE_ERROR__) return window.__ONLYPUMP_LAST_PROFILE_SAVE_ERROR__;
+  return fallback;
+}
+
 const profileGoalTypeLabels = {
   fat_loss: "Похудение",
   muscle_gain: "Набор мышц",
@@ -20323,7 +20350,7 @@ function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving }) {
     }
     setError("");
     const ok = await onComplete(profilePayloadFromDraft(draft));
-    if (ok === false) setError("Не удалось сохранить профиль. Проверь подключение и попробуй еще раз.");
+    if (isOnlyPumpSaveFailure(ok)) setError(onlyPumpSaveFailureMessage(ok, "Не удалось сохранить профиль. Проверь подключение и попробуй еще раз."));
   };
 
   return <div className="onboarding-screen onlypump-app-shell overflow-y-auto bg-black px-4 py-6 text-zinc-100" style={{ paddingTop: "calc(var(--onlypump-safe-top) + var(--onlypump-telegram-main-top-offset) + 1.5rem)", paddingBottom: "calc(var(--onlypump-safe-bottom) + 1.5rem)" }}>
@@ -20496,7 +20523,7 @@ function ProfileEditSheet({ profile, onClose, onSave, saving }) {
     setError("");
     const payload = profilePayloadFromDraft(draft);
     const ok = await onSave?.(payload);
-    if (ok === false) setError("Не удалось сохранить профиль. Попробуй еще раз.");
+    if (isOnlyPumpSaveFailure(ok)) setError(onlyPumpSaveFailureMessage(ok, "Не удалось сохранить профиль. Попробуй еще раз."));
     return ok;
   };
 
@@ -20505,7 +20532,7 @@ function ProfileEditSheet({ profile, onClose, onSave, saving }) {
     const manualConflict = getManualNutritionConflict(nextDraft);
     if (manualConflict) return;
     const ok = await onSave?.(profilePayloadFromDraft(nextDraft));
-    if (ok === false) setError("Не удалось сохранить дату рождения. Попробуй еще раз.");
+    if (isOnlyPumpSaveFailure(ok)) setError(onlyPumpSaveFailureMessage(ok, "Не удалось сохранить дату рождения. Попробуй еще раз."));
     else setError("");
   };
 
@@ -20523,7 +20550,7 @@ function ProfileEditSheet({ profile, onClose, onSave, saving }) {
       {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
       <div className="mt-6 flex gap-3">
         <Button onClick={onClose} className="flex-1 bg-white/8">Отмена</Button>
-        <Button onClick={async () => { const ok = await submit(); if (ok !== false) onClose(); }} disabled={saving} className="flex-1 bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+        <Button onClick={async () => { const ok = await submit(); if (!isOnlyPumpSaveFailure(ok)) onClose(); }} disabled={saving} className="flex-1 bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
       </div>
     </BottomSheetPanel>
   </div>;
@@ -20679,8 +20706,8 @@ function UnitSystemSheet({ profile = DEFAULT_PROFILE, saving = false, onClose, o
       default_weight_unit: unit,
     });
     const ok = await onSave?.(payload);
-    if (ok === false) {
-      setError("Не удалось сохранить единицы измерения. Попробуй еще раз.");
+    if (isOnlyPumpSaveFailure(ok)) {
+      setError(onlyPumpSaveFailureMessage(ok, "Не удалось сохранить единицы измерения. Попробуй еще раз."));
       return;
     }
     onClose();
@@ -22376,11 +22403,14 @@ function OnlyPumpPlatform() {
         const savedProfile = applyProfileState(result.profile, { updateNutritionDay: true, nutritionTargetsFromDate: targetsFromDate });
         clearCachedNutritionForProfileFromDate(savedProfile, targetsFromDate);
         setProfileStatus("verified");
+        if (typeof window !== "undefined") window.__ONLYPUMP_LAST_PROFILE_SAVE_ERROR__ = "";
         return Boolean(savedProfile);
       } catch (error) {
         console.error("onlypump-profile-api error:", error);
         if (action === "update_profile" || action === "complete_onboarding") console.log("PROFILE MEASUREMENT ERROR", error);
-        return false;
+        const message = profileSaveErrorMessage(error);
+        if (typeof window !== "undefined") window.__ONLYPUMP_LAST_PROFILE_SAVE_ERROR__ = message;
+        return { ok: false, error: message };
       } finally {
         setProfileSaving(false);
       }
