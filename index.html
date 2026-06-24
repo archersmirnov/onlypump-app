@@ -23331,22 +23331,38 @@ function OnlyPumpPlatform() {
     activeRef.current = active;
   }, [active]);
 
-  useEffect(() => {
-    navigationStackRef.current = navigationStack;
-  }, [navigationStack]);
+	  useEffect(() => {
+	    navigationStackRef.current = navigationStack;
+	  }, [navigationStack]);
 
-  const setActive = useCallback((target, options = {}) => {
-    setActiveState(prev => {
-      const next = typeof target === "function" ? target(prev) : target;
-      if (!next || next === prev) return prev;
-      if (next === "home") {
-        setNavigationStack([]);
-      } else if (!options.replace) {
-        setNavigationStack(stack => [...stack, prev].slice(-24));
-      }
-      return next;
-    });
-  }, []);
+	  const scrollMainScreenToTop = useCallback(() => {
+	    if (typeof window === "undefined" || typeof document === "undefined") return;
+	    const reset = () => {
+	      const scrollNode = document.querySelector(".onlypump-main-scroll");
+	      if (!scrollNode) return;
+	      scrollNode.scrollTop = 0;
+	      scrollNode.scrollLeft = 0;
+	    };
+	    reset();
+	    window.requestAnimationFrame?.(() => {
+	      reset();
+	      window.requestAnimationFrame?.(reset);
+	    });
+	  }, []);
+
+	  const setActive = useCallback((target, options = {}) => {
+	    setActiveState(prev => {
+	      const next = typeof target === "function" ? target(prev) : target;
+	      if (!next || next === prev) return prev;
+	      if (!options.preserveScroll) scrollMainScreenToTop();
+	      if (next === "home") {
+	        setNavigationStack([]);
+	      } else if (!options.replace) {
+	        setNavigationStack(stack => [...stack, prev].slice(-24));
+	      }
+	      return next;
+	    });
+	  }, [scrollMainScreenToTop]);
 
   const openAnalyticsType = useCallback((type, payload = {}) => {
     if (type !== "personal_tracker") {
