@@ -5692,6 +5692,18 @@ function markOnlyPumpProfileWelcomeSeen(profile = DEFAULT_PROFILE) {
   } catch (error) {}
 }
 
+function getTourDomFlag(selector) {
+  if (typeof document === "undefined" || !selector) return false;
+  try {
+    return Array.from(document.querySelectorAll(selector)).some(element => {
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    });
+  } catch (error) {
+    return false;
+  }
+}
+
 function getTourCardStyle(targetRect, compact = false, step = {}) {
   const viewportWidth = window.innerWidth || 390;
   const viewportHeight = window.innerHeight || 740;
@@ -23986,12 +23998,12 @@ function OnlyPumpPlatform() {
     homeWidgetCount: normalizeHomeWidgetsOrder(homeWidgets, []).length,
     nutritionFoodCount: (nutritionDay?.meals || []).reduce((sum, meal) => sum + (meal.items || []).length, 0),
     workoutCount: workouts.length,
-    workoutTitlePromptOpen: Boolean(workoutTitlePrompt),
-    workoutTypePickerOpen: Boolean(workoutTypePicker),
+    workoutTitlePromptOpen: getTourDomFlag('[data-tour="workouts-title-input"]'),
+    workoutTypePickerOpen: getTourDomFlag('[data-tour="workouts-type-strength"]'),
     workoutExerciseCount: workouts.reduce((sum, workout) => sum + (workout.exercises || []).length, 0),
     workoutSetCount: workouts.reduce((sum, workout) => sum + (workout.exercises || []).reduce((exerciseSum, exercise) => exerciseSum + (exercise.sets || []).length, 0), 0),
     measurementSignature: JSON.stringify(measurements || {}),
-  }), [homeWidgets, measurements, nutritionDay, workoutTitlePrompt, workoutTypePicker, workouts]);
+  }), [homeWidgets, measurements, nutritionDay, workouts]);
 
   const awardTourXp = useCallback((awardId) => {
     const award = ONLYPUMP_TOUR_XP_AWARDS[awardId];
@@ -24217,16 +24229,25 @@ function OnlyPumpPlatform() {
   useEffect(() => {
     if (!tourState.active || !activeTourStep?.taskId) return;
     if (!activeTourStep.completion || activeTourStep.completion === "target-click") return;
-    if (!isTourTaskComplete(activeTourStep)) return;
-    const timerId = window.setTimeout(() => nextTourStep(), 360);
-    return () => window.clearTimeout(timerId);
+    let done = false;
+    let timerId = null;
+    const checkCompletion = () => {
+      if (done || !isTourTaskComplete(activeTourStep)) return;
+      done = true;
+      timerId = window.setTimeout(() => nextTourStep(), 360);
+    };
+    checkCompletion();
+    const intervalId = window.setInterval(checkCompletion, 220);
+    return () => {
+      done = true;
+      window.clearInterval(intervalId);
+      if (timerId) window.clearTimeout(timerId);
+    };
   }, [
     tourState.active,
     tourState.screen,
     tourState.stepIndex,
     activeTourStep?.taskId,
-    Boolean(workoutTitlePrompt),
-    Boolean(workoutTypePicker),
     homeWidgets.length,
     workouts.length,
     JSON.stringify(workouts.map(workout => ({
