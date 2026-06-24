@@ -21253,21 +21253,33 @@ const onboardingQuizSteps = [
   },
 ];
 
+const getQuizRulerPrecision = (step = 1) => {
+  const stepText = String(step);
+  return stepText.includes(".") ? stepText.split(".")[1].length : 0;
+};
+
+const formatQuizRulerValue = (value, step = 1) => {
+  const precision = getQuizRulerPrecision(step);
+  return precision ? Number(value).toFixed(precision) : String(value);
+};
+
 const buildQuizRulerValues = (min, max, step = 1) => {
+  const precision = getQuizRulerPrecision(step);
   const length = Math.max(1, Math.floor((max - min) / step) + 1);
-  return Array.from({ length }, (_, index) => min + index * step);
+  return Array.from({ length }, (_, index) => Number((min + index * step).toFixed(precision)));
 };
 
 const getQuizRulerValue = (value, fallback, min, max, step = 1) => {
+  const precision = getQuizRulerPrecision(step);
   const raw = profileNumber(value, fallback);
-  const rounded = Math.round(raw / step) * step;
+  const rounded = Number((Math.round(raw / step) * step).toFixed(precision));
   return Math.max(min, Math.min(max, rounded));
 };
 
-function QuizHorizontalRuler({ label, value, onChange, min = 35, max = 200, fallback = 70, unit = "кг" }) {
-  const itemWidth = 42;
-  const values = useMemo(() => buildQuizRulerValues(min, max), [min, max]);
-  const selectedValue = getQuizRulerValue(value, fallback, min, max);
+function QuizHorizontalRuler({ label, value, onChange, min = 35, max = 200, fallback = 70, unit = "кг", step = 0.1 }) {
+  const itemWidth = 16;
+  const values = useMemo(() => buildQuizRulerValues(min, max, step), [min, max, step]);
+  const selectedValue = getQuizRulerValue(value, fallback, min, max, step);
   const selectedIndex = Math.max(0, values.findIndex(item => item === selectedValue));
   const scrollRef = useRef(null);
   const settleTimerRef = useRef(null);
@@ -21303,7 +21315,7 @@ function QuizHorizontalRuler({ label, value, onChange, min = 35, max = 200, fall
   return <div className="rounded-[2rem] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-5 shadow-2xl shadow-black/10">
     <p className="text-center text-xs font-black uppercase tracking-[0.18em] text-[var(--onlypump-muted)]">{label}</p>
     <div className="mt-4 flex items-end justify-center gap-2 text-red-500">
-      <span className="text-6xl font-black leading-none tracking-[-0.06em]">{selectedValue}</span>
+      <span className="text-6xl font-black leading-none tracking-[-0.06em]">{formatQuizRulerValue(selectedValue, step)}</span>
       <span className="pb-2 text-2xl font-black">{unit}</span>
     </div>
     <div className="relative mt-5 h-28 overflow-hidden">
@@ -21321,7 +21333,9 @@ function QuizHorizontalRuler({ label, value, onChange, min = 35, max = 200, fall
         <div aria-hidden="true" style={{ flex: `0 0 calc(50% - ${itemWidth / 2}px)` }} />
         {values.map((item, index) => {
           const selected = item === selectedValue;
-          const major = item % 5 === 0;
+          const wholeValue = Math.abs(item - Math.round(item)) < 0.0001;
+          const major = wholeValue && Math.round(item) % 5 === 0;
+          const medium = wholeValue && !major;
           return <button
             key={item}
             type="button"
@@ -21332,8 +21346,8 @@ function QuizHorizontalRuler({ label, value, onChange, min = 35, max = 200, fall
               scrollToIndex(index, "smooth");
             }}
           >
-            <span className={`text-sm font-black transition ${selected ? "scale-110 text-red-500" : major ? "text-[var(--onlypump-text)]" : "text-[var(--onlypump-faint)]"}`}>{item}</span>
-            <span className={`w-px rounded-full transition ${selected ? "h-16 bg-red-500" : major ? "h-11 bg-[var(--onlypump-muted)]" : "h-7 bg-zinc-500/60"}`} />
+            <span className={`h-5 text-sm font-black transition ${selected ? "scale-110 text-red-500" : major ? "text-[var(--onlypump-text)]" : "text-[var(--onlypump-faint)]"}`}>{wholeValue ? Math.round(item) : ""}</span>
+            <span className={`w-px rounded-full transition ${selected ? "h-16 bg-red-500" : major ? "h-11 bg-[var(--onlypump-muted)]" : medium ? "h-9 bg-zinc-500/70" : "h-7 bg-zinc-500/60"}`} />
           </button>;
         })}
         <div aria-hidden="true" style={{ flex: `0 0 calc(50% - ${itemWidth / 2}px)` }} />
@@ -21342,10 +21356,10 @@ function QuizHorizontalRuler({ label, value, onChange, min = 35, max = 200, fall
   </div>;
 }
 
-function QuizVerticalRuler({ label, value, onChange, min = 120, max = 220, fallback = 170, unit = "см" }) {
-  const itemHeight = 38;
-  const values = useMemo(() => buildQuizRulerValues(min, max), [min, max]);
-  const selectedValue = getQuizRulerValue(value, fallback, min, max);
+function QuizVerticalRuler({ label, value, onChange, min = 120, max = 220, fallback = 170, unit = "см", step = 0.1 }) {
+  const itemHeight = 14;
+  const values = useMemo(() => buildQuizRulerValues(min, max, step), [min, max, step]);
+  const selectedValue = getQuizRulerValue(value, fallback, min, max, step);
   const selectedIndex = Math.max(0, values.findIndex(item => item === selectedValue));
   const scrollRef = useRef(null);
   const settleTimerRef = useRef(null);
@@ -21381,10 +21395,10 @@ function QuizVerticalRuler({ label, value, onChange, min = 120, max = 220, fallb
   return <div className="rounded-[2rem] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-5 shadow-2xl shadow-black/10">
     <p className="text-center text-xs font-black uppercase tracking-[0.18em] text-[var(--onlypump-muted)]">{label}</p>
     <div className="mt-4 flex items-end justify-center gap-2 text-red-500">
-      <span className="text-6xl font-black leading-none tracking-[-0.06em]">{selectedValue}</span>
+      <span className="text-6xl font-black leading-none tracking-[-0.06em]">{formatQuizRulerValue(selectedValue, step)}</span>
       <span className="pb-2 text-2xl font-black">{unit}</span>
     </div>
-    <div className="relative mx-auto mt-5 h-72 max-w-[260px] overflow-hidden">
+    <div className="relative mx-auto mt-4 h-56 max-w-[260px] overflow-hidden">
       <div className="pointer-events-none absolute left-8 right-8 top-1/2 z-20 h-1 -translate-y-1/2 rounded-full bg-red-500 shadow-[0_0_18px_rgba(239,68,68,0.35)]" />
       <div
         ref={scrollRef}
@@ -21399,7 +21413,9 @@ function QuizVerticalRuler({ label, value, onChange, min = 120, max = 220, fallb
         <div aria-hidden="true" style={{ height: `calc(50% - ${itemHeight / 2}px)` }} />
         {values.map((item, index) => {
           const selected = item === selectedValue;
-          const major = item % 5 === 0;
+          const wholeValue = Math.abs(item - Math.round(item)) < 0.0001;
+          const major = wholeValue && Math.round(item) % 5 === 0;
+          const medium = wholeValue && !major;
           return <button
             key={item}
             type="button"
@@ -21410,9 +21426,9 @@ function QuizVerticalRuler({ label, value, onChange, min = 120, max = 220, fallb
               scrollToIndex(index, "smooth");
             }}
           >
-            <span className={`justify-self-end rounded-full transition ${selected ? "h-1 w-12 bg-red-500" : major ? "h-px w-9 bg-[var(--onlypump-muted)]" : "h-px w-5 bg-zinc-500/60"}`} />
-            <span className={`text-base font-black transition ${selected ? "scale-110 text-red-500" : major ? "text-[var(--onlypump-text)]" : "text-[var(--onlypump-faint)]"}`}>{item}</span>
-            <span className={`justify-self-start rounded-full transition ${selected ? "h-1 w-12 bg-red-500" : major ? "h-px w-9 bg-[var(--onlypump-muted)]" : "h-px w-5 bg-zinc-500/60"}`} />
+            <span className={`justify-self-end rounded-full transition ${selected ? "h-1 w-12 bg-red-500" : major ? "h-px w-9 bg-[var(--onlypump-muted)]" : medium ? "h-px w-7 bg-zinc-500/70" : "h-px w-5 bg-zinc-500/60"}`} />
+            <span className={`text-base font-black transition ${selected ? "scale-110 text-red-500" : major ? "text-[var(--onlypump-text)]" : "text-[var(--onlypump-faint)]"}`}>{wholeValue ? Math.round(item) : ""}</span>
+            <span className={`justify-self-start rounded-full transition ${selected ? "h-1 w-12 bg-red-500" : major ? "h-px w-9 bg-[var(--onlypump-muted)]" : medium ? "h-px w-7 bg-zinc-500/70" : "h-px w-5 bg-zinc-500/60"}`} />
           </button>;
         })}
         <div aria-hidden="true" style={{ height: `calc(50% - ${itemHeight / 2}px)` }} />
@@ -21595,11 +21611,9 @@ function OnboardingScreen({ profile = DEFAULT_PROFILE, onComplete, saving, onCan
     </div>;
     if (step.id === "height") return <div className="space-y-4">
       <QuizVerticalRuler label="Рост" value={draft.height_cm} onChange={(value) => set("height_cm", value)} fallback={170} unit="см"/>
-      <p className="rounded-2xl border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)] p-3 text-sm leading-6 text-[var(--onlypump-muted)]">Стартовое значение 170 см. Прокрути шкалу вверх или вниз, чтобы выбрать свой рост.</p>
     </div>;
     if (step.id === "weight") return <div className="space-y-4">
       <QuizHorizontalRuler label="Вес" value={draft.weight_kg} onChange={(value) => set("weight_kg", value)} fallback={70} unit="кг"/>
-      <p className="rounded-2xl border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)] p-3 text-sm leading-6 text-[var(--onlypump-muted)]">Стартовое значение 70 кг. Прокрути линейку вправо или влево, чтобы выбрать свой вес.</p>
     </div>;
     if (step.id === "body_start") return <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
