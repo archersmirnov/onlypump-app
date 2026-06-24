@@ -4939,7 +4939,7 @@ const PUMP_XP_RULE_GROUPS = [
       "Анкета: полное заполнение с замерами: +100 PUMP XP",
       "За анкету учитывается только лучшая награда, максимум 100 PUMP XP один раз",
       "Прошёл обучение на главной: +5 PUMP XP",
-      "Прошёл обучение на всех экранах: +10 PUMP XP",
+      "Прошёл обучение на всех доступных экранах: +10 PUMP XP",
       "Баллы за обучение начисляются только один раз",
       "Повторное обучение из личного кабинета PUMP XP не дублирует",
     ],
@@ -5461,6 +5461,8 @@ const emptyPumpXpSummary = () => ({
 });
 
 const onlyPumpTourScreens = ["home", "nutrition", "workouts", "progress", "analytics", "education", "lectures", "calculators", "community", "profile"];
+const onlyPumpLockedTourScreens = ["education", "lectures", "community"];
+const onlyPumpAvailableTourScreens = onlyPumpTourScreens.filter(screen => !onlyPumpLockedTourScreens.includes(screen));
 
 const onlyPumpTourDefinitions = {
   home: [
@@ -5487,14 +5489,13 @@ const onlyPumpTourDefinitions = {
     { target: '[data-tour="workouts-calendar"]', title: "Неделя тренировок", text: "Календарь помогает быстро перейти к тренировкам выбранного дня." },
     { target: '[data-tour="workouts-add"]', title: "Открой создание", text: "Нажми плюс, чтобы открыть меню новой тренировки.", taskId: "workouts-open-add", completion: "target-click", task: "Нажми плюс тренировок." },
     { target: '[data-tour="workouts-start-empty"]', title: "Начни пустую", text: "Выбери пустую тренировку. Далее можно оставить стандартное название или ввести своё.", taskId: "workouts-pick-empty", completion: "target-click", task: "Нажми «Начать пустую тренировку»." },
-    { target: '[data-tour="workouts-title-input"]', title: "Назови тренировку", text: "Можно оставить поле пустым: тогда приложение само поставит название «Новая тренировка»." },
-    { target: '[data-tour="workouts-title-confirm"]', title: "Подтверди тренировку", text: "Подтверди название и переходи к выбору типа тренировки.", taskId: "workouts-confirm-title", completion: "target-click", task: "Нажми «Продолжить»." },
-    { target: '[data-tour="workouts-type-strength"]', title: "Выбери тип", text: "Для первого задания выбери силовую тренировку: в ней есть упражнения, подходы, вес и повторы.", taskId: "workouts-pick-strength-type", completion: "workout-created", task: "Нажми «Силовая»." },
-    { target: '[data-tour="workouts-add-exercise"]', title: "Добавь упражнение", text: "Открой базу упражнений из экрана тренировки.", taskId: "workouts-open-exercise-base", completion: "target-click", task: "Нажми плюс упражнения." },
-    { target: '[data-tour="workouts-exercise-option"]', title: "Выбери упражнение", text: "Отметь любое упражнение из базы. Оно добавится в список выбранных.", taskId: "workouts-pick-exercise", completion: "target-click", task: "Выбери упражнение." },
-    { target: '[data-tour="workouts-add-selected-exercises"]', title: "Подтверди добавление", text: "Теперь добавь выбранное упражнение в тренировку. Я продолжу, когда оно появится на экране.", taskId: "workouts-add-exercise-to-workout", completion: "workout-exercise-added", task: "Нажми «Добавить упражнение»." },
-    { target: '[data-tour="workouts-open-exercise"]', title: "Открой упражнение", text: "Нажми на добавленное упражнение, чтобы перейти к подходам.", taskId: "workouts-open-exercise", completion: "target-click", task: "Открой упражнение." },
-    { target: '[data-tour="workouts-add-set"]', title: "Добавь подход", text: "Открой упражнение и добавь рабочий подход. Я продолжу, когда подход появится в тренировке.", taskId: "workouts-add-set", completion: "workout-set-added", task: "Добавь подход." },
+    { target: '[data-tour="workouts-title-input"]', title: "Назови тренировку", text: "Можно оставить поле пустым: тогда приложение само поставит название «Новая тренировка».", taskId: "workouts-confirm-title", completion: "workout-title-confirmed", task: "Введи название и нажми «Продолжить».", cardPlacement: "top-center", disableAutoScroll: true },
+    { target: '[data-tour="workouts-type-strength"]', title: "Выбери тип", text: "Для первого задания выбери силовую тренировку: в ней есть упражнения, подходы, вес и повторы.", taskId: "workouts-pick-strength-type", completion: "workout-created", task: "Нажми «Силовая».", cardPlacement: "top-center", disableAutoScroll: true },
+    { target: '[data-tour="workouts-add-exercise"]', title: "Добавь упражнение", text: "Открой базу упражнений из экрана тренировки.", taskId: "workouts-open-exercise-base", completion: "target-click", task: "Нажми плюс упражнения.", cardPlacement: "top-center" },
+    { target: '[data-tour="workouts-exercise-option"]', title: "Выбери упражнение", text: "Отметь любое упражнение из базы. Оно добавится в список выбранных.", taskId: "workouts-pick-exercise", completion: "target-click", task: "Выбери упражнение.", cardPlacement: "top-center", disableAutoScroll: true },
+    { target: '[data-tour="workouts-add-selected-exercises"]', title: "Подтверди добавление", text: "Теперь добавь выбранное упражнение в тренировку. Я продолжу, когда оно появится на экране.", taskId: "workouts-add-exercise-to-workout", completion: "workout-exercise-added", task: "Нажми «Добавить упражнение».", cardPlacement: "top-center", disableAutoScroll: true },
+    { target: '[data-tour="workouts-open-exercise"]', title: "Открой упражнение", text: "Нажми на добавленное упражнение, чтобы перейти к подходам.", taskId: "workouts-open-exercise", completion: "target-click", task: "Открой упражнение.", cardPlacement: "top-center" },
+    { target: '[data-tour="workouts-add-set"]', title: "Добавь подход", text: "Открой упражнение и добавь рабочий подход. Я продолжу, когда подход появится в тренировке.", taskId: "workouts-add-set", completion: "workout-set-added", task: "Добавь подход.", cardPlacement: "top-center" },
     { title: "Готово", text: "Теперь ты умеешь создавать тренировку и добавлять подходы. Дальше создай остальные упражнения и выполни тренировку." },
   ],
   progress: [
@@ -5691,11 +5692,19 @@ function markOnlyPumpProfileWelcomeSeen(profile = DEFAULT_PROFILE) {
   } catch (error) {}
 }
 
-function getTourCardStyle(targetRect, compact = false) {
+function getTourCardStyle(targetRect, compact = false, step = {}) {
   const viewportWidth = window.innerWidth || 390;
   const viewportHeight = window.innerHeight || 740;
   const margin = 12;
   const width = Math.min(compact ? 228 : 340, viewportWidth - margin * 2);
+  if (step?.cardPlacement === "top-center") {
+    return {
+      left: "50%",
+      top: "calc(env(safe-area-inset-top, 0px) + var(--onlypump-telegram-main-top-offset, 0px) + 72px)",
+      transform: "translateX(-50%)",
+      width,
+    };
+  }
   if (!targetRect) {
     if (compact) {
       return {
@@ -5754,7 +5763,9 @@ function InteractiveTourOverlay({ step, stepIndex, totalSteps, onNext, onSkip, o
         return;
       }
       targetElementRef.current = target;
-      try { target.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" }); } catch (error) {}
+      if (!step.disableAutoScroll) {
+        try { target.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" }); } catch (error) {}
+      }
       const rect = target.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) {
         targetElementRef.current = null;
@@ -5810,7 +5821,7 @@ function InteractiveTourOverlay({ step, stepIndex, totalSteps, onNext, onSkip, o
   const isLast = stepIndex >= totalSteps - 1;
   const isStateTask = Boolean(step.taskId && step.completion && step.completion !== "target-click");
   const isClickTask = Boolean(step.taskId && step.completion === "target-click");
-  const cardStyle = getTourCardStyle(targetRect, isStateTask);
+  const cardStyle = getTourCardStyle(targetRect, isStateTask, step);
   const showBodyText = Boolean(step.text && !isStateTask);
   const handleNextClick = () => {
     if (isClickTask) {
@@ -5905,8 +5916,9 @@ function TutorialPickerSheet({ profile = DEFAULT_PROFILE, onClose, onStartTour }
   const navMetaById = Object.fromEntries(nav.map(item => [item.id, item]));
   const completedScreens = getProfileTutorialCompletedScreens(profile);
   const skippedScreens = getProfileTutorialSkippedScreens(profile);
-  const fullCompleted = Boolean(profile?.tutorial_completed_at) || onlyPumpTourScreens.every(screen => completedScreens.includes(screen));
+  const fullCompleted = Boolean(profile?.tutorial_completed_at) || onlyPumpAvailableTourScreens.every(screen => completedScreens.includes(screen));
   const startTour = (screen, options = {}) => {
+    if (onlyPumpLockedTourScreens.includes(screen)) return;
     onClose?.();
     onStartTour?.(screen, options);
   };
@@ -5914,9 +5926,11 @@ function TutorialPickerSheet({ profile = DEFAULT_PROFILE, onClose, onStartTour }
     .map(screen => {
       const steps = onlyPumpTourDefinitions[screen] || [];
       const meta = navMetaById[screen] || { id: screen, icon: Play, label: screen };
+      const locked = onlyPumpLockedTourScreens.includes(screen);
       return {
         screen,
         steps,
+        locked,
         taskCount: steps.filter(step => step.taskId).length,
         Icon: meta.icon || Play,
         label: meta.label || screen,
@@ -5940,31 +5954,33 @@ function TutorialPickerSheet({ profile = DEFAULT_PROFILE, onClose, onStartTour }
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-500 text-black"><Route size={20}/></span>
             <div className="min-w-0">
               <p className="text-base font-black">Полное обучение</p>
-              <p className="mt-1 text-xs text-zinc-500">Все экраны по очереди · +10 PUMP XP один раз</p>
+              <p className="mt-1 text-xs text-zinc-500">Доступные экраны по очереди · +10 PUMP XP один раз</p>
             </div>
           </div>
           <span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${fullCompleted ? "bg-emerald-500/10 text-emerald-300" : "bg-white/8 text-zinc-400"}`}>{fullCompleted ? "пройдено" : "не пройдено"}</span>
           <ChevronRight className="shrink-0 text-red-300" size={18}/>
         </button>
-        {screenOptions.map(({ screen, steps, taskCount, Icon, label }) => {
+        {screenOptions.map(({ screen, steps, taskCount, Icon, label, locked }) => {
           const completed = completedScreens.includes(screen);
           const skipped = !completed && skippedScreens.includes(screen);
-          const statusLabel = completed ? "пройдено" : skipped ? "пропущено" : "не пройдено";
-          const statusClass = completed
+          const statusLabel = locked ? "закрыто" : completed ? "пройдено" : skipped ? "пропущено" : "не пройдено";
+          const statusClass = locked
+            ? "bg-white/8 text-zinc-500"
+            : completed
             ? "bg-emerald-500/10 text-emerald-300"
             : skipped
               ? "bg-amber-500/10 text-amber-300"
               : "bg-white/8 text-zinc-400";
-          return <button key={screen} type="button" onClick={() => startTour(screen, { force: true, full: false })} className="flex w-full items-center justify-between gap-4 rounded-3xl bg-white/[0.04] p-4 text-left transition active:scale-[0.99] hover:bg-white/[0.07]">
+          return <button key={screen} type="button" disabled={locked} onClick={() => startTour(screen, { force: true, full: false })} className={`flex w-full items-center justify-between gap-4 rounded-3xl bg-white/[0.04] p-4 text-left transition ${locked ? "cursor-not-allowed opacity-60" : "active:scale-[0.99] hover:bg-white/[0.07]"}`}>
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06] text-red-300"><Icon size={20}/></span>
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06] text-red-300">{locked ? <Lock size={20}/> : <Icon size={20}/>}</span>
             <div className="min-w-0">
               <p className="break-words text-base font-black">{label}</p>
-              <p className="mt-1 text-xs text-zinc-500">{steps.length} шагов · {taskCount ? `${taskCount} заданий` : "без задания"}</p>
+              <p className="mt-1 text-xs text-zinc-500">{locked ? "Пока закрыто" : `${steps.length} шагов · ${taskCount ? `${taskCount} заданий` : "без задания"}`}</p>
             </div>
           </div>
           <span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${statusClass}`}>{statusLabel}</span>
-          <ChevronRight className="shrink-0 text-zinc-500" size={18}/>
+          {locked ? <Lock className="shrink-0 text-zinc-600" size={16}/> : <ChevronRight className="shrink-0 text-zinc-500" size={18}/>}
         </button>;
         })}
       </div>
@@ -8817,6 +8833,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [programSaving, setProgramSaving] = useState(false);
   const programBuilderAutosaveRef = useRef(null);
   const programBuilderLastAutosaveRef = useRef("");
+  const programBuilderSaveInFlightRef = useRef(null);
+  const programBuilderQueuedAutosaveRef = useRef(null);
   const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
   const [isExerciseBaseOpen, setIsExerciseBaseOpen] = useState(false);
   const [exerciseBaseMode, setExerciseBaseMode] = useState("view");
@@ -9254,6 +9272,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           name: exercise.exercise_name || exercise.exerciseName || exercise.name,
           muscleGroup: exercise.muscle_group || exercise.muscleGroup,
           measurementMode: exercise.measurement_mode || exercise.measurementMode,
+          sourceExerciseId: exercise.exercise_library_id || exercise.exerciseLibraryId,
+          doubleCountInStatistics: exercise.double_count_in_statistics ?? exercise.doubleCountInStatistics ?? exercise.double_weight_in_stats ?? exercise.doubleWeightInStats,
         });
         const targetSets = Math.max(1, Number(exercise.target_sets || exercise.targetSets || 3));
         const repMin = Math.max(1, Number(exercise.rep_min || exercise.repMin || 8));
@@ -9273,6 +9293,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           targetWeight,
           targetReps,
           measurementMode: exercise.measurement_mode || source.measurementMode,
+          sourceExerciseId: source.sourceExerciseId,
+          doubleCountInStatistics: Boolean(exercise.double_count_in_statistics ?? exercise.doubleCountInStatistics ?? source.doubleCountInStatistics),
+          doubleWeightInStats: Boolean(exercise.double_weight_in_stats ?? exercise.doubleWeightInStats ?? exercise.double_count_in_statistics ?? source.doubleCountInStatistics),
           progressionMode: exercise.progression_mode || exercise.progressionMode || row.progression_type || "double_progression",
           progressionWeightStep: Number(exercise.progression_weight_step || exercise.progressionWeightStep || 2.5),
           progressionRepStep: Number(exercise.progression_rep_step || exercise.progressionRepStep || 1),
@@ -9461,6 +9484,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           primaryMuscles: exercise.primaryMuscles || exercise.primary_muscles || (exercise.muscleGroup ? [exercise.muscleGroup] : []),
           secondaryMuscles: exercise.secondaryMuscles || exercise.secondary_muscles || [],
           measurementMode: exercise.measurementMode || exercise.measurement_mode || "weight_reps",
+          sourceExerciseId: onlypumpUuidPattern.test(String(exercise.sourceExerciseId || exercise.exercise_library_id || exercise.exerciseLibraryId || "")) ? (exercise.sourceExerciseId || exercise.exercise_library_id || exercise.exerciseLibraryId) : null,
+          doubleCountInStatistics: Boolean(exercise.doubleCountInStatistics ?? exercise.double_count_in_statistics ?? exercise.doubleWeightInStats ?? exercise.double_weight_in_stats ?? false),
+          doubleWeightInStats: Boolean(exercise.doubleWeightInStats ?? exercise.double_weight_in_stats ?? exercise.doubleCountInStatistics ?? exercise.double_count_in_statistics ?? false),
           targetSets: Number(exercise.targetSets || exercise.target_sets || getProgramExerciseSetsCount(exercise) || 3),
           repMin: Number(exercise.repMin || exercise.rep_min || 8),
           repMax: Number(exercise.repMax || exercise.rep_max || 12),
@@ -9551,10 +9577,45 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return sum + (day.exercises || []).reduce((exerciseSum, exercise) => exerciseSum + Math.max(1, Number(exercise.targetSets || 3)), 0);
   }, 0);
 
+  const buildProgramBuilderExerciseFromSource = (source, draft, groupAlternatives = [], existing = null) => {
+    const sourceExerciseId = onlypumpUuidPattern.test(String(source.sourceExerciseId || source.id || "")) ? (source.sourceExerciseId || source.id) : null;
+    const isStrength = normalizeExerciseCategory(source.exerciseCategory) === "strength";
+    return {
+      id: existing?.id || `builder-exercise-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      name: source.name,
+      muscleGroup: source.muscleGroup,
+      primaryMuscles: source.primaryMuscles,
+      secondaryMuscles: source.secondaryMuscles,
+      sourceExerciseId,
+      exerciseCategory: source.exerciseCategory,
+      measurementMode: source.measurementMode,
+      doubleCountInStatistics: Boolean(existing?.doubleCountInStatistics ?? source.doubleCountInStatistics ?? source.double_count_in_statistics ?? false),
+      doubleWeightInStats: Boolean(existing?.doubleWeightInStats ?? source.doubleWeightInStats ?? source.double_weight_in_stats ?? source.doubleCountInStatistics ?? false),
+      targetSets: existing?.targetSets ?? (isStrength ? 3 : 1),
+      repMin: existing?.repMin ?? 8,
+      repMax: existing?.repMax ?? 12,
+      targetWeight: existing?.targetWeight ?? 0,
+      progressionWeightStep: existing?.progressionWeightStep ?? (/ног|спин|ягод|груд/i.test(source.muscleGroup) ? 5 : 2.5),
+      progressionRepStep: existing?.progressionRepStep ?? 1,
+      progressionMode: existing?.progressionMode || draft.progressionType,
+      deloadWeightSteps: existing?.deloadWeightSteps ?? 1,
+      regressionThresholdSessions: existing?.regressionThresholdSessions ?? 2,
+      restSeconds: existing?.restSeconds ?? 120,
+      restAfterSeconds: existing?.restAfterSeconds ?? 0,
+      rir: existing?.rir ?? "",
+      rpe: existing?.rpe ?? "",
+      tempo: existing?.tempo ?? "",
+      note: existing?.note ?? "",
+      alternatives: existing?.alternatives?.length ? existing.alternatives : groupAlternatives,
+      alternativesText: existing?.alternativesText,
+    };
+  };
+
   const addExerciseToProgramBuilder = (exerciseItem) => {
     if (!programBuilderSheet || !programBuilderExercisePicker) return;
     const source = normalizeExerciseSourceItem(exerciseItem);
     const dayIndex = Number(programBuilderExercisePicker.dayIndex || 0);
+    const replaceExerciseId = programBuilderExercisePicker.replaceExerciseId || null;
     const groupAlternatives = availableExerciseItems
       .filter(item => (item.muscleGroup || item.group) === source.muscleGroup && item.name !== source.name)
       .slice(0, 4)
@@ -9563,30 +9624,16 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       ...draft,
       days: (draft.days || []).map((day, index) => {
         if (index !== dayIndex) return day;
-        const exercise = {
-          id: `builder-exercise-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          name: source.name,
-          muscleGroup: source.muscleGroup,
-          primaryMuscles: source.primaryMuscles,
-          secondaryMuscles: source.secondaryMuscles,
-          measurementMode: source.measurementMode,
-          targetSets: normalizeExerciseCategory(source.exerciseCategory) === "strength" ? 3 : 1,
-          repMin: 8,
-          repMax: 12,
-          targetWeight: 0,
-          progressionWeightStep: /ног|спин|ягод|груд/i.test(source.muscleGroup) ? 5 : 2.5,
-          progressionRepStep: 1,
-          progressionMode: draft.progressionType,
-          deloadWeightSteps: 1,
-          regressionThresholdSessions: 2,
-          restSeconds: 120,
-          restAfterSeconds: 0,
-          rir: "",
-          rpe: "",
-          tempo: "",
-          note: "",
-          alternatives: groupAlternatives,
-        };
+        const currentExercises = day.exercises || [];
+        if (replaceExerciseId) {
+          return {
+            ...day,
+            exercises: currentExercises.map(existing => existing.id === replaceExerciseId
+              ? buildProgramBuilderExerciseFromSource(source, draft, groupAlternatives, existing)
+              : existing),
+          };
+        }
+        const exercise = buildProgramBuilderExerciseFromSource(source, draft, groupAlternatives);
         return { ...day, exercises: [...(day.exercises || []), exercise] };
       }),
     }));
@@ -9656,6 +9703,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           const repMax = Math.max(repMin, clampProgramNumber(exercise.repMax, 1, 999, 12));
           return {
             template_exercise_key: `${templateKey}-day-${dayIndex + 1}-exercise-${exerciseIndex + 1}`,
+            exercise_library_id: onlypumpUuidPattern.test(String(exercise.sourceExerciseId || exercise.exerciseLibraryId || "")) ? (exercise.sourceExerciseId || exercise.exerciseLibraryId) : null,
             exercise_name: exercise.name,
             muscle_group: exercise.muscleGroup,
             target_sets: clampProgramNumber(exercise.targetSets, 1, 99, 3),
@@ -9675,6 +9723,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             rpe: exercise.rpe === "" ? null : getProgramNumber(exercise.rpe, null),
             tempo: exercise.tempo,
             notes: exercise.note,
+            double_weight_in_stats: Boolean(exercise.doubleWeightInStats ?? exercise.doubleCountInStatistics),
+            double_count_in_statistics: Boolean(exercise.doubleCountInStatistics ?? exercise.doubleWeightInStats),
             alternatives: String(exercise.alternativesText ?? (exercise.alternatives || []).join(", "))
               .split(",")
               .map(item => item.trim())
@@ -9740,6 +9790,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       exercises: (day.exercises || []).map(exercise => ({
         name: exercise.name || "",
         muscleGroup: exercise.muscleGroup || "",
+        sourceExerciseId: exercise.sourceExerciseId || "",
+        doubleCountInStatistics: Boolean(exercise.doubleCountInStatistics),
         targetSets: exercise.targetSets,
         repMin: exercise.repMin,
         repMax: exercise.repMax,
@@ -9808,6 +9860,17 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       updateProgramBuilderDraft({ error: "Добавьте хотя бы одно упражнение." });
       return null;
     }
+    const activeSave = programBuilderSaveInFlightRef.current;
+    if (activeSave) {
+      if (autosave) {
+        programBuilderQueuedAutosaveRef.current = { draft, options: { autosave: true, allowEmptyExercises: true, stayOpen: true } };
+        return null;
+      }
+      await activeSave.catch(() => null);
+    }
+    let resolveCurrentSave = null;
+    const currentSavePromise = new Promise(resolve => { resolveCurrentSave = resolve; });
+    programBuilderSaveInFlightRef.current = currentSavePromise;
     const payload = buildProgramTemplatePayloadFromDraft({ ...draft, title, error: "" });
     const localProgram = buildLocalProgramFromPayload(payload);
     if (localProgram?.days?.length) applyProgramTemplateUpdate(localProgram);
@@ -9858,6 +9921,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return localProgram;
     } finally {
       if (!autosave) setProgramSaving(false);
+      if (programBuilderSaveInFlightRef.current === currentSavePromise) {
+        programBuilderSaveInFlightRef.current = null;
+      }
+      if (typeof resolveCurrentSave === "function") resolveCurrentSave();
+      const queued = programBuilderQueuedAutosaveRef.current;
+      programBuilderQueuedAutosaveRef.current = null;
+      if (queued?.draft) {
+        window.setTimeout(() => saveProgramBuilder(queued.draft, queued.options), 0);
+      }
     }
   };
 
@@ -9990,7 +10062,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       templateExerciseKey: key,
       originalName: exercise.name,
       selectedExerciseName: exercise.name,
-      selectedExerciseLibraryId: null,
+      selectedExerciseLibraryId: onlypumpUuidPattern.test(String(exercise.sourceExerciseId || exercise.exercise_library_id || exercise.exerciseLibraryId || "")) ? (exercise.sourceExerciseId || exercise.exercise_library_id || exercise.exerciseLibraryId) : null,
       muscleGroup: muscle,
       alternatives: getProgramExerciseAlternatives(exercise),
       targetSets,
@@ -10008,6 +10080,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       rir: exercise.rir ?? "",
       rpe: exercise.rpe ?? "",
       tempo: exercise.tempo || "",
+      doubleCountInStatistics: Boolean(exercise.doubleCountInStatistics ?? exercise.double_count_in_statistics ?? exercise.doubleWeightInStats ?? exercise.double_weight_in_stats ?? false),
     };
   };
 
@@ -10070,6 +10143,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
           ...defaults,
           selectedExerciseName: previous.selectedExerciseName || defaults.selectedExerciseName,
           selectedExerciseLibraryId: previous.selectedExerciseLibraryId || defaults.selectedExerciseLibraryId,
+          doubleCountInStatistics: previous.doubleCountInStatistics ?? defaults.doubleCountInStatistics,
           repMin: previous.repMin ?? defaults.repMin,
           repMax: previous.repMax ?? defaults.repMax,
           targetWeight: previous.targetWeight ?? defaults.targetWeight,
@@ -10131,6 +10205,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       name: setting.selectedExerciseName,
       muscleGroup: setting.muscleGroup || exercise.muscleGroup,
       measurementMode: setting.measurementMode,
+      sourceExerciseId: setting.selectedExerciseLibraryId || exercise.sourceExerciseId || null,
+      doubleCountInStatistics: Boolean(setting.doubleCountInStatistics ?? exercise.doubleCountInStatistics ?? false),
+      double_weight_in_stats: Boolean(setting.doubleCountInStatistics ?? exercise.doubleCountInStatistics ?? false),
+      double_count_in_statistics: Boolean(setting.doubleCountInStatistics ?? exercise.doubleCountInStatistics ?? false),
       primaryMuscles: [setting.muscleGroup || exercise.muscleGroup].filter(Boolean),
     });
     return {
@@ -10159,6 +10237,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       },
       restSeconds: plannedRestSeconds,
       restAfterSeconds: plannedRestAfterSeconds,
+      doubleCountInStatistics: Boolean(setting.doubleCountInStatistics ?? exercise.doubleCountInStatistics ?? false),
+      double_weight_in_stats: Boolean(setting.doubleCountInStatistics ?? exercise.doubleCountInStatistics ?? false),
+      double_count_in_statistics: Boolean(setting.doubleCountInStatistics ?? exercise.doubleCountInStatistics ?? false),
       rir: setting.rir === "" ? null : getProgramNumber(setting.rir, null),
       rpe: setting.rpe === "" ? null : getProgramNumber(setting.rpe, null),
       tempo: setting.tempo || "",
@@ -16206,7 +16287,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	              <button type="button" onClick={() => { blurProgramBuilderFocus(); setProgramBuilderExercisePicker({ dayIndex: activeDayIndex }); }} className="flex w-full items-center justify-center gap-2 rounded-full bg-red-500 px-4 py-3 font-black text-black transition active:scale-[0.98]"><Plus size={18}/> Добавить упражнение</button>
 	              <div className="space-y-3">
 	                {(activeDay.exercises || []).map((exercise) => <div key={exercise.id} className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
-	                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="break-words font-black">{exercise.name}</h3><p className="mt-1 text-xs font-semibold text-red-300">{exercise.muscleGroup}</p></div><button type="button" onClick={() => removeProgramBuilderExercise(activeDayIndex, exercise.id)} className="shrink-0 rounded-full bg-white/8 px-3 py-2 text-xs font-black text-red-300">Удалить</button></div>
+	                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="break-words font-black">{exercise.name}</h3><p className="mt-1 text-xs font-semibold text-red-300">{exercise.muscleGroup}</p></div><div className="flex shrink-0 flex-col gap-2"><button type="button" onClick={() => { blurProgramBuilderFocus(); setProgramBuilderExercisePicker({ dayIndex: activeDayIndex, replaceExerciseId: exercise.id }); }} className="rounded-full bg-white/8 px-3 py-2 text-xs font-black text-zinc-300">Заменить</button><button type="button" onClick={() => removeProgramBuilderExercise(activeDayIndex, exercise.id)} className="rounded-full bg-white/8 px-3 py-2 text-xs font-black text-red-300">Удалить</button></div></div>
 	                  <div className="mt-3 grid grid-cols-3 gap-2">
 	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Подх.</span><input inputMode="numeric" value={exercise.targetSets} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { targetSets: sanitizeProgramIntegerInput(e.target.value) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
 	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">От</span><input inputMode="numeric" value={exercise.repMin} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { repMin: sanitizeProgramIntegerInput(e.target.value) })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
@@ -16222,6 +16303,10 @@ const toggleExerciseMeasurementSetting = (field) => {
 	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">RPE</span><input inputMode="decimal" value={exercise.rpe} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { rpe: e.target.value })} className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
 	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Темп</span><input value={exercise.tempo} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { tempo: e.target.value })} placeholder="3-1-1" className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
 	                  </div>
+	                  <button type="button" onClick={() => updateProgramBuilderExercise(activeDayIndex, exercise.id, { doubleCountInStatistics: !Boolean(exercise.doubleCountInStatistics), doubleWeightInStats: !Boolean(exercise.doubleCountInStatistics) })} className="mt-3 flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left transition active:scale-[0.99]">
+	                    <span><span className="block text-sm font-black">Удваивать в статистике</span><span className="mt-1 block text-xs font-semibold text-zinc-500">Для односторонних движений: объем будет считаться x2.</span></span>
+	                    <span className={`relative h-7 w-12 shrink-0 rounded-full transition ${exercise.doubleCountInStatistics ? "bg-red-500" : "bg-white/15"}`}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition ${exercise.doubleCountInStatistics ? "left-6" : "left-1"}`} /></span>
+	                  </button>
 	                  <label className="mt-3 block"><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Альтернативы</span><input value={exercise.alternativesText ?? (exercise.alternatives || []).join(", ")} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { alternativesText: e.target.value })} placeholder="Через запятую" className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 font-bold outline-none"/></label>
 	                </div>)}
 	              </div>
@@ -16251,7 +16336,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
 	        <div className="flex items-start justify-between gap-3">
 	          <button type="button" onClick={() => setProgramBuilderExercisePicker(null)} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отмена</button>
-	          <div className="min-w-0 text-center"><p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Программа</p><h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Добавить упражнение</h2></div>
+	          <div className="min-w-0 text-center"><p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Программа</p><h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">{programBuilderExercisePicker?.replaceExerciseId ? "Заменить упражнение" : "Добавить упражнение"}</h2></div>
 	          <button type="button" onClick={() => setProgramBuilderExercisePicker(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
 	        </div>
 	        <input value={programBuilderExerciseSearch} onChange={(e) => setProgramBuilderExerciseSearch(e.target.value)} placeholder="Поиск упражнения" className="onlypump-program-field mt-5 w-full rounded-2xl px-4 py-3 font-bold outline-none"/>
@@ -16259,7 +16344,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	          {programBuilderGroups.map(group => <button key={group} type="button" onClick={() => setProgramBuilderExerciseGroup(group)} className={`onlypump-program-chip shrink-0 rounded-full px-3 py-2 text-xs font-black transition ${programBuilderExerciseGroup === group ? "is-active bg-red-500 text-black" : "bg-white/8 text-zinc-300"}`}>{group}</button>)}
 	        </div>
 	        <div className="onlypump-sheet-list mt-4 flex-1 space-y-4 overflow-y-auto pr-1 onlypump-scrollbar-none" data-no-sheet-drag="true">
-	          {filteredProgramBuilderGroups.map(section => <div key={section.group}><p className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">{section.group}</p><div className="space-y-2">{section.exercises.map(exercise => <button key={exercisePickerKey(exercise)} type="button" onClick={() => addExerciseToProgramBuilder(exercise)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-3 text-left transition hover:bg-white/[0.08]"><span className="min-w-0"><span className="block break-words font-black">{exercise.name}</span><span className="mt-1 block text-xs text-zinc-500">{exercise.muscleGroup}</span></span><Plus size={18} className="shrink-0 text-red-400"/></button>)}</div></div>)}
+	          {filteredProgramBuilderGroups.map(section => <div key={section.group}><p className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">{section.group}</p><div className="space-y-2">{section.exercises.map(exercise => <button key={exercisePickerKey(exercise)} type="button" onClick={() => addExerciseToProgramBuilder(exercise)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-3 text-left transition hover:bg-white/[0.08]"><span className="min-w-0"><span className="block break-words font-black">{exercise.name}</span><span className="mt-1 block text-xs text-zinc-500">{exercise.muscleGroup}</span></span>{programBuilderExercisePicker?.replaceExerciseId ? <Repeat2 size={18} className="shrink-0 text-red-400"/> : <Plus size={18} className="shrink-0 text-red-400"/>}</button>)}</div></div>)}
 	        </div>
 	      </BottomSheetPanel>
 	    </div>}
@@ -23901,10 +23986,12 @@ function OnlyPumpPlatform() {
     homeWidgetCount: normalizeHomeWidgetsOrder(homeWidgets, []).length,
     nutritionFoodCount: (nutritionDay?.meals || []).reduce((sum, meal) => sum + (meal.items || []).length, 0),
     workoutCount: workouts.length,
+    workoutTitlePromptOpen: Boolean(workoutTitlePrompt),
+    workoutTypePickerOpen: Boolean(workoutTypePicker),
     workoutExerciseCount: workouts.reduce((sum, workout) => sum + (workout.exercises || []).length, 0),
     workoutSetCount: workouts.reduce((sum, workout) => sum + (workout.exercises || []).reduce((exerciseSum, exercise) => exerciseSum + (exercise.sets || []).length, 0), 0),
     measurementSignature: JSON.stringify(measurements || {}),
-  }), [homeWidgets, measurements, nutritionDay, workouts]);
+  }), [homeWidgets, measurements, nutritionDay, workoutTitlePrompt, workoutTypePicker, workouts]);
 
   const awardTourXp = useCallback((awardId) => {
     const award = ONLYPUMP_TOUR_XP_AWARDS[awardId];
@@ -23944,7 +24031,7 @@ function OnlyPumpPlatform() {
       markOnlyPumpTourScreenSeen(baseProfile, safeScreen);
     }
     if (event === "complete_full") {
-      onlyPumpTourScreens.forEach(item => completedSet.add(item));
+      onlyPumpAvailableTourScreens.forEach(item => completedSet.add(item));
       skippedSet.clear();
     }
 
@@ -24039,6 +24126,7 @@ function OnlyPumpPlatform() {
     const current = getTourTaskSnapshot();
     if (step.completion === "home-widget-added") return current.homeWidgetCount > Number(snapshot.homeWidgetCount || 0);
     if (step.completion === "nutrition-food-added") return current.nutritionFoodCount > Number(snapshot.nutritionFoodCount || 0);
+    if (step.completion === "workout-title-confirmed") return !current.workoutTitlePromptOpen && current.workoutTypePickerOpen;
     if (step.completion === "workout-created") return current.workoutCount > Number(snapshot.workoutCount || 0);
     if (step.completion === "workout-exercise-added") return current.workoutExerciseCount > Number(snapshot.workoutExerciseCount || 0);
     if (step.completion === "workout-set-added") return current.workoutSetCount > Number(snapshot.workoutSetCount || 0);
@@ -24054,7 +24142,7 @@ function OnlyPumpPlatform() {
 	  }, [profile, syncTutorialProfileState]);
 
 	  const startInteractiveTour = useCallback((screen = "home", options = {}) => {
-	    const nextScreen = onlyPumpTourDefinitions[screen] ? screen : "home";
+	    const nextScreen = onlyPumpTourDefinitions[screen] && !onlyPumpLockedTourScreens.includes(screen) ? screen : "home";
 	    if (options.reset) resetOnlyPumpTourSeen(profile || DEFAULT_PROFILE);
       markOnlyPumpProfileWelcomeSeen(profile || DEFAULT_PROFILE);
 	    setProfileWelcomeOpen(false);
@@ -24087,8 +24175,8 @@ function OnlyPumpPlatform() {
           awards.push(ONLYPUMP_TOUR_XP_AWARDS["home-tour-completed"]);
         }
         if (prev.full) {
-          const currentIndex = onlyPumpTourScreens.indexOf(prev.screen);
-          const nextScreen = onlyPumpTourScreens.slice(currentIndex + 1).find(screen => (onlyPumpTourDefinitions[screen] || []).length);
+          const currentIndex = onlyPumpAvailableTourScreens.indexOf(prev.screen);
+          const nextScreen = onlyPumpAvailableTourScreens.slice(currentIndex + 1).find(screen => (onlyPumpTourDefinitions[screen] || []).length);
           if (nextScreen) {
             void syncTutorialProfileState({ event: "complete_screen", screen: prev.screen, awards });
             setActive(nextScreen, { replace: true });
@@ -24137,6 +24225,8 @@ function OnlyPumpPlatform() {
     tourState.screen,
     tourState.stepIndex,
     activeTourStep?.taskId,
+    Boolean(workoutTitlePrompt),
+    Boolean(workoutTypePicker),
     homeWidgets.length,
     workouts.length,
     JSON.stringify(workouts.map(workout => ({
