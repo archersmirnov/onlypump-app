@@ -731,6 +731,34 @@
       background-color: #ffffff !important;
       box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
     }
+    .onlypump-student-summary-row td {
+      background: rgba(239, 68, 68, 0.12);
+      border-top-color: rgba(239, 68, 68, 0.28);
+      color: #fecaca;
+    }
+    .onlypump-student-month-summary-row td {
+      background: rgba(239, 68, 68, 0.18);
+      border-top-color: rgba(239, 68, 68, 0.38);
+      color: #fecaca;
+    }
+    .onlypump-student-summary-row .onlypump-student-sticky-cell,
+    .onlypump-student-month-summary-row .onlypump-student-sticky-cell {
+      background: #1f0f12;
+    }
+    .theme-light .onlypump-student-summary-row td {
+      background: #fff1f2;
+      border-top-color: rgba(239, 68, 68, 0.28);
+      color: #b91c1c;
+    }
+    .theme-light .onlypump-student-month-summary-row td {
+      background: #fee2e2;
+      border-top-color: rgba(220, 38, 38, 0.36);
+      color: #991b1b;
+    }
+    .theme-light .onlypump-student-summary-row .onlypump-student-sticky-cell,
+    .theme-light .onlypump-student-month-summary-row .onlypump-student-sticky-cell {
+      background: #fee2e2;
+    }
     .onlypump-loading-screen {
       background: #070A12;
       color: #f4f4f5;
@@ -22909,6 +22937,90 @@ const formatStudentDashboardNumber = (value, suffix = "") => {
 
 const getStudentDashboardChoiceLabel = (options = [], id = "") => findDailyChoice(options, id)?.label || "";
 
+const trainerDashboardConditionalColumns = ["calories", "protein", "fat", "carbs", "steps", "sleep", "weight"];
+const createTrainerDashboardFormatDefaults = () => trainerDashboardConditionalColumns.reduce((acc, key) => {
+  acc[key] = {
+    enabled: true,
+    mode: "previous",
+    norm: key === "steps" ? 10000 : key === "sleep" ? 8 : key === "weight" ? 70 : 0,
+    min: key === "sleep" ? 7 : 0,
+    max: key === "sleep" ? 9 : 0,
+    formula: "",
+    applyText: true,
+    applyCell: false,
+    textColors: {
+      greater: "#22c55e",
+      less: "#ef4444",
+      equal: "#facc15",
+      inRange: "#22c55e",
+      outRange: "#ef4444",
+      formulaHit: "#22c55e",
+      formulaMiss: "#ef4444",
+    },
+    cellColors: {
+      greater: "#dcfce7",
+      less: "#fee2e2",
+      equal: "#fef9c3",
+      inRange: "#dcfce7",
+      outRange: "#fee2e2",
+      formulaHit: "#dcfce7",
+      formulaMiss: "#fee2e2",
+    },
+  };
+  return acc;
+}, {});
+
+const mergeTrainerDashboardFormatRules = (saved = {}) => {
+  const defaults = createTrainerDashboardFormatDefaults();
+  return Object.fromEntries(Object.entries(defaults).map(([key, rule]) => {
+    const savedRule = saved && typeof saved === "object" ? saved[key] : null;
+    return [key, {
+      ...rule,
+      ...(savedRule && typeof savedRule === "object" ? savedRule : {}),
+      textColors: { ...rule.textColors, ...((savedRule && savedRule.textColors) || {}) },
+      cellColors: { ...rule.cellColors, ...((savedRule && savedRule.cellColors) || {}) },
+    }];
+  }));
+};
+
+const parseTrainerDashboardFormula = (formula = "", current, previous) => {
+  const text = String(formula || "").trim().replace(",", ".");
+  if (!text) return null;
+  const resolveValue = (raw) => {
+    const normalized = String(raw || "").trim().toLowerCase();
+    if (["prev", "previous", "прошлое", "пред"].includes(normalized)) return previous;
+    const numeric = Number(normalized);
+    return Number.isFinite(numeric) ? numeric : null;
+  };
+  const rangeMatch = text.match(/^(-?\d+(?:\.\d+)?)\s*(?:\.\.|-|:)\s*(-?\d+(?:\.\d+)?)$/);
+  if (rangeMatch) {
+    const min = Number(rangeMatch[1]);
+    const max = Number(rangeMatch[2]);
+    if (Number.isFinite(min) && Number.isFinite(max)) return current >= Math.min(min, max) && current <= Math.max(min, max);
+  }
+  const comparisonMatch = text.match(/^(>=|<=|>|<|=|==)\s*(prev|previous|прошлое|пред|-?\d+(?:\.\d+)?)$/i);
+  if (!comparisonMatch) return null;
+  const target = resolveValue(comparisonMatch[2]);
+  if (!Number.isFinite(target)) return null;
+  switch (comparisonMatch[1]) {
+    case ">": return current > target;
+    case "<": return current < target;
+    case ">=": return current >= target;
+    case "<=": return current <= target;
+    case "=":
+    case "==": return Math.abs(current - target) < 0.0001;
+    default: return null;
+  }
+};
+
+const getTrainerDashboardRawValue = (column, source = {}) => {
+  if (!column || !trainerDashboardConditionalColumns.includes(column.key)) return null;
+  const raw = source[column.key];
+  if (raw === null || raw === undefined || raw === "") return null;
+  const number = Number(raw);
+  return Number.isFinite(number) && number > 0 ? number : null;
+};
+
 function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose }) {
   const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [tab, setTab] = useState("overview");
@@ -22917,12 +23029,21 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
   const [data, setData] = useState({ workouts: [], health_logs: [], nutrition_days: [], measurements: [] });
   const [detail, setDetail] = useState(null);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const [showConditionalSettings, setShowConditionalSettings] = useState(false);
   const columnSettingsKey = `onlypump_student_dashboard_columns_${student?.id || "unknown"}`;
+  const formatSettingsKey = `onlypump_student_dashboard_format_${student?.id || "unknown"}`;
   const [columnOverrides, setColumnOverrides] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(columnSettingsKey) || "{}");
     } catch (_error) {
       return {};
+    }
+  });
+  const [conditionalRules, setConditionalRules] = useState(() => {
+    try {
+      return mergeTrainerDashboardFormatRules(JSON.parse(localStorage.getItem(formatSettingsKey) || "{}"));
+    } catch (_error) {
+      return mergeTrainerDashboardFormatRules({});
     }
   });
   const studentName = getManagedUserTitle(student);
@@ -22938,11 +23059,32 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
     }
   }, [columnSettingsKey]);
 
+  useEffect(() => {
+    try {
+      setConditionalRules(mergeTrainerDashboardFormatRules(JSON.parse(localStorage.getItem(formatSettingsKey) || "{}")));
+    } catch (_error) {
+      setConditionalRules(mergeTrainerDashboardFormatRules({}));
+    }
+  }, [formatSettingsKey]);
+
   const setColumnVisible = (key, value) => {
     setColumnOverrides(prev => {
       const next = { ...(prev || {}), [key]: Boolean(value) };
       try {
         localStorage.setItem(columnSettingsKey, JSON.stringify(next));
+      } catch (_error) {}
+      return next;
+    });
+  };
+
+  const updateConditionalRule = (key, patch) => {
+    setConditionalRules(prev => {
+      const base = mergeTrainerDashboardFormatRules(prev);
+      const previousRule = base[key] || mergeTrainerDashboardFormatRules({})[key] || {};
+      const nextRule = typeof patch === "function" ? patch(previousRule) : { ...previousRule, ...patch };
+      const next = { ...base, [key]: nextRule };
+      try {
+        localStorage.setItem(formatSettingsKey, JSON.stringify(next));
       } catch (_error) {}
       return next;
     });
@@ -23071,26 +23213,80 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
   const trainingWorkouts = data.workouts.filter(workout => normalizeWorkoutStatus(workout.status) !== "deleted");
   const maxSetCount = Math.max(3, ...trainingWorkouts.flatMap(workout => (workout.exercises || []).map(exercise => (exercise.sets || []).length || Number(exercise.plannedSets || exercise.planned_sets || 0))));
   const metricColumns = [
-    { key: "workout", label: "Тренировка", value: row => row.hasWorkout ? "✓" : "", summaryValue: summary => summary.workouts || "" },
-    { key: "cardio", label: "Кардио", optional: true, value: row => row.cardio ? "✓" : "", summaryValue: summary => summary.cardio || "" },
-    { key: "volume", label: "Тоннаж", value: row => row.volume ? Math.round(row.volume).toLocaleString("ru-RU") : "", summaryValue: summary => summary.volume ? Math.round(summary.volume).toLocaleString("ru-RU") : "" },
-    { key: "sets", label: "Подходы", value: row => row.sets || "", summaryValue: summary => summary.sets || "" },
-    { key: "calories", label: "Ккал", value: row => row.calories || "", summaryValue: summary => summary.calories ? Math.round(summary.calories) : "" },
-    { key: "protein", label: "Белок", value: row => formatStudentDashboardNumber(row.protein), summaryValue: summary => summary.protein ? Math.round(summary.protein) : "" },
-    { key: "fat", label: "Жиры", optional: true, value: row => formatStudentDashboardNumber(row.fat), summaryValue: summary => summary.fat ? Math.round(summary.fat) : "" },
-    { key: "carbs", label: "Углеводы", optional: true, value: row => formatStudentDashboardNumber(row.carbs), summaryValue: summary => summary.carbs ? Math.round(summary.carbs) : "" },
-    { key: "mood", label: "Настроение", optional: true, value: row => row.mood || "", summaryValue: () => "" },
-    { key: "wellbeing", label: "Самочувствие", optional: true, value: row => row.wellbeing || "", summaryValue: () => "" },
-    { key: "sleep", label: "Сон", value: row => row.sleep ? `${row.sleep} ч` : "", summaryValue: summary => summary.sleep ? `${roundMacro(summary.sleep)} ч` : "" },
-    { key: "sleepStart", label: "Отбой", optional: true, value: row => row.sleepStart || "", summaryValue: () => "" },
-    { key: "sleepEnd", label: "Подъем", optional: true, value: row => row.sleepEnd || "", summaryValue: () => "" },
-    { key: "steps", label: "Шаги", value: row => row.steps ? row.steps.toLocaleString("ru-RU") : "", summaryValue: summary => summary.steps ? Math.round(summary.steps).toLocaleString("ru-RU") : "" },
-    { key: "weight", label: "Вес", value: row => row.weight ? `${roundMacro(row.weight)} кг` : "", summaryValue: summary => summary.weight ? `${roundMacro(summary.weight)} кг` : "" },
-    { key: "weightChange", label: "Изменение веса", optional: true, value: row => formatStudentDashboardChange(row.weightChange), summaryValue: summary => summary.weightChangeCount ? formatStudentDashboardChange(summary.weightChange) : "" },
-    { key: "measurements", label: "Замеры", optional: true, value: row => row.measurementsDone ? "✓" : "", summaryValue: summary => summary.measurements || "" },
-    { key: "photo", label: "Фото", optional: true, value: row => row.photoDone ? "✓" : "", summaryValue: summary => summary.photos || "" },
-    { key: "notes", label: "Заметки", optional: true, value: row => row.notes || "", summaryValue: () => "" },
+    { key: "workout", label: "Тренировка", value: row => row.hasWorkout ? "✓" : "", summaryValue: summary => summary.workouts || "", widthClass: "min-w-[112px]" },
+    { key: "cardio", label: "Кардио", optional: true, value: row => row.cardio ? "✓" : "", summaryValue: summary => summary.cardio || "", widthClass: "min-w-[90px]" },
+    { key: "volume", label: "Тоннаж", value: row => row.volume ? Math.round(row.volume).toLocaleString("ru-RU") : "", summaryValue: summary => summary.volume ? Math.round(summary.volume).toLocaleString("ru-RU") : "", widthClass: "min-w-[104px]" },
+    { key: "sets", label: "Подходы", value: row => row.sets || "", summaryValue: summary => summary.sets || "", widthClass: "min-w-[92px]" },
+    { key: "calories", label: "Ккал", value: row => row.calories || "", summaryValue: summary => summary.calories ? Math.round(summary.calories) : "", widthClass: "min-w-[92px]" },
+    { key: "protein", label: "Белок", value: row => formatStudentDashboardNumber(row.protein), summaryValue: summary => summary.protein ? Math.round(summary.protein) : "", widthClass: "min-w-[92px]" },
+    { key: "fat", label: "Жиры", optional: true, value: row => formatStudentDashboardNumber(row.fat), summaryValue: summary => summary.fat ? Math.round(summary.fat) : "", widthClass: "min-w-[92px]" },
+    { key: "carbs", label: "Углеводы", optional: true, value: row => formatStudentDashboardNumber(row.carbs), summaryValue: summary => summary.carbs ? Math.round(summary.carbs) : "", widthClass: "min-w-[104px]" },
+    { key: "mood", label: "Настроение", optional: true, value: row => row.mood || "", summaryValue: () => "", widthClass: "min-w-[132px]" },
+    { key: "wellbeing", label: "Самочувствие", optional: true, value: row => row.wellbeing || "", summaryValue: () => "", widthClass: "min-w-[140px]" },
+    { key: "sleep", label: "Сон", value: row => row.sleep ? `${row.sleep} ч` : "", summaryValue: summary => summary.sleep ? `${roundMacro(summary.sleep)} ч` : "", widthClass: "min-w-[118px]", nowrap: true },
+    { key: "sleepStart", label: "Отбой", optional: true, value: row => row.sleepStart || "", summaryValue: () => "", widthClass: "min-w-[94px]" },
+    { key: "sleepEnd", label: "Подъем", optional: true, value: row => row.sleepEnd || "", summaryValue: () => "", widthClass: "min-w-[94px]" },
+    { key: "steps", label: "Шаги", value: row => row.steps ? row.steps.toLocaleString("ru-RU") : "", summaryValue: summary => summary.steps ? Math.round(summary.steps).toLocaleString("ru-RU") : "", widthClass: "min-w-[112px]" },
+    { key: "weight", label: "Вес", value: row => row.weight ? `${roundMacro(row.weight)} кг` : "", summaryValue: summary => summary.weight ? `${roundMacro(summary.weight)} кг` : "", widthClass: "min-w-[124px]", nowrap: true },
+    { key: "weightChange", label: "Изменение веса", optional: true, value: row => formatStudentDashboardChange(row.weightChange), summaryValue: summary => summary.weightChangeCount ? formatStudentDashboardChange(summary.weightChange) : "", widthClass: "min-w-[150px]" },
+    { key: "measurements", label: "Замеры", optional: true, value: row => row.measurementsDone ? "✓" : "", summaryValue: summary => summary.measurements || "", widthClass: "min-w-[92px]" },
+    { key: "photo", label: "Фото", optional: true, value: row => row.photoDone ? "✓" : "", summaryValue: summary => summary.photos || "", widthClass: "min-w-[86px]" },
+    { key: "notes", label: "Заметки", optional: true, value: row => row.notes || "", summaryValue: () => "", widthClass: "min-w-[240px]", valueClass: "text-xs font-medium leading-5 text-zinc-400 whitespace-normal" },
   ];
+  const weeklySummaryRows = dashboardRows.reduce((rows, row, index) => {
+    if ((index + 1) % 7 === 0) {
+      rows.push({
+        key: `week-${rows.length + 1}`,
+        label: row.label,
+        summary: summarizeRows(dashboardRows.slice(Math.max(0, index - 6), index + 1)),
+      });
+    }
+    return rows;
+  }, []);
+  const summaryFormatRows = [...weeklySummaryRows, { key: "month", label: monthLabel, summary: monthSummary }];
+  const getDailyPreviousValue = (column, rowIndex) => {
+    for (let index = rowIndex - 1; index >= 0; index -= 1) {
+      const value = getTrainerDashboardRawValue(column, dashboardRows[index]);
+      if (value !== null) return value;
+    }
+    return null;
+  };
+  const getSummaryPreviousValue = (column, summaryIndex) => {
+    for (let index = summaryIndex - 1; index >= 0; index -= 1) {
+      const value = getTrainerDashboardRawValue(column, summaryFormatRows[index]?.summary);
+      if (value !== null) return value;
+    }
+    return null;
+  };
+  const getConditionalCellProps = (column, source, options = {}) => {
+    const rule = conditionalRules[column.key];
+    if (!rule?.enabled) return { tdStyle: undefined, valueStyle: undefined };
+    const current = getTrainerDashboardRawValue(column, source);
+    if (current === null) return { tdStyle: undefined, valueStyle: undefined };
+    const kind = options.kind || "day";
+    const previous = kind === "summary" ? getSummaryPreviousValue(column, options.summaryIndex || 0) : getDailyPreviousValue(column, options.rowIndex || 0);
+    let relation = "";
+    if (rule.mode === "range") {
+      const min = Number(rule.min);
+      const max = Number(rule.max);
+      if (!Number.isFinite(min) || !Number.isFinite(max)) return { tdStyle: undefined, valueStyle: undefined };
+      relation = current >= Math.min(min, max) && current <= Math.max(min, max) ? "inRange" : "outRange";
+    } else if (rule.mode === "formula") {
+      const formulaResult = parseTrainerDashboardFormula(rule.formula, current, previous);
+      if (formulaResult === null) return { tdStyle: undefined, valueStyle: undefined };
+      relation = formulaResult ? "formulaHit" : "formulaMiss";
+    } else {
+      const base = rule.mode === "norm" ? Number(rule.norm) : previous;
+      if (!Number.isFinite(base)) return { tdStyle: undefined, valueStyle: undefined };
+      relation = current > base ? "greater" : current < base ? "less" : "equal";
+    }
+    const cellColor = rule.applyCell ? rule.cellColors?.[relation] : "";
+    const textColor = rule.applyText ? rule.textColors?.[relation] : "";
+    return {
+      tdStyle: cellColor ? { backgroundColor: cellColor } : undefined,
+      valueStyle: textColor ? { color: textColor } : undefined,
+    };
+  };
   const columnHasData = (column) => dashboardRows.some(row => {
     const value = column.value(row);
     return value !== "" && value !== null && value !== undefined;
@@ -23102,6 +23298,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
     return columnHasData(column);
   });
   const optionalMetricColumns = metricColumns.filter(column => column.optional);
+  const formatMetricColumns = metricColumns.filter(column => trainerDashboardConditionalColumns.includes(column.key));
   const openMetricDetail = (column, row) => {
     setDetail({
       title: column.label,
@@ -23142,7 +23339,10 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
           {tab === "table" && <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">{visibleMetricColumns.length} колонок</p>
-              <button type="button" onClick={() => setShowColumnPicker(prev => !prev)} className="rounded-full bg-white/8 px-4 py-2 text-xs font-black text-zinc-200 transition hover:bg-white/12">Колонки</button>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => setShowColumnPicker(prev => !prev)} className="rounded-full bg-white/8 px-4 py-2 text-xs font-black text-zinc-200 transition hover:bg-white/12">Колонки</button>
+                <button type="button" onClick={() => setShowConditionalSettings(prev => !prev)} className="rounded-full bg-red-500/15 px-4 py-2 text-xs font-black text-red-200 transition hover:bg-red-500/25">Формат</button>
+              </div>
             </div>
             {showColumnPicker && <div className="grid gap-2 rounded-[22px] border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-2 lg:grid-cols-3">
               {optionalMetricColumns.map(column => {
@@ -23154,29 +23354,100 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
                 </button>;
               })}
             </div>}
+            {showConditionalSettings && <div className="space-y-3 rounded-[24px] border border-red-500/20 bg-red-500/[0.06] p-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-red-300">Условное форматирование</p>
+                <p className="mt-1 text-xs text-zinc-500">Дневные значения сравниваются с предыдущим днем. Итоги недели и месяца сравниваются только с предыдущими итоговыми строками.</p>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-2">
+                {formatMetricColumns.map(column => {
+                  const rule = conditionalRules[column.key] || mergeTrainerDashboardFormatRules({})[column.key];
+                  const updateColor = (group, colorKey, value) => updateConditionalRule(column.key, current => ({
+                    ...current,
+                    [group]: { ...(current[group] || {}), [colorKey]: value },
+                  }));
+                  const activeMode = rule.mode || "previous";
+                  return <div key={column.key} className="rounded-[22px] border border-white/10 bg-white/[0.04] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <b className="block text-sm">{column.label}</b>
+                        <span className="mt-1 block text-[11px] text-zinc-500">Цвет текста и фона ячейки</span>
+                      </div>
+                      <button type="button" onClick={() => updateConditionalRule(column.key, { enabled: !rule.enabled })} className={`rounded-full px-3 py-1.5 text-[11px] font-black ${rule.enabled ? "bg-red-500 text-black" : "bg-white/8 text-zinc-400"}`}>{rule.enabled ? "Вкл" : "Выкл"}</button>
+                    </div>
+                    <div className="mt-3 grid grid-cols-4 gap-1 rounded-2xl bg-black/20 p-1 text-[10px] font-black">
+                      {[["previous", "Прошлое"], ["norm", "Норма"], ["range", "Диапазон"], ["formula", "Формула"]].map(([mode, label]) => <button key={mode} type="button" onClick={() => updateConditionalRule(column.key, { mode })} className={`rounded-xl px-2 py-2 ${activeMode === mode ? "bg-red-500 text-black" : "text-zinc-400"}`}>{label}</button>)}
+                    </div>
+                    {activeMode === "norm" && <label className="mt-3 block text-[11px] font-black uppercase tracking-[0.14em] text-zinc-500">Норма
+                      <input type="number" value={rule.norm ?? ""} onChange={(event) => updateConditionalRule(column.key, { norm: event.target.value })} className="mt-1 w-full rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-sm font-black outline-none"/>
+                    </label>}
+                    {activeMode === "range" && <div className="mt-3 grid grid-cols-2 gap-2">
+                      <label className="block text-[11px] font-black uppercase tracking-[0.14em] text-zinc-500">От
+                        <input type="number" value={rule.min ?? ""} onChange={(event) => updateConditionalRule(column.key, { min: event.target.value })} className="mt-1 w-full rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-sm font-black outline-none"/>
+                      </label>
+                      <label className="block text-[11px] font-black uppercase tracking-[0.14em] text-zinc-500">До
+                        <input type="number" value={rule.max ?? ""} onChange={(event) => updateConditionalRule(column.key, { max: event.target.value })} className="mt-1 w-full rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-sm font-black outline-none"/>
+                      </label>
+                    </div>}
+                    {activeMode === "formula" && <label className="mt-3 block text-[11px] font-black uppercase tracking-[0.14em] text-zinc-500">Формула
+                      <input value={rule.formula || ""} onChange={(event) => updateConditionalRule(column.key, { formula: event.target.value })} placeholder="Например: >=100 или 80..120" className="mt-1 w-full rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-sm font-black outline-none"/>
+                    </label>}
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-black">
+                      <button type="button" onClick={() => updateConditionalRule(column.key, { applyText: !rule.applyText })} className={`rounded-full px-3 py-1.5 ${rule.applyText ? "bg-white text-black" : "bg-white/8 text-zinc-400"}`}>Текст</button>
+                      <button type="button" onClick={() => updateConditionalRule(column.key, { applyCell: !rule.applyCell })} className={`rounded-full px-3 py-1.5 ${rule.applyCell ? "bg-white text-black" : "bg-white/8 text-zinc-400"}`}>Ячейка</button>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-[11px]">
+                      {(activeMode === "range" ? [["inRange", "В диапазоне"], ["outRange", "Вне диапазона"]] : activeMode === "formula" ? [["formulaHit", "Формула да"], ["formulaMiss", "Формула нет"]] : [["greater", "> / >="], ["less", "< / <="], ["equal", "="]]).map(([colorKey, label]) => <div key={colorKey} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-2xl bg-black/15 px-3 py-2">
+                        <span className="font-black text-zinc-300">{label}</span>
+                        <label className="flex items-center gap-1 text-zinc-500">Т
+                          <input type="color" value={rule.textColors?.[colorKey] || "#ef4444"} onChange={(event) => updateColor("textColors", colorKey, event.target.value)} className="h-7 w-8 rounded-lg border border-white/10 bg-transparent"/>
+                        </label>
+                        <label className="flex items-center gap-1 text-zinc-500">Я
+                          <input type="color" value={rule.cellColors?.[colorKey] || "#fee2e2"} onChange={(event) => updateColor("cellColors", colorKey, event.target.value)} className="h-7 w-8 rounded-lg border border-white/10 bg-transparent"/>
+                        </label>
+                      </div>)}
+                    </div>
+                  </div>;
+                })}
+              </div>
+            </div>}
             <div className="overflow-auto rounded-[24px] border border-white/10">
             <table className="min-w-[900px] border-separate border-spacing-0 text-sm">
-              <thead><tr>{["Дата", "День", ...visibleMetricColumns.map(column => column.label)].map((label, index) => <th key={label} className={`sticky top-0 z-10 bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500 ${index === 0 ? "left-0 z-20" : ""}`}>{label}</th>)}</tr></thead>
+              <thead><tr>
+                <th className="sticky left-0 top-0 z-20 min-w-[72px] bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500">Дата</th>
+                <th className="sticky top-0 z-10 min-w-[72px] bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500">День</th>
+                {visibleMetricColumns.map(column => <th key={column.key} className={`sticky top-0 z-10 bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500 ${column.widthClass || "min-w-[92px]"}`}>{column.label}</th>)}
+              </tr></thead>
               <tbody>
                 {dashboardRows.map((row, index) => <React.Fragment key={row.key}>
                   <tr>
                     <td className="sticky left-0 z-10 border-t border-white/10 bg-zinc-950 p-3 font-black">{row.label}</td>
                     <td className="border-t border-white/10 p-3 text-zinc-500">{row.weekday}</td>
-                    {visibleMetricColumns.map(column => <td key={column.key} className="border-t border-white/10 p-2"><button type="button" onClick={() => openMetricDetail(column, row)} className="min-h-10 w-full rounded-xl bg-white/[0.035] px-2 text-left font-bold transition hover:bg-white/[0.08]">{column.value(row) || " "}</button></td>)}
+                    {visibleMetricColumns.map(column => {
+                      const format = getConditionalCellProps(column, row, { kind: "day", rowIndex: index });
+                      return <td key={column.key} style={format.tdStyle} className={`border-t border-white/10 p-2 ${column.widthClass || ""}`}><button type="button" onClick={() => openMetricDetail(column, row)} style={format.valueStyle} className={`min-h-10 w-full rounded-xl bg-white/[0.035] px-2 text-left transition hover:bg-white/[0.08] ${column.nowrap ? "whitespace-nowrap" : ""} ${column.valueClass || "font-bold"}`}>{column.value(row) || " "}</button></td>;
+                    })}
                   </tr>
-                  {(index + 1) % 7 === 0 && <tr className="bg-red-500/7">
-                    <td className="sticky left-0 z-10 bg-zinc-950 p-3 text-xs font-black text-red-300">Итоги 7 дней</td>
+                  {(index + 1) % 7 === 0 && <tr className="onlypump-student-summary-row">
+                    <td className="onlypump-student-sticky-cell sticky left-0 z-10 p-3 text-xs font-black text-red-300">Итоги 7 дней</td>
                     <td className="p-3 text-xs text-zinc-500">{row.label}</td>
                     {(() => {
-                      const summary = summarizeRows(dashboardRows.slice(Math.max(0, index - 6), index + 1));
-                      return visibleMetricColumns.map(column => <td key={column.key} className="p-3 text-xs font-black text-red-200">{column.summaryValue?.(summary) || "—"}</td>);
+                      const summaryIndex = Math.floor(index / 7);
+                      const summary = weeklySummaryRows[summaryIndex]?.summary || summarizeRows(dashboardRows.slice(Math.max(0, index - 6), index + 1));
+                      return visibleMetricColumns.map(column => {
+                        const format = getConditionalCellProps(column, summary, { kind: "summary", summaryIndex });
+                        return <td key={column.key} style={{ ...(format.tdStyle || {}), ...(format.valueStyle || {}) }} className={`p-3 text-xs font-black text-red-200 ${column.widthClass || ""}`}>{column.summaryValue?.(summary) || "—"}</td>;
+                      });
                     })()}
                   </tr>}
                 </React.Fragment>)}
-                <tr className="bg-white/[0.04]">
-                  <td className="sticky left-0 z-10 bg-zinc-950 p-3 text-xs font-black text-red-300">Итоги месяца</td>
+                <tr className="onlypump-student-month-summary-row">
+                  <td className="onlypump-student-sticky-cell sticky left-0 z-10 p-3 text-xs font-black text-red-300">Итоги месяца</td>
                   <td className="p-3 text-xs text-zinc-500">{monthLabel}</td>
-                  {visibleMetricColumns.map(column => <td key={column.key} className="p-3 text-xs font-black text-red-200">{column.summaryValue?.(monthSummary) || "—"}</td>)}
+                  {visibleMetricColumns.map(column => {
+                    const format = getConditionalCellProps(column, monthSummary, { kind: "summary", summaryIndex: summaryFormatRows.length - 1 });
+                    return <td key={column.key} style={{ ...(format.tdStyle || {}), ...(format.valueStyle || {}) }} className={`p-3 text-xs font-black text-red-200 ${column.widthClass || ""}`}>{column.summaryValue?.(monthSummary) || "—"}</td>;
+                  })}
                 </tr>
               </tbody>
             </table>
