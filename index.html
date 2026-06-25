@@ -904,7 +904,7 @@ function initTelegramWebApp() {
 }
 
 const telegramWebApp = initTelegramWebApp();
-const ONLYPUMP_FRONTEND_BUILD = "analytics-program-hotfix-20260624-01";
+const ONLYPUMP_FRONTEND_BUILD = "student-analytics-hotfix-20260625-01";
 console.log("ONLYPUMP START");
 console.log("ONLYPUMP BUILD", ONLYPUMP_FRONTEND_BUILD);
 console.log("Telegram object exists", Boolean(telegramWebApp || window.Telegram?.WebApp));
@@ -22878,15 +22878,15 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
         });
       } catch (loadError) {
         console.error("student dashboard error:", loadError);
-        if (alive) setError("Не удалось загрузить аналитику ученика.");
+        if (alive) setError(onlyPumpApiErrorMessage(loadError, "Не удалось загрузить аналитику ученика."));
       } finally {
         if (alive) setLoading(false);
       }
     };
-    if (student?.id && telegramInitData) load();
+    if (student?.id && hasOnlyPumpRemoteAuth(telegramInitData)) load();
     else {
       setLoading(false);
-      setError("Аналитика ученика доступна внутри Telegram.");
+      setError("Войди в аккаунт, чтобы открыть аналитику ученика.");
     }
     return () => { alive = false; };
   }, [monthKey, student?.id, telegramInitData]);
@@ -22972,9 +22972,8 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
     });
   };
 
-  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[235] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-    <BottomSheetPanel onClose={onClose} priority={235} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet flex max-h-[calc(var(--onlypump-app-height)-18px)] w-full max-w-6xl flex-col overflow-hidden rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
-      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+  return <div onClick={onClose} className="profile-screen onlypump-modal-layer fixed inset-0 z-[235] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+    <BottomSheetPanel onClose={onClose} priority={235} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet flex max-h-[calc(var(--onlypump-app-height)-48px)] w-full max-w-6xl flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
       <div className="flex items-start justify-between gap-3">
         <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Назад</button>
         <div className="min-w-0 text-center">
