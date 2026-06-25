@@ -22939,6 +22939,7 @@ const getStudentDashboardChoiceLabel = (options = [], id = "") => findDailyChoic
 
 const trainerDashboardConditionalColumns = ["calories", "protein", "fat", "carbs", "steps", "sleep", "weight"];
 const createTrainerDashboardFormatDefaults = () => trainerDashboardConditionalColumns.reduce((acc, key) => {
+  const higherIsBetter = key === "steps" || key === "protein";
   acc[key] = {
     enabled: true,
     mode: "previous",
@@ -22953,7 +22954,8 @@ const createTrainerDashboardFormatDefaults = () => trainerDashboardConditionalCo
       less: "#ef4444",
       equal: "#facc15",
       inRange: "#22c55e",
-      outRange: "#ef4444",
+      belowRange: higherIsBetter ? "#f97316" : "#facc15",
+      aboveRange: higherIsBetter ? "#22c55e" : "#f97316",
       formulaHit: "#22c55e",
       formulaMiss: "#ef4444",
     },
@@ -22962,7 +22964,8 @@ const createTrainerDashboardFormatDefaults = () => trainerDashboardConditionalCo
       less: "#fee2e2",
       equal: "#fef9c3",
       inRange: "#dcfce7",
-      outRange: "#fee2e2",
+      belowRange: higherIsBetter ? "#ffedd5" : "#fef9c3",
+      aboveRange: higherIsBetter ? "#dcfce7" : "#ffedd5",
       formulaHit: "#dcfce7",
       formulaMiss: "#fee2e2",
     },
@@ -23030,6 +23033,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
   const [detail, setDetail] = useState(null);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [showConditionalSettings, setShowConditionalSettings] = useState(false);
+  const [isTableFullscreen, setIsTableFullscreen] = useState(false);
   const columnSettingsKey = `onlypump_student_dashboard_columns_${student?.id || "unknown"}`;
   const formatSettingsKey = `onlypump_student_dashboard_format_${student?.id || "unknown"}`;
   const [columnOverrides, setColumnOverrides] = useState(() => {
@@ -23270,7 +23274,9 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
       const min = Number(rule.min);
       const max = Number(rule.max);
       if (!Number.isFinite(min) || !Number.isFinite(max)) return { tdStyle: undefined, valueStyle: undefined };
-      relation = current >= Math.min(min, max) && current <= Math.max(min, max) ? "inRange" : "outRange";
+      const lower = Math.min(min, max);
+      const upper = Math.max(min, max);
+      relation = current < lower ? "belowRange" : current > upper ? "aboveRange" : "inRange";
     } else if (rule.mode === "formula") {
       const formulaResult = parseTrainerDashboardFormula(rule.formula, current, previous);
       if (formulaResult === null) return { tdStyle: undefined, valueStyle: undefined };
@@ -23307,9 +23313,121 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
       rows: dashboardRows.map(item => ({ dateKey: item.key, value: column.value(item) || 0 })),
     });
   };
+  const downloadStudentDashboardTable = () => {
+    const escapeExportCell = (value) => String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+    const styleToString = (style = {}) => Object.entries(style)
+      .filter(([, value]) => value !== undefined && value !== null && value !== "")
+      .map(([key, value]) => `${key}:${String(value).replace(/"/g, "'")}`)
+      .join(";");
+    const renderCell = (tag, content, style = {}) => `<${tag} style="${styleToString(style)}">${escapeExportCell(content)}</${tag}>`;
+    const border = "1px solid #e5e7eb";
+    const baseCellStyle = {
+      "border": border,
+      "padding": "8px 10px",
+      "vertical-align": "top",
+      "font-family": "Arial, sans-serif",
+      "font-size": "12px",
+      "color": "#111827",
+      "background-color": "#ffffff",
+    };
+    const headerCellStyle = {
+      ...baseCellStyle,
+      "background-color": "#111827",
+      "color": "#f9fafb",
+      "font-weight": "900",
+      "text-align": "left",
+      "white-space": "nowrap",
+      "text-transform": "uppercase",
+    };
+    const dayCellStyle = {
+      ...baseCellStyle,
+      "font-weight": "900",
+      "white-space": "nowrap",
+    };
+    const weeklySummaryStyle = {
+      ...baseCellStyle,
+      "background-color": "#fff1f2",
+      "color": "#b91c1c",
+      "font-weight": "900",
+      "border-top": "2px solid #fca5a5",
+    };
+    const monthSummaryStyle = {
+      ...baseCellStyle,
+      "background-color": "#fee2e2",
+      "color": "#991b1b",
+      "font-weight": "900",
+      "border-top": "2px solid #ef4444",
+    };
+    const renderMetricExportCell = (column, value, source, formatOptions, fallbackStyle = {}) => {
+      const format = getConditionalCellProps(column, source, formatOptions);
+      const style = {
+        ...baseCellStyle,
+        ...fallbackStyle,
+        "background-color": format.tdStyle?.backgroundColor || fallbackStyle["background-color"] || baseCellStyle["background-color"],
+        "color": format.valueStyle?.color || fallbackStyle.color || baseCellStyle.color,
+        "font-weight": fallbackStyle["font-weight"] || (column.key === "notes" ? "500" : "700"),
+        "white-space": column.nowrap ? "nowrap" : "normal",
+      };
+      return renderCell("td", value || "", style);
+    };
+    const headerHtml = `<tr>${[
+      renderCell("th", "Дата", headerCellStyle),
+      renderCell("th", "День", headerCellStyle),
+      ...visibleMetricColumns.map(column => renderCell("th", column.label, headerCellStyle)),
+    ].join("")}</tr>`;
+    const bodyRows = [];
+    dashboardRows.forEach((row, index) => {
+      bodyRows.push(`<tr>${[
+        renderCell("td", row.label, dayCellStyle),
+        renderCell("td", row.weekday, { ...baseCellStyle, "color": "#6b7280", "white-space": "nowrap" }),
+        ...visibleMetricColumns.map(column => renderMetricExportCell(column, column.value(row), row, { kind: "day", rowIndex: index })),
+      ].join("")}</tr>`);
+      if ((index + 1) % 7 === 0) {
+        const summaryIndex = Math.floor(index / 7);
+        const summary = weeklySummaryRows[summaryIndex]?.summary || summarizeRows(dashboardRows.slice(Math.max(0, index - 6), index + 1));
+        bodyRows.push(`<tr>${[
+          renderCell("td", "Итоги 7 дней", weeklySummaryStyle),
+          renderCell("td", row.label, weeklySummaryStyle),
+          ...visibleMetricColumns.map(column => renderMetricExportCell(column, column.summaryValue?.(summary) || "-", summary, { kind: "summary", summaryIndex }, weeklySummaryStyle)),
+        ].join("")}</tr>`);
+      }
+    });
+    bodyRows.push(`<tr>${[
+      renderCell("td", "Итоги месяца", monthSummaryStyle),
+      renderCell("td", monthLabel, monthSummaryStyle),
+      ...visibleMetricColumns.map(column => renderMetricExportCell(column, column.summaryValue?.(monthSummary) || "-", monthSummary, { kind: "summary", summaryIndex: summaryFormatRows.length - 1 }, monthSummaryStyle)),
+    ].join("")}</tr>`);
+    const title = `ONLYPUMP - ${studentName} - ${monthLabel}`;
+    const html = `<!doctype html>
+      <html>
+        <head><meta charset="utf-8"><title>${escapeExportCell(title)}</title></head>
+        <body>
+          <table style="border-collapse:collapse;">
+            <caption style="font-family:Arial,sans-serif;font-weight:900;font-size:18px;text-align:left;padding:0 0 12px 0;">${escapeExportCell(title)}</caption>
+            <thead>${headerHtml}</thead>
+            <tbody>${bodyRows.join("")}</tbody>
+          </table>
+        </body>
+      </html>`;
+    const safeName = String(studentName || "student").replace(/[^0-9A-Za-zА-Яа-яЁё_-]+/g, "_").replace(/^_+|_+$/g, "") || "student";
+    const blob = new Blob(["\ufeff", html], { type: "application/vnd.ms-excel;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `onlypump_${safeName}_${monthKey}_analytics.xls`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 500);
+  };
+  const isDashboardFullscreen = tab === "table" && isTableFullscreen;
 
-  return <div onClick={onClose} style={{ alignItems: "center", justifyContent: "center" }} className="profile-screen onlypump-modal-layer fixed inset-0 z-[235] flex bg-black/70 p-4 backdrop-blur-sm">
-    <BottomSheetPanel onClose={onClose} priority={235} onClick={(event) => event.stopPropagation()} className="student-dashboard-panel flex max-h-[min(calc(var(--onlypump-app-height)-72px),860px)] w-full max-w-6xl flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+  return <div onClick={onClose} style={{ alignItems: "center", justifyContent: "center" }} className={`profile-screen onlypump-modal-layer fixed inset-0 z-[235] flex bg-black/70 backdrop-blur-sm ${isDashboardFullscreen ? "p-2 md:p-4" : "p-4"}`}>
+    <BottomSheetPanel onClose={onClose} priority={235} onClick={(event) => event.stopPropagation()} className={`student-dashboard-panel flex w-full flex-col overflow-hidden border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl ${isDashboardFullscreen ? "h-[calc(var(--onlypump-app-height)-24px)] max-h-none max-w-none rounded-[1.5rem] md:w-[calc(100vw-32px)]" : "max-h-[min(calc(var(--onlypump-app-height)-72px),860px)] max-w-6xl rounded-[2rem]"}`}>
       <div className="flex items-start justify-between gap-3">
         <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Назад</button>
         <div className="min-w-0 text-center">
@@ -23339,10 +23457,12 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
           {tab === "table" && <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">{visibleMetricColumns.length} колонок</p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => setShowColumnPicker(prev => !prev)} className="rounded-full bg-white/8 px-4 py-2 text-xs font-black text-zinc-200 transition hover:bg-white/12">Колонки</button>
-                <button type="button" onClick={() => setShowConditionalSettings(prev => !prev)} className="rounded-full bg-red-500/15 px-4 py-2 text-xs font-black text-red-200 transition hover:bg-red-500/25">Формат</button>
-              </div>
+	              <div className="flex flex-wrap gap-2">
+	                <button type="button" onClick={() => setShowColumnPicker(prev => !prev)} className="rounded-full bg-white/8 px-4 py-2 text-xs font-black text-zinc-200 transition hover:bg-white/12">Колонки</button>
+	                <button type="button" onClick={() => setShowConditionalSettings(prev => !prev)} className="rounded-full bg-red-500/15 px-4 py-2 text-xs font-black text-red-200 transition hover:bg-red-500/25">Формат</button>
+	                <button type="button" onClick={downloadStudentDashboardTable} className="rounded-full bg-red-500 px-4 py-2 text-xs font-black text-black transition hover:bg-red-400">Скачать</button>
+	                <button type="button" onClick={() => setIsTableFullscreen(prev => !prev)} className="hidden rounded-full bg-white px-4 py-2 text-xs font-black text-black transition hover:bg-red-100 md:inline-flex">{isDashboardFullscreen ? "Свернуть" : "На весь экран"}</button>
+	              </div>
             </div>
             {showColumnPicker && <div className="grid gap-2 rounded-[22px] border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-2 lg:grid-cols-3">
               {optionalMetricColumns.map(column => {
@@ -23397,7 +23517,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
                       <button type="button" onClick={() => updateConditionalRule(column.key, { applyCell: !rule.applyCell })} className={`rounded-full px-3 py-1.5 ${rule.applyCell ? "bg-white text-black" : "bg-white/8 text-zinc-400"}`}>Ячейка</button>
                     </div>
                     <div className="mt-3 grid gap-2 text-[11px]">
-                      {(activeMode === "range" ? [["inRange", "В диапазоне"], ["outRange", "Вне диапазона"]] : activeMode === "formula" ? [["formulaHit", "Формула да"], ["formulaMiss", "Формула нет"]] : [["greater", "> / >="], ["less", "< / <="], ["equal", "="]]).map(([colorKey, label]) => <div key={colorKey} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-2xl bg-black/15 px-3 py-2">
+                      {(activeMode === "range" ? [["inRange", "В диапазоне"], ["belowRange", "Ниже диапазона"], ["aboveRange", "Выше диапазона"]] : activeMode === "formula" ? [["formulaHit", "Формула да"], ["formulaMiss", "Формула нет"]] : [["greater", "> / >="], ["less", "< / <="], ["equal", "="]]).map(([colorKey, label]) => <div key={colorKey} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-2xl bg-black/15 px-3 py-2">
                         <span className="font-black text-zinc-300">{label}</span>
                         <label className="flex items-center gap-1 text-zinc-500">Т
                           <input type="color" value={rule.textColors?.[colorKey] || "#ef4444"} onChange={(event) => updateColor("textColors", colorKey, event.target.value)} className="h-7 w-8 rounded-lg border border-white/10 bg-transparent"/>
