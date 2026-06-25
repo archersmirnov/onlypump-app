@@ -1076,7 +1076,7 @@ function initTelegramWebApp() {
 }
 
 const telegramWebApp = initTelegramWebApp();
-const ONLYPUMP_FRONTEND_BUILD = "workout-selected-date-jump-20260625-01";
+const ONLYPUMP_FRONTEND_BUILD = "analytics-table-live-refresh-20260625-01";
 console.log("ONLYPUMP START");
 console.log("ONLYPUMP BUILD", ONLYPUMP_FRONTEND_BUILD);
 console.log("Telegram object exists", Boolean(telegramWebApp || window.Telegram?.WebApp));
@@ -23336,6 +23336,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
   });
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(!initialData);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState(() => initialData ? normalizeStudentDashboardData(initialData, formatDateKey(new Date())) : { workouts: [], health_logs: [], nutrition_days: [], measurements: [] });
   const [detail, setDetail] = useState(null);
@@ -23405,14 +23406,37 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
 
   useEffect(() => {
     let alive = true;
-    if (initialData) {
+    const monthPrefix = monthKey.slice(0, 7);
+    const seedDate = initialMonthDate ? parseDateKeyLocal(initialMonthDate) : new Date();
+    const seedMonthPrefix = formatDateKey(new Date(seedDate.getFullYear(), seedDate.getMonth(), 1)).slice(0, 7);
+    const canUseInitialData = Boolean(initialData && seedMonthPrefix === monthPrefix);
+    if (canUseInitialData) {
       setData(normalizeStudentDashboardData(initialData, monthKey));
       setLoading(false);
       setError("");
-      return () => { alive = false; };
+    } else if (!initialData) {
+      setData({ workouts: [], health_logs: [], nutrition_days: [], measurements: [] });
     }
     const load = async () => {
-      setLoading(true);
+      if (!student?.id) {
+        if (!canUseInitialData) {
+          setLoading(false);
+          setError("Не выбран профиль для аналитики.");
+        }
+        return;
+      }
+      if (!hasOnlyPumpRemoteAuth(telegramInitData)) {
+        if (!canUseInitialData) {
+          setLoading(false);
+          setError("Войди в аккаунт, чтобы открыть аналитику.");
+        }
+        return;
+      }
+      if (canUseInitialData) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       setError("");
       try {
         const result = await callOnlyPumpProfileApi(telegramInitData, "load_student_dashboard", {
@@ -23425,16 +23449,15 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
         console.error("student dashboard error:", loadError);
         if (alive) setError(onlyPumpApiErrorMessage(loadError, "Не удалось загрузить аналитику ученика."));
       } finally {
-        if (alive) setLoading(false);
+        if (alive) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     };
-    if (student?.id && hasOnlyPumpRemoteAuth(telegramInitData)) load();
-    else {
-      setLoading(false);
-      setError("Войди в аккаунт, чтобы открыть аналитику ученика.");
-    }
+    load();
     return () => { alive = false; };
-  }, [initialData, monthKey, student?.id, telegramInitData]);
+  }, [initialData, initialMonthDate, monthKey, student?.id, telegramInitData]);
 
   const monthDays = useMemo(() => {
     const count = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
@@ -23788,6 +23811,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
         {[["overview", "Обычный вид"], ["table", "Таблица"], ["training", "Тренировки"]].map(([id, label]) => <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-full px-3 py-2 text-xs font-black transition ${tab === id ? "bg-red-500 text-black" : "bg-white/8 text-zinc-300"}`}>{label}</button>)}
       </div>
       {error && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{error}</p>}
+      {refreshing && !error && <p className="mt-3 rounded-2xl bg-white/[0.04] p-3 text-xs font-bold uppercase tracking-[0.14em] text-zinc-500">Обновляю таблицу...</p>}
       <div className="student-dashboard-scroll onlypump-sheet-list mt-4 flex-1 overflow-auto pr-1 onlypump-scrollbar-none" data-no-sheet-drag="true">
         {loading ? <p className="rounded-2xl bg-white/[0.04] p-4 text-sm text-zinc-500">Загружаю...</p> : <>
           {tab === "overview" && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
