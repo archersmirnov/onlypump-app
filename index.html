@@ -9989,6 +9989,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const currentSavePromise = new Promise(resolve => { resolveCurrentSave = resolve; });
     programBuilderSaveInFlightRef.current = currentSavePromise;
     const payload = buildProgramTemplatePayloadFromDraft({ ...draft, title, error: "" });
+    payload.replace_missing_children = !autosave;
     const localProgram = buildLocalProgramFromPayload(payload);
     if (localProgram?.days?.length) applyProgramTemplateUpdate(localProgram);
     if (!autosave) setProgramSaving(true);
