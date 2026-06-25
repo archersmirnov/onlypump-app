@@ -2113,21 +2113,21 @@ const personalTrackerAccents = {
 };
 
 const dailyMoodOptions = [
-  { id: "great", label: "Отличное", icon: "😄" },
-  { id: "good", label: "Хорошее", icon: "🙂" },
-  { id: "calm", label: "Спокойное", icon: "😌" },
-  { id: "tired", label: "Усталость", icon: "😮‍💨" },
-  { id: "stress", label: "Стресс", icon: "😵‍💫" },
-  { id: "bad", label: "Плохое", icon: "🙁" },
+  { id: "great", label: "Отличное", icon: "😄", asset: "assets/mood-wellbeing/v1/mood-great.svg" },
+  { id: "good", label: "Хорошее", icon: "🙂", asset: "assets/mood-wellbeing/v1/mood-good.svg" },
+  { id: "calm", label: "Спокойное", icon: "😌", asset: "assets/mood-wellbeing/v1/mood-calm.svg" },
+  { id: "tired", label: "Усталость", icon: "😮‍💨", asset: "assets/mood-wellbeing/v1/mood-tired.svg" },
+  { id: "stress", label: "Стресс", icon: "😵‍💫", asset: "assets/mood-wellbeing/v1/mood-stress.svg" },
+  { id: "bad", label: "Плохое", icon: "🙁", asset: "assets/mood-wellbeing/v1/mood-bad.svg" },
 ];
 
 const dailyWellbeingOptions = [
-  { id: "strong", label: "Сильное", icon: "💪" },
-  { id: "normal", label: "Нормальное", icon: "👌" },
-  { id: "low", label: "Слабость", icon: "🪫" },
-  { id: "sore", label: "Болит", icon: "🤕" },
-  { id: "sick", label: "Недомогание", icon: "🤒" },
-  { id: "recovered", label: "Восстановлен", icon: "✨" },
+  { id: "strong", label: "Сильное", icon: "💪", asset: "assets/mood-wellbeing/v1/wellbeing-strong.svg" },
+  { id: "normal", label: "Нормальное", icon: "👌", asset: "assets/mood-wellbeing/v1/wellbeing-normal.svg" },
+  { id: "low", label: "Слабость", icon: "🪫", asset: "assets/mood-wellbeing/v1/wellbeing-low.svg" },
+  { id: "sore", label: "Болит", icon: "🤕", asset: "assets/mood-wellbeing/v1/wellbeing-sore.svg" },
+  { id: "sick", label: "Недомогание", icon: "🤒", asset: "assets/mood-wellbeing/v1/wellbeing-sick.svg" },
+  { id: "recovered", label: "Восстановлен", icon: "✨", asset: "assets/mood-wellbeing/v1/wellbeing-recovered.svg" },
 ];
 
 const personalTrackerBinaryTypes = new Set(["habit", "abstinence"]);
@@ -2136,6 +2136,26 @@ const isPersonalTrackerMetricType = (type = "") => !isPersonalTrackerBinaryType(
 const findDailyChoice = (options = [], id = "") => options.find(option => option.id === id) || null;
 
 const isPersonalTrackerWidgetId = (id = "") => String(id).startsWith(PERSONAL_TRACKER_WIDGET_PREFIX);
+
+function DailyChoiceIcon({ option, size = "md" }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const sizeClass = size === "lg" ? "h-10 w-10 text-xl" : size === "sm" ? "h-8 w-8 text-base" : "h-9 w-9 text-lg";
+
+  if (!option) {
+    return <span className={`inline-flex ${sizeClass} shrink-0 items-center justify-center rounded-full bg-white/8 font-black text-zinc-500`}>—</span>;
+  }
+
+  if (option.asset && !imageFailed) {
+    return <img
+      src={option.asset}
+      alt=""
+      onError={() => setImageFailed(true)}
+      className={`${sizeClass} shrink-0 rounded-full object-contain`}
+    />;
+  }
+
+  return <span className={`inline-flex ${sizeClass} shrink-0 items-center justify-center rounded-full bg-white/8`}>{option.icon || "—"}</span>;
+}
 const personalTrackerWidgetId = (trackerId = "") => `${PERSONAL_TRACKER_WIDGET_PREFIX}${trackerId}`;
 const personalTrackerIdFromWidget = (widgetId = "") => String(widgetId).slice(PERSONAL_TRACKER_WIDGET_PREFIX.length);
 const getPersonalTrackerTypeConfig = (type = "liquid") => personalTrackerTypeConfigs[type] || personalTrackerTypeConfigs.liquid;
@@ -6862,7 +6882,6 @@ function MetricWidgetCard({ title, value, sub, delta, progress, icon: Icon, onCl
 function MoodWellbeingWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
   const mood = findDailyChoice(dailyMoodOptions, healthLog?.mood_key || healthLog?.mood);
   const wellbeing = findDailyChoice(dailyWellbeingOptions, healthLog?.wellbeing_key || healthLog?.wellbeing);
-  const hasData = Boolean(mood || wellbeing);
   const rowClass = "flex min-w-0 items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2";
 
   return <Card onClick={onOpen} className="h-full cursor-pointer p-4 transition hover:border-red-500/50 hover:bg-red-500/5">
@@ -6876,20 +6895,13 @@ function MoodWellbeingWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
     <div className="mt-4 space-y-2">
       <div className={rowClass}>
         <span className="min-w-0 truncate text-xs text-zinc-500">Настроение</span>
-        <span className="flex min-w-0 items-center gap-1 text-sm font-black">
-          <span>{mood?.icon || "—"}</span>
-          <span className="truncate">{mood?.label || "нет данных"}</span>
-        </span>
+        <DailyChoiceIcon option={mood} size="sm"/>
       </div>
       <div className={rowClass}>
         <span className="min-w-0 truncate text-xs text-zinc-500">Самочувствие</span>
-        <span className="flex min-w-0 items-center gap-1 text-sm font-black">
-          <span>{wellbeing?.icon || "—"}</span>
-          <span className="truncate">{wellbeing?.label || "нет данных"}</span>
-        </span>
+        <DailyChoiceIcon option={wellbeing} size="sm"/>
       </div>
     </div>
-    <p className="mt-3 text-[11px] text-zinc-500">{hasData ? "за выбранный день" : "нажми, чтобы отметить"}</p>
   </Card>;
 }
 
@@ -6910,9 +6922,11 @@ function DailyNoteWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
       <StickyNote size={18} className="shrink-0 text-yellow-800"/>
     </div>
     <div
-      className="mt-4 min-h-[88px] rounded-2xl border border-yellow-700/20 px-3 py-2 text-sm font-bold leading-7 text-zinc-900"
+      className="mt-4 min-h-[96px] rounded-2xl border border-yellow-700/20 px-3 py-3 text-sm font-bold text-zinc-900"
       style={{
-        backgroundImage: "repeating-linear-gradient(to bottom, rgba(113,63,18,0.16) 0 1px, transparent 1px 28px)",
+        lineHeight: "28px",
+        backgroundImage: "repeating-linear-gradient(to bottom, transparent 0 27px, rgba(113,63,18,0.16) 27px 28px)",
+        backgroundPosition: "0 10px",
       }}
     >
       <p
@@ -7445,7 +7459,7 @@ function MoodWellbeingEditorSheet({ dateKey, healthLog, onSave, onClose, saving 
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
             {dailyMoodOptions.map(option => <button key={option.id} type="button" onClick={() => setMoodDraft(option.id)} className={optionClass(moodDraft === option.id)}>
-              <span className="text-lg">{option.icon}</span>
+              <DailyChoiceIcon option={option} size="lg"/>
               <span className="min-w-0 truncate">{option.label}</span>
             </button>)}
           </div>
@@ -7458,7 +7472,7 @@ function MoodWellbeingEditorSheet({ dateKey, healthLog, onSave, onClose, saving 
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
             {dailyWellbeingOptions.map(option => <button key={option.id} type="button" onClick={() => setWellbeingDraft(option.id)} className={optionClass(wellbeingDraft === option.id)}>
-              <span className="text-lg">{option.icon}</span>
+              <DailyChoiceIcon option={option} size="lg"/>
               <span className="min-w-0 truncate">{option.label}</span>
             </button>)}
           </div>
@@ -7513,10 +7527,12 @@ function DailyNoteEditorSheet({ dateKey, healthLog, onSave, onClose, saving = fa
           onChange={(event) => setNoteDraft(event.target.value)}
           placeholder="Что важно запомнить за день?"
           rows={8}
-          className="mt-3 w-full resize-none rounded-2xl border border-yellow-700/30 bg-yellow-50/90 px-4 py-3 text-base font-bold leading-7 text-zinc-950 outline-none placeholder:text-yellow-900/35 focus:border-yellow-700"
+          className="mt-3 w-full resize-none rounded-2xl border border-yellow-700/30 bg-yellow-50/90 px-4 py-4 text-base font-bold text-zinc-950 outline-none placeholder:text-yellow-900/35 focus:border-yellow-700"
           style={{
             fontSize: 16,
-            backgroundImage: "repeating-linear-gradient(to bottom, transparent 0 26px, rgba(113,63,18,0.18) 26px 27px)",
+            lineHeight: "30px",
+            backgroundImage: "repeating-linear-gradient(to bottom, transparent 0 29px, rgba(113,63,18,0.18) 29px 30px)",
+            backgroundPosition: "0 12px",
           }}
         />
       </label>
