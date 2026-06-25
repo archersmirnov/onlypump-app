@@ -1076,7 +1076,7 @@ function initTelegramWebApp() {
 }
 
 const telegramWebApp = initTelegramWebApp();
-const ONLYPUMP_FRONTEND_BUILD = "student-analytics-hotfix-20260625-02";
+const ONLYPUMP_FRONTEND_BUILD = "student-analytics-table-graphs-20260625-02";
 console.log("ONLYPUMP START");
 console.log("ONLYPUMP BUILD", ONLYPUMP_FRONTEND_BUILD);
 console.log("Telegram object exists", Boolean(telegramWebApp || window.Telegram?.WebApp));
@@ -5124,7 +5124,9 @@ const writeCachedAnalyticsForProfile = (profile, type, metric, period, selectedD
 const normalizeAnalyticsRemotePayload = (data = {}) => ({
   measurements: Array.isArray(data.measurements) ? data.measurements : [],
   health_logs: Array.isArray(data.health_logs) ? data.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [],
-  nutrition_days: Array.isArray(data.nutrition_days) ? data.nutrition_days : [],
+  nutrition_days: Array.isArray(data.nutrition_days)
+    ? data.nutrition_days.map(day => normalizeNutritionDay(day, day.nutrition_date || day.date || data.date, initialNutritionGoal))
+    : [],
 });
 
 const nutritionDayHasFood = (day) => {
@@ -20021,6 +20023,7 @@ const measurementAnalyticsMetrics = [
   { key: "biceps_cm", label: "Бицепс", unit: "см" },
   { key: "waist_cm", label: "Талия", unit: "см" },
   { key: "abdomen_cm", label: "Живот", unit: "см" },
+  { key: "hips_cm", label: "Таз", unit: "см" },
   { key: "glutes_cm", label: "Ягодицы", unit: "см" },
   { key: "thigh_cm", label: "Бедро", unit: "см" },
   { key: "calf_cm", label: "Голень", unit: "см" },
@@ -20043,6 +20046,9 @@ const trainingAnalyticsMetrics = [
 
 const nutritionAnalyticsMetrics = [
   { key: "calories_total", label: "Калории", unit: "ккал", type: "bar" },
+  { key: "protein_total", label: "Белок", unit: "г", type: "bar" },
+  { key: "fat_total", label: "Жиры", unit: "г", type: "bar" },
+  { key: "carbs_total", label: "Углеводы", unit: "г", type: "bar" },
   { key: "palms_total", label: "Ладони", unit: "лад.", type: "bar" },
 ];
 
@@ -20054,6 +20060,9 @@ const analyticsTypeConfigs = {
   recovery: { title: "Восстановление", source: "health", metrics: healthAnalyticsMetrics.filter(metric => metric.key === "recovery_score"), defaultMetric: "recovery_score" },
   water: { title: "Вода", source: "health", metrics: healthAnalyticsMetrics.filter(metric => metric.key === "water_ml"), defaultMetric: "water_ml" },
   calories: { title: "Калории", source: "nutrition", metrics: nutritionAnalyticsMetrics, defaultMetric: "calories_total" },
+  protein: { title: "Белок", source: "nutrition", metrics: nutritionAnalyticsMetrics.filter(metric => metric.key === "protein_total"), defaultMetric: "protein_total" },
+  fat: { title: "Жиры", source: "nutrition", metrics: nutritionAnalyticsMetrics.filter(metric => metric.key === "fat_total"), defaultMetric: "fat_total" },
+  carbs: { title: "Углеводы", source: "nutrition", metrics: nutritionAnalyticsMetrics.filter(metric => metric.key === "carbs_total"), defaultMetric: "carbs_total" },
   training_load: { title: "Тренировочная нагрузка", source: "training", metrics: trainingAnalyticsMetrics, defaultMetric: "sets" },
 };
 
@@ -20531,8 +20540,16 @@ const nutritionPalmValueFromDay = (day = {}) => {
   return roundMacro((protein / 28) + (fat / 12) + (carbs / 35));
 };
 
+const nutritionMetricValue = (item = {}, metricKey = "calories_total") => {
+  if (metricKey === "palms_total") return nutritionPalmValueFromDay(item);
+  if (metricKey === "protein_total") return Number(item.protein_total ?? item.proteinTotal ?? item.totals?.protein ?? item.protein ?? 0);
+  if (metricKey === "fat_total") return Number(item.fat_total ?? item.fatTotal ?? item.totals?.fat ?? item.fat ?? 0);
+  if (metricKey === "carbs_total") return Number(item.carbs_total ?? item.carbsTotal ?? item.totals?.carbs ?? item.carbs ?? 0);
+  return Number(item.calories_total ?? item.caloriesTotal ?? item.totals?.calories ?? item.calories ?? 0);
+};
+
 const buildNutritionSeries = (days = [], metricKey = "calories_total") => days
-  .map(item => ({ date: String(item.nutrition_date || item.date || "").slice(0, 10), value: metricKey === "palms_total" ? nutritionPalmValueFromDay(item) : Number(item[metricKey] ?? item.totals?.calories ?? item.calories ?? 0) }))
+  .map(item => ({ date: String(item.nutrition_date || item.date || "").slice(0, 10), value: nutritionMetricValue(item, metricKey) }))
   .filter(item => item.date && Number.isFinite(item.value) && item.value > 0);
 
 const buildTrainingSeries = (workouts = [], metricKey = "sets") => {
@@ -20761,13 +20778,14 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
   </div>;
 }
 
-function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutritionDays = [], workouts, selectedDateKey, profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onClose, onOpenEditor }) {
+function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutritionDays = [], workouts, selectedDateKey, initialMetric = "", profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onClose, onOpenEditor }) {
   const typeConfig = analyticsTypeConfigs[type] || analyticsTypeConfigs.measurements;
   const usePalmNutritionDetail = typeConfig.source === "nutrition" && profileUsesPalmNutrition(profile);
   const metricOptions = usePalmNutritionDetail
     ? nutritionAnalyticsMetrics.filter(metric => metric.key === "palms_total")
     : (typeConfig.metrics.length ? typeConfig.metrics : measurementAnalyticsMetrics);
-  const defaultMetric = usePalmNutritionDetail ? "palms_total" : (typeConfig.defaultMetric || metricOptions[0].key);
+  const requestedMetric = metricOptions.some(item => item.key === initialMetric) ? initialMetric : "";
+  const defaultMetric = usePalmNutritionDetail ? "palms_total" : (requestedMetric || typeConfig.defaultMetric || metricOptions[0].key);
   const [metric, setMetric] = useState(defaultMetric);
   const [period, setPeriod] = useState(typeConfig.source === "training" ? "week" : "month");
   const [chartDateKey, setChartDateKey] = useState(selectedDateKey);
@@ -20798,7 +20816,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
     setMetric(defaultMetric);
     setPeriod(typeConfig.source === "training" ? "week" : "month");
     setChartDateKey(selectedDateKey);
-  }, [type, defaultMetric]);
+  }, [type, defaultMetric, selectedDateKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -20887,6 +20905,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
 
 function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements, nutritionDay, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], personalTrackers = [], healthSaving = false, healthRefreshing = false, profileSaving = false, selectedDateKey = formatDateKey(new Date()), setSelectedDateKey = () => {}, telegramInitData = "", profileStatus = "local", analyticsIntent = null, onSaveHealthLog, onSaveWeightMeasurement, onSaveAnalyticsCardSettings, onOpenNutrition, onOpenProgress }) {
   const [detail, setDetail] = useState(null);
+  const [tableViewOpen, setTableViewOpen] = useState(false);
   const [trackerDetail, setTrackerDetail] = useState(null);
   const [editorType, setEditorType] = useState(null);
   const [editorMetric, setEditorMetric] = useState(null);
@@ -21023,6 +21042,12 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
         : (selectedNutritionRecord ? [selectedNutritionRecord] : []),
     };
   }, [canLoadAnalyticsOverview, currentHealthLog, healthLogs, localMeasurementHasData, localMeasurementRecord, remotePeriodData, remotePeriodError, selectedDateKey, selectedNutritionRecord]);
+  const selfAnalyticsTableData = useMemo(() => ({
+    workouts,
+    health_logs: analyticsData.health_logs.length ? analyticsData.health_logs : [currentHealthLog],
+    nutrition_days: analyticsData.nutrition_days.length ? analyticsData.nutrition_days : (selectedNutritionRecord ? [selectedNutritionRecord] : []),
+    measurements: analyticsData.measurements.length ? analyticsData.measurements : (localMeasurementHasData ? [localMeasurementRecord] : []),
+  }), [analyticsData.health_logs, analyticsData.measurements, analyticsData.nutrition_days, currentHealthLog, localMeasurementHasData, localMeasurementRecord, selectedNutritionRecord, workouts]);
 
   const periodStats = useMemo(() => buildAnalyticsStats({
     workouts,
@@ -21387,6 +21412,8 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     <div className="mb-6 flex items-start justify-between gap-4">
       <Header title="Аналитика" subtitle="Календарь, карточки, тоннаж, активность и ачивки."/>
       <div className="flex shrink-0 gap-2 pt-1">
+	        <button type="button" onClick={() => setTableViewOpen(true)} className="hidden h-11 items-center rounded-full bg-red-500 px-4 text-xs font-black text-black transition hover:bg-red-400 sm:flex">Смотреть в таблице</button>
+	        <button type="button" onClick={() => setTableViewOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-black transition hover:bg-red-400 sm:hidden" aria-label="Смотреть в таблице"><Grid3X3 size={18}/></button>
 	        <button type="button" data-tour="analytics-add-card" onClick={() => setCardPickerOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200"><Plus size={20}/></button>
 	        <button type="button" data-tour="analytics-settings" onClick={() => setCardSettingsOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200"><Settings size={20}/></button>
       </div>
@@ -21403,6 +21430,14 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       {personalTrackers.map(renderPersonalTrackerAnalyticsCard)}
     </PageGrid>
     {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} nutritionDays={analyticsData.nutrition_days} workouts={workouts} selectedDateKey={selectedDateKey} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onClose={() => setDetail(null)} onOpenEditor={detail.type === "training_load" || analyticsPeriod !== "day" ? null : openEditorForDetail}/>}
+    {tableViewOpen && <TrainerStudentDashboardSheet
+      student={profile}
+      telegramInitData={telegramInitData}
+      initialData={selfAnalyticsTableData}
+      initialMonthDate={selectedDateKey}
+      selfMode
+      onClose={() => setTableViewOpen(false)}
+    />}
     {trackerDetail && <PersonalTrackerAnalyticsSheet tracker={trackerDetail} selectedDateKey={selectedDateKey} onClose={() => setTrackerDetail(null)}/>}
     {editorType === "weight" && <WeightEditorSheet dateKey={selectedDateKey} measurements={latestMeasurement} profile={profile} saving={profileSaving} onClose={() => setEditorType(null)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => setEditorType(null)}/>}
     {editorType === "measurement" && <MeasurementEditorSheet dateKey={selectedDateKey} metricKey={editorMetric || "waist_cm"} measurements={latestMeasurement} profile={profile} saving={profileSaving} onClose={() => setEditorType(null)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => setEditorType(null)}/>}
@@ -23168,13 +23203,113 @@ const getTrainerDashboardRawValue = (column, source = {}) => {
   return Number.isFinite(number) && number > 0 ? number : null;
 };
 
-function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose }) {
-  const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+const normalizeStudentDashboardData = (payload = {}, monthKey = formatDateKey(new Date())) => ({
+  workouts: Array.isArray(payload.workouts) ? payload.workouts : buildWorkoutsTreeFromApiResponse(payload, monthKey),
+  health_logs: Array.isArray(payload.health_logs) ? payload.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date || monthKey)) : [],
+  nutrition_days: Array.isArray(payload.nutrition_days)
+    ? payload.nutrition_days.map(day => normalizeNutritionDay(day, day.nutrition_date || day.date || monthKey, initialNutritionGoal))
+    : [],
+  measurements: Array.isArray(payload.measurements) ? payload.measurements : [],
+});
+
+const studentDashboardMetricGraphByKey = {
+  workout: { type: "training_load", metric: "workouts" },
+  cardio: { type: "training_load", metric: "workouts" },
+  volume: { type: "training_load", metric: "volume" },
+  sets: { type: "training_load", metric: "sets" },
+  calories: { type: "calories", metric: "calories_total" },
+  protein: { type: "protein", metric: "protein_total" },
+  fat: { type: "fat", metric: "fat_total" },
+  carbs: { type: "carbs", metric: "carbs_total" },
+  sleep: { type: "sleep", metric: "sleep_duration_minutes" },
+  steps: { type: "steps", metric: "steps_count" },
+  weight: { type: "weight", metric: "weight_kg" },
+  weightChange: { type: "weight", metric: "weight_kg" },
+};
+
+const studentMeasurementValue = (measurement = {}, key = "") => {
+  const value = Number(measurement?.[key]);
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
+
+const getStudentMeasurementPreviousValue = (rows = [], rowIndex = 0, key = "") => {
+  for (let index = rowIndex - 1; index >= 0; index -= 1) {
+    const value = studentMeasurementValue(rows[index], key);
+    if (value !== null) return value;
+  }
+  return null;
+};
+
+const getStudentMeasurementCellStyle = (rows = [], rowIndex = 0, key = "") => {
+  const current = studentMeasurementValue(rows[rowIndex], key);
+  const previous = getStudentMeasurementPreviousValue(rows, rowIndex, key);
+  if (current === null || previous === null || Math.abs(current - previous) < 0.0001) return {};
+  if (current > previous) {
+    return { backgroundColor: "rgba(249, 115, 22, 0.12)", color: "#fb923c" };
+  }
+  return { backgroundColor: "rgba(34, 197, 94, 0.12)", color: "#4ade80" };
+};
+
+function StudentMeasurementsTableSheet({ profile = DEFAULT_PROFILE, measurements = [], monthDate = new Date(), onClose, onOpenGraph }) {
+  const monthPrefix = formatDateKey(monthDate).slice(0, 7);
+  const rows = (Array.isArray(measurements) ? measurements : [])
+    .filter(item => {
+      const key = measurementDateKey(item);
+      return key && key.startsWith(monthPrefix);
+    })
+    .sort((a, b) => measurementDateKey(a).localeCompare(measurementDateKey(b)));
+  const studentName = getManagedUserTitle(profile);
+
+  return <div onClick={onClose} className="fixed inset-0 z-[255] flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center">
+    <BottomSheetPanel onClose={onClose} priority={255} onClick={(event) => event.stopPropagation()} className="flex max-h-[min(calc(var(--onlypump-app-height)-48px),840px)] w-full max-w-6xl flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-red-400">Замеры</p>
+          <h3 className="mt-2 text-2xl font-black">{studentName}</h3>
+          <p className="mt-1 text-sm text-zinc-500">{monthDate.toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}</p>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8">×</button>
+      </div>
+      <p className="mt-4 rounded-2xl bg-white/[0.04] p-3 text-xs text-zinc-500">Нажми на заголовок или значение замера, чтобы открыть график по этому параметру.</p>
+      <div className="mt-4 flex-1 overflow-auto rounded-[24px] border border-white/10 onlypump-scrollbar-none" data-no-sheet-drag="true">
+        <table className="min-w-[1120px] border-separate border-spacing-0 text-sm">
+          <thead><tr>
+            <th className="sticky left-0 top-0 z-20 min-w-[112px] bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500">Дата</th>
+            {measurementAnalyticsMetrics.map(metric => <th key={metric.key} className="sticky top-0 z-10 min-w-[118px] bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500">
+              <button type="button" onClick={() => onOpenGraph?.(metric.key, metric.label)} className="transition hover:text-red-300">{metric.label}</button>
+            </th>)}
+          </tr></thead>
+          <tbody>
+            {rows.length ? rows.map((row, rowIndex) => <tr key={measurementDateKey(row) || rowIndex}>
+              <td className="sticky left-0 z-10 border-t border-white/10 bg-zinc-950 p-3 font-black">{formatShortDateRu(measurementDateKey(row))}</td>
+              {measurementAnalyticsMetrics.map(metric => {
+                const value = studentMeasurementValue(row, metric.key);
+                const style = getStudentMeasurementCellStyle(rows, rowIndex, metric.key);
+                return <td key={metric.key} style={style.backgroundColor ? { backgroundColor: style.backgroundColor } : undefined} className="border-t border-white/10 p-2">
+                  <button type="button" disabled={value === null} onClick={() => value !== null && onOpenGraph?.(metric.key, metric.label)} style={style.color ? { color: style.color } : undefined} className={`min-h-10 w-full rounded-xl bg-white/[0.035] px-2 text-left font-bold transition ${value === null ? "text-zinc-700" : "hover:bg-white/[0.08]"}`}>
+                    {value === null ? "—" : formatAnalyticsValue(value, metric.unit, metric.key)}
+                  </button>
+                </td>;
+              })}
+            </tr>) : <tr><td colSpan={measurementAnalyticsMetrics.length + 1} className="border-t border-white/10 p-6 text-sm text-zinc-500">Замеров за этот месяц нет.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialData = null, initialMonthDate = null, selfMode = false, onClose }) {
+  const [monthDate, setMonthDate] = useState(() => {
+    const seed = initialMonthDate ? parseDateKeyLocal(initialMonthDate) : new Date();
+    return new Date(seed.getFullYear(), seed.getMonth(), 1);
+  });
   const [tab, setTab] = useState("overview");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState("");
-  const [data, setData] = useState({ workouts: [], health_logs: [], nutrition_days: [], measurements: [] });
+  const [data, setData] = useState(() => initialData ? normalizeStudentDashboardData(initialData, formatDateKey(new Date())) : { workouts: [], health_logs: [], nutrition_days: [], measurements: [] });
   const [detail, setDetail] = useState(null);
+  const [measurementTableOpen, setMeasurementTableOpen] = useState(false);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [showConditionalSettings, setShowConditionalSettings] = useState(false);
   const [isTableFullscreen, setIsTableFullscreen] = useState(false);
@@ -23240,6 +23375,12 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
 
   useEffect(() => {
     let alive = true;
+    if (initialData) {
+      setData(normalizeStudentDashboardData(initialData, monthKey));
+      setLoading(false);
+      setError("");
+      return () => { alive = false; };
+    }
     const load = async () => {
       setLoading(true);
       setError("");
@@ -23249,12 +23390,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
           month: monthKey,
         });
         if (!alive) return;
-        setData({
-          workouts: buildWorkoutsTreeFromApiResponse(result, monthKey),
-          health_logs: Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [],
-          nutrition_days: Array.isArray(result.nutrition_days) ? result.nutrition_days.map(day => normalizeNutritionDay(day, initialNutritionGoal)) : [],
-          measurements: Array.isArray(result.measurements) ? result.measurements : [],
-        });
+        setData(normalizeStudentDashboardData(result, monthKey));
       } catch (loadError) {
         console.error("student dashboard error:", loadError);
         if (alive) setError(onlyPumpApiErrorMessage(loadError, "Не удалось загрузить аналитику ученика."));
@@ -23268,7 +23404,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
       setError("Войди в аккаунт, чтобы открыть аналитику ученика.");
     }
     return () => { alive = false; };
-  }, [monthKey, student?.id, telegramInitData]);
+  }, [initialData, monthKey, student?.id, telegramInitData]);
 
   const monthDays = useMemo(() => {
     const count = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
@@ -23449,8 +23585,28 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
   });
   const optionalMetricColumns = metricColumns.filter(column => column.optional);
   const formatMetricColumns = metricColumns.filter(column => trainerDashboardConditionalColumns.includes(column.key));
-  const openMetricDetail = (column, row) => {
+  const openMetricGraph = (column) => {
+    if (!column) return;
+    if (column.key === "measurements") {
+      setMeasurementTableOpen(true);
+      return;
+    }
+    const graph = studentDashboardMetricGraphByKey[column.key];
+    if (!graph) return;
     setDetail({
+      mode: "graph",
+      title: column.label,
+      type: graph.type,
+      initialMetric: graph.metric,
+    });
+  };
+  const openMetricDetail = (column, row) => {
+    if (column.key === "measurements") {
+      setMeasurementTableOpen(true);
+      return;
+    }
+    setDetail({
+      mode: "value",
       title: column.label,
       dateKey: row.key,
       value: column.value(row) || "нет данных",
@@ -23576,7 +23732,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
       <div className="student-dashboard-head flex items-start justify-between gap-3">
         <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Назад</button>
         <div className="student-dashboard-title-block min-w-0 text-center">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Ученик</p>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">{selfMode ? "Аналитика" : "Ученик"}</p>
           <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{studentName}</h2>
           <p className="student-dashboard-identity mt-1 text-xs text-zinc-500">{getManagedUserIdentity(student)}</p>
         </div>
@@ -23691,7 +23847,14 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
               <thead><tr>
                 <th className="sticky left-0 top-0 z-20 min-w-[72px] bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500">Дата</th>
                 <th className="sticky top-0 z-10 min-w-[72px] bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500">День</th>
-                {visibleMetricColumns.map(column => <th key={column.key} className={`sticky top-0 z-10 bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500 ${column.widthClass || "min-w-[92px]"}`}>{column.label}</th>)}
+                {visibleMetricColumns.map(column => {
+                  const canOpenGraph = column.key === "measurements" || Boolean(studentDashboardMetricGraphByKey[column.key]);
+                  return <th key={column.key} className={`sticky top-0 z-10 bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500 ${column.widthClass || "min-w-[92px]"}`}>
+                    {canOpenGraph
+                      ? <button type="button" onClick={() => openMetricGraph(column)} className="text-left transition hover:text-red-300">{column.label}</button>
+                      : column.label}
+                  </th>;
+                })}
               </tr></thead>
               <tbody>
                 {dashboardRows.map((row, index) => <React.Fragment key={row.key}>
@@ -23754,7 +23917,31 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
           </div>}
         </>}
       </div>
-      {detail && <div onClick={() => setDetail(null)} className="fixed inset-0 z-[245] flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center">
+      {detail?.mode === "graph" && <AnalyticsDetailSheet
+        type={detail.type}
+        title={detail.title}
+        initialMetric={detail.initialMetric}
+        measurements={data.measurements}
+        healthLogs={data.health_logs}
+        nutritionDays={data.nutrition_days}
+        workouts={data.workouts}
+        selectedDateKey={monthKey}
+        profile={student || DEFAULT_PROFILE}
+        profileStatus="local"
+        telegramInitData=""
+        onClose={() => setDetail(null)}
+      />}
+      {measurementTableOpen && <StudentMeasurementsTableSheet
+        profile={student || DEFAULT_PROFILE}
+        measurements={data.measurements}
+        monthDate={monthDate}
+        onClose={() => setMeasurementTableOpen(false)}
+        onOpenGraph={(metricKey, label) => {
+          setMeasurementTableOpen(false);
+          setDetail({ mode: "graph", title: label, type: "measurements", initialMetric: metricKey });
+        }}
+      />}
+      {detail && detail.mode !== "graph" && <div onClick={() => setDetail(null)} className="fixed inset-0 z-[245] flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center">
         <div onClick={(event) => event.stopPropagation()} className="w-full max-w-md rounded-[28px] border border-white/10 bg-zinc-950 p-5 shadow-2xl">
           <div className="flex items-start justify-between gap-3">
             <div><p className="text-xs font-black uppercase tracking-[0.18em] text-red-400">Детали</p><h3 className="mt-2 text-2xl font-black">{detail.title}</h3><p className="mt-1 text-sm text-zinc-500">{formatCycleCardDate(detail.dateKey)}</p></div>
@@ -25356,6 +25543,37 @@ function OnlyPumpPlatform() {
     }
   }, [globalSelectedDateKey, healthLogs]);
 
+  const loadProgressForProfile = useCallback(async (activeProfile, initData, dateKey = globalSelectedDateKey) => {
+    if (!activeProfile) return null;
+
+    if (!hasOnlyPumpRemoteAuth(initData) || !activeProfile.id) {
+      setMeasurements(prev => {
+        const next = progressMeasurementsFromRecord(activeProfile, prev);
+        return progressMeasurementsEqual(prev, next) ? prev : next;
+      });
+      return null;
+    }
+
+    try {
+      const result = await callOnlyPumpProfileApi(initData, "load_progress", { date: dateKey });
+      const freshProfile = result?.profile ? normalizeProfileRecord(result.profile, activeProfile) : activeProfile;
+      const effectiveRecord = result?.effective_measurement || result?.measurement || freshProfile || activeProfile;
+      setMeasurements(prev => {
+        const profileMeasurements = progressMeasurementsFromRecord(freshProfile, prev);
+        const next = progressMeasurementsFromRecord(effectiveRecord, profileMeasurements);
+        return progressMeasurementsEqual(prev, next) ? prev : next;
+      });
+      return result;
+    } catch (error) {
+      console.error("onlypump-profile-api progress error:", error);
+      setMeasurements(prev => {
+        const next = progressMeasurementsFromRecord(activeProfile, prev);
+        return progressMeasurementsEqual(prev, next) ? prev : next;
+      });
+      return null;
+    }
+  }, [globalSelectedDateKey]);
+
   const handleSaveHealthLog = useCallback(async (payload = {}) => {
     const dateKey = payload.date || payload.log_date || globalSelectedDateKey;
     const currentDateLog = (healthLog?.log_date || healthLog?.date) === dateKey
@@ -25925,6 +26143,7 @@ function OnlyPumpPlatform() {
         loadWorkoutsForProfile(savedProfile, telegramInitData, { useCache: true }),
         loadNutritionForProfile(savedProfile, telegramInitData, globalSelectedDateKey, { useCache: true }),
         loadHealthForProfile(savedProfile, telegramInitData, globalSelectedDateKey),
+        loadProgressForProfile(savedProfile, telegramInitData, globalSelectedDateKey),
       ]).then((results) => console.log("Access granted data refreshed", results.map(item => item.status)));
       return true;
     } catch (error) {
@@ -25936,7 +26155,7 @@ function OnlyPumpPlatform() {
       setProfileLoading(false);
       setAppLoading(false);
     }
-  }, [applyProfileState, globalSelectedDateKey, loadHealthForProfile, loadNutritionForProfile, loadWorkoutsForProfile, profile, telegramInitData]);
+  }, [applyProfileState, globalSelectedDateKey, loadHealthForProfile, loadNutritionForProfile, loadProgressForProfile, loadWorkoutsForProfile, profile, telegramInitData]);
 
   useEffect(() => {
     if (!profile) return;
@@ -26048,6 +26267,7 @@ function OnlyPumpPlatform() {
 	        loadWorkoutsForProfile(activeProfile, result.status === "verified" ? initData : "", { useCache: true }),
 	        loadNutritionForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey, { useCache: true }),
 	        loadHealthForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey),
+	        loadProgressForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey),
 	      ]);
 	      const initialDataResults = await Promise.race([
 	        initialDataPromise,
@@ -26104,6 +26324,13 @@ function OnlyPumpPlatform() {
     const canUseRemoteHealth = profileStatus === "verified" && profileHasTestAccess(profile) && Boolean(hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id);
     loadHealthForProfile(profile, canUseRemoteHealth ? telegramInitData : "", globalSelectedDateKey);
   }, [accessGateStatus, globalSelectedDateKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData]);
+
+  useEffect(() => {
+    if (!profile) return;
+    if (accessGateStatus) return;
+    const canUseRemoteProgress = profileStatus === "verified" && profileHasTestAccess(profile) && Boolean(hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id);
+    loadProgressForProfile(profile, canUseRemoteProgress ? telegramInitData : "", globalSelectedDateKey);
+  }, [accessGateStatus, globalSelectedDateKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData, loadProgressForProfile]);
 
   useEffect(() => {
     if (!profile || !nutritionDay?.date) return;
