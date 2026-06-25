@@ -828,7 +828,7 @@ import {
   BarChart3, Users, User, Bell, Flame, ChevronDown, Play, Activity, Grid3X3,
   Menu, CalendarDays, Trophy, Moon, Target, BookOpen, MessageCircle, Settings,
   ShieldCheck, CreditCard, Scale, Ruler, Utensils, Clock3, CheckCircle2, Lock,
-  Search, Plus, ExternalLink, Star, Zap, HeartPulse, Droplets, MoreHorizontal, Share2, Pencil, Repeat2, Route, ChevronRight
+  Search, Plus, ExternalLink, Star, Zap, HeartPulse, Droplets, MoreHorizontal, Share2, Pencil, Repeat2, Route, ChevronRight, Smile, StickyNote
 } from "lucide-react";
 
 function syncOnlyPumpViewportHeight(tg) {
@@ -2078,6 +2078,8 @@ const homeWidgetCatalog = [
   { id: "macros", label: "БЖУ", description: "Белки, жиры и углеводы со шкалами", default: false, span: "compact" },
   { id: "water", label: "Вода", description: "Трекер выпитой воды за день", default: false, span: "compact" },
   { id: "personalTracker", label: "Трекер", description: "Персональный трекер жидкости, еды, привычки или отказа", default: false, span: "compact" },
+  { id: "moodWellbeing", label: "Настроение и самочувствие", description: "Два показателя за выбранный день", default: false, span: "compact" },
+  { id: "dailyNote", label: "Заметки", description: "Заметка по выбранному дню", default: false, span: "compact" },
   { id: "workout", label: "Сегодняшняя тренировка", description: "План и прогресс тренировки дня", default: false, span: "large" },
   { id: "nutrition", label: "Питание на сегодня", description: "Калории и кольцо прогресса", default: false, span: "large" },
   { id: "weekProgress", label: "Прогресс недели", description: "График выполнения плана", default: false, span: "large" },
@@ -2104,9 +2106,34 @@ const personalTrackerTypeConfigs = {
 const personalTrackerAccents = {
   sky: { color: "#38bdf8", text: "text-sky-400", soft: "bg-sky-500/15 text-sky-300 hover:bg-sky-500/25", ring: "from-sky-500 to-cyan-400" },
   red: { color: "#ef4444", text: "text-red-500", soft: "bg-red-500/15 text-red-300 hover:bg-red-500/25", ring: "from-red-700 to-red-500" },
+  amber: { color: "#f59e0b", text: "text-amber-400", soft: "bg-amber-500/15 text-amber-300 hover:bg-amber-500/25", ring: "from-amber-400 to-orange-500" },
+  yellow: { color: "#facc15", text: "text-yellow-400", soft: "bg-yellow-500/15 text-yellow-300 hover:bg-yellow-500/25", ring: "from-yellow-300 to-amber-400" },
   green: { color: "#22c55e", text: "text-emerald-400", soft: "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25", ring: "from-emerald-500 to-lime-400" },
   violet: { color: "#a855f7", text: "text-violet-400", soft: "bg-violet-500/15 text-violet-300 hover:bg-violet-500/25", ring: "from-violet-500 to-fuchsia-400" },
 };
+
+const dailyMoodOptions = [
+  { id: "great", label: "Отличное", icon: "😄" },
+  { id: "good", label: "Хорошее", icon: "🙂" },
+  { id: "calm", label: "Спокойное", icon: "😌" },
+  { id: "tired", label: "Усталость", icon: "😮‍💨" },
+  { id: "stress", label: "Стресс", icon: "😵‍💫" },
+  { id: "bad", label: "Плохое", icon: "🙁" },
+];
+
+const dailyWellbeingOptions = [
+  { id: "strong", label: "Сильное", icon: "💪" },
+  { id: "normal", label: "Нормальное", icon: "👌" },
+  { id: "low", label: "Слабость", icon: "🪫" },
+  { id: "sore", label: "Болит", icon: "🤕" },
+  { id: "sick", label: "Недомогание", icon: "🤒" },
+  { id: "recovered", label: "Восстановлен", icon: "✨" },
+];
+
+const personalTrackerBinaryTypes = new Set(["habit", "abstinence"]);
+const isPersonalTrackerBinaryType = (type = "") => personalTrackerBinaryTypes.has(String(type || ""));
+const isPersonalTrackerMetricType = (type = "") => !isPersonalTrackerBinaryType(type);
+const findDailyChoice = (options = [], id = "") => options.find(option => option.id === id) || null;
 
 const isPersonalTrackerWidgetId = (id = "") => String(id).startsWith(PERSONAL_TRACKER_WIDGET_PREFIX);
 const personalTrackerWidgetId = (trackerId = "") => `${PERSONAL_TRACKER_WIDGET_PREFIX}${trackerId}`;
@@ -2225,16 +2252,17 @@ const normalizePersonalTracker = (tracker = {}) => {
   Object.entries(tracker.entries || {}).forEach(([dateKey, entry]) => {
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) entries[dateKey] = normalizePersonalTrackerEntry(entry);
   });
-  const portions = Array.isArray(tracker.portions) && tracker.portions.length
+  const usesMetric = isPersonalTrackerMetricType(type);
+  const portions = usesMetric && Array.isArray(tracker.portions) && tracker.portions.length
     ? tracker.portions.map(value => profileNonNegativeNumber(value, 0)).filter(value => value > 0).slice(0, 4)
-    : config.defaultPortions;
+    : (usesMetric ? config.defaultPortions : []);
   return {
     id,
     type,
     title: String(tracker.title || config.defaultTitle).trim() || config.defaultTitle,
-    mode: tracker.mode === "limit" ? "limit" : "goal",
+    mode: usesMetric && tracker.mode === "limit" ? "limit" : "goal",
     target: Math.max(1, profileNonNegativeNumber(tracker.target, config.defaultTarget)),
-    unit: String(tracker.unit || config.unit || "").trim(),
+    unit: usesMetric ? String(tracker.unit || config.unit || "").trim() : String(config.unit || "").trim(),
     portions,
     startDate: tracker.startDate || tracker.start_date || formatDateKey(new Date()),
     durationDays: Math.max(1, profileNonNegativeNumber(tracker.durationDays ?? tracker.duration_days, config.defaultTarget)),
@@ -2293,7 +2321,7 @@ const upsertPersonalTrackerEntry = (trackers = [], trackerId, dateKey, entryPatc
 
 const getPersonalTrackerProgress = (tracker = {}, entry = {}, dateKey = formatDateKey(new Date())) => {
   const config = getPersonalTrackerTypeConfig(tracker.type);
-  if (tracker.type === "habit" || tracker.type === "abstinence") {
+  if (isPersonalTrackerBinaryType(tracker.type)) {
     const stats = getPersonalTrackerStreakStats(tracker, dateKey);
     return Math.min(100, Math.round((stats.completed / Math.max(1, tracker.durationDays || config.defaultTarget)) * 100));
   }
@@ -2324,7 +2352,7 @@ const getPersonalTrackerStreakStats = (tracker = {}, selectedDateKey = formatDat
 
 const getPersonalTrackerValueLabel = (tracker = {}, dateKey = formatDateKey(new Date())) => {
   const entry = getPersonalTrackerEntry(tracker, dateKey);
-  if (tracker.type === "habit" || tracker.type === "abstinence") {
+  if (isPersonalTrackerBinaryType(tracker.type)) {
     const stats = getPersonalTrackerStreakStats(tracker, dateKey);
     return `${stats.completed} дн`;
   }
@@ -2337,7 +2365,7 @@ const getPersonalTrackerPeriodStats = (tracker = {}, period = "day", selectedDat
   const rows = Object.entries(tracker.entries || {})
     .filter(([dateKey]) => isDateKeyInRange(dateKey, range))
     .map(([dateKey, entry]) => ({ dateKey, entry: normalizePersonalTrackerEntry(entry) }));
-  if (tracker.type === "habit" || tracker.type === "abstinence") {
+  if (isPersonalTrackerBinaryType(tracker.type)) {
     return {
       count: rows.filter(row => row.entry.done).length,
       rows,
@@ -2591,6 +2619,8 @@ const DEFAULT_HEALTH_LOG = {
   recovery_score: null,
   water_ml: 0,
   water_target_ml: 2500,
+  mood_key: "",
+  wellbeing_key: "",
   notes: "",
 };
 
@@ -2628,6 +2658,9 @@ const normalizeHealthLog = (record = {}, dateKey = formatDateKey(new Date())) =>
     steps_count: profileNonNegativeNumber(record.steps_count, 0),
     water_ml: profileNonNegativeNumber(record.water_ml, DEFAULT_HEALTH_LOG.water_ml),
     water_target_ml: profileNonNegativeNumber(record.water_target_ml, DEFAULT_HEALTH_LOG.water_target_ml),
+    mood_key: String(record.mood_key || record.mood || ""),
+    wellbeing_key: String(record.wellbeing_key || record.wellbeing || ""),
+    notes: String(record.notes || ""),
     sleep_duration_minutes: duration,
     sleep_latency_minutes: profileNonNegativeNumber(record.sleep_latency_minutes, 0),
     sleep_awakenings: profileNonNegativeNumber(record.sleep_awakenings, 0),
@@ -2647,6 +2680,8 @@ const healthLogHasRealData = (log = {}) => {
     || profileNonNegativeNumber(log.sleep_duration_minutes, 0) > 0
     || Boolean(log.sleep_started_at || log.sleep_ended_at)
     || log.recovery_score !== null && log.recovery_score !== undefined
+    || String(log.mood_key || log.mood || "").trim().length > 0
+    || String(log.wellbeing_key || log.wellbeing || "").trim().length > 0
     || String(log.notes || "").trim().length > 0;
 };
 
@@ -6824,6 +6859,72 @@ function MetricWidgetCard({ title, value, sub, delta, progress, icon: Icon, onCl
   </Card>;
 }
 
+function MoodWellbeingWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
+  const mood = findDailyChoice(dailyMoodOptions, healthLog?.mood_key || healthLog?.mood);
+  const wellbeing = findDailyChoice(dailyWellbeingOptions, healthLog?.wellbeing_key || healthLog?.wellbeing);
+  const hasData = Boolean(mood || wellbeing);
+  const rowClass = "flex min-w-0 items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2";
+
+  return <Card onClick={onOpen} className="h-full cursor-pointer p-4 transition hover:border-red-500/50 hover:bg-red-500/5">
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-500">День</p>
+        <h3 className="mt-1 break-words text-base font-black leading-tight">Настроение и самочувствие</h3>
+      </div>
+      <Smile size={18} className="shrink-0 text-red-500"/>
+    </div>
+    <div className="mt-4 space-y-2">
+      <div className={rowClass}>
+        <span className="min-w-0 truncate text-xs text-zinc-500">Настроение</span>
+        <span className="flex min-w-0 items-center gap-1 text-sm font-black">
+          <span>{mood?.icon || "—"}</span>
+          <span className="truncate">{mood?.label || "нет данных"}</span>
+        </span>
+      </div>
+      <div className={rowClass}>
+        <span className="min-w-0 truncate text-xs text-zinc-500">Самочувствие</span>
+        <span className="flex min-w-0 items-center gap-1 text-sm font-black">
+          <span>{wellbeing?.icon || "—"}</span>
+          <span className="truncate">{wellbeing?.label || "нет данных"}</span>
+        </span>
+      </div>
+    </div>
+    <p className="mt-3 text-[11px] text-zinc-500">{hasData ? "за выбранный день" : "нажми, чтобы отметить"}</p>
+  </Card>;
+}
+
+function DailyNoteWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
+  const note = String(healthLog?.notes || "").trim();
+  return <Card
+    onClick={onOpen}
+    className="h-full cursor-pointer overflow-hidden border-yellow-300/40 p-4 text-zinc-950 shadow-yellow-500/10 transition hover:border-yellow-400/70"
+    style={{
+      background: "linear-gradient(180deg, rgba(254,240,138,0.96), rgba(253,224,71,0.9))",
+    }}
+  >
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-yellow-800/70">День</p>
+        <h3 className="mt-1 break-words text-lg font-black leading-tight text-zinc-950">Заметки</h3>
+      </div>
+      <StickyNote size={18} className="shrink-0 text-yellow-800"/>
+    </div>
+    <div
+      className="mt-4 min-h-[88px] rounded-2xl border border-yellow-700/20 px-3 py-2 text-sm font-bold leading-7 text-zinc-900"
+      style={{
+        backgroundImage: "repeating-linear-gradient(to bottom, rgba(113,63,18,0.16) 0 1px, transparent 1px 28px)",
+      }}
+    >
+      <p
+        className="whitespace-pre-wrap break-words"
+        style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+      >
+        {note || "Нажми, чтобы добавить заметку"}
+      </p>
+    </div>
+  </Card>;
+}
+
 function Header({ title, subtitle, pumpXp, onOpenPumpXp }) {
   const summary = pumpXp || null;
   return <header className="flex items-start justify-between gap-6">
@@ -7295,6 +7396,135 @@ function StepsEditorSheet({ dateKey, healthLog, onSave, onClose, saving = false,
         <Button onClick={onClose} className="flex-1 bg-white/8">Отмена</Button>
         <Button onClick={onOpenAnalytics} className="flex-1 bg-white/8">Перейти в аналитику</Button>
         <Button onClick={save} disabled={saving} className="flex-1 bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+      </div>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function MoodWellbeingEditorSheet({ dateKey, healthLog, onSave, onClose, saving = false }) {
+  const [moodDraft, setMoodDraft] = useState(String(healthLog?.mood_key || healthLog?.mood || ""));
+  const [wellbeingDraft, setWellbeingDraft] = useState(String(healthLog?.wellbeing_key || healthLog?.wellbeing || ""));
+  const [error, setError] = useState("");
+
+  const optionClass = (active) => `flex min-w-0 items-center gap-2 rounded-2xl border px-3 py-3 text-left text-sm font-black transition ${active ? "border-red-500 bg-red-500 text-black" : "border-white/10 bg-white/[0.04] text-zinc-200 hover:border-red-500/50 hover:bg-red-500/10"}`;
+
+  const save = async () => {
+    setError("");
+    const payload = {
+      ...healthLog,
+      date: dateKey,
+      log_date: dateKey,
+      mood_key: moodDraft,
+      wellbeing_key: wellbeingDraft,
+    };
+    const ok = await onSave?.(payload);
+    if (ok === false) {
+      setError("Не удалось сохранить настроение. Значения остались на экране, попробуй еще раз.");
+      return;
+    }
+    onClose();
+  };
+
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Отмена</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs uppercase tracking-wider text-red-500">{formatCycleDate(dateKey)}</p>
+          <h2 className="mt-2 text-2xl font-black leading-tight">Настроение и самочувствие</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+      </div>
+
+      <div className="mt-6 space-y-5">
+        <section>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-xs font-black uppercase tracking-[0.16em] text-zinc-500">Настроение</h3>
+            {moodDraft && <button type="button" onClick={() => setMoodDraft("")} className="text-xs font-bold text-zinc-500">очистить</button>}
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {dailyMoodOptions.map(option => <button key={option.id} type="button" onClick={() => setMoodDraft(option.id)} className={optionClass(moodDraft === option.id)}>
+              <span className="text-lg">{option.icon}</span>
+              <span className="min-w-0 truncate">{option.label}</span>
+            </button>)}
+          </div>
+        </section>
+
+        <section>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-xs font-black uppercase tracking-[0.16em] text-zinc-500">Самочувствие</h3>
+            {wellbeingDraft && <button type="button" onClick={() => setWellbeingDraft("")} className="text-xs font-bold text-zinc-500">очистить</button>}
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {dailyWellbeingOptions.map(option => <button key={option.id} type="button" onClick={() => setWellbeingDraft(option.id)} className={optionClass(wellbeingDraft === option.id)}>
+              <span className="text-lg">{option.icon}</span>
+              <span className="min-w-0 truncate">{option.label}</span>
+            </button>)}
+          </div>
+        </section>
+      </div>
+
+      {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+      <div className="mt-6 grid gap-3 sm:grid-cols-2">
+        <Button onClick={onClose} className="bg-white/8">Отмена</Button>
+        <Button onClick={save} disabled={saving} className="bg-gradient-to-r from-red-700 to-red-500 text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+      </div>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function DailyNoteEditorSheet({ dateKey, healthLog, onSave, onClose, saving = false }) {
+  const [noteDraft, setNoteDraft] = useState(String(healthLog?.notes || ""));
+  const [error, setError] = useState("");
+
+  const save = async () => {
+    setError("");
+    const payload = {
+      ...healthLog,
+      date: dateKey,
+      log_date: dateKey,
+      notes: noteDraft,
+    };
+    const ok = await onSave?.(payload);
+    if (ok === false) {
+      setError("Не удалось сохранить заметку. Текст остался на экране, попробуй еще раз.");
+      return;
+    }
+    onClose();
+  };
+
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-md rounded-t-[2rem] border border-yellow-300/30 bg-yellow-50 p-5 text-zinc-950 shadow-2xl shadow-black/50 backdrop-blur-2xl sm:rounded-[2rem]">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-yellow-900/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-yellow-900/60">Отмена</button>
+        <div className="min-w-0 text-center">
+          <p className="text-xs uppercase tracking-wider text-yellow-700">{formatCycleDate(dateKey)}</p>
+          <h2 className="mt-2 text-2xl font-black">Заметки</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-900/10 text-zinc-900">×</button>
+      </div>
+
+      <label className="mt-6 block rounded-2xl border border-yellow-700/30 bg-yellow-100/80 p-3">
+        <span className="text-xs font-black uppercase tracking-[0.16em] text-yellow-900/60">Заметка дня</span>
+        <textarea
+          value={noteDraft}
+          onChange={(event) => setNoteDraft(event.target.value)}
+          placeholder="Что важно запомнить за день?"
+          rows={8}
+          className="mt-3 w-full resize-none rounded-2xl border border-yellow-700/30 bg-yellow-50/90 px-4 py-3 text-base font-bold leading-7 text-zinc-950 outline-none placeholder:text-yellow-900/35 focus:border-yellow-700"
+          style={{
+            fontSize: 16,
+            backgroundImage: "repeating-linear-gradient(to bottom, transparent 0 26px, rgba(113,63,18,0.18) 26px 27px)",
+          }}
+        />
+      </label>
+
+      {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm text-red-700">{error}</p>}
+      <div className="mt-6 grid gap-3 sm:grid-cols-2">
+        <Button onClick={onClose} className="bg-yellow-900/10 text-zinc-950">Отмена</Button>
+        <Button onClick={save} disabled={saving} className="bg-yellow-500 text-zinc-950 disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
       </div>
     </BottomSheetPanel>
   </div>;
@@ -7936,8 +8166,8 @@ function HomeWidgetSettingsModal({ enabledWidgets, personalTrackerCount = 0, onA
 
       <div className="onlypump-list-55 mt-6 space-y-2 overflow-y-auto pr-1">
         {availableWidgets.length ? availableWidgets.map((widget, index) => <button key={widget.id} type="button" data-tour={index === 0 ? "home-widget-option" : undefined} onClick={() => onAdd(widget.id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-4 text-left transition hover:bg-white/[0.08]">
-          <div>
-            <h3 className="text-sm font-semibold">{widget.label}</h3>
+          <div className="min-w-0">
+            <h3 className="break-words text-sm font-semibold leading-tight">{widget.label}</h3>
             <p className="mt-1 text-xs text-zinc-500">{widget.description}</p>
           </div>
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-500 text-black">+</span>
@@ -8055,9 +8285,13 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       if (profileNonNegativeNumber(log.steps_count, 0) > 0) items.push(`${profileNonNegativeNumber(log.steps_count, 0).toLocaleString("ru-RU")} шагов`);
       if (profileNonNegativeNumber(log.water_ml, 0) > 0) items.push(`${profileNonNegativeNumber(log.water_ml, 0)} мл воды`);
       if (profileNonNegativeNumber(log.sleep_duration_minutes, 0) > 0) items.push(formatSleepDuration(log.sleep_duration_minutes));
+      const mood = findDailyChoice(dailyMoodOptions, log.mood_key || log.mood);
+      const wellbeing = findDailyChoice(dailyWellbeingOptions, log.wellbeing_key || log.wellbeing);
+      if (mood || wellbeing) items.push([mood?.label, wellbeing?.label].filter(Boolean).join(" · "));
+      if (String(log.notes || "").trim()) items.push("Есть заметка");
       push(date, {
         type: "Здоровье",
-        title: "Шаги, сон и вода",
+        title: "Дневные показатели",
         meta: items.length ? items.join(" · ") : "Есть запись за день",
         target: "analytics",
       });
@@ -8139,6 +8373,8 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const [waterSheetOpen, setWaterSheetOpen] = useState(false);
   const [sleepSheetOpen, setSleepSheetOpen] = useState(false);
   const [stepsSheetOpen, setStepsSheetOpen] = useState(false);
+  const [moodSheetOpen, setMoodSheetOpen] = useState(false);
+  const [dailyNoteSheetOpen, setDailyNoteSheetOpen] = useState(false);
   const [activeTrackerId, setActiveTrackerId] = useState(null);
   const [trackerSettingsDraft, setTrackerSettingsDraft] = useState(null);
   const mobileHiddenWidgetIds = [];
@@ -8276,6 +8512,10 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
             <button onClick={(e) => { e.stopPropagation(); saveWaterQuick(-250); }} className="rounded-full bg-white/5 px-3 py-1.5 text-[11px] text-zinc-400">−250</button>
           </div>
         </MetricWidgetCard>;
+      case "moodWellbeing":
+        return <MoodWellbeingWidgetCard healthLog={selectedHealthLog} onOpen={() => setMoodSheetOpen(true)}/>;
+      case "dailyNote":
+        return <DailyNoteWidgetCard healthLog={selectedHealthLog} onOpen={() => setDailyNoteSheetOpen(true)}/>;
       case "workout":
         return <Card key={id} onClick={() => setActive("workouts")} className={`cursor-pointer overflow-hidden transition hover:border-red-500/50 hover:bg-red-500/5 ${widgetSpan(id)}`}>
           <div className="p-5"><h3 className="font-semibold">Тренировка за выбранный день</h3></div>
@@ -8458,6 +8698,8 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     {waterSheetOpen && <WaterEditorSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setWaterSheetOpen(false)} onSave={onSaveHealthLog} onOpenAnalytics={() => { setWaterSheetOpen(false); openAnalyticsFromHome("water"); }}/>}
     {sleepSheetOpen && <SleepReportSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setSleepSheetOpen(false)} onSave={onSaveHealthLog} onOpenAnalytics={() => { setSleepSheetOpen(false); openAnalyticsFromHome("sleep"); }}/>}
     {stepsSheetOpen && <StepsEditorSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setStepsSheetOpen(false)} onSave={onSaveHealthLog} onOpenAnalytics={() => { setStepsSheetOpen(false); openAnalyticsFromHome("steps"); }}/>}
+    {moodSheetOpen && <MoodWellbeingEditorSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setMoodSheetOpen(false)} onSave={onSaveHealthLog}/>}
+    {dailyNoteSheetOpen && <DailyNoteEditorSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setDailyNoteSheetOpen(false)} onSave={onSaveHealthLog}/>}
     {activeTrackerId && personalTrackers.find(tracker => tracker.id === activeTrackerId) && <PersonalTrackerEntrySheet
       tracker={personalTrackers.find(tracker => tracker.id === activeTrackerId)}
       dateKey={selectedDateKey}
