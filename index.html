@@ -218,6 +218,131 @@
     .onlypump-modal-scroll {
       max-height: calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 2rem);
     }
+    .student-dashboard-panel {
+      min-height: 0;
+      padding-bottom: calc(var(--onlypump-safe-bottom) + 1.25rem);
+    }
+    .student-dashboard-panel.is-fullscreen {
+      height: calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 2rem);
+      max-height: calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 2rem);
+    }
+    .student-dashboard-scroll {
+      min-height: 0;
+      max-height: none;
+      padding-bottom: calc(var(--onlypump-safe-bottom) + 1rem);
+    }
+    .student-dashboard-scroll.onlypump-sheet-list {
+      max-height: none;
+    }
+    .student-dashboard-panel.is-fullscreen .student-dashboard-scroll {
+      padding-bottom: calc(var(--onlypump-safe-bottom) + 2rem);
+    }
+    .student-dashboard-table-wrap {
+      max-height: min(620px, calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 300px));
+    }
+    .student-dashboard-panel.is-fullscreen .student-dashboard-table-wrap {
+      max-height: calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 245px);
+    }
+    .student-dashboard-icon-button {
+      color: rgb(212 212 216);
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .student-dashboard-icon-button:hover {
+      background: rgba(255, 255, 255, 0.13);
+    }
+    .theme-light .student-dashboard-icon-button {
+      color: #111827;
+      background: rgba(17, 24, 39, 0.06);
+    }
+    .theme-light .student-dashboard-icon-button:hover {
+      background: rgba(17, 24, 39, 0.10);
+    }
+    @media (orientation: landscape) and (max-height: 520px) and (max-width: 980px) {
+      .student-dashboard-layer.onlypump-modal-layer {
+        padding-top: calc(var(--onlypump-safe-top) + 0.4rem) !important;
+        padding-bottom: calc(var(--onlypump-safe-bottom) + 0.4rem) !important;
+      }
+      .student-dashboard-panel {
+        border-radius: 1.25rem !important;
+        padding: 0.7rem 0.9rem calc(var(--onlypump-safe-bottom) + 0.7rem) !important;
+      }
+      .student-dashboard-panel.is-fullscreen {
+        height: calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 0.8rem);
+        max-height: calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 0.8rem);
+      }
+      .student-dashboard-head {
+        align-items: center;
+        gap: 0.45rem;
+      }
+      .student-dashboard-icon-button {
+        height: 2rem;
+        width: 2rem;
+        font-size: 0.75rem;
+      }
+      .student-dashboard-head > button:first-child {
+        font-size: 0.75rem;
+      }
+      .student-dashboard-title-block p:first-child {
+        font-size: 0.62rem;
+        letter-spacing: 0.14em;
+      }
+      .student-dashboard-title-block h2 {
+        margin-top: 0.1rem;
+        font-size: 1.15rem;
+        line-height: 1.05;
+      }
+      .student-dashboard-identity {
+        margin-top: 0.05rem !important;
+        font-size: 0.65rem;
+      }
+      .student-dashboard-month-row {
+        margin-top: 0.45rem !important;
+        padding: 0.15rem 0.2rem !important;
+      }
+      .student-dashboard-month-row button {
+        padding: 0.25rem 0.6rem !important;
+        font-size: 0.75rem !important;
+      }
+      .student-dashboard-tabs {
+        margin-top: 0.35rem !important;
+        gap: 0.4rem !important;
+      }
+      .student-dashboard-tabs button {
+        padding: 0.4rem 0.65rem !important;
+        font-size: 0.68rem !important;
+      }
+      .student-dashboard-scroll {
+        margin-top: 0.45rem !important;
+        padding-bottom: calc(var(--onlypump-safe-bottom) + 0.5rem);
+      }
+      .student-dashboard-table-actions {
+        gap: 0.35rem !important;
+      }
+      .student-dashboard-table-actions button {
+        padding: 0.38rem 0.6rem !important;
+        font-size: 0.65rem !important;
+      }
+      .student-dashboard-table-wrap {
+        max-height: calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 142px);
+        border-radius: 1rem !important;
+      }
+      .student-dashboard-panel.is-fullscreen .student-dashboard-table-wrap {
+        max-height: calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 126px);
+      }
+      .student-dashboard-table th {
+        padding: 0.45rem 0.55rem !important;
+        font-size: 0.62rem !important;
+        letter-spacing: 0.08em !important;
+      }
+      .student-dashboard-table td {
+        padding: 0.42rem 0.55rem !important;
+        font-size: 0.72rem !important;
+      }
+      .student-dashboard-table td button {
+        min-height: 2rem !important;
+        padding: 0.25rem 0.45rem !important;
+      }
+    }
     .profile-screen,
     .onboarding-screen {
       width: 100%;
@@ -856,7 +981,7 @@ import {
   BarChart3, Users, User, Bell, Flame, ChevronDown, Play, Activity, Grid3X3,
   Menu, CalendarDays, Trophy, Moon, Target, BookOpen, MessageCircle, Settings,
   ShieldCheck, CreditCard, Scale, Ruler, Utensils, Clock3, CheckCircle2, Lock,
-  Search, Plus, ExternalLink, Star, Zap, HeartPulse, Droplets, MoreHorizontal, Share2, Pencil, Repeat2, Route, ChevronRight, Smile, StickyNote
+  Search, Plus, ExternalLink, Star, Zap, HeartPulse, Droplets, MoreHorizontal, Share2, Pencil, Repeat2, Route, ChevronRight, Smile, StickyNote, Maximize2, Minimize2
 } from "lucide-react";
 
 function syncOnlyPumpViewportHeight(tg) {
@@ -23425,28 +23550,40 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
     window.setTimeout(() => URL.revokeObjectURL(url), 500);
   };
   const isDashboardFullscreen = tab === "table" && isTableFullscreen;
+  const DashboardFullscreenIcon = isDashboardFullscreen ? Minimize2 : Maximize2;
 
-  return <div onClick={onClose} style={{ alignItems: "center", justifyContent: "center" }} className={`profile-screen onlypump-modal-layer fixed inset-0 z-[235] flex bg-black/70 backdrop-blur-sm ${isDashboardFullscreen ? "p-2 md:p-4" : "p-4"}`}>
-    <BottomSheetPanel onClose={onClose} priority={235} onClick={(event) => event.stopPropagation()} className={`student-dashboard-panel flex w-full flex-col overflow-hidden border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl ${isDashboardFullscreen ? "h-[calc(var(--onlypump-app-height)-24px)] max-h-none max-w-none rounded-[1.5rem] md:w-[calc(100vw-32px)]" : "max-h-[min(calc(var(--onlypump-app-height)-72px),860px)] max-w-6xl rounded-[2rem]"}`}>
-      <div className="flex items-start justify-between gap-3">
+  return <div onClick={onClose} style={{ alignItems: "center", justifyContent: "center" }} className={`student-dashboard-layer profile-screen onlypump-modal-layer fixed inset-0 z-[235] flex bg-black/70 backdrop-blur-sm ${isDashboardFullscreen ? "p-2 md:p-4" : "p-4"}`}>
+    <BottomSheetPanel onClose={onClose} priority={235} onClick={(event) => event.stopPropagation()} className={`student-dashboard-panel flex w-full flex-col overflow-hidden border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl ${isDashboardFullscreen ? "is-fullscreen max-w-none rounded-[1.5rem] md:w-[calc(100vw-32px)]" : "max-h-[min(calc(var(--onlypump-app-height)-72px),860px)] max-w-6xl rounded-[2rem]"}`}>
+      <div className="student-dashboard-head flex items-start justify-between gap-3">
         <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Назад</button>
-        <div className="min-w-0 text-center">
+        <div className="student-dashboard-title-block min-w-0 text-center">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Ученик</p>
           <h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{studentName}</h2>
-          <p className="mt-1 text-xs text-zinc-500">{getManagedUserIdentity(student)}</p>
+          <p className="student-dashboard-identity mt-1 text-xs text-zinc-500">{getManagedUserIdentity(student)}</p>
         </div>
-        <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
+        <div className="flex shrink-0 items-center gap-2">
+          {tab === "table" && <button
+            type="button"
+            onClick={() => setIsTableFullscreen(prev => !prev)}
+            aria-label={isDashboardFullscreen ? "Свернуть таблицу" : "Развернуть таблицу"}
+            title={isDashboardFullscreen ? "Свернуть" : "На весь экран"}
+            className="student-dashboard-icon-button flex h-9 w-9 items-center justify-center rounded-full transition"
+          >
+            <DashboardFullscreenIcon className="h-4 w-4" />
+          </button>}
+          <button type="button" onClick={onClose} className="student-dashboard-icon-button flex h-9 w-9 items-center justify-center rounded-full transition">×</button>
+        </div>
       </div>
-      <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-2">
+      <div className="student-dashboard-month-row mt-4 flex items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-2">
         <button type="button" onClick={() => setMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))} className="rounded-full bg-white/8 px-4 py-2 text-sm font-black">‹</button>
         <b className="text-center text-sm capitalize">{monthLabel}</b>
         <button type="button" onClick={() => setMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))} className="rounded-full bg-white/8 px-4 py-2 text-sm font-black">›</button>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      <div className="student-dashboard-tabs mt-3 grid grid-cols-3 gap-2">
         {[["overview", "Обычный вид"], ["table", "Таблица"], ["training", "Тренировки"]].map(([id, label]) => <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-full px-3 py-2 text-xs font-black transition ${tab === id ? "bg-red-500 text-black" : "bg-white/8 text-zinc-300"}`}>{label}</button>)}
       </div>
       {error && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{error}</p>}
-      <div className="onlypump-sheet-list mt-4 flex-1 overflow-auto pr-1 onlypump-scrollbar-none" data-no-sheet-drag="true">
+      <div className="student-dashboard-scroll onlypump-sheet-list mt-4 flex-1 overflow-auto pr-1 onlypump-scrollbar-none" data-no-sheet-drag="true">
         {loading ? <p className="rounded-2xl bg-white/[0.04] p-4 text-sm text-zinc-500">Загружаю...</p> : <>
           {tab === "overview" && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-2xl bg-white/[0.04] p-4"><span className="text-xs text-zinc-500">Тренировок</span><b className="mt-2 block text-2xl">{monthSummary.workouts}</b></div>
@@ -23457,11 +23594,10 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
           {tab === "table" && <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">{visibleMetricColumns.length} колонок</p>
-	              <div className="flex flex-wrap gap-2">
+	              <div className="student-dashboard-table-actions flex flex-wrap gap-2">
 	                <button type="button" onClick={() => setShowColumnPicker(prev => !prev)} className="rounded-full bg-white/8 px-4 py-2 text-xs font-black text-zinc-200 transition hover:bg-white/12">Колонки</button>
 	                <button type="button" onClick={() => setShowConditionalSettings(prev => !prev)} className="rounded-full bg-red-500/15 px-4 py-2 text-xs font-black text-red-200 transition hover:bg-red-500/25">Формат</button>
 	                <button type="button" onClick={downloadStudentDashboardTable} className="rounded-full bg-red-500 px-4 py-2 text-xs font-black text-black transition hover:bg-red-400">Скачать</button>
-	                <button type="button" onClick={() => setIsTableFullscreen(prev => !prev)} className="hidden rounded-full bg-white px-4 py-2 text-xs font-black text-black transition hover:bg-red-100 md:inline-flex">{isDashboardFullscreen ? "Свернуть" : "На весь экран"}</button>
 	              </div>
             </div>
             {showColumnPicker && <div className="grid gap-2 rounded-[22px] border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -23531,8 +23667,8 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
                 })}
               </div>
             </div>}
-            <div className="overflow-auto rounded-[24px] border border-white/10">
-            <table className="min-w-[900px] border-separate border-spacing-0 text-sm">
+            <div className="student-dashboard-table-wrap overflow-auto rounded-[24px] border border-white/10">
+            <table className="student-dashboard-table min-w-[900px] border-separate border-spacing-0 text-sm">
               <thead><tr>
                 <th className="sticky left-0 top-0 z-20 min-w-[72px] bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500">Дата</th>
                 <th className="sticky top-0 z-10 min-w-[72px] bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500">День</th>
