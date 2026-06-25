@@ -485,6 +485,26 @@
     .onlypump-program-chip.is-active {
       border-color: rgba(239, 68, 68, 0.72);
     }
+    .onlypump-programs-cta {
+      border-color: rgba(239, 68, 68, 0.46) !important;
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.32), rgba(220, 38, 38, 0.22)) !important;
+      color: #fee2e2 !important;
+      box-shadow: 0 12px 26px rgba(239, 68, 68, 0.16);
+    }
+    .onlypump-programs-cta:hover {
+      border-color: rgba(239, 68, 68, 0.70) !important;
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.40), rgba(220, 38, 38, 0.30)) !important;
+    }
+    .theme-light .onlypump-programs-cta {
+      border-color: #dc2626 !important;
+      background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+      color: #111827 !important;
+      box-shadow: 0 14px 30px rgba(239, 68, 68, 0.24);
+    }
+    .theme-light .onlypump-programs-cta:hover {
+      border-color: #b91c1c !important;
+      background: linear-gradient(135deg, #f05252, #dc2626) !important;
+    }
     .onlypump-program-builder-short-field > span {
       min-height: 2.35rem;
       display: flex;
@@ -8911,6 +8931,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [programBuilderExercisePicker, setProgramBuilderExercisePicker] = useState(null);
   const [programBuilderTargetPicker, setProgramBuilderTargetPicker] = useState(null);
   const [programShareTargetPicker, setProgramShareTargetPicker] = useState(null);
+  const [programSearch, setProgramSearch] = useState("");
   const [programBuilderExerciseSearch, setProgramBuilderExerciseSearch] = useState("");
   const [programBuilderExerciseGroup, setProgramBuilderExerciseGroup] = useState("Все");
   const [programSaving, setProgramSaving] = useState(false);
@@ -9342,10 +9363,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         isUserCreated: row.isUserCreated ?? row.is_user_created ?? true,
         creatorProfileId: row.creatorProfileId || row.creator_profile_id || null,
         createdByRole: row.createdByRole || row.created_by_role || "",
-        visibilityScope: row.visibilityScope || row.visibility_scope || "private",
-        targetProfileIds: Array.isArray(row.targetProfileIds || row.target_profile_ids) ? (row.targetProfileIds || row.target_profile_ids).map(String).filter(Boolean) : [],
-        isPublic: Boolean(row.isPublic ?? row.is_public ?? false),
-      };
+	        visibilityScope: row.visibilityScope || row.visibility_scope || "private",
+	        targetProfileIds: Array.isArray(row.targetProfileIds || row.target_profile_ids) ? (row.targetProfileIds || row.target_profile_ids).map(String).filter(Boolean) : [],
+	        isPublic: Boolean(row.isPublic ?? row.is_public ?? false),
+	        assignedToCurrentProfile: Boolean(row.assignedToCurrentProfile ?? row.assigned_to_current_profile ?? row.isAssigned ?? row.is_assigned ?? false),
+	      };
     }
     const templateKey = row.template_key || row.templateKey || row.id || `program-${Date.now()}`;
     const workouts = [...(row.program_template_workouts || row.workouts || [])].sort((a, b) => Number(a.sort_order || a.sortOrder || a.day_index || 0) - Number(b.sort_order || b.sortOrder || b.day_index || 0));
@@ -9420,11 +9442,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       targetProfileIds: Array.isArray(row.target_profile_ids || row.targetProfileIds) ? (row.target_profile_ids || row.targetProfileIds).map(String).filter(Boolean) : [],
       creatorProfileId: row.creator_profile_id || row.creatorProfileId || null,
       createdByRole: row.created_by_role || row.createdByRole || "",
-      isPublic: Boolean(row.is_public ?? row.isPublic ?? false),
-      isUserCreated: Boolean(row.is_user_created || row.isUserCreated),
-      days,
-    };
-  };
+	      isPublic: Boolean(row.is_public ?? row.isPublic ?? false),
+	      isUserCreated: Boolean(row.is_user_created || row.isUserCreated),
+	      assignedToCurrentProfile: Boolean(row.assigned_to_current_profile ?? row.assignedToCurrentProfile ?? row.is_assigned ?? row.isAssigned ?? false),
+	      days,
+	    };
+	  };
 
   const normalizeProgramTargetProfileIds = (value) => Array.isArray(value)
     ? value.map(String).map(item => item.trim()).filter(Boolean)
@@ -9471,11 +9494,22 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return "только мне";
   };
 
-  const canShareProgramTemplate = (program = {}) => {
-    if (!canCreateProgramTemplates || !program?.isUserCreated) return false;
-    if (profileHasRole(profile, "owner")) return true;
-    return String(program.creatorProfileId || program.creator_profile_id || "") === String(profile?.id || "");
-  };
+	  const canShareProgramTemplate = (program = {}) => {
+	    if (!canCreateProgramTemplates) return false;
+	    if (profileHasRole(profile, "owner")) return true;
+	    return String(program.creatorProfileId || program.creator_profile_id || "") === String(profile?.id || "");
+	  };
+
+	  const isProgramAssignedToCurrentProfile = (program = {}) => {
+	    const profileId = String(profile?.id || "");
+	    const creatorId = String(program.creatorProfileId || program.creator_profile_id || "");
+	    if (!profileId || !creatorId || creatorId === profileId) return false;
+	    if (program.assignedToCurrentProfile || program.assigned_to_current_profile || program.isAssigned || program.is_assigned) return true;
+	    const scope = program.visibilityScope || program.visibility_scope || (program.isPublic || program.is_public ? "all" : "private");
+	    const targetIds = normalizeProgramTargetProfileIds(program.targetProfileIds || program.target_profile_ids);
+	    if (scope === "selected") return targetIds.includes(profileId);
+	    return ["all", "students", "trainer_students"].includes(scope);
+	  };
 
   const getProgramBuilderOffsetDays = (pattern, index, cycleLength) => {
     const safeCycle = Math.max(1, Math.min(20, Number(cycleLength || 7)));
@@ -9916,7 +9950,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     try {
       const result = await callWorkoutsApi("load_program_templates", { profile_id: profile?.id || null });
       const rows = readApiArray(result, "program_templates", ["templates"]);
-      const mapped = rows.map(mapProgramTemplateRowToProgram).filter(program => program.isUserCreated);
+	      const mapped = rows.map(mapProgramTemplateRowToProgram).filter(program => program?.id);
       setCustomTrainingPrograms(mapped);
       writeLocalProgramTemplates(mapped);
       return mapped;
@@ -14024,9 +14058,9 @@ const toggleExerciseMeasurementSetting = (field) => {
     });
   };
 
-  const openCompletedWorkoutScheduler = (workoutType = "strength", title = "Выполненная тренировка") => {
-    const now = new Date();
-    const durationParts = durationPartsFromMinutes(45);
+	  const openCompletedWorkoutScheduler = (workoutType = "strength", title = "Выполненная тренировка") => {
+	    const now = new Date();
+	    const durationParts = durationPartsFromMinutes(45);
     setIsAddMenuOpen(false);
     setWorkoutTypePicker(null);
     setRepeatScheduler({
@@ -14038,22 +14072,42 @@ const toggleExerciseMeasurementSetting = (field) => {
       hour: String(now.getHours()).padStart(2, "0"),
       minute: String(now.getMinutes()).padStart(2, "0"),
       durationHours: durationParts.hours,
-      durationMinutes: durationParts.minutes,
-    });
-  };
+	      durationMinutes: durationParts.minutes,
+	    });
+	  };
 
-  const getSchedulerActionLabel = (mode) => {
-    if (mode === "completed" || mode === "new_completed") return "Добавить выполненную";
-    if (mode === "new_planned") return "Добавить запланированную";
-    if (mode === "planned") return "Запланировать";
-    return "Начать";
-  };
+	  const openCompletedWorkoutTimingEditor = (workout) => {
+	    if (!workout) return;
+	    const startedDate = workout.startedAt || workout.started_at ? new Date(workout.startedAt || workout.started_at) : parseDateKey(workout.date || selectedDateKey);
+	    const safeStartedDate = Number.isNaN(startedDate.getTime()) ? new Date() : startedDate;
+	    const durationParts = durationPartsFromMinutes(safeWorkoutNumber(workout.durationMinutes ?? workout.duration_minutes ?? (workout.duration_seconds ? Number(workout.duration_seconds) / 60 : 60), 60));
+	    setDetailMenuOpen(false);
+	    setRepeatScheduler({
+	      workout,
+	      mode: "edit_completed",
+	      workoutType: normalizeWorkoutType(workout?.workoutType),
+	      dateKey: workout.date || workout.workout_date || formatDateKey(safeStartedDate),
+	      hour: String(safeStartedDate.getHours()).padStart(2, "0"),
+	      minute: String(safeStartedDate.getMinutes()).padStart(2, "0"),
+	      durationHours: durationParts.hours,
+	      durationMinutes: durationParts.minutes,
+	    });
+	  };
 
-  const getSchedulerEyebrow = (mode) => {
-    if (mode === "completed" || mode === "new_completed") return "Выполненная";
-    if (mode === "new_planned") return "Новая тренировка";
-    return "План";
-  };
+	  const getSchedulerActionLabel = (mode) => {
+	    if (mode === "edit_completed") return "Сохранить";
+	    if (mode === "completed" || mode === "new_completed") return "Добавить выполненную";
+	    if (mode === "new_planned") return "Добавить запланированную";
+	    if (mode === "planned") return "Запланировать";
+	    return "Начать";
+	  };
+
+	  const getSchedulerEyebrow = (mode) => {
+	    if (mode === "edit_completed") return "Редактирование";
+	    if (mode === "completed" || mode === "new_completed") return "Выполненная";
+	    if (mode === "new_planned") return "Новая тренировка";
+	    return "План";
+	  };
 
   const SchedulerWheelColumn = ({ label, value, options = [], onChange, className = "", size = "large" }) => {
     const scrollRef = useRef(null);
@@ -14171,9 +14225,9 @@ const toggleExerciseMeasurementSetting = (field) => {
     });
   };
 
-  const createCompletedWorkoutFromScheduler = async (scheduler) => {
-    if (!scheduler) return;
-    const durationMinutes = Math.max(1, schedulerDurationMinutes(scheduler));
+	  const createCompletedWorkoutFromScheduler = async (scheduler) => {
+	    if (!scheduler) return;
+	    const durationMinutes = Math.max(1, schedulerDurationMinutes(scheduler));
     const startedAt = buildWorkoutDateTimeIso(scheduler.dateKey, scheduler.hour, scheduler.minute);
     const workoutType = normalizeWorkoutType(scheduler.workoutType);
     const calories = estimateWorkoutCalories(durationMinutes * 60, { workoutType, exercises: [] });
@@ -14189,15 +14243,62 @@ const toggleExerciseMeasurementSetting = (field) => {
       estimatedCaloriesBurned: calories,
       exercises: [],
       startedAt,
-      finishedAt: startedAt,
-    });
-  };
+	      finishedAt: startedAt,
+	    });
+	  };
 
-  const confirmRepeatScheduler = () => {
-    if (!repeatScheduler) return;
-    if (repeatScheduler.mode === "new_planned") {
-      createPlannedWorkoutFromScheduler(repeatScheduler);
-      return;
+	  const updateCompletedWorkoutTimingFromScheduler = async (scheduler) => {
+	    const workout = scheduler?.workout;
+	    if (!workout) return;
+	    const durationMinutes = Math.max(1, schedulerDurationMinutes(scheduler));
+	    const startedAt = buildWorkoutDateTimeIso(scheduler.dateKey, scheduler.hour, scheduler.minute);
+	    const finishedAt = new Date(new Date(startedAt).getTime() + durationMinutes * 60000).toISOString();
+	    const workoutType = normalizeWorkoutType(workout.workoutType);
+	    const calories = estimateWorkoutCalories(durationMinutes * 60, { workoutType, exercises: workout.exercises || [] });
+	    const patchTiming = (item) => {
+	      const totals = recalculateWorkoutTotals(item);
+	      return {
+	        ...item,
+	        date: scheduler.dateKey,
+	        workout_date: scheduler.dateKey,
+	        status: "completed",
+	        durationMinutes,
+	        duration_minutes: durationMinutes,
+	        duration_seconds: durationMinutes * 60,
+	        calories,
+	        estimatedCaloriesBurned: calories,
+	        estimated_calories_burned: calories,
+	        startedAt,
+	        started_at: startedAt,
+	        finishedAt,
+	        finished_at: finishedAt,
+	        totalSets: totals.totalSets,
+	        total_sets: totals.totalSets,
+	        totalVolumeKg: totals.totalVolume,
+	        total_volume: totals.totalVolume,
+	        updatedAt: new Date().toISOString(),
+	      };
+	    };
+	    const nextWorkout = patchTiming(workout);
+	    setRepeatScheduler(null);
+	    setSelectedDateKey(scheduler.dateKey);
+	    patchWorkoutInState(workout.id, patchTiming);
+	    if (nextWorkout.supabaseId) {
+	      queueWorkoutPatch(nextWorkout.id, {
+	        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
+	      }, { immediate: true });
+	    }
+	  };
+
+	  const confirmRepeatScheduler = () => {
+	    if (!repeatScheduler) return;
+	    if (repeatScheduler.mode === "edit_completed") {
+	      updateCompletedWorkoutTimingFromScheduler(repeatScheduler);
+	      return;
+	    }
+	    if (repeatScheduler.mode === "new_planned") {
+	      createPlannedWorkoutFromScheduler(repeatScheduler);
+	      return;
     }
     if (repeatScheduler.mode === "new_completed") {
       createCompletedWorkoutFromScheduler(repeatScheduler);
@@ -14695,14 +14796,31 @@ const toggleExerciseMeasurementSetting = (field) => {
     }
   }, [programBuilderSheet?.draft]);
 
-  const visibleTrainingPrograms = useMemo(() => {
-    const byId = new Map();
-    [...availableTrainingPrograms, ...customTrainingPrograms, programBuilderListPreview].filter(Boolean).forEach(program => {
-      if (!program?.id || byId.has(program.id)) return;
-      byId.set(program.id, program);
-    });
-    return Array.from(byId.values());
-  }, [customTrainingPrograms, programBuilderListPreview]);
+	  const visibleTrainingPrograms = useMemo(() => {
+	    const byId = new Map();
+	    [...availableTrainingPrograms, ...customTrainingPrograms, programBuilderListPreview].filter(Boolean).forEach(program => {
+	      if (!program?.id || byId.has(program.id)) return;
+	      byId.set(program.id, program);
+	    });
+	    const query = programSearch.trim().toLowerCase();
+	    return Array.from(byId.values())
+	      .filter(program => {
+	        if (!query) return true;
+	        return [
+	          program.title,
+	          program.description,
+	          program.focus,
+	          program.audience,
+	          getProgramVisibilityLabel(program),
+	        ].some(value => String(value || "").toLowerCase().includes(query));
+	      })
+	      .map((program, index) => ({ program, index, assigned: isProgramAssignedToCurrentProfile(program) }))
+	      .sort((a, b) => {
+	        if (a.assigned !== b.assigned) return a.assigned ? -1 : 1;
+	        return a.index - b.index;
+	      })
+	      .map(item => item.program);
+	  }, [customTrainingPrograms, programBuilderListPreview, programSearch, profile?.id]);
 
   const canCreateProgramTemplates = profileHasAnyRole(profile, ["owner", "trainer"]);
   const programBuilderExerciseItems = useMemo(() => {
@@ -15471,10 +15589,11 @@ const toggleExerciseMeasurementSetting = (field) => {
           <h2 className="text-xl font-black tracking-[-0.03em]">Действия тренировки</h2>
           <div className="mt-5 space-y-2">
             {selectedWorkout.status !== "active" && <button onClick={() => { startWorkout(selectedWorkout); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Начать</button>}
-            <button onClick={() => openRepeatSheet(selectedWorkout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Повторить</button>
-            <button onClick={() => { setIsEditingWorkout(true); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Редактировать название</button>
-            <button onClick={() => { setIsEditingWorkout(true); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Редактировать тренировку</button>
-            <button onClick={() => setDetailMenuOpen(false)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Поделиться</button>
+	            <button onClick={() => openRepeatSheet(selectedWorkout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Повторить</button>
+	            <button onClick={() => { setIsEditingWorkout(true); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Редактировать название</button>
+	            <button onClick={() => { setIsEditingWorkout(true); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Редактировать тренировку</button>
+	            {selectedWorkout.status === "completed" && <button type="button" onClick={() => openCompletedWorkoutTimingEditor(selectedWorkout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Изменить время и длительность</button>}
+	            <button onClick={() => setDetailMenuOpen(false)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Поделиться</button>
             {selectedWorkout.status === "active" && <button onClick={() => { finishActiveWorkout(); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Завершить</button>}
             <button type="button" onClick={() => openDeleteSheet(selectedWorkout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           </div>
@@ -15865,15 +15984,17 @@ const toggleExerciseMeasurementSetting = (field) => {
     : "weight_reps";
   const customExerciseShowsWeightUnit = customExerciseMode === "weight_reps" || customExerciseMode === "weight_time" || customExerciseMode === "weight_distance";
   const customExerciseShowsDistanceUnit = customExerciseMode === "distance" || customExerciseMode === "weight_distance";
+  const customExerciseShowsDoubleCount = customExerciseSheet?.exerciseCategory === "strength";
 
   return <>
     <Header title="Тренировки" subtitle="Дневник тренировок, готовые программы, недельный объём и упражнения."/>
     <div className="mt-6 w-full pb-32">
       <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-6">
         <div className="flex min-h-11 items-center justify-between gap-4">
-          <button data-tour="workouts-programs" onClick={() => setIsTemplatesOpen(true)} className="min-h-11 rounded-full px-1 text-base font-medium text-zinc-100 transition hover:text-red-400">
-            Доступные программы
-          </button>
+	          <button data-tour="workouts-programs" onClick={() => setIsTemplatesOpen(true)} className="onlypump-programs-cta inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-base font-black transition active:scale-95">
+	            <Grid3X3 size={17}/>
+	            <span>Доступные программы</span>
+	          </button>
           <button data-tour="workouts-add" onClick={() => setIsAddMenuOpen(true)} className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-3xl font-light leading-none text-zinc-100 transition active:scale-95 hover:text-red-400">
             +
           </button>
@@ -16082,7 +16203,7 @@ const toggleExerciseMeasurementSetting = (field) => {
           />
         </div>
 
-        {(repeatScheduler.mode === "completed" || repeatScheduler.mode === "new_completed") && <div className="mt-4">
+	        {(repeatScheduler.mode === "completed" || repeatScheduler.mode === "new_completed" || repeatScheduler.mode === "edit_completed") && <div className="mt-4">
           <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">Длительность</div>
           <div className="grid grid-cols-2 gap-3">
             <SchedulerWheelColumn
@@ -16228,23 +16349,34 @@ const toggleExerciseMeasurementSetting = (field) => {
 	    {isTemplatesOpen && <div onClick={() => setIsTemplatesOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
 	      <BottomSheetPanel onClose={() => setIsTemplatesOpen(false)} onClick={(e) => e.stopPropagation()} className="onlypump-modal-scroll mx-auto w-full max-w-[430px] overflow-y-auto rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl onlypump-scrollbar-none">
         <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-black tracking-[-0.03em]">Доступные программы</h2>
-            <p className="mt-2 text-sm leading-6 text-zinc-500">Нажми программу, настрой длительность, сложность и прогрессию. В календарь она добавится только после подтверждения.</p>
-          </div>
-          {canCreateProgramTemplates && <button type="button" onClick={() => openProgramBuilder()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-500 text-black shadow-lg shadow-red-500/20 transition active:scale-95"><Plus size={22}/></button>}
-        </div>
-        <div className="mt-5 space-y-3">
-          {visibleTrainingPrograms.map(program => {
-            const canShareProgram = canShareProgramTemplate(program);
-            return <div key={program.id} role="button" tabIndex={0} onClick={() => openProgramSettings(program)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") openProgramSettings(program); }} className="w-full cursor-pointer rounded-[24px] border border-white/10 bg-white/[0.04] p-4 text-left transition active:scale-[0.99] hover:border-red-500/40 hover:bg-red-500/10">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="break-words text-[22px] font-black leading-tight tracking-[-0.04em]">{program.title}</div>
-                <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold uppercase tracking-[0.12em]">
-                  <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-red-300">{program.audience}</span>
-                  <span className="rounded-full bg-white/[0.07] px-2.5 py-1 text-zinc-400">{program.focus}</span>
+	        <div className="flex items-start justify-between gap-3">
+	          <div>
+	            <h2 className="text-xl font-black tracking-[-0.03em]">Доступные программы</h2>
+	            <p className="mt-2 text-sm leading-6 text-zinc-500">Нажми программу, настрой длительность, сложность и прогрессию. В календарь она добавится только после подтверждения.</p>
+	          </div>
+	          {canCreateProgramTemplates && <button type="button" onClick={() => openProgramBuilder()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-500 text-black shadow-lg shadow-red-500/20 transition active:scale-95"><Plus size={22}/></button>}
+	        </div>
+	        <label className="mt-5 block">
+	          <span className="sr-only">Поиск программ</span>
+	          <input
+	            value={programSearch}
+	            onChange={(event) => setProgramSearch(event.target.value)}
+	            placeholder="Поиск по названию программы"
+	            className="onlypump-program-field w-full rounded-2xl border border-white/10 px-4 py-3 text-base font-bold outline-none transition focus:border-red-500/50 focus:ring-1 focus:ring-red-500/35"
+	          />
+	        </label>
+	        <div className="mt-5 space-y-3">
+	          {visibleTrainingPrograms.map(program => {
+	            const canShareProgram = canShareProgramTemplate(program);
+	            const assignedProgram = isProgramAssignedToCurrentProfile(program);
+	            return <div key={program.id} role="button" tabIndex={0} onClick={() => openProgramSettings(program)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") openProgramSettings(program); }} className={`w-full cursor-pointer rounded-[24px] border p-4 text-left transition active:scale-[0.99] ${assignedProgram ? "border-yellow-300/45 bg-yellow-300/12 shadow-lg shadow-yellow-500/10 hover:border-yellow-300/70 hover:bg-yellow-300/16" : "border-white/10 bg-white/[0.04] hover:border-red-500/40 hover:bg-red-500/10"}`}>
+	            <div className="flex items-start justify-between gap-3">
+	              <div className="min-w-0">
+	                <div className="break-words text-[22px] font-black leading-tight tracking-[-0.04em]">{program.title}</div>
+	                <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold uppercase tracking-[0.12em]">
+	                  {assignedProgram && <span className="rounded-full bg-yellow-300/25 px-2.5 py-1 text-yellow-100">выдана</span>}
+	                  <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-red-300">{program.audience}</span>
+	                  <span className="rounded-full bg-white/[0.07] px-2.5 py-1 text-zinc-400">{program.focus}</span>
                   {program.isUserCreated && <span className="rounded-full bg-white/[0.07] px-2.5 py-1 text-zinc-400">моя</span>}
                   {program.isUserCreated && <span className="rounded-full bg-white/[0.07] px-2.5 py-1 text-zinc-400">{getProgramVisibilityLabel(program)}</span>}
                 </div>
@@ -16269,10 +16401,11 @@ const toggleExerciseMeasurementSetting = (field) => {
                 </div>
                 <div className="mt-1 text-xs text-zinc-600">{formatDuration(day.durationMinutes)} · {(day.exercises || []).reduce((sum, exercise) => sum + getProgramExerciseSetsCount(exercise), 0)} подходов</div>
               </div>)}
-            </div>
-          </div>;
-          })}
-        </div>
+	            </div>
+	          </div>;
+	          })}
+	          {!visibleTrainingPrograms.length && <p className="rounded-2xl bg-white/[0.04] p-4 text-sm font-semibold text-zinc-500">Программ по такому запросу нет.</p>}
+	        </div>
 	      </BottomSheetPanel>
 	    </div>}
 
@@ -16387,8 +16520,8 @@ const toggleExerciseMeasurementSetting = (field) => {
 	                    <label><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Темп</span><input value={exercise.tempo} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { tempo: e.target.value })} placeholder="3-1-1" className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 text-center font-black outline-none"/></label>
 	                  </div>
 	                  <button type="button" onClick={() => updateProgramBuilderExercise(activeDayIndex, exercise.id, { doubleCountInStatistics: !Boolean(exercise.doubleCountInStatistics), doubleWeightInStats: !Boolean(exercise.doubleCountInStatistics) })} className="mt-3 flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left transition active:scale-[0.99]">
-	                    <span><span className="block text-sm font-black">Удваивать в статистике</span><span className="mt-1 block text-xs font-semibold text-zinc-500">Для односторонних движений: объем будет считаться x2.</span></span>
-	                    <span className={`relative h-7 w-12 shrink-0 rounded-full transition ${exercise.doubleCountInStatistics ? "bg-red-500" : "bg-white/15"}`}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition ${exercise.doubleCountInStatistics ? "left-6" : "left-1"}`} /></span>
+	                    <span className="block text-sm font-black">Удваивать в статистике</span>
+	                    <span className={`onlypump-toggle-track relative h-7 w-12 shrink-0 rounded-full transition ${exercise.doubleCountInStatistics ? "is-on bg-red-500" : "bg-white/[0.12]"}`}><span className={`onlypump-toggle-knob absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${exercise.doubleCountInStatistics ? "left-6" : "left-1"}`} /></span>
 	                  </button>
 	                  <label className="mt-3 block"><span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Альтернативы</span><input value={exercise.alternativesText ?? (exercise.alternatives || []).join(", ")} onChange={(e) => updateProgramBuilderExercise(activeDayIndex, exercise.id, { alternativesText: e.target.value })} placeholder="Через запятую" className="onlypump-program-field mt-1 w-full rounded-2xl px-3 py-3 font-bold outline-none"/></label>
 	                </div>)}
@@ -16758,8 +16891,7 @@ const toggleExerciseMeasurementSetting = (field) => {
                     </button>;
                   })}
               </div>
-              <p className="mt-2 text-[11px] font-semibold leading-4 text-zinc-600">В расчёте: 1-й 0.3, 2-й 0.2 подхода.</p>
-            </div>
+	            </div>
           </div>
 
           {(customExerciseShowsWeightUnit || customExerciseShowsDistanceUnit) && <div className="grid grid-cols-2 gap-3">
@@ -16778,7 +16910,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             </label>}
           </div>}
 
-	          {customExerciseShowsWeightUnit && <button type="button" onClick={() => setCustomExerciseSheet(prev => {
+		          {customExerciseShowsDoubleCount && <button type="button" onClick={() => setCustomExerciseSheet(prev => {
 	            const nextValue = !Boolean(prev.doubleCountInStatistics);
 	            return { ...prev, doubleCountInStatistics: nextValue };
 	          })} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
@@ -16850,10 +16982,11 @@ const toggleExerciseMeasurementSetting = (field) => {
     {exerciseMeasurementSheet && (() => {
       const exercise = (selectedWorkout?.exercises || []).find(item => item.id === exerciseMeasurementSheet.exerciseId);
 	      const settings = normalizeExerciseMeasurementSettings(exerciseMeasurementSheet.draft || exercise || {});
-	      const currentMode = settings.measurementMode;
-	      const modeItems = workoutMeasurementModes.map(mode => [mode.id, mode.label]);
-	      const showWeightUnitSettings = Boolean(settings.measureWeightEnabled);
-	      const showDistanceUnitSettings = Boolean(settings.measureDistanceEnabled);
+		      const currentMode = settings.measurementMode;
+		      const modeItems = workoutMeasurementModes.map(mode => [mode.id, mode.label]);
+		      const showWeightUnitSettings = Boolean(settings.measureWeightEnabled);
+		      const showDoubleCountSettings = settings.exerciseCategory === "strength";
+		      const showDistanceUnitSettings = Boolean(settings.measureDistanceEnabled);
 	      return <div onClick={() => setExerciseMeasurementSheet(null)} className="onlypump-modal-layer fixed inset-0 z-[190] flex items-end bg-black/45 p-4 backdrop-blur-sm">
         <BottomSheetPanel onClose={() => setExerciseMeasurementSheet(null)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/94 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
           <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
@@ -16883,7 +17016,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	              <span>{label}</span>
 	              <span className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-black ${settings[field] ? 'border-red-500 bg-red-500 text-black' : 'border-white/20 text-zinc-600'}`}>{settings[field] ? "✓" : ""}</span>
 	            </button>)}
-		            {showWeightUnitSettings && <button type="button" onClick={() => toggleExerciseMeasurementSetting("doubleCountInStatistics")} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
+			            {showDoubleCountSettings && <button type="button" onClick={() => toggleExerciseMeasurementSetting("doubleCountInStatistics")} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.04] px-4 py-4 text-left font-semibold transition hover:bg-white/[0.07]">
 		              <span>Удваивать в статистике</span>
 		              <span className={`onlypump-toggle-track relative h-7 w-12 rounded-full transition ${settings.doubleCountInStatistics ? "is-on bg-red-500" : "bg-white/[0.12]"}`}>
 		                <span className={`onlypump-toggle-knob absolute top-1 h-5 w-5 rounded-full bg-white shadow-lg transition ${settings.doubleCountInStatistics ? "left-6" : "left-1"}`} />
@@ -17155,10 +17288,10 @@ const toggleExerciseMeasurementSetting = (field) => {
           </div>
         </> : <>
           <h2 className="text-xl font-black tracking-[-0.03em]">{weekMenuGroup.workout.title}</h2>
-          <div className="mt-5 space-y-2">
-            <button onClick={() => openRepeatSheet(weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Повторить тренировку</button>
-            <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Перенести на другую дату</button>
-            <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Превратить в программу</button>
+	          <div className="mt-5 space-y-2">
+	            <button onClick={() => openRepeatSheet(weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Повторить тренировку</button>
+	            {weekMenuGroup.workout.status === "completed" ? <button type="button" onClick={() => { setWeekMenuGroup(null); openCompletedWorkoutTimingEditor(weekMenuGroup.workout); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Изменить время и длительность</button> : <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Перенести на другую дату</button>}
+	            <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Превратить в программу</button>
             <button type="button" onClick={() => openDeleteSheet(weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           </div>
         </>}
