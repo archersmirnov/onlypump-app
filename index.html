@@ -2644,6 +2644,10 @@ const DEFAULT_HEALTH_LOG = {
   water_target_ml: 2500,
   mood_key: "",
   wellbeing_key: "",
+  cardio_completed: null,
+  extra_activity_completed: null,
+  measurements_done: null,
+  photo_done: null,
   notes: "",
 };
 
@@ -2673,6 +2677,12 @@ const calculateRecoveryScoreLocal = (log = {}) => {
 const normalizeHealthLog = (record = {}, dateKey = formatDateKey(new Date())) => {
   const logDate = record?.log_date || record?.date || dateKey;
   const duration = calculateSleepDurationMinutesLocal(record.sleep_started_at, record.sleep_ended_at, record.sleep_duration_minutes);
+  const optionalBoolean = (value) => {
+    if (value === undefined || value === null || value === "") return null;
+    if (value === true || value === "true" || value === 1 || value === "1" || value === "yes" || value === "да") return true;
+    if (value === false || value === "false" || value === 0 || value === "0" || value === "no" || value === "нет") return false;
+    return Boolean(value);
+  };
   const base = {
     ...DEFAULT_HEALTH_LOG,
     ...record,
@@ -2683,6 +2693,10 @@ const normalizeHealthLog = (record = {}, dateKey = formatDateKey(new Date())) =>
     water_target_ml: profileNonNegativeNumber(record.water_target_ml, DEFAULT_HEALTH_LOG.water_target_ml),
     mood_key: String(record.mood_key || record.mood || ""),
     wellbeing_key: String(record.wellbeing_key || record.wellbeing || ""),
+    cardio_completed: optionalBoolean(record.cardio_completed ?? record.cardio),
+    extra_activity_completed: optionalBoolean(record.extra_activity_completed ?? record.extra_activity),
+    measurements_done: optionalBoolean(record.measurements_done),
+    photo_done: optionalBoolean(record.photo_done),
     notes: String(record.notes || ""),
     sleep_duration_minutes: duration,
     sleep_latency_minutes: profileNonNegativeNumber(record.sleep_latency_minutes, 0),
@@ -2705,6 +2719,10 @@ const healthLogHasRealData = (log = {}) => {
     || log.recovery_score !== null && log.recovery_score !== undefined
     || String(log.mood_key || log.mood || "").trim().length > 0
     || String(log.wellbeing_key || log.wellbeing || "").trim().length > 0
+    || log.cardio_completed === true
+    || log.extra_activity_completed === true
+    || log.measurements_done === true
+    || log.photo_done === true
     || String(log.notes || "").trim().length > 0;
 };
 
@@ -22853,6 +22871,44 @@ function ProgramTargetPickerSheet({ mode = "selected", profile = DEFAULT_PROFILE
   </div>;
 }
 
+const trainerStudentMeasurementFields = ["neck_cm", "waist_cm", "hips_cm", "shoulders_cm", "chest_cm", "biceps_cm", "abdomen_cm", "glutes_cm", "thigh_cm", "calf_cm"];
+
+const formatStudentDashboardTime = (value) => {
+  if (!value) return "";
+  const text = String(value);
+  const timeMatch = text.match(/(\d{1,2}):(\d{2})/);
+  if (timeMatch) return `${String(timeMatch[1]).padStart(2, "0")}:${timeMatch[2]}`;
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+};
+
+const measurementHasBodyValues = (measurement = {}) => trainerStudentMeasurementFields.some(key => profileNumber(measurement?.[key], 0) > 0);
+
+const normalizeStudentDashboardNote = (notes = "") => {
+  const text = String(notes || "").trim();
+  if (!text) return "";
+  const importedNote = text.split("\n").find(line => line.trim().startsWith("Примечание:"));
+  if (importedNote) return importedNote.replace(/^Примечание:\s*/i, "").trim();
+  return text.replace(/^Импорт трекера Ники\.?\s*/i, "").trim();
+};
+
+const formatStudentDashboardChange = (value) => {
+  if (value === null || value === undefined || value === "") return "";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "";
+  if (Math.abs(number) < 0.05) return "0 кг";
+  return `${number > 0 ? "+" : ""}${roundMacro(number)} кг`;
+};
+
+const formatStudentDashboardNumber = (value, suffix = "") => {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number) || number <= 0) return "";
+  return `${roundMacro(number)}${suffix}`;
+};
+
+const getStudentDashboardChoiceLabel = (options = [], id = "") => findDailyChoice(options, id)?.label || "";
+
 function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose }) {
   const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [tab, setTab] = useState("overview");
@@ -22860,9 +22916,37 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
   const [error, setError] = useState("");
   const [data, setData] = useState({ workouts: [], health_logs: [], nutrition_days: [], measurements: [] });
   const [detail, setDetail] = useState(null);
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const columnSettingsKey = `onlypump_student_dashboard_columns_${student?.id || "unknown"}`;
+  const [columnOverrides, setColumnOverrides] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(columnSettingsKey) || "{}");
+    } catch (_error) {
+      return {};
+    }
+  });
   const studentName = getManagedUserTitle(student);
   const monthKey = formatDateKey(monthDate);
   const monthLabel = monthDate.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(columnSettingsKey) || "{}");
+      setColumnOverrides(saved && typeof saved === "object" ? saved : {});
+    } catch (_error) {
+      setColumnOverrides({});
+    }
+  }, [columnSettingsKey]);
+
+  const setColumnVisible = (key, value) => {
+    setColumnOverrides(prev => {
+      const next = { ...(prev || {}), [key]: Boolean(value) };
+      try {
+        localStorage.setItem(columnSettingsKey, JSON.stringify(next));
+      } catch (_error) {}
+      return next;
+    });
+  };
 
   useEffect(() => {
     let alive = true;
@@ -22914,6 +22998,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
     const healthByDate = new Map(data.health_logs.map(log => [pumpXpDateKey(log.log_date || log.date), log]));
     const nutritionByDate = new Map(data.nutrition_days.map(day => [pumpXpDateKey(day.date || day.nutrition_date), day]));
     const measurementsByDate = new Map(data.measurements.map(item => [pumpXpDateKey(item.measurement_date || item.date), item]));
+    let previousWeight = null;
     return monthDays.map(day => {
       const workouts = workoutsByDate.get(day.key) || [];
       const completed = workouts.filter(workout => normalizeWorkoutStatus(workout.status) === "completed");
@@ -22922,17 +23007,36 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
       const nutrition = nutritionByDate.get(day.key) || {};
       const nutritionTotals = nutrition.totals || normalizeNutritionDay(nutrition, initialNutritionGoal).totals || {};
       const measurement = measurementsByDate.get(day.key) || {};
+      const weight = profileNumber(measurement.weight_kg ?? measurement.weight, 0);
+      const weightChange = weight && previousWeight ? weight - previousWeight : null;
+      if (weight) previousWeight = weight;
+      const cardioFromWorkout = completed.some(workout => {
+        const workoutType = String(workout.workoutType || workout.workout_type || workout.type || "").toLowerCase();
+        return workoutType === "cardio" || workoutType === "hiit" || workoutType === "mobility";
+      });
+      const measurementsDone = health.measurements_done === true || measurementHasBodyValues(measurement);
       return {
         ...day,
         workouts,
         hasWorkout: completed.length > 0,
+        cardio: cardioFromWorkout || health.cardio_completed === true || health.extra_activity_completed === true,
         volume: workoutSummary.completedVolume || 0,
         sets: workoutSummary.completedSets || 0,
         calories: roundCalories(nutritionTotals.calories || 0),
         protein: roundMacro(nutritionTotals.protein || 0),
-        sleep: roundMacro(profileNonNegativeNumber(health.sleep_hours, 0)),
+        fat: roundMacro(nutritionTotals.fat || 0),
+        carbs: roundMacro(nutritionTotals.carbs || 0),
+        sleep: roundMacro(profileNonNegativeNumber(health.sleep_duration_minutes, 0) / 60),
+        sleepStart: formatStudentDashboardTime(health.sleep_started_at),
+        sleepEnd: formatStudentDashboardTime(health.sleep_ended_at),
         steps: Math.round(profileNonNegativeNumber(health.steps_count, 0)),
-        weight: profileNumber(measurement.weight_kg ?? measurement.weight, 0),
+        weight,
+        weightChange,
+        mood: getStudentDashboardChoiceLabel(dailyMoodOptions, health.mood_key || health.mood),
+        wellbeing: getStudentDashboardChoiceLabel(dailyWellbeingOptions, health.wellbeing_key || health.wellbeing),
+        measurementsDone,
+        photoDone: health.photo_done === true,
+        notes: normalizeStudentDashboardNote(health.notes),
       };
     });
   }, [data, monthDays]);
@@ -22943,15 +23047,23 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
       const values = withValue(key);
       return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
     };
+    const sum = (key) => rows.reduce((total, row) => total + Number(row[key] || 0), 0);
     return {
       workouts: rows.filter(row => row.hasWorkout).length,
-      volume: rows.reduce((sum, row) => sum + row.volume, 0),
-      sets: rows.reduce((sum, row) => sum + row.sets, 0),
+      cardio: rows.filter(row => row.cardio).length,
+      volume: sum("volume"),
+      sets: sum("sets"),
       calories: avg("calories"),
       protein: avg("protein"),
+      fat: avg("fat"),
+      carbs: avg("carbs"),
       sleep: avg("sleep"),
       steps: avg("steps"),
       weight: avg("weight"),
+      weightChange: rows.reduce((total, row) => total + (Number.isFinite(Number(row.weightChange)) ? Number(row.weightChange) : 0), 0),
+      weightChangeCount: rows.filter(row => row.weightChange !== null && row.weightChange !== undefined).length,
+      measurements: rows.filter(row => row.measurementsDone).length,
+      photos: rows.filter(row => row.photoDone).length,
     };
   };
 
@@ -22959,15 +23071,37 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
   const trainingWorkouts = data.workouts.filter(workout => normalizeWorkoutStatus(workout.status) !== "deleted");
   const maxSetCount = Math.max(3, ...trainingWorkouts.flatMap(workout => (workout.exercises || []).map(exercise => (exercise.sets || []).length || Number(exercise.plannedSets || exercise.planned_sets || 0))));
   const metricColumns = [
-    { key: "workout", label: "Тренировка", value: row => row.hasWorkout ? "✓" : "" },
-    { key: "volume", label: "Тоннаж", value: row => row.volume ? Math.round(row.volume).toLocaleString("ru-RU") : "" },
-    { key: "sets", label: "Подходы", value: row => row.sets || "" },
-    { key: "calories", label: "Ккал", value: row => row.calories || "" },
-    { key: "protein", label: "Белок", value: row => row.protein || "" },
-    { key: "sleep", label: "Сон", value: row => row.sleep || "" },
-    { key: "steps", label: "Шаги", value: row => row.steps ? row.steps.toLocaleString("ru-RU") : "" },
-    { key: "weight", label: "Вес", value: row => row.weight || "" },
+    { key: "workout", label: "Тренировка", value: row => row.hasWorkout ? "✓" : "", summaryValue: summary => summary.workouts || "" },
+    { key: "cardio", label: "Кардио", optional: true, value: row => row.cardio ? "✓" : "", summaryValue: summary => summary.cardio || "" },
+    { key: "volume", label: "Тоннаж", value: row => row.volume ? Math.round(row.volume).toLocaleString("ru-RU") : "", summaryValue: summary => summary.volume ? Math.round(summary.volume).toLocaleString("ru-RU") : "" },
+    { key: "sets", label: "Подходы", value: row => row.sets || "", summaryValue: summary => summary.sets || "" },
+    { key: "calories", label: "Ккал", value: row => row.calories || "", summaryValue: summary => summary.calories ? Math.round(summary.calories) : "" },
+    { key: "protein", label: "Белок", value: row => formatStudentDashboardNumber(row.protein), summaryValue: summary => summary.protein ? Math.round(summary.protein) : "" },
+    { key: "fat", label: "Жиры", optional: true, value: row => formatStudentDashboardNumber(row.fat), summaryValue: summary => summary.fat ? Math.round(summary.fat) : "" },
+    { key: "carbs", label: "Углеводы", optional: true, value: row => formatStudentDashboardNumber(row.carbs), summaryValue: summary => summary.carbs ? Math.round(summary.carbs) : "" },
+    { key: "mood", label: "Настроение", optional: true, value: row => row.mood || "", summaryValue: () => "" },
+    { key: "wellbeing", label: "Самочувствие", optional: true, value: row => row.wellbeing || "", summaryValue: () => "" },
+    { key: "sleep", label: "Сон", value: row => row.sleep ? `${row.sleep} ч` : "", summaryValue: summary => summary.sleep ? `${roundMacro(summary.sleep)} ч` : "" },
+    { key: "sleepStart", label: "Отбой", optional: true, value: row => row.sleepStart || "", summaryValue: () => "" },
+    { key: "sleepEnd", label: "Подъем", optional: true, value: row => row.sleepEnd || "", summaryValue: () => "" },
+    { key: "steps", label: "Шаги", value: row => row.steps ? row.steps.toLocaleString("ru-RU") : "", summaryValue: summary => summary.steps ? Math.round(summary.steps).toLocaleString("ru-RU") : "" },
+    { key: "weight", label: "Вес", value: row => row.weight ? `${roundMacro(row.weight)} кг` : "", summaryValue: summary => summary.weight ? `${roundMacro(summary.weight)} кг` : "" },
+    { key: "weightChange", label: "Изменение веса", optional: true, value: row => formatStudentDashboardChange(row.weightChange), summaryValue: summary => summary.weightChangeCount ? formatStudentDashboardChange(summary.weightChange) : "" },
+    { key: "measurements", label: "Замеры", optional: true, value: row => row.measurementsDone ? "✓" : "", summaryValue: summary => summary.measurements || "" },
+    { key: "photo", label: "Фото", optional: true, value: row => row.photoDone ? "✓" : "", summaryValue: summary => summary.photos || "" },
+    { key: "notes", label: "Заметки", optional: true, value: row => row.notes || "", summaryValue: () => "" },
   ];
+  const columnHasData = (column) => dashboardRows.some(row => {
+    const value = column.value(row);
+    return value !== "" && value !== null && value !== undefined;
+  });
+  const visibleMetricColumns = metricColumns.filter(column => {
+    if (!column.optional) return true;
+    if (columnOverrides[column.key] === true) return true;
+    if (columnOverrides[column.key] === false) return false;
+    return columnHasData(column);
+  });
+  const optionalMetricColumns = metricColumns.filter(column => column.optional);
   const openMetricDetail = (column, row) => {
     setDetail({
       title: column.label,
@@ -23005,41 +23139,48 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", onClose 
             <div className="rounded-2xl bg-white/[0.04] p-4"><span className="text-xs text-zinc-500">Шаги сред.</span><b className="mt-2 block text-2xl">{Math.round(monthSummary.steps).toLocaleString("ru-RU")}</b></div>
             <div className="rounded-2xl bg-white/[0.04] p-4"><span className="text-xs text-zinc-500">Сон сред.</span><b className="mt-2 block text-2xl">{roundMacro(monthSummary.sleep)} ч</b></div>
           </div>}
-          {tab === "table" && <div className="overflow-auto rounded-[24px] border border-white/10">
+          {tab === "table" && <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">{visibleMetricColumns.length} колонок</p>
+              <button type="button" onClick={() => setShowColumnPicker(prev => !prev)} className="rounded-full bg-white/8 px-4 py-2 text-xs font-black text-zinc-200 transition hover:bg-white/12">Колонки</button>
+            </div>
+            {showColumnPicker && <div className="grid gap-2 rounded-[22px] border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-2 lg:grid-cols-3">
+              {optionalMetricColumns.map(column => {
+                const hasData = columnHasData(column);
+                const visible = visibleMetricColumns.some(item => item.key === column.key);
+                return <button key={column.key} type="button" onClick={() => setColumnVisible(column.key, !visible)} className={`flex items-center justify-between gap-2 rounded-2xl px-3 py-2 text-left text-xs font-black transition ${visible ? "bg-red-500 text-black" : "bg-white/[0.05] text-zinc-300"}`}>
+                  <span>{column.label}<span className={`mt-0.5 block text-[10px] font-bold ${visible ? "text-black/55" : "text-zinc-500"}`}>{hasData ? "есть данные" : "нет данных"}</span></span>
+                  <span>{visible ? "✓" : "+"}</span>
+                </button>;
+              })}
+            </div>}
+            <div className="overflow-auto rounded-[24px] border border-white/10">
             <table className="min-w-[900px] border-separate border-spacing-0 text-sm">
-              <thead><tr>{["Дата", "День", ...metricColumns.map(column => column.label)].map((label, index) => <th key={label} className={`sticky top-0 z-10 bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500 ${index === 0 ? "left-0 z-20" : ""}`}>{label}</th>)}</tr></thead>
+              <thead><tr>{["Дата", "День", ...visibleMetricColumns.map(column => column.label)].map((label, index) => <th key={label} className={`sticky top-0 z-10 bg-zinc-950 p-3 text-left text-xs uppercase tracking-[0.14em] text-zinc-500 ${index === 0 ? "left-0 z-20" : ""}`}>{label}</th>)}</tr></thead>
               <tbody>
                 {dashboardRows.map((row, index) => <React.Fragment key={row.key}>
                   <tr>
                     <td className="sticky left-0 z-10 border-t border-white/10 bg-zinc-950 p-3 font-black">{row.label}</td>
                     <td className="border-t border-white/10 p-3 text-zinc-500">{row.weekday}</td>
-                    {metricColumns.map(column => <td key={column.key} className="border-t border-white/10 p-2"><button type="button" onClick={() => openMetricDetail(column, row)} className="min-h-10 w-full rounded-xl bg-white/[0.035] px-2 text-left font-bold transition hover:bg-white/[0.08]">{column.value(row) || " "}</button></td>)}
+                    {visibleMetricColumns.map(column => <td key={column.key} className="border-t border-white/10 p-2"><button type="button" onClick={() => openMetricDetail(column, row)} className="min-h-10 w-full rounded-xl bg-white/[0.035] px-2 text-left font-bold transition hover:bg-white/[0.08]">{column.value(row) || " "}</button></td>)}
                   </tr>
                   {(index + 1) % 7 === 0 && <tr className="bg-red-500/7">
                     <td className="sticky left-0 z-10 bg-zinc-950 p-3 text-xs font-black text-red-300">Итоги 7 дней</td>
                     <td className="p-3 text-xs text-zinc-500">{row.label}</td>
                     {(() => {
                       const summary = summarizeRows(dashboardRows.slice(Math.max(0, index - 6), index + 1));
-                      return [
-                        summary.workouts,
-                        Math.round(summary.volume).toLocaleString("ru-RU"),
-                        summary.sets,
-                        Math.round(summary.calories),
-                        Math.round(summary.protein),
-                        roundMacro(summary.sleep),
-                        Math.round(summary.steps).toLocaleString("ru-RU"),
-                        roundMacro(summary.weight),
-                      ].map((value, summaryIndex) => <td key={summaryIndex} className="p-3 text-xs font-black text-red-200">{value || "—"}</td>);
+                      return visibleMetricColumns.map(column => <td key={column.key} className="p-3 text-xs font-black text-red-200">{column.summaryValue?.(summary) || "—"}</td>);
                     })()}
                   </tr>}
                 </React.Fragment>)}
                 <tr className="bg-white/[0.04]">
                   <td className="sticky left-0 z-10 bg-zinc-950 p-3 text-xs font-black text-red-300">Итоги месяца</td>
                   <td className="p-3 text-xs text-zinc-500">{monthLabel}</td>
-                  {[monthSummary.workouts, Math.round(monthSummary.volume).toLocaleString("ru-RU"), monthSummary.sets, Math.round(monthSummary.calories), Math.round(monthSummary.protein), roundMacro(monthSummary.sleep), Math.round(monthSummary.steps).toLocaleString("ru-RU"), roundMacro(monthSummary.weight)].map((value, index) => <td key={index} className="p-3 text-xs font-black text-red-200">{value || "—"}</td>)}
+                  {visibleMetricColumns.map(column => <td key={column.key} className="p-3 text-xs font-black text-red-200">{column.summaryValue?.(monthSummary) || "—"}</td>)}
                 </tr>
               </tbody>
             </table>
+            </div>
           </div>}
           {tab === "training" && <div className="space-y-4">
             {trainingWorkouts.length ? trainingWorkouts.map((workout, workoutIndex) => <div key={workout.id || workoutIndex} className="overflow-auto rounded-[24px] border border-white/10">
