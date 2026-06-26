@@ -564,6 +564,104 @@
       break-inside: avoid;
       will-change: transform;
     }
+    .onlypump-home-widget-area {
+      container-type: inline-size;
+      width: 100%;
+    }
+    .onlypump-home-widget-grid {
+      --onlypump-home-widget-gap: 0.75rem;
+      --onlypump-home-widget-cell: calc((100cqw - (var(--onlypump-home-widget-gap) * 3)) / 4);
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-auto-flow: dense;
+      grid-auto-rows: var(--onlypump-home-widget-cell);
+      gap: var(--onlypump-home-widget-gap);
+      align-items: stretch;
+    }
+    @media (min-width: 640px) {
+      .onlypump-home-widget-grid {
+        --onlypump-home-widget-gap: 1rem;
+        --onlypump-home-widget-cell: calc((100cqw - (var(--onlypump-home-widget-gap) * 7)) / 8);
+        grid-template-columns: repeat(8, minmax(0, 1fr));
+      }
+    }
+    @media (min-width: 1024px) {
+      .onlypump-home-widget-grid {
+        --onlypump-home-widget-cell: calc((100cqw - (var(--onlypump-home-widget-gap) * 7)) / 8);
+      }
+    }
+    @media (min-width: 1536px) {
+      .onlypump-home-widget-grid {
+        --onlypump-home-widget-cell: calc((100cqw - (var(--onlypump-home-widget-gap) * 11)) / 12);
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+      }
+    }
+    .onlypump-home-widget-shell {
+      width: 100%;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      will-change: transform;
+    }
+    .onlypump-home-widget-frame {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .onlypump-home-widget-size-compact {
+      grid-column: span 2;
+      grid-row: span 1;
+    }
+    .onlypump-home-widget-size-square {
+      grid-column: span 2;
+      grid-row: span 2;
+    }
+    .onlypump-home-widget-size-wide {
+      grid-column: span 4;
+      grid-row: span 2;
+    }
+    .onlypump-home-widget-size-tall {
+      grid-column: span 2;
+      grid-row: span 4;
+    }
+    .onlypump-home-widget-card {
+      display: flex;
+      height: 100%;
+      min-height: 0;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .onlypump-home-widget-size-compact .onlypump-home-widget-card {
+      padding: 0.65rem;
+    }
+    .onlypump-home-widget-size-compact .onlypump-home-widget-value {
+      font-size: clamp(1.05rem, 4.8vw, 1.5rem);
+    }
+    .onlypump-home-widget-size-compact .onlypump-line-clamp-2 {
+      -webkit-line-clamp: 1;
+    }
+    .onlypump-home-widget-size-compact .onlypump-home-widget-extra {
+      display: none;
+    }
+    .onlypump-home-widget-value {
+      line-height: 0.98;
+      overflow-wrap: anywhere;
+    }
+    .onlypump-home-widget-extra {
+      min-height: 0;
+      overflow: hidden;
+    }
+    .onlypump-line-clamp-1,
+    .onlypump-line-clamp-2,
+    .onlypump-line-clamp-3 {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .onlypump-line-clamp-1 { -webkit-line-clamp: 1; }
+    .onlypump-line-clamp-2 { -webkit-line-clamp: 2; }
+    .onlypump-line-clamp-3 { -webkit-line-clamp: 3; }
     .theme-light .bg-black,
     .theme-light .bg-zinc-950,
     .theme-light .bg-zinc-900 {
@@ -2302,27 +2400,27 @@ const nav = [
 const getVisibleNavItems = (profile = DEFAULT_PROFILE) => nav.filter(item => !item.roles || profileHasAnyRole(profile, item.roles));
 
 const homeWidgetCatalog = [
-  { id: "metricWeight", label: "Вес", description: "Текущий вес и изменение", default: true, span: "compact" },
-  { id: "metricBodyFat", label: "Процент жира", description: "Оценка процента жира", default: true, span: "compact" },
-  { id: "metricTonnage", label: "Тоннаж", description: "Выполненный тоннаж тренировки", default: true, span: "compact" },
-  { id: "metricSets", label: "Подходы", description: "Выполненные подходы", default: true, span: "compact" },
-  { id: "metricCalories", label: "Калории", description: "Калории за день", default: true, span: "compact" },
-  { id: "metricProtein", label: "Белок", description: "Белок за день", default: true, span: "compact" },
-  { id: "metricRecovery", label: "Восстановление", description: "Индекс восстановления", default: true, span: "compact" },
-  { id: "metricSleep", label: "Сон", description: "Отчет сна и восстановление", default: false, span: "compact" },
-  { id: "metricSteps", label: "Шаги", description: "Шаги за выбранный день", default: false, span: "compact" },
-  { id: "macros", label: "БЖУ", description: "Белки, жиры и углеводы со шкалами", default: false, span: "compact" },
-  { id: "water", label: "Вода", description: "Трекер выпитой воды за день", default: false, span: "compact" },
-  { id: "personalTracker", label: "Трекер", description: "Персональный трекер жидкости, еды, привычки или отказа", default: false, span: "compact" },
-  { id: "moodWellbeing", label: "Настроение и самочувствие", description: "Два показателя за выбранный день", default: false, span: "compact" },
-  { id: "dailyNote", label: "Заметки", description: "Заметка по выбранному дню", default: false, span: "compact" },
-  { id: "workout", label: "Сегодняшняя тренировка", description: "План и прогресс тренировки дня", default: false, span: "large" },
-  { id: "nutrition", label: "Питание на сегодня", description: "Калории и кольцо прогресса", default: false, span: "large" },
-  { id: "weekProgress", label: "Прогресс недели", description: "График выполнения плана", default: false, span: "large" },
-  { id: "goalProgress", label: "Прогресс к цели", description: "Процент достижения цели", default: false, span: "large" },
-  { id: "miniActions", label: "Быстрые действия", description: "Тренировка, лекция и план", default: false, span: "large" },
-  { id: "education", label: "Обучение", description: "Лекции для продолжения", default: false, span: "full" },
-  { id: "tools", label: "Инструменты", description: "Калькуляторы ONLYPUMP", default: false, span: "full" },
+  { id: "metricWeight", label: "Вес", description: "Текущий вес и изменение", default: true, size: "compact" },
+  { id: "metricBodyFat", label: "Процент жира", description: "Оценка процента жира", default: true, size: "compact" },
+  { id: "metricTonnage", label: "Тоннаж", description: "Выполненный тоннаж тренировки", default: true, size: "compact" },
+  { id: "metricSets", label: "Подходы", description: "Выполненные подходы", default: true, size: "compact" },
+  { id: "metricCalories", label: "Калории", description: "Калории за день", default: true, size: "compact" },
+  { id: "metricProtein", label: "Белок", description: "Белок за день", default: true, size: "compact" },
+  { id: "metricRecovery", label: "Восстановление", description: "Индекс восстановления", default: true, size: "compact" },
+  { id: "metricSleep", label: "Сон", description: "Отчет сна и восстановление", default: false, size: "compact" },
+  { id: "metricSteps", label: "Шаги", description: "Шаги за выбранный день", default: false, size: "compact" },
+  { id: "macros", label: "БЖУ", description: "Белки, жиры и углеводы со шкалами", default: false, size: "square" },
+  { id: "water", label: "Вода", description: "Трекер выпитой воды за день", default: false, size: "square" },
+  { id: "personalTracker", label: "Трекер", description: "Персональный трекер жидкости, еды, привычки или отказа", default: false, size: "square" },
+  { id: "moodWellbeing", label: "Настроение и самочувствие", description: "Два показателя за выбранный день", default: false, size: "square" },
+  { id: "dailyNote", label: "Заметки", description: "Заметка по выбранному дню", default: false, size: "square" },
+  { id: "workout", label: "Сегодняшняя тренировка", description: "План и прогресс тренировки дня", default: false, size: "wide" },
+  { id: "nutrition", label: "Питание на сегодня", description: "Калории и кольцо прогресса", default: false, size: "wide" },
+  { id: "weekProgress", label: "Прогресс недели", description: "График выполнения плана", default: false, size: "wide" },
+  { id: "goalProgress", label: "Прогресс к цели", description: "Процент достижения цели", default: false, size: "square" },
+  { id: "miniActions", label: "Быстрые действия", description: "Тренировка, лекция и план", default: false, size: "tall" },
+  { id: "education", label: "Обучение", description: "Лекции для продолжения", default: false, size: "wide" },
+  { id: "tools", label: "Инструменты", description: "Калькуляторы ONLYPUMP", default: false, size: "wide" },
 ];
 
 const defaultHomeWidgets = homeWidgetCatalog.filter(w => w.default).map(w => w.id);
@@ -2394,6 +2492,16 @@ function DailyChoiceIcon({ option, size = "md" }) {
 }
 const personalTrackerWidgetId = (trackerId = "") => `${PERSONAL_TRACKER_WIDGET_PREFIX}${trackerId}`;
 const personalTrackerIdFromWidget = (widgetId = "") => String(widgetId).slice(PERSONAL_TRACKER_WIDGET_PREFIX.length);
+const getHomeCatalogWidgetSize = (id = "") => {
+  const item = homeWidgetCatalog.find(widget => widget.id === id);
+  if (!item) return "compact";
+  if (item.size) return item.size;
+  if (item.span === "full") return "wide";
+  if (item.span === "large") return "wide";
+  return "compact";
+};
+const isCompactHomeWidget = (id = "") => !isPersonalTrackerWidgetId(id) && getHomeCatalogWidgetSize(id) === "compact";
+const isWidgetCompactForInsert = (id = "") => isPersonalTrackerWidgetId(id) || isCompactHomeWidget(id);
 const getPersonalTrackerTypeConfig = (type = "liquid") => personalTrackerTypeConfigs[type] || personalTrackerTypeConfigs.liquid;
 const getPersonalTrackerAccent = (tracker = {}) => personalTrackerAccents[getPersonalTrackerTypeConfig(tracker.type).accent] || personalTrackerAccents.red;
 
@@ -2667,10 +2775,7 @@ function enforceHomeWidgetRules(widgets = []) {
 
 function buildHomeWidgetsAfterAdding(prevWidgets, id) {
   if (isPersonalTrackerWidgetId(id)) {
-    const firstLargeIndex = prevWidgets.findIndex(widgetId => {
-      if (isPersonalTrackerWidgetId(widgetId)) return false;
-      return homeWidgetCatalog.find(w => w.id === widgetId)?.span !== "compact";
-    });
+    const firstLargeIndex = prevWidgets.findIndex(widgetId => !isWidgetCompactForInsert(widgetId));
     if (prevWidgets.includes(id)) return enforceHomeWidgetRules(prevWidgets);
     const next = firstLargeIndex === -1
       ? [...prevWidgets, id]
@@ -2678,7 +2783,7 @@ function buildHomeWidgetsAfterAdding(prevWidgets, id) {
     return enforceHomeWidgetRules(next);
   }
   const withoutNutritionGroup = prevWidgets.filter(widgetId => !nutritionHomeWidgetIds.includes(widgetId));
-  const compactInsertIndex = withoutNutritionGroup.findIndex(widgetId => (isPersonalTrackerWidgetId(widgetId) ? "compact" : homeWidgetCatalog.find(w => w.id === widgetId)?.span) !== "compact");
+  const compactInsertIndex = withoutNutritionGroup.findIndex(widgetId => !isWidgetCompactForInsert(widgetId));
   const insertCompact = (items) => {
     const cleanItems = items.filter((item, index) => items.indexOf(item) === index);
     if (compactInsertIndex === -1) return [...withoutNutritionGroup, ...cleanItems];
@@ -2694,9 +2799,8 @@ function buildHomeWidgetsAfterAdding(prevWidgets, id) {
   }
 
   if (prevWidgets.includes(id)) return enforceHomeWidgetRules(prevWidgets);
-  const catalogItem = homeWidgetCatalog.find(w => w.id === id);
-  if (catalogItem?.span === "compact") {
-    const firstLargeIndex = prevWidgets.findIndex(widgetId => homeWidgetCatalog.find(w => w.id === widgetId)?.span !== "compact");
+  if (isCompactHomeWidget(id)) {
+    const firstLargeIndex = prevWidgets.findIndex(widgetId => !isWidgetCompactForInsert(widgetId));
     const next = firstLargeIndex === -1
       ? [...prevWidgets, id]
       : [...prevWidgets.slice(0, firstLargeIndex), id, ...prevWidgets.slice(firstLargeIndex)];
@@ -7205,18 +7309,22 @@ function DayDataModal({ dateKey, context = "home", onClose, setActive, workout, 
 
 function MetricWidgetCard({ title, value, sub, delta, progress, icon: Icon, onClick, children, accent = "red" }) {
   const ringColor = accent === "sky" ? "#38bdf8" : "#ef4444";
-  return <Card onClick={onClick} className="h-full cursor-pointer p-4 transition hover:border-red-500/50 hover:bg-red-500/5">
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-xs text-zinc-500">{title}</p>
-        <div className="mt-2 break-words text-2xl font-semibold leading-tight">{value}</div>
-        {sub && <p className="mt-1 break-words text-[11px] text-zinc-500">{sub}</p>}
+  return <Card onClick={onClick} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="onlypump-line-clamp-1 text-[11px] text-zinc-500 sm:text-xs">{title}</p>
+          <div className="onlypump-home-widget-value mt-1 break-words text-[clamp(1.35rem,4.4vw,1.75rem)] font-semibold leading-tight">{value}</div>
+          {sub && <p className="onlypump-line-clamp-2 mt-1 text-[10px] leading-tight text-zinc-500 sm:text-[11px]">{sub}</p>}
+        </div>
+        {Icon && <Icon size={18} className={`shrink-0 ${accent === "sky" ? "text-sky-400" : "text-red-500"}`}/>} 
       </div>
-      {Icon && <Icon size={18} className={accent === "sky" ? "text-sky-400" : "text-red-500"}/>} 
+      {children && <div className="onlypump-home-widget-extra mt-2">{children}</div>}
+      <div className="mt-auto space-y-2 pt-2">
+        {typeof progress === "number" && <Progress value={Math.min(100, Math.max(0, progress))}/>}
+        {delta && <div className="onlypump-line-clamp-1 text-[10px] text-zinc-400 sm:text-[11px]">{delta}</div>}
+      </div>
     </div>
-    {typeof progress === "number" && <div className="mt-4"><Progress value={Math.min(100, Math.max(0, progress))}/></div>}
-    {children}
-    {delta && <div className="mt-3 text-[11px] text-zinc-400">{delta}</div>}
   </Card>;
 }
 
@@ -7225,15 +7333,15 @@ function MoodWellbeingWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
   const wellbeing = findDailyChoice(dailyWellbeingOptions, healthLog?.wellbeing_key || healthLog?.wellbeing);
   const rowClass = "flex min-w-0 items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2";
 
-  return <Card onClick={onOpen} className="h-full cursor-pointer p-4 transition hover:border-red-500/50 hover:bg-red-500/5">
+  return <Card onClick={onOpen} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-500">День</p>
-        <h3 className="mt-1 break-words text-base font-black leading-tight">Настроение и самочувствие</h3>
+        <h3 className="onlypump-line-clamp-2 mt-1 text-base font-black leading-tight">Настроение и самочувствие</h3>
       </div>
       <Smile size={18} className="shrink-0 text-red-500"/>
     </div>
-    <div className="mt-4 space-y-2">
+    <div className="mt-auto space-y-2 pt-3">
       <div className={rowClass}>
         <span className="min-w-0 truncate text-xs text-zinc-500">Настроение</span>
         <DailyChoiceIcon option={mood} size="sm"/>
@@ -7250,7 +7358,7 @@ function DailyNoteWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
   const note = String(healthLog?.notes || "").trim();
   return <Card
     onClick={onOpen}
-    className="h-full cursor-pointer overflow-hidden border-yellow-300/40 p-4 text-zinc-950 shadow-yellow-500/10 transition hover:border-yellow-400/70"
+    className="onlypump-home-widget-card cursor-pointer border-yellow-300/40 p-3 text-zinc-950 shadow-yellow-500/10 transition hover:border-yellow-400/70 sm:p-4"
     style={{
       background: "linear-gradient(180deg, rgba(254,240,138,0.96), rgba(253,224,71,0.9))",
     }}
@@ -7258,12 +7366,12 @@ function DailyNoteWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-yellow-800/70">День</p>
-        <h3 className="mt-1 break-words text-lg font-black leading-tight text-zinc-950">Заметки</h3>
+        <h3 className="mt-1 text-lg font-black leading-tight text-zinc-950">Заметки</h3>
       </div>
       <StickyNote size={18} className="shrink-0 text-yellow-800"/>
     </div>
     <div
-      className="mt-4 min-h-[96px] rounded-2xl border border-yellow-700/20 px-3 py-3 text-sm font-bold text-zinc-900"
+      className="mt-3 min-h-0 flex-1 rounded-2xl border border-yellow-700/20 px-3 py-2 text-sm font-bold text-zinc-900"
       style={{
         lineHeight: "28px",
         backgroundImage: "repeating-linear-gradient(to bottom, transparent 0 27px, rgba(113,63,18,0.16) 27px 28px)",
@@ -8106,19 +8214,19 @@ function PersonalTrackerCard({ tracker, dateKey, onOpen, onQuickAdd }) {
   const progress = getPersonalTrackerProgress(tracker, entry, dateKey);
   const titlePrefix = tracker.mode === "limit" && !isBinary ? "лимит" : "цель";
 
-  return <Card onClick={onOpen} className="h-full cursor-pointer p-4 transition hover:border-red-500/50 hover:bg-red-500/5">
+  return <Card onClick={onOpen} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
-        <p className="text-xs text-zinc-500">{config.shortLabel}</p>
-        <h3 className="mt-1 break-words text-lg font-black leading-tight">{tracker.title}</h3>
+        <p className="onlypump-line-clamp-1 text-[11px] text-zinc-500">{config.shortLabel}</p>
+        <h3 className="onlypump-line-clamp-2 mt-1 text-base font-black leading-tight">{tracker.title}</h3>
       </div>
       <PersonalTrackerIcon tracker={tracker}/>
     </div>
-    {isBinary ? <div className="mt-4">
+    {isBinary ? <div className="mt-3 flex min-h-0 flex-1 flex-col">
       <div className="flex items-end justify-between gap-3">
-        <div>
-          <div className="text-3xl font-black">{stats.completed} дн</div>
-          <p className="mt-1 text-xs text-zinc-500">отмечено · осталось {stats.remaining} дн</p>
+        <div className="min-w-0">
+          <div className="text-3xl font-black leading-none">{stats.completed} дн</div>
+          <p className="onlypump-line-clamp-1 mt-1 text-[11px] text-zinc-500">отмечено · осталось {stats.remaining} дн</p>
         </div>
         <span className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black ${entry.done ? accent.soft : "bg-white/[0.06] text-zinc-500"}`}>
           {entry.done ? "Отмечено" : "Не отмечено"}
@@ -8129,8 +8237,8 @@ function PersonalTrackerCard({ tracker, dateKey, onOpen, onQuickAdd }) {
         <span>{formatCycleDate(dateKey)}</span>
       </div>
       <div className="mt-2"><Progress value={progress}/></div>
-      {entry.note && <p className="mt-3 line-clamp-2 rounded-2xl bg-white/[0.04] p-3 text-xs leading-5 text-zinc-400">{entry.note}</p>}
-      <div className="mt-4 grid grid-cols-7 gap-1">
+      {entry.note && <p className="onlypump-line-clamp-2 mt-2 rounded-2xl bg-white/[0.04] p-2 text-xs leading-5 text-zinc-400">{entry.note}</p>}
+      <div className="mt-auto grid grid-cols-7 gap-1 pt-3">
         {Array.from({ length: 14 }, (_, index) => {
           const date = addLocalDaysToDate(parseDateKeyLocal(dateKey), index - 13);
           const key = formatDateKey(date);
@@ -8139,14 +8247,14 @@ function PersonalTrackerCard({ tracker, dateKey, onOpen, onQuickAdd }) {
         })}
       </div>
     </div> : <>
-      <div className="mt-4 flex items-center gap-4">
+      <div className="mt-3 flex min-h-0 flex-1 items-center gap-3">
         <PersonalTrackerRing tracker={tracker} value={value.toLocaleString("ru-RU")} progress={progress} label={tracker.unit}/>
         <div className="min-w-0 flex-1">
-          <p className="text-xs text-zinc-500">{titlePrefix} {tracker.target.toLocaleString("ru-RU")} {tracker.unit}</p>
+          <p className="onlypump-line-clamp-2 text-xs text-zinc-500">{titlePrefix} {tracker.target.toLocaleString("ru-RU")} {tracker.unit}</p>
           <div className="mt-3"><Progress value={progress}/></div>
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-auto flex flex-wrap gap-2 pt-3">
         {(tracker.portions || []).slice(0, 2).map(portion => <button key={portion} type="button" onClick={(event) => { event.stopPropagation(); onQuickAdd(portion); }} className={`rounded-full px-3 py-1.5 text-[11px] font-black ${accent.soft}`}>+{portion}</button>)}
       </div>
     </>}
@@ -8813,13 +8921,14 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     }, null);
   };
 
-  const widgetSpan = (id) => {
-    if (isPersonalTrackerWidgetId(id)) return "";
-    const span = homeWidgetCatalog.find(w => w.id === id)?.span;
-    if (span === "full") return "sm:col-span-2 xl:col-span-4";
-    if (span === "large") return "sm:col-span-2 xl:col-span-2";
-    return "";
+  const getHomeWidgetSizeForGrid = (id) => {
+    if (isPersonalTrackerWidgetId(id)) {
+      const tracker = personalTrackers.find(item => item.id === personalTrackerIdFromWidget(id));
+      return isPersonalTrackerBinaryType(tracker?.type) ? "tall" : "square";
+    }
+    return getHomeCatalogWidgetSize(id);
   };
+  const widgetSizeClass = (id) => `onlypump-home-widget-size-${getHomeWidgetSizeForGrid(id)}`;
 
   const renderWidget = (id) => {
     if (isPersonalTrackerWidgetId(id)) {
@@ -8874,58 +8983,87 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       case "dailyNote":
         return <DailyNoteWidgetCard healthLog={selectedHealthLog} onOpen={() => setDailyNoteSheetOpen(true)}/>;
       case "workout":
-        return <Card key={id} onClick={() => setActive("workouts")} className={`cursor-pointer overflow-hidden transition hover:border-red-500/50 hover:bg-red-500/5 ${widgetSpan(id)}`}>
-          <div className="p-5"><h3 className="font-semibold">Тренировка за выбранный день</h3></div>
-          <div className="relative mx-4 h-52 rounded-xl bg-[url('https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?q=80&w=900&auto=format&fit=crop')] bg-cover bg-center grayscale">
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20"/>
+        return <Card key={id} onClick={() => setActive("workouts")} className="onlypump-home-widget-card cursor-pointer overflow-hidden p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="onlypump-line-clamp-1 text-[11px] text-zinc-500">Тренировка</p>
+              <h3 className="onlypump-line-clamp-2 mt-1 text-sm font-semibold leading-tight">Тренировка за выбранный день</h3>
+            </div>
+            <Dumbbell size={18} className="shrink-0 text-red-500"/>
+          </div>
+          <div className="relative mt-3 min-h-0 flex-1 rounded-2xl bg-[url('https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?q=80&w=900&auto=format&fit=crop')] bg-cover bg-center grayscale">
+            <div className="absolute inset-0 rounded-2xl bg-gradient-to-t from-black/85 via-black/25"/>
             <Play className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"/>
           </div>
-          <div className="p-5">
-            <h4>{selectedPrimaryWorkout?.title || "Нет тренировки на выбранный день"}</h4>
-            <div className="mt-3 text-xs text-zinc-500">{selectedWorkoutSummary.exerciseCount} упражнений · {selectedWorkoutSummary.completedSets}/{selectedWorkoutSummary.totalSets} подходов · {formatHomeVolume(selectedWorkoutSummary.completedVolume)}</div>
-            <Button className="mt-6 w-full bg-gradient-to-r from-red-700 to-red-500">Открыть тренировки</Button>
-          </div>
+          <h4 className="onlypump-line-clamp-1 mt-3 text-sm font-black">{selectedPrimaryWorkout?.title || "Нет тренировки на выбранный день"}</h4>
+          <div className="onlypump-line-clamp-2 mt-2 text-[11px] text-zinc-500">{selectedWorkoutSummary.exerciseCount} упражнений · {selectedWorkoutSummary.completedSets}/{selectedWorkoutSummary.totalSets} подходов · {formatHomeVolume(selectedWorkoutSummary.completedVolume)}</div>
+          <Button className="mt-3 h-9 w-full bg-gradient-to-r from-red-700 to-red-500 text-xs">Открыть тренировки</Button>
         </Card>;
       case "nutrition":
-        return <Card key={id} onClick={openNutritionFromHome} className={`cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5 ${widgetSpan(id)}`}>
-          <h3 className="font-semibold">Питание за выбранный день</h3>
-          <div className="mt-5 grid grid-cols-[1fr_auto] items-center gap-4">
-            <div className="h-40 rounded-2xl bg-[url('https://images.unsplash.com/photo-1546069901-d5bfd2cbfb1f?q=80&w=700&auto=format&fit=crop')] bg-cover bg-center"/>
+        return <Card key={id} onClick={openNutritionFromHome} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
+          <h3 className="onlypump-line-clamp-1 text-sm font-semibold">Питание за выбранный день</h3>
+          <div className="mt-3 grid min-h-0 flex-1 grid-cols-[1fr_auto] items-center gap-3">
+            <div className="h-full min-h-[6rem] rounded-2xl bg-[url('https://images.unsplash.com/photo-1546069901-d5bfd2cbfb1f?q=80&w=700&auto=format&fit=crop')] bg-cover bg-center"/>
             <NutritionRing calories={homeUsesPalmNutrition ? selectedPalmSummary.total : selectedNutritionTotals.calories} goal={homeUsesPalmNutrition ? selectedPalmSummary.target : nutritionGoal.calories} label={homeUsesPalmNutrition ? "Ладони" : "Калории"} unit={homeUsesPalmNutrition ? "лад." : "ккал"}/>
           </div>
-          <div className="mt-5 space-y-4 text-sm">
+          <div className="mt-3 space-y-2 text-[11px]">
             <div>Белки <span className="float-right">{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.protein)} / ${roundMacro(selectedPalmSummary.targets.protein)} лад.` : `${selectedNutritionTotals.protein} / ${nutritionGoal.protein}г`}</span><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}/></div>
             <div>Жиры <span className="float-right">{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.fat)} / ${roundMacro(selectedPalmSummary.targets.fat)} лад.` : `${selectedNutritionTotals.fat} / ${nutritionGoal.fat}г`}</span><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.fat / Math.max(1, selectedPalmSummary.targets.fat)) * 100)) : fatPercent}/></div>
             <div>Углеводы <span className="float-right">{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.carbs)} / ${roundMacro(selectedPalmSummary.targets.carbs)} лад.` : `${selectedNutritionTotals.carbs} / ${nutritionGoal.carbs}г`}</span><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.carbs / Math.max(1, selectedPalmSummary.targets.carbs)) * 100)) : carbsPercent}/></div>
           </div>
-          <Button className="mt-7 w-full bg-white/8">Открыть дневник питания</Button>
+          <Button className="mt-3 h-9 w-full bg-white/8 text-xs">Открыть дневник питания</Button>
         </Card>;
       case "weekProgress":
-        return <Card key={id} onClick={() => setActive("progress")} className={`cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5 ${widgetSpan(id)}`}>
+        return <Card key={id} onClick={() => setActive("progress")} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
           <div className="flex items-center justify-between">
-            <h3>Прогресс недели</h3>
-            <button className="rounded-md bg-white/5 px-3 py-1 text-xs text-zinc-400">Выполнение плана <ChevronDown size={12} className="inline"/></button>
+            <h3 className="onlypump-line-clamp-1 text-sm font-black">Прогресс недели</h3>
+            <button className="shrink-0 rounded-md bg-white/5 px-2 py-1 text-[10px] text-zinc-400">План <ChevronDown size={12} className="inline"/></button>
           </div>
-          <svg viewBox="0 0 420 150" className="mt-4 h-44 w-full"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="rgb(239 68 68)" stopOpacity="0.55"/><stop offset="1" stopColor="rgb(239 68 68)" stopOpacity="0"/></linearGradient></defs><path d="M10 125 L70 75 L130 50 L190 70 L250 38 L300 32 L350 10 L405 25 L405 140 L10 140 Z" fill="url(#g)"/><path d="M10 125 L70 75 L130 50 L190 70 L250 38 L300 32 L350 10 L405 25" fill="none" stroke="#ef4444" strokeWidth="3"/></svg>
+          <svg viewBox="0 0 420 150" className="mt-3 min-h-0 flex-1 w-full"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="rgb(239 68 68)" stopOpacity="0.55"/><stop offset="1" stopColor="rgb(239 68 68)" stopOpacity="0"/></linearGradient></defs><path d="M10 125 L70 75 L130 50 L190 70 L250 38 L300 32 L350 10 L405 25 L405 140 L10 140 Z" fill="url(#g)"/><path d="M10 125 L70 75 L130 50 L190 70 L250 38 L300 32 L350 10 L405 25" fill="none" stroke="#ef4444" strokeWidth="3"/></svg>
         </Card>;
       case "goalProgress":
-        return <Card key={id} onClick={() => setActive("progress")} className={`relative cursor-pointer overflow-hidden p-5 transition hover:border-red-500/50 hover:bg-red-500/5 ${widgetSpan(id)}`}>
-          <h3>Твой прогресс к цели</h3>
-          <p className="mt-3 text-sm text-zinc-400">{progressGoal.title}</p>
-          <div className="mt-4 text-5xl">{bodyProgress}%</div>
-          <div className="mt-5 w-2/3"><Progress value={bodyProgress}/></div>
-          <div className="absolute bottom-0 right-0 h-44 w-44 bg-[url('https://images.unsplash.com/photo-1605296867424-35fc25c9212a?q=80&w=500&auto=format&fit=crop')] bg-cover bg-center opacity-70 grayscale"/>
+        return <Card key={id} onClick={() => setActive("progress")} className="onlypump-home-widget-card relative cursor-pointer overflow-hidden p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
+          <h3 className="onlypump-line-clamp-1 text-sm font-black">Твой прогресс к цели</h3>
+          <p className="onlypump-line-clamp-2 mt-2 text-xs text-zinc-400">{progressGoal.title}</p>
+          <div className="mt-auto text-4xl font-black leading-none">{bodyProgress}%</div>
+          <div className="mt-4 w-2/3"><Progress value={bodyProgress}/></div>
+          <div className="pointer-events-none absolute bottom-0 right-0 h-32 w-32 bg-[url('https://images.unsplash.com/photo-1605296867424-35fc25c9212a?q=80&w=500&auto=format&fit=crop')] bg-cover bg-center opacity-35 grayscale"/>
         </Card>;
       case "miniActions":
-        return <div key={id} className={`grid gap-4 ${widgetSpan(id)}`}>
+        return <div key={id} className="grid h-full min-h-0 grid-rows-3 gap-2 overflow-hidden">
           <MiniAction onClick={() => setActive("workouts")} title="Ближайшая тренировка" sub="Следующая" text="Legs — Ноги / Ягодицы" button="Смотреть план"/>
           <MiniAction onClick={() => setActive("lectures")} title="Лекция дня" sub="Рекомпозиция" text="Принципы эффективной сушки" button="Смотреть лекцию"/>
           <MiniAction onClick={() => setActive("education")} title="Твой план" sub="Программа" text="ONLYPUMP Recomp" button="Открыть программу"/>
         </div>;
       case "education":
-        return <div key={id} className={widgetSpan(id)}><EducationStrip setActive={setActive} lectureItems={lectureItems}/></div>;
+        return <Card key={id} onClick={() => setActive("lectures")} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="onlypump-line-clamp-1 text-sm font-black">Продолжить обучение</h3>
+            <BookOpen size={18} className="shrink-0 text-red-500"/>
+          </div>
+          <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-hidden">
+            {lectureItems.slice(0, 3).map(lecture => <div key={lecture.id} className="rounded-2xl border border-white/10 bg-white/[0.04] p-2">
+              <p className="onlypump-line-clamp-1 text-[10px] text-zinc-500">{lecture.category}</p>
+              <p className="onlypump-line-clamp-1 text-xs font-black">{lecture.title}</p>
+              <Progress value={lecture.progress}/>
+            </div>)}
+          </div>
+          <Button className="mt-3 h-9 w-full bg-white/8 text-xs">Смотреть лекции</Button>
+        </Card>;
       case "tools":
-        return <div key={id} className={widgetSpan(id)}><Tools/></div>;
+        return <Card key={id} onClick={() => setActive("calculators")} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="onlypump-line-clamp-1 text-sm font-black">Твои инструменты</h3>
+            <Calculator size={18} className="shrink-0 text-red-500"/>
+          </div>
+          <div className="mt-3 grid min-h-0 flex-1 grid-cols-2 gap-2 overflow-hidden">
+            {calculators.slice(0, 4).map(({icon: Icon, title}) => <div key={title} className="min-h-0 rounded-2xl border border-white/10 bg-white/[0.04] p-2">
+              <Icon size={15} className="mb-2 text-red-500"/>
+              <p className="onlypump-line-clamp-2 text-[11px] font-black leading-tight">{title}</p>
+            </div>)}
+          </div>
+          <Button className="mt-3 h-9 w-full bg-white/8 text-xs">Открыть</Button>
+        </Card>;
       default:
         return null;
     }
@@ -8992,7 +9130,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       onPointerMove={(e) => moveWidgetDrag(e, id)}
       onPointerUp={(e) => endWidgetDrag(e, id)}
       onPointerCancel={(e) => endWidgetDrag(e, id)}
-      className={`relative min-w-0 ${homeEditMode ? "touch-none select-none cursor-grab active:cursor-grabbing" : "touch-auto"} ${widgetSpan(id)} ${hiddenOnMobile ? "hidden sm:block" : ""} ${draggedWidget === id ? "opacity-95" : ""}`}
+      className={`onlypump-home-widget-shell ${widgetSizeClass(id)} relative min-w-0 min-h-0 ${homeEditMode ? "touch-none select-none cursor-grab active:cursor-grabbing" : "touch-auto"} ${hiddenOnMobile ? "hidden sm:block" : ""} ${draggedWidget === id ? "opacity-95" : ""}`}
       style={dragStyle}
     >
       {homeEditMode && <>
@@ -9004,7 +9142,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
           className="absolute -right-2 -top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full bg-zinc-200 text-lg leading-none text-black shadow-xl shadow-black/40 transition hover:scale-105"
         >×</button>
       </>}
-      <div className={`${homeEditMode && !isDragging ? "onlypump-wiggle rounded-2xl ring-1 ring-white/10" : ""} ${homeEditMode ? "pointer-events-none" : ""}`}>
+      <div className={`onlypump-home-widget-frame ${homeEditMode && !isDragging ? "onlypump-wiggle ring-1 ring-white/10" : ""} ${homeEditMode ? "pointer-events-none" : ""}`}>
         {widget}
       </div>
     </div>;
@@ -9041,14 +9179,14 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         </button>
       </div>
     </div>
-    <div className="relative mt-4">
-      <MasonryGrid className="grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-4 2xl:grid-cols-7">
+    <div className="onlypump-home-widget-area relative mt-4">
+      <div className="onlypump-home-widget-grid">
         {homeWidgets.map(id => renderEditableWidget(id))}
-        {homeWidgets.length === 0 && <Card className="col-span-full p-8 text-center">
+        {homeWidgets.length === 0 && <Card className="onlypump-home-widget-size-wide p-8 text-center">
           <p className="text-zinc-400">Нет активных виджетов.</p>
           <Button data-tour="home-add-widget" onClick={() => setWidgetPickerOpen(true)} className="mt-4 bg-white/8">Добавить виджет</Button>
         </Card>}
-      </MasonryGrid>
+      </div>
     </div>
     {widgetPickerOpen && <HomeWidgetSettingsModal enabledWidgets={homeWidgets} personalTrackerCount={personalTrackers.length} onAdd={addWidget} onClose={() => setWidgetPickerOpen(false)}/>} 
     {weightSheetOpen && <WeightEditorSheet dateKey={selectedDateKey} measurements={selectedMeasurements} profile={profile} saving={profileSaving} onClose={() => setWeightSheetOpen(false)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => { setWeightSheetOpen(false); openAnalyticsFromHome("weight"); }}/>}
@@ -9096,7 +9234,13 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
 }
 
 function MiniAction({ title, sub, text, button, onClick }) {
-  return <Card onClick={onClick} className="cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5"><h3>{title}</h3><p className="mt-3 text-xs text-zinc-500">{sub}</p><h4 className="mt-2">{text}</h4><p className="mt-3 text-xs text-zinc-500">75 мин · 7 упражнений</p><Button className="mt-5 w-full bg-white/8">{button}</Button></Card>;
+  return <Card onClick={onClick} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5">
+    <h3 className="onlypump-line-clamp-1 text-sm font-black">{title}</h3>
+    <p className="mt-1 text-[10px] text-zinc-500">{sub}</p>
+    <h4 className="onlypump-line-clamp-2 mt-1 text-sm leading-tight">{text}</h4>
+    <p className="onlypump-line-clamp-1 mt-1 text-[10px] text-zinc-500">75 мин · 7 упражнений</p>
+    <Button className="mt-auto h-8 w-full bg-white/8 text-xs">{button}</Button>
+  </Card>;
 }
 
 function EducationStrip({ setActive, lectureItems = [] }) {
