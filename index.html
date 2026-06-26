@@ -522,7 +522,8 @@
     }
     .onlypump-mobile-menu-logo-img {
       display: block;
-      width: 6rem;
+      width: 5.8rem;
+      max-width: none;
       max-height: 2.35rem;
       object-fit: contain;
       filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.32));
@@ -6506,14 +6507,13 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
       <div onClick={() => setOpen(false)} className={`onlypump-mobile-menu-overlay absolute inset-0 transition-opacity duration-300 ${open ? "opacity-100" : "opacity-0"}`}/>
       <nav
         aria-label={mode === "analytics" ? "Меню аналитики" : "Главное меню"}
-        className={`absolute right-6 flex flex-col items-end gap-3 overflow-y-auto pr-0 onlypump-scrollbar-none transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"}`}
+        className={`absolute right-6 flex flex-col items-end gap-3 overflow-visible bg-transparent pr-0 shadow-none transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"}`}
         style={{
-          bottom: "calc(var(--onlypump-safe-bottom) + 10.25rem)",
-          maxHeight: "calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 11.25rem)"
+          bottom: "calc(var(--onlypump-safe-bottom) + 10.25rem)"
         }}
       >
         {showMenuLogo && <div
-          className={`onlypump-mobile-menu-item ${open ? "onlypump-mobile-menu-item-in" : ""} flex justify-end pr-1`}
+          className={`onlypump-mobile-menu-item ${open ? "onlypump-mobile-menu-item-in" : ""} flex w-[60px] justify-center`}
           style={{ animationDelay: "0ms" }}
         >
           <img src="assets/menu-icons/op_logo.png" alt="ONLYPUMP" draggable="false" className="onlypump-mobile-menu-logo-img"/>
