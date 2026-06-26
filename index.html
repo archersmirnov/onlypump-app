@@ -503,6 +503,10 @@
       background: rgba(17, 24, 39, 0.45);
     }
     .onlypump-mobile-menu-item {
+      opacity: 0;
+      transform: translate3d(26px, 10px, 0) scale(0.94);
+    }
+    .onlypump-mobile-menu-item.onlypump-mobile-menu-item-in {
       animation: onlypump-mobile-menu-in 210ms cubic-bezier(0.22, 1, 0.36, 1) both;
     }
     .onlypump-mobile-menu-icon {
@@ -6509,7 +6513,7 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
             type="button"
             data-tour={mode === "main" ? `nav-${item.id}` : undefined}
             onClick={onClick}
-            className="onlypump-mobile-menu-item flex items-center justify-end gap-3 text-right"
+            className={`onlypump-mobile-menu-item ${open ? "onlypump-mobile-menu-item-in" : ""} flex items-center justify-end gap-3 text-right`}
             style={{ animationDelay: `${index * 34}ms` }}
           >
             <span className={`max-w-[200px] text-[20px] font-medium leading-none text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.42)] ${activeItem ? "text-red-200" : ""}`}>{item.label}</span>
