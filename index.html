@@ -520,6 +520,13 @@
       height: 1.55rem;
       object-fit: contain;
     }
+    .onlypump-mobile-menu-logo-img {
+      display: block;
+      width: 6rem;
+      max-height: 2.35rem;
+      object-fit: contain;
+      filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.32));
+    }
     .onlypump-floating-nav-symbol {
       transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease;
       transform-origin: center;
@@ -6492,6 +6499,7 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
     setOpen(false);
   };
   const floatingLabel = !open ? "Открыть меню" : mode === "analytics" ? "Назад в меню" : "Закрыть меню";
+  const showMenuLogo = mode === "main";
 
   return <>
     <div className={`onlypump-fullscreen-layer fixed inset-0 z-[210] lg:hidden ${open ? "pointer-events-auto" : "pointer-events-none"}`}>
@@ -6504,6 +6512,12 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
           maxHeight: "calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 11.25rem)"
         }}
       >
+        {showMenuLogo && <div
+          className={`onlypump-mobile-menu-item ${open ? "onlypump-mobile-menu-item-in" : ""} flex justify-end pr-1`}
+          style={{ animationDelay: "0ms" }}
+        >
+          <img src="assets/menu-icons/op_logo.png" alt="ONLYPUMP" draggable="false" className="onlypump-mobile-menu-logo-img"/>
+        </div>}
         {items.map((item, index) => {
           const Icon = item.icon;
           const activeItem = mode === "main" && item.id === active;
@@ -6514,7 +6528,7 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
             data-tour={mode === "main" ? `nav-${item.id}` : undefined}
             onClick={onClick}
             className={`onlypump-mobile-menu-item ${open ? "onlypump-mobile-menu-item-in" : ""} flex items-center justify-end gap-3 text-right`}
-            style={{ animationDelay: `${index * 34}ms` }}
+            style={{ animationDelay: `${(index + (showMenuLogo ? 1 : 0)) * 34}ms` }}
           >
             <span className={`max-w-[200px] text-[20px] font-medium leading-none text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.42)] ${activeItem ? "text-red-200" : ""}`}>{item.label}</span>
             <span className={`onlypump-mobile-menu-icon flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-full ${activeItem ? "ring-[3px] ring-red-400/50" : ""}`}>
