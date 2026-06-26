@@ -494,6 +494,14 @@
         transform: translate3d(0, 0, 0) scale(1);
       }
     }
+    @keyframes onlypump-floating-nav-attention {
+      0%, 100% {
+        box-shadow: 0 18px 42px rgba(239, 68, 68, 0.38), 0 0 0 0 rgba(239, 68, 68, 0.26);
+      }
+      50% {
+        box-shadow: 0 22px 56px rgba(239, 68, 68, 0.56), 0 0 0 11px rgba(239, 68, 68, 0);
+      }
+    }
     .onlypump-mobile-menu-overlay {
       background: rgba(10, 15, 20, 0.48);
       backdrop-filter: blur(18px);
@@ -514,23 +522,33 @@
       color: #111827;
       box-shadow: 0 18px 38px rgba(0, 0, 0, 0.22);
     }
+    .onlypump-mobile-menu-label {
+      color: rgba(255, 255, 255, 0.96) !important;
+      text-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
+    }
+    .onlypump-mobile-menu-label.is-active {
+      color: #111827 !important;
+      text-shadow: none;
+    }
     .onlypump-mobile-menu-icon-img {
       display: block;
-      width: 1.55rem;
-      height: 1.55rem;
+      width: 1.42rem;
+      height: 1.42rem;
       object-fit: contain;
     }
-    .onlypump-mobile-menu-logo-img {
+    .onlypump-mobile-menu-home-logo {
       display: block;
-      width: 5.8rem;
-      max-width: none;
-      max-height: 2.35rem;
+      width: 2.75rem;
+      max-width: 2.75rem;
+      max-height: 2.1rem;
       object-fit: contain;
-      filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.32));
     }
     .onlypump-floating-nav-symbol {
       transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease;
       transform-origin: center;
+    }
+    .onlypump-floating-nav-button {
+      animation: onlypump-floating-nav-attention 2.45s ease-in-out infinite;
     }
     .onlypump-floating-nav-button.onlypump-nav-open .onlypump-floating-nav-symbol {
       transform: rotate(135deg);
@@ -578,6 +596,11 @@
       gap: var(--onlypump-home-widget-gap);
       align-items: stretch;
     }
+    @media (max-width: 1023px) {
+      .onlypump-home-widget-area {
+        padding-bottom: calc(var(--onlypump-safe-bottom) + 5.75rem);
+      }
+    }
     @media (min-width: 640px) {
       .onlypump-home-widget-grid {
         --onlypump-home-widget-gap: 1rem;
@@ -600,16 +623,59 @@
       width: 100%;
       min-width: 0;
       min-height: 0;
-      height: 100%;
+      height: 100% !important;
+      background: transparent !important;
+      border-radius: 1.35rem;
+      box-shadow: none !important;
+      overflow: visible;
       will-change: transform;
     }
+    .onlypump-home-widget-shell::before,
+    .onlypump-home-widget-shell::after,
+    .onlypump-home-widget-frame::before,
+    .onlypump-home-widget-frame::after {
+      display: none !important;
+      content: none !important;
+    }
     .onlypump-home-widget-frame {
-      width: 100%;
-      height: 100%;
-      min-height: 0;
-      overflow: hidden;
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+      border-radius: 1.35rem !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      isolation: isolate;
+    }
+    .onlypump-home-widget-frame > * {
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 0 !important;
+      min-width: 0 !important;
+      overflow: hidden !important;
+    }
+    .onlypump-home-widget-frame > .grid,
+    .onlypump-home-widget-stack {
+      width: 100% !important;
+      height: 100% !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      border-radius: 1.35rem;
+    }
+    .onlypump-home-widget-frame > .grid > *,
+    .onlypump-home-widget-stack > * {
+      min-width: 0 !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
     }
     .onlypump-home-widget-size-compact {
+      grid-column: span 2;
+      grid-row: span 1;
+    }
+    .onlypump-home-widget-size-1x2 {
       grid-column: span 2;
       grid-row: span 1;
     }
@@ -617,40 +683,546 @@
       grid-column: span 2;
       grid-row: span 2;
     }
+    .onlypump-home-widget-size-2x2 {
+      grid-column: span 2;
+      grid-row: span 2;
+    }
     .onlypump-home-widget-size-wide {
       grid-column: span 4;
       grid-row: span 2;
+    }
+    .onlypump-home-widget-size-4x2 {
+      grid-column: span 4;
+      grid-row: span 2;
+    }
+    .onlypump-home-widget-size-4x1 {
+      grid-column: span 4;
+      grid-row: span 1;
     }
     .onlypump-home-widget-size-tall {
       grid-column: span 2;
       grid-row: span 4;
     }
+    .onlypump-home-widget-size-2x4 {
+      grid-column: span 2;
+      grid-row: span 4;
+    }
     .onlypump-home-widget-card {
+      position: relative;
       display: flex;
-      height: 100%;
-      min-height: 0;
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 0 !important;
       flex-direction: column;
+      overflow: hidden !important;
+      border-radius: 1.35rem !important;
+      background-clip: padding-box !important;
+      contain: paint;
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08), 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+    }
+    .theme-light .onlypump-home-widget-card {
+      background-color: var(--onlypump-card-solid) !important;
+    }
+    .theme-dark .onlypump-home-widget-card {
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.32) !important;
+    }
+    .onlypump-home-widget-card *,
+    .onlypump-home-widget-card *::before,
+    .onlypump-home-widget-card *::after {
+      min-width: 0;
+      max-width: 100%;
+    }
+    .onlypump-home-widget-card img,
+    .onlypump-home-widget-card video,
+    .onlypump-home-widget-card canvas {
+      max-width: 100%;
+      max-height: 100%;
+    }
+    .onlypump-home-widget-card .flex-1,
+    .onlypump-home-widget-card .min-h-0 {
+      min-height: 0 !important;
+    }
+    .onlypump-home-widget-card .truncate,
+    .onlypump-home-widget-card [class*="truncate"],
+    .onlypump-home-widget-card .onlypump-line-clamp-1,
+    .onlypump-home-widget-card .onlypump-line-clamp-2,
+    .onlypump-home-widget-card .onlypump-line-clamp-3 {
+      max-width: 100%;
+    }
+    .onlypump-home-widget-card [class*="rounded-2xl"],
+    .onlypump-home-widget-card [class*="rounded-xl"] {
       overflow: hidden;
     }
-    .onlypump-home-widget-size-compact .onlypump-home-widget-card {
-      padding: 0.65rem;
+    .onlypump-home-widget-size-compact .onlypump-home-widget-card,
+    .onlypump-home-widget-size-1x2 .onlypump-home-widget-card {
+      padding: 0.6rem !important;
     }
-    .onlypump-home-widget-size-compact .onlypump-home-widget-value {
+    .onlypump-home-widget-size-compact .onlypump-home-widget-value,
+    .onlypump-home-widget-size-1x2 .onlypump-home-widget-value {
       font-size: clamp(1.05rem, 4.8vw, 1.5rem);
+      white-space: nowrap;
+      text-overflow: ellipsis;
     }
-    .onlypump-home-widget-size-compact .onlypump-line-clamp-2 {
+    .onlypump-home-widget-size-compact .onlypump-line-clamp-2,
+    .onlypump-home-widget-size-1x2 .onlypump-line-clamp-2 {
       -webkit-line-clamp: 1;
     }
-    .onlypump-home-widget-size-compact .onlypump-home-widget-extra {
-      display: none;
+    .onlypump-home-widget-size-compact .onlypump-home-widget-extra,
+    .onlypump-home-widget-size-1x2 .onlypump-home-widget-extra {
+      display: none !important;
     }
     .onlypump-home-widget-value {
       line-height: 0.98;
       overflow-wrap: anywhere;
+      max-width: 100%;
+      overflow: hidden;
     }
     .onlypump-home-widget-extra {
       min-height: 0;
       overflow: hidden;
+    }
+    .onlypump-metric-widget svg {
+      max-width: 1.15rem;
+      max-height: 1.15rem;
+    }
+    .onlypump-metric-widget > div {
+      min-height: 0;
+      overflow: hidden;
+    }
+    .onlypump-metric-widget .onlypump-line-clamp-1,
+    .onlypump-metric-widget .onlypump-line-clamp-2 {
+      overflow-wrap: normal;
+    }
+    .onlypump-home-widget-size-compact .onlypump-metric-widget,
+    .onlypump-home-widget-size-1x2 .onlypump-metric-widget {
+      justify-content: space-between;
+    }
+    .onlypump-home-widget-size-compact .onlypump-metric-widget .onlypump-line-clamp-2,
+    .onlypump-home-widget-size-1x2 .onlypump-metric-widget .onlypump-line-clamp-2 {
+      font-size: 0.62rem;
+      line-height: 1.05;
+    }
+    .onlypump-home-widget-size-square .onlypump-metric-widget,
+    .onlypump-home-widget-size-2x2 .onlypump-metric-widget {
+      padding: 0.72rem !important;
+    }
+    .onlypump-home-widget-card .mt-auto {
+      min-height: 0;
+    }
+    .onlypump-home-widget-card button {
+      min-width: 0;
+    }
+    .onlypump-home-widget-card [class*="h-1"],
+    .onlypump-home-widget-card [class*="h-2"] {
+      max-width: 100%;
+      overflow: hidden;
+    }
+    .onlypump-macro-lines {
+      display: grid;
+      gap: 0.4rem;
+      min-height: 0;
+      overflow: hidden;
+      font-size: 0.68rem;
+      line-height: 1.05;
+    }
+    .onlypump-macro-line {
+      display: grid;
+      gap: 0.22rem;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .onlypump-macro-line-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.35rem;
+      min-width: 0;
+      color: rgb(161 161 170);
+    }
+    .onlypump-macro-line-label span:first-child,
+    .onlypump-macro-line-label span:last-child {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .onlypump-home-widget-size-square .onlypump-macro-lines,
+    .onlypump-home-widget-size-2x2 .onlypump-macro-lines {
+      gap: 0.3rem;
+      font-size: 0.6rem;
+    }
+    .onlypump-home-widget-size-square .onlypump-macro-line .h-1\.5,
+    .onlypump-home-widget-size-2x2 .onlypump-macro-line .h-1\.5,
+    .onlypump-home-widget-size-wide .onlypump-macro-line .h-1\.5,
+    .onlypump-home-widget-size-4x2 .onlypump-macro-line .h-1\.5 {
+      height: 0.3rem;
+    }
+    .onlypump-nutrition-widget {
+      gap: 0.48rem !important;
+      padding: 0.78rem !important;
+    }
+    .onlypump-nutrition-layout {
+      display: grid;
+      flex: 1 1 auto;
+      grid-template-rows: auto 1px minmax(0, 1fr);
+      gap: 0.52rem;
+      min-height: 0 !important;
+      overflow: hidden !important;
+    }
+    .onlypump-nutrition-layout > * {
+      min-width: 0;
+      min-height: 0;
+    }
+    .onlypump-nutrition-summary {
+      display: grid;
+      grid-template-columns: minmax(0, 0.95fr) auto minmax(0, 0.95fr);
+      align-items: center;
+      gap: 0.62rem;
+      overflow: hidden;
+    }
+    .onlypump-nutrition-stat {
+      display: grid;
+      gap: 0.14rem;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .onlypump-nutrition-stat-end {
+      justify-items: end;
+      text-align: right;
+    }
+    .onlypump-nutrition-stat-label,
+    .onlypump-nutrition-stat-sub {
+      max-width: 100%;
+      overflow: hidden;
+      color: rgb(113 113 122);
+      font-size: clamp(0.66rem, 2.85cqw, 0.84rem);
+      line-height: 1.08;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .onlypump-nutrition-stat-value {
+      max-width: 100%;
+      overflow: hidden;
+      color: rgb(244 244 245);
+      font-size: clamp(1.48rem, 6.8cqw, 2.55rem);
+      font-weight: 950;
+      letter-spacing: 0;
+      line-height: 0.92;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .theme-light .onlypump-nutrition-stat-value {
+      color: rgb(15 23 42);
+    }
+    .onlypump-nutrition-ring-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .onlypump-nutrition-ring {
+      width: clamp(4.35rem, 19.5cqw, 6.15rem) !important;
+      height: clamp(4.35rem, 19.5cqw, 6.15rem) !important;
+      flex: 0 0 auto;
+    }
+    .onlypump-nutrition-ring-inner {
+      width: calc(100% - 0.46rem) !important;
+      height: calc(100% - 0.46rem) !important;
+      padding: 0.16rem !important;
+      background: rgb(9 9 11);
+    }
+    .theme-light .onlypump-nutrition-ring-inner {
+      background: rgb(255 255 255);
+    }
+    .onlypump-nutrition-ring-label {
+      max-width: 100%;
+      overflow: hidden;
+      color: rgb(113 113 122);
+      font-size: clamp(0.5rem, 2.2cqw, 0.62rem);
+      line-height: 1;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .onlypump-nutrition-ring-value {
+      color: rgb(244 244 245);
+      font-size: clamp(1.28rem, 5.4cqw, 2rem);
+      font-weight: 950;
+      line-height: 0.92;
+    }
+    .theme-light .onlypump-nutrition-ring-value {
+      color: rgb(15 23 42);
+    }
+    .onlypump-nutrition-ring-target {
+      max-width: 100%;
+      overflow: hidden;
+      color: rgb(113 113 122);
+      font-size: clamp(0.56rem, 2.35cqw, 0.7rem);
+      line-height: 1;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .onlypump-nutrition-divider {
+      min-height: 1px !important;
+      background: rgba(148, 163, 184, 0.22);
+    }
+    .onlypump-nutrition-macros {
+      display: grid;
+      align-content: center;
+      gap: 0.26rem;
+      min-height: 0 !important;
+      overflow: hidden !important;
+    }
+    .onlypump-nutrition-macro-row {
+      display: grid;
+      grid-template-columns: minmax(2.6rem, 0.38fr) minmax(0, 1fr) minmax(3.25rem, 0.46fr);
+      align-items: center;
+      gap: 0.45rem;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .onlypump-nutrition-macro-label,
+    .onlypump-nutrition-macro-value {
+      min-width: 0;
+      overflow: hidden;
+      color: rgb(113 113 122);
+      font-size: clamp(0.56rem, 2.35cqw, 0.72rem);
+      line-height: 1;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .onlypump-nutrition-macro-value {
+      text-align: right;
+      font-weight: 700;
+    }
+    .onlypump-nutrition-macro-actual {
+      color: rgb(244 244 245);
+      font-weight: 800;
+    }
+    .theme-light .onlypump-nutrition-macro-actual {
+      color: rgb(15 23 42);
+    }
+    .onlypump-nutrition-macro-target {
+      color: rgb(113 113 122);
+      font-weight: 700;
+    }
+    .onlypump-nutrition-macro-track {
+      height: clamp(0.28rem, 1.4cqw, 0.4rem);
+      min-width: 0;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.25);
+    }
+    .onlypump-nutrition-macro-fill {
+      height: 100%;
+      max-width: 100%;
+      border-radius: inherit;
+    }
+    .onlypump-nutrition-macro-protein,
+    .onlypump-nutrition-macro-carbs,
+    .onlypump-nutrition-macro-fat {
+      background: linear-gradient(90deg, #dc2626, #ef4444);
+    }
+    @container (max-width: 430px) {
+      .onlypump-nutrition-widget {
+        gap: 0.4rem !important;
+        padding: 0.68rem !important;
+      }
+      .onlypump-nutrition-layout {
+        gap: 0.38rem;
+      }
+      .onlypump-nutrition-summary {
+        gap: 0.42rem;
+      }
+      .onlypump-nutrition-ring {
+        width: clamp(3.85rem, 18cqw, 4.85rem) !important;
+        height: clamp(3.85rem, 18cqw, 4.85rem) !important;
+      }
+      .onlypump-nutrition-macro-row {
+        grid-template-columns: minmax(2.35rem, 0.36fr) minmax(0, 1fr) minmax(2.75rem, 0.42fr);
+        gap: 0.32rem;
+      }
+    }
+    .onlypump-home-widget-size-tall .onlypump-nutrition-summary,
+    .onlypump-home-widget-size-2x4 .onlypump-nutrition-summary {
+      grid-template-columns: 1fr;
+      justify-items: center;
+      text-align: center;
+    }
+    .onlypump-home-widget-size-tall .onlypump-nutrition-stat,
+    .onlypump-home-widget-size-2x4 .onlypump-nutrition-stat {
+      justify-items: center;
+      text-align: center;
+    }
+    .onlypump-home-widget-size-tall .onlypump-nutrition-ring,
+    .onlypump-home-widget-size-2x4 .onlypump-nutrition-ring {
+      width: clamp(4.5rem, 25cqw, 6.2rem) !important;
+      height: clamp(4.5rem, 25cqw, 6.2rem) !important;
+    }
+	    .onlypump-mood-widget {
+	      padding: 0.7rem !important;
+	      display: flex !important;
+	      flex-direction: column;
+	    }
+	    .onlypump-mood-widget > * {
+	      min-height: 0;
+	    }
+    .onlypump-mood-title {
+      font-size: clamp(0.76rem, 3.4cqw, 0.95rem);
+      line-height: 1.1;
+    }
+	    .onlypump-mood-icon-grid {
+	      display: grid;
+	      grid-template-columns: repeat(2, minmax(0, 1fr));
+	      flex: 1 1 auto;
+	      align-content: center;
+	      align-items: center;
+	      justify-items: center;
+	      gap: 0.35rem;
+	      margin-top: 0;
+	      padding-top: 0.2rem;
+	    }
+	    .onlypump-mood-icon-slot {
+	      display: flex;
+	      width: 100%;
+	      min-height: clamp(3.6rem, 18cqw, 5rem);
+	      align-items: center;
+	      justify-content: center;
+	      border-radius: 1rem;
+	      border: 0;
+	      background: transparent;
+	    }
+		    .onlypump-mood-icon-slot > * {
+		      transform: scale(1.75);
+		      transform-origin: center;
+		    }
+    .onlypump-note-widget {
+      padding: 0.72rem !important;
+    }
+    .onlypump-note-paper {
+      line-height: 1.55rem;
+      background-size: 100% 1.55rem;
+      background-position: 0 0.72rem;
+      overflow: hidden !important;
+    }
+    .onlypump-personal-tracker-widget {
+      padding: 0.72rem !important;
+    }
+	    .onlypump-personal-tracker-widget > * {
+	      min-height: 0;
+	    }
+	    .onlypump-habit-count {
+	      white-space: nowrap;
+	      letter-spacing: 0;
+	      font-size: clamp(1.65rem, 7.4cqw, 2.1rem);
+	      line-height: 0.95;
+	    }
+		    .onlypump-habit-remaining {
+		      white-space: nowrap;
+		      color: rgb(113, 113, 122);
+		    }
+		    .theme-light .onlypump-habit-remaining {
+		      color: rgb(107, 114, 128);
+		    }
+	    .onlypump-habit-dots > span {
+	      min-width: 0;
+	    }
+    .onlypump-personal-tracker-ring {
+      width: clamp(3.95rem, 16cqw, 5.05rem);
+      height: clamp(3.95rem, 16cqw, 5.05rem);
+    }
+    .onlypump-personal-tracker-ring-inner {
+      width: calc(100% - 0.5rem);
+      height: calc(100% - 0.5rem);
+    }
+    .onlypump-home-widget-size-square .onlypump-personal-tracker-widget .onlypump-home-widget-value,
+    .onlypump-home-widget-size-2x2 .onlypump-personal-tracker-widget .onlypump-home-widget-value,
+    .onlypump-home-widget-size-square .onlypump-personal-tracker-widget .text-3xl,
+    .onlypump-home-widget-size-2x2 .onlypump-personal-tracker-widget .text-3xl {
+      font-size: clamp(1.55rem, 7cqw, 2rem);
+    }
+    .onlypump-water-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      overflow: hidden;
+      max-height: 2.1rem;
+    }
+    .onlypump-water-actions button {
+      min-height: 1.65rem;
+      flex: 1 1 3.2rem;
+      padding: 0.32rem 0.55rem;
+      font-size: 0.68rem;
+      line-height: 1;
+    }
+    .onlypump-water-wide-card {
+      flex-direction: row !important;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.8rem 0.9rem !important;
+    }
+    .onlypump-water-wide-main {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .onlypump-water-glass-actions {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .onlypump-water-glass {
+      position: relative;
+      display: flex;
+      height: 3.25rem;
+      width: 2.55rem;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-radius: 0.95rem 0.95rem 1.1rem 1.1rem;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      font-weight: 900;
+      line-height: 1;
+      transition: transform 0.16s ease, filter 0.16s ease;
+    }
+    .onlypump-water-glass::before {
+      content: "";
+      position: absolute;
+      left: 0.42rem;
+      right: 0.42rem;
+      top: 0.34rem;
+      height: 0.22rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.5);
+    }
+    .onlypump-water-glass:active {
+      transform: scale(0.95);
+      filter: brightness(1.05);
+    }
+    .onlypump-water-glass-plus {
+      background: linear-gradient(180deg, rgba(56, 189, 248, 0.38), rgba(14, 165, 233, 0.18));
+      color: #0284c7;
+      box-shadow: inset 0 -0.8rem 1.2rem rgba(14, 165, 233, 0.16);
+    }
+    .theme-dark .onlypump-water-glass-plus {
+      color: #7dd3fc;
+    }
+    .onlypump-water-glass-minus {
+      background: rgba(148, 163, 184, 0.16);
+      color: rgba(100, 116, 139, 0.9);
+    }
+    .theme-dark .onlypump-water-glass-minus {
+      color: rgba(226, 232, 240, 0.72);
+    }
+    .onlypump-water-glass-count {
+      max-width: 100%;
+      font-size: 0.98rem;
+      letter-spacing: 0;
+    }
+    .onlypump-water-glass-symbol {
+      margin-top: 0.2rem;
+      font-size: 0.9rem;
     }
     .onlypump-line-clamp-1,
     .onlypump-line-clamp-2,
@@ -2400,27 +2972,27 @@ const nav = [
 const getVisibleNavItems = (profile = DEFAULT_PROFILE) => nav.filter(item => !item.roles || profileHasAnyRole(profile, item.roles));
 
 const homeWidgetCatalog = [
-  { id: "metricWeight", label: "Вес", description: "Текущий вес и изменение", default: true, size: "compact" },
-  { id: "metricBodyFat", label: "Процент жира", description: "Оценка процента жира", default: true, size: "compact" },
-  { id: "metricTonnage", label: "Тоннаж", description: "Выполненный тоннаж тренировки", default: true, size: "compact" },
-  { id: "metricSets", label: "Подходы", description: "Выполненные подходы", default: true, size: "compact" },
-  { id: "metricCalories", label: "Калории", description: "Калории за день", default: true, size: "compact" },
-  { id: "metricProtein", label: "Белок", description: "Белок за день", default: true, size: "compact" },
-  { id: "metricRecovery", label: "Восстановление", description: "Индекс восстановления", default: true, size: "compact" },
-  { id: "metricSleep", label: "Сон", description: "Отчет сна и восстановление", default: false, size: "compact" },
-  { id: "metricSteps", label: "Шаги", description: "Шаги за выбранный день", default: false, size: "compact" },
-  { id: "macros", label: "БЖУ", description: "Белки, жиры и углеводы со шкалами", default: false, size: "square" },
-  { id: "water", label: "Вода", description: "Трекер выпитой воды за день", default: false, size: "square" },
-  { id: "personalTracker", label: "Трекер", description: "Персональный трекер жидкости, еды, привычки или отказа", default: false, size: "square" },
-  { id: "moodWellbeing", label: "Настроение и самочувствие", description: "Два показателя за выбранный день", default: false, size: "square" },
-  { id: "dailyNote", label: "Заметки", description: "Заметка по выбранному дню", default: false, size: "square" },
-  { id: "workout", label: "Сегодняшняя тренировка", description: "План и прогресс тренировки дня", default: false, size: "wide" },
-  { id: "nutrition", label: "Питание на сегодня", description: "Калории и кольцо прогресса", default: false, size: "wide" },
-  { id: "weekProgress", label: "Прогресс недели", description: "График выполнения плана", default: false, size: "wide" },
-  { id: "goalProgress", label: "Прогресс к цели", description: "Процент достижения цели", default: false, size: "square" },
-  { id: "miniActions", label: "Быстрые действия", description: "Тренировка, лекция и план", default: false, size: "tall" },
-  { id: "education", label: "Обучение", description: "Лекции для продолжения", default: false, size: "wide" },
-  { id: "tools", label: "Инструменты", description: "Калькуляторы ONLYPUMP", default: false, size: "wide" },
+  { id: "metricWeight", label: "Вес", description: "Текущий вес и изменение", default: true, size: "1x2" },
+  { id: "metricBodyFat", label: "Процент жира", description: "Оценка процента жира", default: true, size: "1x2" },
+  { id: "metricTonnage", label: "Тоннаж", description: "Выполненный тоннаж тренировки", default: true, size: "1x2" },
+  { id: "metricSets", label: "Подходы", description: "Выполненные подходы", default: true, size: "1x2" },
+  { id: "metricCalories", label: "Калории", description: "Калории за день", default: true, size: "1x2" },
+  { id: "metricProtein", label: "Белок", description: "Белок за день", default: true, size: "1x2" },
+  { id: "metricRecovery", label: "Восстановление", description: "Индекс восстановления", default: true, size: "1x2" },
+  { id: "metricSleep", label: "Сон", description: "Отчет сна и восстановление", default: false, size: "1x2" },
+  { id: "metricSteps", label: "Шаги", description: "Шаги за выбранный день", default: false, size: "1x2" },
+  { id: "macros", label: "БЖУ", description: "Белки, жиры и углеводы со шкалами", default: false, size: "2x2" },
+  { id: "water", label: "Вода", description: "Трекер выпитой воды за день", default: false, size: "4x1" },
+  { id: "personalTracker", label: "Трекер", description: "Персональный трекер жидкости, еды, привычки или отказа", default: false, size: "2x2" },
+  { id: "moodWellbeing", label: "Настроение и самочувствие", description: "Два показателя за выбранный день", default: false, size: "2x2" },
+  { id: "dailyNote", label: "Заметки", description: "Заметка по выбранному дню", default: false, size: "2x2" },
+  { id: "workout", label: "Сегодняшняя тренировка", description: "План и прогресс тренировки дня", default: false, size: "4x2" },
+  { id: "nutrition", label: "Питание на сегодня", description: "Калории и кольцо прогресса", default: false, size: "4x2" },
+  { id: "weekProgress", label: "Прогресс недели", description: "График выполнения плана", default: false, size: "4x2" },
+  { id: "goalProgress", label: "Прогресс к цели", description: "Процент достижения цели", default: false, size: "2x2" },
+  { id: "miniActions", label: "Быстрые действия", description: "Тренировка, лекция и план", default: false, size: "2x4" },
+  { id: "education", label: "Обучение", description: "Лекции для продолжения", default: false, size: "4x2" },
+  { id: "tools", label: "Инструменты", description: "Калькуляторы ONLYPUMP", default: false, size: "4x2" },
 ];
 
 const defaultHomeWidgets = homeWidgetCatalog.filter(w => w.default).map(w => w.id);
@@ -2470,6 +3042,27 @@ const isPersonalTrackerMetricType = (type = "") => !isPersonalTrackerBinaryType(
 const findDailyChoice = (options = [], id = "") => options.find(option => option.id === id) || null;
 
 const isPersonalTrackerWidgetId = (id = "") => String(id).startsWith(PERSONAL_TRACKER_WIDGET_PREFIX);
+const HOME_WIDGET_SIZE_ALIASES = {
+  compact: "1x2",
+  "1x2": "1x2",
+  square: "2x2",
+  "2x2": "2x2",
+  tall: "2x4",
+  "2x4": "2x4",
+  wide: "4x2",
+  full: "4x2",
+  large: "4x2",
+  "4x2": "4x2",
+  "4x1": "4x1",
+};
+const HOME_WIDGET_SIZE_CLASSES = {
+  "1x2": "onlypump-home-widget-size-1x2",
+  "2x2": "onlypump-home-widget-size-2x2",
+  "2x4": "onlypump-home-widget-size-2x4",
+  "4x2": "onlypump-home-widget-size-4x2",
+  "4x1": "onlypump-home-widget-size-4x1",
+};
+const normalizeHomeWidgetSize = (size = "2x2") => HOME_WIDGET_SIZE_ALIASES[String(size || "").trim()] || "2x2";
 
 function DailyChoiceIcon({ option, size = "md" }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -2494,13 +3087,13 @@ const personalTrackerWidgetId = (trackerId = "") => `${PERSONAL_TRACKER_WIDGET_P
 const personalTrackerIdFromWidget = (widgetId = "") => String(widgetId).slice(PERSONAL_TRACKER_WIDGET_PREFIX.length);
 const getHomeCatalogWidgetSize = (id = "") => {
   const item = homeWidgetCatalog.find(widget => widget.id === id);
-  if (!item) return "compact";
-  if (item.size) return item.size;
-  if (item.span === "full") return "wide";
-  if (item.span === "large") return "wide";
-  return "compact";
+  if (!item) return "1x2";
+  if (item.size) return normalizeHomeWidgetSize(item.size);
+  if (item.span === "full") return "4x2";
+  if (item.span === "large") return "4x2";
+  return "1x2";
 };
-const isCompactHomeWidget = (id = "") => !isPersonalTrackerWidgetId(id) && getHomeCatalogWidgetSize(id) === "compact";
+const isCompactHomeWidget = (id = "") => !isPersonalTrackerWidgetId(id) && getHomeCatalogWidgetSize(id) === "1x2";
 const isWidgetCompactForInsert = (id = "") => isPersonalTrackerWidgetId(id) || isCompactHomeWidget(id);
 const getPersonalTrackerTypeConfig = (type = "liquid") => personalTrackerTypeConfigs[type] || personalTrackerTypeConfigs.liquid;
 const getPersonalTrackerAccent = (tracker = {}) => personalTrackerAccents[getPersonalTrackerTypeConfig(tracker.type).accent] || personalTrackerAccents.red;
@@ -2758,17 +3351,19 @@ function enforceHomeWidgetRules(widgets = []) {
 
   const withoutNutritionGroup = unique.filter(id => !nutritionHomeWidgetIds.includes(id));
   const insertAtFirstNutritionPosition = (items) => {
+    const cleanItems = items.filter((item, index) => items.indexOf(item) === index);
     const firstNutritionIndex = unique.findIndex(id => nutritionHomeWidgetIds.includes(id));
-    if (firstNutritionIndex === -1) return [...withoutNutritionGroup, ...items];
+    if (firstNutritionIndex === -1) return [...withoutNutritionGroup, ...cleanItems];
     const before = unique.slice(0, firstNutritionIndex).filter(id => !nutritionHomeWidgetIds.includes(id));
     const after = unique.slice(firstNutritionIndex).filter(id => !nutritionHomeWidgetIds.includes(id));
-    return [...before, ...items, ...after];
+    return [...before, ...cleanItems, ...after];
   };
 
   if (unique.includes("nutrition")) return insertAtFirstNutritionPosition(["nutrition"]);
-  if (unique.includes("macros")) return insertAtFirstNutritionPosition(["metricCalories", "macros"]);
-  if (unique.includes("metricProtein")) return insertAtFirstNutritionPosition(["metricCalories", "metricProtein"]);
-  if (unique.includes("metricCalories")) return insertAtFirstNutritionPosition(["metricCalories", "metricProtein"]);
+  if (unique.includes("macros")) return insertAtFirstNutritionPosition(["macros"]);
+
+  const compactNutritionWidgets = unique.filter(id => id === "metricCalories" || id === "metricProtein");
+  if (compactNutritionWidgets.length) return insertAtFirstNutritionPosition(compactNutritionWidgets);
 
   return unique;
 }
@@ -2782,20 +3377,20 @@ function buildHomeWidgetsAfterAdding(prevWidgets, id) {
       : [...prevWidgets.slice(0, firstLargeIndex), id, ...prevWidgets.slice(firstLargeIndex)];
     return enforceHomeWidgetRules(next);
   }
-  const withoutNutritionGroup = prevWidgets.filter(widgetId => !nutritionHomeWidgetIds.includes(widgetId));
-  const compactInsertIndex = withoutNutritionGroup.findIndex(widgetId => !isWidgetCompactForInsert(widgetId));
-  const insertCompact = (items) => {
+  const insertCompact = (baseWidgets, items) => {
     const cleanItems = items.filter((item, index) => items.indexOf(item) === index);
-    if (compactInsertIndex === -1) return [...withoutNutritionGroup, ...cleanItems];
-    return [...withoutNutritionGroup.slice(0, compactInsertIndex), ...cleanItems, ...withoutNutritionGroup.slice(compactInsertIndex)];
+    const compactInsertIndex = baseWidgets.findIndex(widgetId => !isWidgetCompactForInsert(widgetId));
+    if (compactInsertIndex === -1) return [...baseWidgets, ...cleanItems];
+    return [...baseWidgets.slice(0, compactInsertIndex), ...cleanItems, ...baseWidgets.slice(compactInsertIndex)];
   };
 
-  if (id === "nutrition") return insertCompact(["nutrition"]);
-  if (id === "macros") return insertCompact(["metricCalories", "macros"]);
-  if (id === "metricProtein") return insertCompact(["metricCalories", "metricProtein"]);
-  if (id === "metricCalories") {
-    if (prevWidgets.includes("macros")) return insertCompact(["metricCalories", "macros"]);
-    return insertCompact(["metricCalories", "metricProtein"]);
+  if (id === "nutrition" || id === "macros") {
+    const withoutNutritionGroup = prevWidgets.filter(widgetId => !nutritionHomeWidgetIds.includes(widgetId));
+    return enforceHomeWidgetRules(insertCompact(withoutNutritionGroup, [id]));
+  }
+  if (id === "metricProtein" || id === "metricCalories") {
+    const withoutExclusiveNutrition = prevWidgets.filter(widgetId => widgetId !== "nutrition" && widgetId !== "macros" && widgetId !== id);
+    return enforceHomeWidgetRules(insertCompact(withoutExclusiveNutrition, [id]));
   }
 
   if (prevWidgets.includes(id)) return enforceHomeWidgetRules(prevWidgets);
@@ -2810,10 +3405,7 @@ function buildHomeWidgetsAfterAdding(prevWidgets, id) {
 }
 
 function buildHomeWidgetsAfterRemoving(prevWidgets, id) {
-  let next = prevWidgets.filter(widgetId => widgetId !== id);
-  if (id === "metricCalories") next = next.filter(widgetId => widgetId !== "metricProtein" && widgetId !== "macros");
-  if (id === "metricProtein") next = next.filter(widgetId => widgetId !== "metricCalories");
-  if (id === "macros") next = next.filter(widgetId => widgetId !== "metricCalories");
+  const next = prevWidgets.filter(widgetId => widgetId !== id);
   return enforceHomeWidgetRules(next);
 }
 
@@ -5918,8 +6510,9 @@ const initialNutritionGoal = {
   carbs: 250,
 };
 
-function Progress({ value = 0 }) {
-  return <div className="h-1.5 w-full rounded-full bg-zinc-800"><div style={{ width: `${value}%` }} className="h-full rounded-full bg-gradient-to-r from-red-700 to-red-500" /></div>;
+function Progress({ value = 0, tone = "red" }) {
+  const fillClass = tone === "sky" ? "bg-gradient-to-r from-sky-500 to-cyan-300" : "bg-gradient-to-r from-red-700 to-red-500";
+  return <div className="h-1.5 w-full rounded-full bg-zinc-800"><div style={{ width: `${value}%` }} className={`h-full rounded-full ${fillClass}`} /></div>;
 }
 
 function Card({ children, className = "", ...props }) {
@@ -6542,6 +7135,7 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState("main");
   const menuIcon = (name) => `assets/menu-icons/${name}.svg`;
+  const menuLogo = "assets/menu-icons/op_logo.png";
   useAppBackLayer("floating-nav-menu", open, () => {
     if (mode === "analytics") {
       setMode("main");
@@ -6555,7 +7149,7 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
   }, [open]);
 
   const mainItems = [
-    { id: "home", icon: Home, asset: menuIcon("home"), label: "Главная" },
+    { id: "home", icon: Home, asset: menuLogo, label: "Главная", useLogo: true },
     { id: "workouts", icon: Dumbbell, asset: menuIcon("workouts"), label: "Тренировки" },
     { id: "nutrition", icon: Apple, asset: menuIcon("nutrition"), label: "Питание" },
     { id: "students", icon: Users, asset: menuIcon("students"), label: "Ученики", roles: ["owner", "admin", "trainer"] },
@@ -6604,7 +7198,6 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
     setOpen(false);
   };
   const floatingLabel = !open ? "Открыть меню" : mode === "analytics" ? "Назад в меню" : "Закрыть меню";
-  const showMenuLogo = mode === "main";
 
   return <>
     <div className={`onlypump-fullscreen-layer fixed inset-0 z-[210] lg:hidden ${open ? "pointer-events-auto" : "pointer-events-none"}`}>
@@ -6616,12 +7209,6 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
           bottom: "calc(var(--onlypump-safe-bottom) + 10.25rem)"
         }}
       >
-        {showMenuLogo && <div
-          className={`onlypump-mobile-menu-item ${open ? "onlypump-mobile-menu-item-in" : ""} flex w-[60px] justify-center`}
-          style={{ animationDelay: "0ms" }}
-        >
-          <img src="assets/menu-icons/op_logo.png" alt="ONLYPUMP" draggable="false" className="onlypump-mobile-menu-logo-img"/>
-        </div>}
         {items.map((item, index) => {
           const Icon = item.icon;
           const activeItem = mode === "main" && item.id === active;
@@ -6632,11 +7219,17 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
             data-tour={mode === "main" ? `nav-${item.id}` : undefined}
             onClick={onClick}
             className={`onlypump-mobile-menu-item ${open ? "onlypump-mobile-menu-item-in" : ""} flex items-center justify-end gap-3 text-right`}
-            style={{ animationDelay: `${(index + (showMenuLogo ? 1 : 0)) * 34}ms` }}
+            style={{ animationDelay: `${index * 34}ms` }}
           >
-            <span className={`max-w-[200px] text-[20px] font-medium leading-none text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.42)] ${activeItem ? "text-red-200" : ""}`}>{item.label}</span>
-            <span className={`onlypump-mobile-menu-icon flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-full ${activeItem ? "ring-[3px] ring-red-400/50" : ""}`}>
-              <MobileMenuAssetIcon src={item.asset} alt={item.label} FallbackIcon={Icon}/>
+            <span className={`onlypump-mobile-menu-label max-w-[180px] text-[18px] font-medium leading-none ${activeItem ? "is-active" : ""}`}>{item.label}</span>
+            <span className={`onlypump-mobile-menu-icon flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full ${activeItem ? "ring-2 ring-red-400/50" : ""}`}>
+              <MobileMenuAssetIcon
+                src={item.asset}
+                alt={item.label}
+                FallbackIcon={Icon}
+                className={item.useLogo ? "onlypump-mobile-menu-home-logo" : "onlypump-mobile-menu-icon-img"}
+                fallbackSize={item.useLogo ? 27 : 26}
+              />
             </span>
           </button>;
         })}
@@ -7179,10 +7772,9 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
 
   return <>
     <Card className={`p-4 ${className}`}>
-    <button type="button" onClick={() => setHistoryOpen(true)} className="mb-4 flex w-full items-center justify-between gap-3 rounded-2xl text-left transition hover:bg-white/[0.035]">
+    <button type="button" onClick={() => setHistoryOpen(true)} className="mb-3 flex w-full items-center justify-between gap-3 rounded-2xl text-left transition hover:bg-white/[0.035]">
       <div className="px-1 py-1">
         <h2 className="text-base font-semibold">{title}</h2>
-        <p className="mt-1 text-xs text-zinc-500">{visibleDays === 14 ? "Две недели на экране." : "Неделя на экране."} Перетаскивай кружки вправо или влево — шаг равен одному дню.</p>
       </div>
       <CalendarDays className="mr-1 shrink-0 text-zinc-500" size={18}/>
     </button>
@@ -7309,7 +7901,7 @@ function DayDataModal({ dateKey, context = "home", onClose, setActive, workout, 
 
 function MetricWidgetCard({ title, value, sub, delta, progress, icon: Icon, onClick, children, accent = "red" }) {
   const ringColor = accent === "sky" ? "#38bdf8" : "#ef4444";
-  return <Card onClick={onClick} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
+  return <Card onClick={onClick} className="onlypump-home-widget-card onlypump-metric-widget cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -7331,24 +7923,20 @@ function MetricWidgetCard({ title, value, sub, delta, progress, icon: Icon, onCl
 function MoodWellbeingWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
   const mood = findDailyChoice(dailyMoodOptions, healthLog?.mood_key || healthLog?.mood);
   const wellbeing = findDailyChoice(dailyWellbeingOptions, healthLog?.wellbeing_key || healthLog?.wellbeing);
-  const rowClass = "flex min-w-0 items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2";
 
-  return <Card onClick={onOpen} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
+  return <Card onClick={onOpen} className="onlypump-home-widget-card onlypump-mood-widget cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-zinc-500">День</p>
-        <h3 className="onlypump-line-clamp-2 mt-1 text-base font-black leading-tight">Настроение и самочувствие</h3>
+        <p className="onlypump-mood-title onlypump-line-clamp-2 text-[11px] text-zinc-500">Настроение и самочувствие</p>
       </div>
       <Smile size={18} className="shrink-0 text-red-500"/>
     </div>
-    <div className="mt-auto space-y-2 pt-3">
-      <div className={rowClass}>
-        <span className="min-w-0 truncate text-xs text-zinc-500">Настроение</span>
-        <DailyChoiceIcon option={mood} size="sm"/>
+    <div className="onlypump-mood-icon-grid">
+      <div className="onlypump-mood-icon-slot">
+        <DailyChoiceIcon option={mood} size="lg"/>
       </div>
-      <div className={rowClass}>
-        <span className="min-w-0 truncate text-xs text-zinc-500">Самочувствие</span>
-        <DailyChoiceIcon option={wellbeing} size="sm"/>
+      <div className="onlypump-mood-icon-slot">
+        <DailyChoiceIcon option={wellbeing} size="lg"/>
       </div>
     </div>
   </Card>;
@@ -7358,34 +7946,33 @@ function DailyNoteWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
   const note = String(healthLog?.notes || "").trim();
   return <Card
     onClick={onOpen}
-    className="onlypump-home-widget-card cursor-pointer border-yellow-300/40 p-3 text-zinc-950 shadow-yellow-500/10 transition hover:border-yellow-400/70 sm:p-4"
+    className="onlypump-home-widget-card onlypump-note-widget cursor-pointer border-yellow-300/40 p-3 text-zinc-950 shadow-yellow-500/10 transition hover:border-yellow-400/70 sm:p-4"
     style={{
       background: "linear-gradient(180deg, rgba(254,240,138,0.96), rgba(253,224,71,0.9))",
     }}
-  >
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-yellow-800/70">День</p>
-        <h3 className="mt-1 text-lg font-black leading-tight text-zinc-950">Заметки</h3>
-      </div>
-      <StickyNote size={18} className="shrink-0 text-yellow-800"/>
-    </div>
+	  >
+	    <div className="flex items-start justify-between gap-3">
+	      <div className="min-w-0">
+	        <p className="onlypump-line-clamp-1 text-[11px] text-yellow-800/70">Заметки</p>
+	      </div>
+	      <StickyNote size={18} className="shrink-0 text-yellow-800"/>
+	    </div>
     <div
-      className="mt-3 min-h-0 flex-1 rounded-2xl border border-yellow-700/20 px-3 py-2 text-sm font-bold text-zinc-900"
+      className="onlypump-note-paper mt-3 min-h-0 flex-1 rounded-2xl border border-yellow-700/20 px-3 py-2 text-sm font-bold text-zinc-900"
       style={{
-        lineHeight: "28px",
-        backgroundImage: "repeating-linear-gradient(to bottom, transparent 0 27px, rgba(113,63,18,0.16) 27px 28px)",
-        backgroundPosition: "0 10px",
+        lineHeight: "24px",
+        backgroundImage: "repeating-linear-gradient(to bottom, transparent 0 23px, rgba(113,63,18,0.16) 23px 24px)",
+        backgroundPosition: "0 12px",
       }}
     >
       <p
         className="whitespace-pre-wrap break-words"
-        style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}
-      >
-        {note || "Нажми, чтобы добавить заметку"}
-      </p>
-    </div>
-  </Card>;
+	        style={{ display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+	      >
+	        {note || "Нажми, чтобы добавить"}
+	      </p>
+	    </div>
+	  </Card>;
 }
 
 function Header({ title, subtitle, pumpXp, onOpenPumpXp }) {
@@ -7594,7 +8181,17 @@ function StatStrip({ measurements, nutritionTotals, nutritionGoal, workoutSummar
 function NutritionRing({ calories = 0, goal = initialNutritionGoal.calories, label = "Калории", unit = "ккал" }) {
   const percent = Math.min(100, goal ? Math.round((calories / goal) * 100) : 0);
 
-  return <div className="relative flex h-28 w-28 items-center justify-center rounded-full" style={{background:`conic-gradient(#ef4444 0 ${percent}%, var(--chart-track) ${percent}% 100%)`}}><div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-zinc-950"><span className="text-xs text-zinc-400">{label}</span><span className="text-2xl">{roundMacro(calories)}</span><span className="text-[10px] text-zinc-500">/ {roundMacro(goal)} {unit}</span></div></div>;
+  return <div className="onlypump-nutrition-ring relative flex h-28 w-28 items-center justify-center rounded-full" style={{background:`conic-gradient(#ef4444 0 ${percent}%, var(--chart-track) ${percent}% 100%)`}}><div className="onlypump-nutrition-ring-inner flex h-24 w-24 flex-col items-center justify-center rounded-full bg-zinc-950"><span className="onlypump-nutrition-ring-label text-xs text-zinc-400">{label}</span><span className="onlypump-nutrition-ring-value text-2xl">{roundMacro(calories)}</span><span className="onlypump-nutrition-ring-target text-[10px] text-zinc-500">/ {roundMacro(goal)} {unit}</span></div></div>;
+}
+
+function HomeMacroLine({ label, value, progress }) {
+  return <div className="onlypump-macro-line">
+    <div className="onlypump-macro-line-label">
+      <span>{label}</span>
+      <span>{value}</span>
+    </div>
+    <Progress value={Math.min(100, Math.max(0, Number(progress) || 0))}/>
+  </div>;
 }
 
 function MacrosWidget({ nutritionTotals, nutritionGoal, proteinPercent, fatPercent, carbsPercent, onOpen }) {
@@ -7639,7 +8236,7 @@ function WaterWidget({ waterIntake, waterGoal, onAdd, onRemove }) {
       </div>
       <div className="flex-1">
         <p className="text-sm text-zinc-400">{glasses} стаканов · {percent}% цели</p>
-        <div className="mt-3"><Progress value={percent}/></div>
+        <div className="mt-3"><Progress value={percent} tone="sky"/></div>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button onClick={() => onAdd(250)} className="bg-sky-500/15 px-3 py-2 text-xs text-sky-300 hover:bg-sky-500/25">+250 мл</Button>
           <Button onClick={() => onAdd(500)} className="bg-sky-500/15 px-3 py-2 text-xs text-sky-300 hover:bg-sky-500/25">+500 мл</Button>
@@ -8186,18 +8783,19 @@ function WaterEditorSheet({ dateKey, healthLog, onSave, onClose, saving = false,
   </div>;
 }
 
-function PersonalTrackerIcon({ tracker, size = 18 }) {
+function PersonalTrackerIcon({ tracker, size = 18, done = false }) {
   const config = getPersonalTrackerTypeConfig(tracker?.type);
   const Icon = config.icon || Target;
   const accent = getPersonalTrackerAccent(tracker || {});
-  return <Icon size={size} className={accent.text}/>;
+  const isBinary = tracker?.type === "habit" || tracker?.type === "abstinence";
+  return <Icon size={size} className={isBinary ? (done ? accent.text : "text-red-500") : accent.text}/>;
 }
 
 function PersonalTrackerRing({ tracker, value = 0, progress = 0, label }) {
   const accent = getPersonalTrackerAccent(tracker);
   const safeProgress = Math.min(100, Math.max(0, Math.round(progress || 0)));
-  return <div className="relative flex h-24 w-24 shrink-0 items-center justify-center rounded-full" style={{ background: `conic-gradient(${accent.color} 0 ${safeProgress}%, var(--chart-track) ${safeProgress}% 100%)` }}>
-    <div className="flex h-20 w-20 flex-col items-center justify-center rounded-full bg-zinc-950 px-2 text-center">
+  return <div className="onlypump-personal-tracker-ring relative flex h-24 w-24 shrink-0 items-center justify-center rounded-full" style={{ background: `conic-gradient(${accent.color} 0 ${safeProgress}%, var(--chart-track) ${safeProgress}% 100%)` }}>
+    <div className="onlypump-personal-tracker-ring-inner flex h-20 w-20 flex-col items-center justify-center rounded-full bg-zinc-950 px-2 text-center">
       <span className="text-lg font-black leading-none">{value}</span>
       <span className="mt-1 text-[10px] leading-none text-zinc-500">{label}</span>
     </div>
@@ -8214,31 +8812,28 @@ function PersonalTrackerCard({ tracker, dateKey, onOpen, onQuickAdd }) {
   const progress = getPersonalTrackerProgress(tracker, entry, dateKey);
   const titlePrefix = tracker.mode === "limit" && !isBinary ? "лимит" : "цель";
 
-  return <Card onClick={onOpen} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <p className="onlypump-line-clamp-1 text-[11px] text-zinc-500">{config.shortLabel}</p>
-        <h3 className="onlypump-line-clamp-2 mt-1 text-base font-black leading-tight">{tracker.title}</h3>
-      </div>
-      <PersonalTrackerIcon tracker={tracker}/>
-    </div>
-    {isBinary ? <div className="mt-3 flex min-h-0 flex-1 flex-col">
+	  return <Card onClick={onOpen} className="onlypump-home-widget-card onlypump-personal-tracker-widget cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
+	    <div className="flex items-start justify-between gap-3">
+	      <div className="min-w-0">
+	        <p className="onlypump-line-clamp-2 text-[11px] text-zinc-500">{tracker.title || config.shortLabel}</p>
+	      </div>
+		      <PersonalTrackerIcon tracker={tracker} done={entry.done}/>
+	    </div>
+    {isBinary ? <div className="mt-2 flex min-h-0 flex-1 flex-col">
       <div className="flex items-end justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-3xl font-black leading-none">{stats.completed} дн</div>
-          <p className="onlypump-line-clamp-1 mt-1 text-[11px] text-zinc-500">отмечено · осталось {stats.remaining} дн</p>
+          <div className="onlypump-habit-count font-black">{stats.completed.toLocaleString("ru-RU")} дн</div>
         </div>
-        <span className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black ${entry.done ? accent.soft : "bg-white/[0.06] text-zinc-500"}`}>
-          {entry.done ? "Отмечено" : "Не отмечено"}
-        </span>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-zinc-500">
-        <span>{stats.completed}/{tracker.durationDays || tracker.target} дней</span>
-        <span>{formatCycleDate(dateKey)}</span>
+      <div className="onlypump-habit-remaining mt-1.5 text-[11px]">
+        осталось {stats.remaining.toLocaleString("ru-RU")} дн
       </div>
       <div className="mt-2"><Progress value={progress}/></div>
+			      <div className="mt-1.5 text-[11px] text-zinc-500">
+			        <span>{stats.completed}/{tracker.durationDays || tracker.target} дней</span>
+      </div>
       {entry.note && <p className="onlypump-line-clamp-2 mt-2 rounded-2xl bg-white/[0.04] p-2 text-xs leading-5 text-zinc-400">{entry.note}</p>}
-      <div className="mt-auto grid grid-cols-7 gap-1 pt-3">
+      <div className="onlypump-habit-dots mt-auto grid grid-cols-7 gap-1 pt-2">
         {Array.from({ length: 14 }, (_, index) => {
           const date = addLocalDaysToDate(parseDateKeyLocal(dateKey), index - 13);
           const key = formatDateKey(date);
@@ -8921,14 +9516,13 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     }, null);
   };
 
-  const getHomeWidgetSizeForGrid = (id) => {
-    if (isPersonalTrackerWidgetId(id)) {
-      const tracker = personalTrackers.find(item => item.id === personalTrackerIdFromWidget(id));
-      return isPersonalTrackerBinaryType(tracker?.type) ? "tall" : "square";
-    }
-    return getHomeCatalogWidgetSize(id);
-  };
-  const widgetSizeClass = (id) => `onlypump-home-widget-size-${getHomeWidgetSizeForGrid(id)}`;
+	  const getHomeWidgetSizeForGrid = (id) => {
+	    if (isPersonalTrackerWidgetId(id)) {
+	      return "2x2";
+	    }
+	    return getHomeCatalogWidgetSize(id);
+	  };
+  const widgetSizeClass = (id) => HOME_WIDGET_SIZE_CLASSES[getHomeWidgetSizeForGrid(id)] || HOME_WIDGET_SIZE_CLASSES["2x2"];
 
   const renderWidget = (id) => {
     if (isPersonalTrackerWidgetId(id)) {
@@ -8965,19 +9559,40 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         return <MetricWidgetCard title="Шаги" value={selectedSteps.toLocaleString("ru-RU")} sub={`цель ${stepsGoal.toLocaleString("ru-RU")}`} progress={stepsProgress} icon={Activity} onClick={() => setStepsSheetOpen(true)}/>;
       case "macros":
         return <MetricWidgetCard title={homeUsesPalmNutrition ? "Ладони" : "БЖУ"} value={`${homeUsesPalmNutrition ? palmNutritionPercent : proteinPercent}%`} sub={homeUsesPalmNutrition ? `${palmLabel(selectedPalmSummary.actual.protein)} белк. · ${palmLabel(selectedPalmSummary.actual.carbs)} угл.` : `${selectedNutritionTotals.protein} Б · ${selectedNutritionTotals.fat} Ж · ${selectedNutritionTotals.carbs} У`} icon={Utensils} onClick={openNutritionFromHome}>
-          <div className="mt-4 space-y-2 text-[11px] text-zinc-400">
-            <div className="flex justify-between"><span>Б</span><span>{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.protein)}/${roundMacro(selectedPalmSummary.targets.protein)}` : `${selectedNutritionTotals.protein}/${nutritionGoal.protein}`}</span></div><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}/>
-            <div className="flex justify-between"><span>Ж</span><span>{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.fat)}/${roundMacro(selectedPalmSummary.targets.fat)}` : `${selectedNutritionTotals.fat}/${nutritionGoal.fat}`}</span></div><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.fat / Math.max(1, selectedPalmSummary.targets.fat)) * 100)) : fatPercent}/>
-            <div className="flex justify-between"><span>У</span><span>{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.carbs)}/${roundMacro(selectedPalmSummary.targets.carbs)}` : `${selectedNutritionTotals.carbs}/${nutritionGoal.carbs}`}</span></div><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.carbs / Math.max(1, selectedPalmSummary.targets.carbs)) * 100)) : carbsPercent}/>
+          <div className="onlypump-macro-lines">
+            <HomeMacroLine label="Б" value={homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.protein)}/${roundMacro(selectedPalmSummary.targets.protein)}` : `${selectedNutritionTotals.protein}/${nutritionGoal.protein}`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}/>
+            <HomeMacroLine label="Ж" value={homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.fat)}/${roundMacro(selectedPalmSummary.targets.fat)}` : `${selectedNutritionTotals.fat}/${nutritionGoal.fat}`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.fat / Math.max(1, selectedPalmSummary.targets.fat)) * 100)) : fatPercent}/>
+            <HomeMacroLine label="У" value={homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.carbs)}/${roundMacro(selectedPalmSummary.targets.carbs)}` : `${selectedNutritionTotals.carbs}/${nutritionGoal.carbs}`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.carbs / Math.max(1, selectedPalmSummary.targets.carbs)) * 100)) : carbsPercent}/>
           </div>
         </MetricWidgetCard>;
-      case "water":
-        return <MetricWidgetCard title="Вода" value={`${selectedWater} мл`} sub={`/ ${waterGoal} мл`} progress={waterProgress} icon={Droplets} accent="sky" onClick={() => setWaterSheetOpen(true)}>
-          <div className="mt-4 flex gap-2">
-            <button onClick={(e) => { e.stopPropagation(); saveWaterQuick(250); }} className="rounded-full bg-sky-500/15 px-3 py-1.5 text-[11px] text-sky-300">+250</button>
-            <button onClick={(e) => { e.stopPropagation(); saveWaterQuick(-250); }} className="rounded-full bg-white/5 px-3 py-1.5 text-[11px] text-zinc-400">−250</button>
-          </div>
-        </MetricWidgetCard>;
+	      case "water":
+	        {
+	          const glassCount = Math.min(99, Math.max(0, Math.floor(selectedWater / 250)));
+	          return <Card onClick={() => setWaterSheetOpen(true)} className="onlypump-home-widget-card onlypump-water-wide-card cursor-pointer transition hover:border-sky-400/50 hover:bg-sky-500/5">
+	            <div className="onlypump-water-wide-main">
+	              <div className="flex min-w-0 items-start justify-between gap-2">
+	                <div className="min-w-0">
+	                  <p className="onlypump-line-clamp-1 text-[11px] text-zinc-500">Вода</p>
+	                  <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+	                    <span className="onlypump-home-widget-value truncate text-2xl font-black leading-none">{selectedWater.toLocaleString("ru-RU")} мл</span>
+	                    <span className="truncate text-[10px] text-zinc-500">/ {waterGoal.toLocaleString("ru-RU")} мл</span>
+	                  </div>
+	                </div>
+	                <Droplets size={18} className="shrink-0 text-sky-400"/>
+	              </div>
+	              <div className="mt-2"><Progress value={waterProgress} tone="sky"/></div>
+	            </div>
+	            <div className="onlypump-water-glass-actions" aria-label="Быстро изменить воду">
+	              <button type="button" onClick={(e) => { e.stopPropagation(); saveWaterQuick(250); }} className="onlypump-water-glass onlypump-water-glass-plus" aria-label="Добавить стакан воды">
+	                <span className="onlypump-water-glass-count">{glassCount}</span>
+	                <span className="onlypump-water-glass-symbol">+</span>
+	              </button>
+	              <button type="button" onClick={(e) => { e.stopPropagation(); saveWaterQuick(-250); }} className="onlypump-water-glass onlypump-water-glass-minus" aria-label="Убрать стакан воды">
+	                <span className="onlypump-water-glass-symbol">−</span>
+	              </button>
+	            </div>
+	          </Card>;
+	        }
       case "moodWellbeing":
         return <MoodWellbeingWidgetCard healthLog={selectedHealthLog} onOpen={() => setMoodSheetOpen(true)}/>;
       case "dailyNote":
@@ -9000,19 +9615,90 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
           <Button className="mt-3 h-9 w-full bg-gradient-to-r from-red-700 to-red-500 text-xs">Открыть тренировки</Button>
         </Card>;
       case "nutrition":
-        return <Card key={id} onClick={openNutritionFromHome} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
-          <h3 className="onlypump-line-clamp-1 text-sm font-semibold">Питание за выбранный день</h3>
-          <div className="mt-3 grid min-h-0 flex-1 grid-cols-[1fr_auto] items-center gap-3">
-            <div className="h-full min-h-[6rem] rounded-2xl bg-[url('https://images.unsplash.com/photo-1546069901-d5bfd2cbfb1f?q=80&w=700&auto=format&fit=crop')] bg-cover bg-center"/>
-            <NutritionRing calories={homeUsesPalmNutrition ? selectedPalmSummary.total : selectedNutritionTotals.calories} goal={homeUsesPalmNutrition ? selectedPalmSummary.target : nutritionGoal.calories} label={homeUsesPalmNutrition ? "Ладони" : "Калории"} unit={homeUsesPalmNutrition ? "лад." : "ккал"}/>
-          </div>
-          <div className="mt-3 space-y-2 text-[11px]">
-            <div>Белки <span className="float-right">{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.protein)} / ${roundMacro(selectedPalmSummary.targets.protein)} лад.` : `${selectedNutritionTotals.protein} / ${nutritionGoal.protein}г`}</span><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}/></div>
-            <div>Жиры <span className="float-right">{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.fat)} / ${roundMacro(selectedPalmSummary.targets.fat)} лад.` : `${selectedNutritionTotals.fat} / ${nutritionGoal.fat}г`}</span><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.fat / Math.max(1, selectedPalmSummary.targets.fat)) * 100)) : fatPercent}/></div>
-            <div>Углеводы <span className="float-right">{homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.carbs)} / ${roundMacro(selectedPalmSummary.targets.carbs)} лад.` : `${selectedNutritionTotals.carbs} / ${nutritionGoal.carbs}г`}</span><Progress value={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.carbs / Math.max(1, selectedPalmSummary.targets.carbs)) * 100)) : carbsPercent}/></div>
-          </div>
-          <Button className="mt-3 h-9 w-full bg-white/8 text-xs">Открыть дневник питания</Button>
-        </Card>;
+        {
+          const nutritionActual = Number(homeUsesPalmNutrition ? selectedPalmSummary.total : selectedNutritionTotals.calories) || 0;
+          const nutritionTarget = Math.max(1, Number(homeUsesPalmNutrition ? selectedPalmSummary.target : nutritionGoal.calories) || 0);
+          const nutritionPercent = Math.min(100, Math.max(0, Math.round((nutritionActual / nutritionTarget) * 100)));
+          const nutritionRemaining = Math.max(0, nutritionTarget - nutritionActual);
+          const nutritionUnit = homeUsesPalmNutrition ? "лад." : "ккал";
+          const formatNutritionAmount = (value) => homeUsesPalmNutrition
+            ? roundMacro(value)
+            : Math.round(Number(value || 0)).toLocaleString("ru-RU");
+          const nutritionMacroRows = [
+            {
+              label: "Белки",
+              actual: homeUsesPalmNutrition ? selectedPalmSummary.actual.protein : selectedNutritionTotals.protein,
+              target: homeUsesPalmNutrition ? selectedPalmSummary.targets.protein : nutritionGoal.protein,
+              tone: "protein",
+              unit: homeUsesPalmNutrition ? "лад." : "г",
+            },
+            {
+              label: "Жиры",
+              actual: homeUsesPalmNutrition ? selectedPalmSummary.actual.fat : selectedNutritionTotals.fat,
+              target: homeUsesPalmNutrition ? selectedPalmSummary.targets.fat : nutritionGoal.fat,
+              tone: "fat",
+              unit: homeUsesPalmNutrition ? "лад." : "г",
+            },
+            {
+              label: "Углеводы",
+              actual: homeUsesPalmNutrition ? selectedPalmSummary.actual.carbs : selectedNutritionTotals.carbs,
+              target: homeUsesPalmNutrition ? selectedPalmSummary.targets.carbs : nutritionGoal.carbs,
+              tone: "carbs",
+              unit: homeUsesPalmNutrition ? "лад." : "г",
+            },
+          ].map(row => {
+            const target = Math.max(1, Number(row.target) || 0);
+            const actual = Number(row.actual) || 0;
+            return {
+              ...row,
+              progress: Math.min(100, Math.max(0, Math.round((actual / target) * 100))),
+              actualValue: homeUsesPalmNutrition ? roundMacro(actual) : Math.round(actual),
+              targetValue: homeUsesPalmNutrition ? roundMacro(target) : Math.round(target),
+            };
+          });
+
+          return <Card key={id} onClick={openNutritionFromHome} className="onlypump-home-widget-card onlypump-nutrition-widget cursor-pointer transition hover:border-red-500/50 hover:bg-red-500/5">
+            <div className="flex items-start justify-between gap-2">
+              <p className="onlypump-line-clamp-1 text-[11px] text-zinc-500">Питание</p>
+              <Apple size={16} className="shrink-0 text-red-500"/>
+            </div>
+              <div className="onlypump-nutrition-layout">
+                <div className="onlypump-nutrition-summary">
+                  <div className="onlypump-nutrition-stat">
+                    <span className="onlypump-nutrition-stat-label">Съедено</span>
+                    <span className="onlypump-nutrition-stat-value">{formatNutritionAmount(nutritionActual)}</span>
+                    <span className="onlypump-nutrition-stat-sub">из {formatNutritionAmount(nutritionTarget)}</span>
+                  </div>
+                  <div className="onlypump-nutrition-ring-wrap">
+                    <div className="onlypump-nutrition-ring relative flex items-center justify-center rounded-full" style={{background:`conic-gradient(#ef4444 0 ${nutritionPercent}%, var(--chart-track) ${nutritionPercent}% 100%)`}}>
+                      <div className="onlypump-nutrition-ring-inner flex flex-col items-center justify-center rounded-full">
+                        <span className="onlypump-nutrition-ring-value">{nutritionPercent}%</span>
+                        <span className="onlypump-nutrition-ring-target">съедено</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="onlypump-nutrition-stat onlypump-nutrition-stat-end">
+                    <span className="onlypump-nutrition-stat-label">Осталось</span>
+                    <span className="onlypump-nutrition-stat-value">{formatNutritionAmount(nutritionRemaining)}</span>
+                    <span className="onlypump-nutrition-stat-sub">{nutritionUnit}</span>
+                  </div>
+                </div>
+              <div className="onlypump-nutrition-divider"/>
+              <div className="onlypump-nutrition-macros">
+                {nutritionMacroRows.map(row => <div key={row.label} className="onlypump-nutrition-macro-row">
+                  <span className="onlypump-nutrition-macro-label">{row.label}</span>
+                  <div className="onlypump-nutrition-macro-track">
+                    <div className={`onlypump-nutrition-macro-fill onlypump-nutrition-macro-${row.tone}`} style={{width: `${row.progress}%`}}/>
+                  </div>
+                  <span className="onlypump-nutrition-macro-value">
+                    <span className="onlypump-nutrition-macro-actual">{row.actualValue}</span>
+                    <span className="onlypump-nutrition-macro-target"> / {row.targetValue}{row.unit}</span>
+                  </span>
+                </div>)}
+              </div>
+            </div>
+          </Card>;
+        }
       case "weekProgress":
         return <Card key={id} onClick={() => setActive("progress")} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
           <div className="flex items-center justify-between">
@@ -9030,7 +9716,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
           <div className="pointer-events-none absolute bottom-0 right-0 h-32 w-32 bg-[url('https://images.unsplash.com/photo-1605296867424-35fc25c9212a?q=80&w=500&auto=format&fit=crop')] bg-cover bg-center opacity-35 grayscale"/>
         </Card>;
       case "miniActions":
-        return <div key={id} className="grid h-full min-h-0 grid-rows-3 gap-2 overflow-hidden">
+        return <div key={id} className="onlypump-home-widget-stack grid h-full min-h-0 grid-rows-3 gap-2 overflow-hidden">
           <MiniAction onClick={() => setActive("workouts")} title="Ближайшая тренировка" sub="Следующая" text="Legs — Ноги / Ягодицы" button="Смотреть план"/>
           <MiniAction onClick={() => setActive("lectures")} title="Лекция дня" sub="Рекомпозиция" text="Принципы эффективной сушки" button="Смотреть лекцию"/>
           <MiniAction onClick={() => setActive("education")} title="Твой план" sub="Программа" text="ONLYPUMP Recomp" button="Открыть программу"/>
@@ -9182,7 +9868,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     <div className="onlypump-home-widget-area relative mt-4">
       <div className="onlypump-home-widget-grid">
         {homeWidgets.map(id => renderEditableWidget(id))}
-        {homeWidgets.length === 0 && <Card className="onlypump-home-widget-size-wide p-8 text-center">
+        {homeWidgets.length === 0 && <Card className="onlypump-home-widget-size-4x2 p-8 text-center">
           <p className="text-zinc-400">Нет активных виджетов.</p>
           <Button data-tour="home-add-widget" onClick={() => setWidgetPickerOpen(true)} className="mt-4 bg-white/8">Добавить виджет</Button>
         </Card>}
@@ -22048,8 +22734,8 @@ function ProfileFormFields({ draft, setDraft, showManualTargets = true, onBirthD
         <p className="text-xs font-bold uppercase tracking-[0.14em] text-red-400">Расчет ладоней</p>
         <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs">
           <div className="rounded-xl bg-black/30 p-2"><span className="block text-zinc-500">Белок</span><b>{palmFormula.protein} г</b></div>
-          <div className="rounded-xl bg-black/30 p-2"><span className="block text-zinc-500">Углеводы</span><b>{palmFormula.carbs} г</b></div>
           <div className="rounded-xl bg-black/30 p-2"><span className="block text-zinc-500">Жиры</span><b>{palmFormula.fat} г</b></div>
+          <div className="rounded-xl bg-black/30 p-2"><span className="block text-zinc-500">Углеводы</span><b>{palmFormula.carbs} г</b></div>
           <div className="rounded-xl bg-black/30 p-2"><span className="block text-zinc-500">Овощи</span><b>{palmFormula.vegetables} г</b></div>
         </div>
         <p className="mt-2 text-xs leading-5 text-zinc-500">Размер порции считается по полу и весу. Калории сохраняются для аналитики, но в интерфейсе питания показываются ладони.</p>
