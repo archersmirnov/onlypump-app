@@ -503,7 +503,7 @@
       background: rgba(17, 24, 39, 0.45);
     }
     .onlypump-mobile-menu-item {
-      animation: onlypump-mobile-menu-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      animation: onlypump-mobile-menu-in 210ms cubic-bezier(0.22, 1, 0.36, 1) both;
     }
     .onlypump-mobile-menu-icon {
       background: rgba(255, 255, 255, 0.96);
@@ -512,23 +512,19 @@
     }
     .onlypump-mobile-menu-icon-img {
       display: block;
-      width: 2rem;
-      height: 2rem;
+      width: 1.55rem;
+      height: 1.55rem;
       object-fit: contain;
     }
-    .onlypump-mobile-menu-close {
-      background: rgba(17, 24, 39, 0.96);
-      color: #ffffff;
-      box-shadow: 0 20px 48px rgba(0, 0, 0, 0.34);
+    .onlypump-floating-nav-symbol {
+      transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease;
+      transform-origin: center;
     }
-    .onlypump-mobile-menu-control-img {
-      display: block;
-      width: 2.15rem;
-      height: 2.15rem;
-      object-fit: contain;
+    .onlypump-floating-nav-button.onlypump-nav-open .onlypump-floating-nav-symbol {
+      transform: rotate(135deg);
     }
-    .onlypump-mobile-menu-close .onlypump-mobile-menu-control-img {
-      filter: invert(1);
+    .onlypump-floating-nav-button.onlypump-nav-analytics .onlypump-floating-nav-symbol {
+      transform: rotate(0deg);
     }
     .theme-light .onlypump-mobile-menu-icon {
       box-shadow: 0 18px 38px rgba(15, 23, 42, 0.18);
@@ -1053,7 +1049,7 @@ import {
   BarChart3, Users, User, Bell, Flame, ChevronDown, Play, Activity, Grid3X3,
   Menu, CalendarDays, Trophy, Moon, Target, BookOpen, MessageCircle, Settings,
   ShieldCheck, CreditCard, Scale, Ruler, Utensils, Clock3, CheckCircle2, Lock,
-  Search, Plus, ExternalLink, Star, Zap, HeartPulse, Droplets, MoreHorizontal, Share2, Pencil, Repeat2, Route, ChevronRight, Smile, StickyNote, Maximize2, Minimize2, Info, ArrowLeft, Camera, Percent, X
+  Search, Plus, ExternalLink, Star, Zap, HeartPulse, Droplets, MoreHorizontal, Share2, Pencil, Repeat2, Route, ChevronRight, Smile, StickyNote, Maximize2, Minimize2, Info, ArrowLeft, Camera, Percent
 } from "lucide-react";
 
 function syncOnlyPumpViewportHeight(tg) {
@@ -6480,21 +6476,29 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
   };
 
   const items = mode === "analytics" ? analyticsItems : mainItems;
-  const closeMenu = () => {
+  const handleFloatingButton = () => {
+    if (!open) {
+      setOpen(true);
+      return;
+    }
     if (mode === "analytics") {
       setMode("main");
       return;
     }
     setOpen(false);
   };
+  const floatingLabel = !open ? "Открыть меню" : mode === "analytics" ? "Назад в меню" : "Закрыть меню";
 
   return <>
     <div className={`onlypump-fullscreen-layer fixed inset-0 z-[210] lg:hidden ${open ? "pointer-events-auto" : "pointer-events-none"}`}>
-      <div onClick={() => setOpen(false)} className={`onlypump-mobile-menu-overlay absolute inset-0 transition-opacity duration-250 ${open ? "opacity-100" : "opacity-0"}`}/>
+      <div onClick={() => setOpen(false)} className={`onlypump-mobile-menu-overlay absolute inset-0 transition-opacity duration-300 ${open ? "opacity-100" : "opacity-0"}`}/>
       <nav
         aria-label={mode === "analytics" ? "Меню аналитики" : "Главное меню"}
-        className={`absolute right-6 flex max-h-[calc(var(--onlypump-app-height)-var(--onlypump-safe-top)-var(--onlypump-safe-bottom)-96px)] flex-col items-end gap-4 overflow-y-auto pr-0 onlypump-scrollbar-none transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"}`}
-        style={{ bottom: "calc(var(--onlypump-safe-bottom) + 6.5rem)" }}
+        className={`absolute right-6 flex flex-col items-end gap-3 overflow-y-auto pr-0 onlypump-scrollbar-none transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"}`}
+        style={{
+          bottom: "calc(var(--onlypump-safe-bottom) + 10.25rem)",
+          maxHeight: "calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 11.25rem)"
+        }}
       >
         {items.map((item, index) => {
           const Icon = item.icon;
@@ -6505,41 +6509,25 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
             type="button"
             data-tour={mode === "main" ? `nav-${item.id}` : undefined}
             onClick={onClick}
-            className="onlypump-mobile-menu-item flex items-center justify-end gap-4 text-right"
-            style={{ animationDelay: `${index * 38}ms` }}
+            className="onlypump-mobile-menu-item flex items-center justify-end gap-3 text-right"
+            style={{ animationDelay: `${index * 34}ms` }}
           >
-            <span className={`max-w-[220px] text-[24px] font-medium leading-none text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.42)] ${activeItem ? "text-red-200" : ""}`}>{item.label}</span>
-            <span className={`onlypump-mobile-menu-icon flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-full ${activeItem ? "ring-4 ring-red-400/50" : ""}`}>
+            <span className={`max-w-[200px] text-[20px] font-medium leading-none text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.42)] ${activeItem ? "text-red-200" : ""}`}>{item.label}</span>
+            <span className={`onlypump-mobile-menu-icon flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-full ${activeItem ? "ring-[3px] ring-red-400/50" : ""}`}>
               <MobileMenuAssetIcon src={item.asset} alt={item.label} FallbackIcon={Icon}/>
             </span>
           </button>;
         })}
       </nav>
-      <button
-        type="button"
-        aria-label={mode === "analytics" ? "Назад в меню" : "Закрыть меню"}
-        onClick={closeMenu}
-        className={`onlypump-mobile-menu-item onlypump-mobile-menu-close absolute right-6 flex h-[82px] w-[82px] items-center justify-center rounded-full text-white transition ${open ? "opacity-100" : "opacity-0"}`}
-        style={{ bottom: "calc(var(--onlypump-safe-bottom) + 1rem)", animationDelay: `${items.length * 38}ms` }}
-      >
-        <MobileMenuAssetIcon
-          src={menuIcon(mode === "analytics" ? "menu-back" : "menu-close")}
-          alt={mode === "analytics" ? "Назад" : "Закрыть"}
-          FallbackIcon={mode === "analytics" ? ArrowLeft : X}
-          className="onlypump-mobile-menu-control-img"
-          fallbackSize={34}
-          fallbackStrokeWidth={2.4}
-        />
-      </button>
     </div>
     <button
       type="button"
-      aria-label={open ? "Закрыть меню" : "Открыть меню"}
-      onClick={() => setOpen(prev => !prev)}
+      aria-label={floatingLabel}
+      onClick={handleFloatingButton}
       style={{ bottom: "calc(var(--onlypump-safe-bottom) + 6rem)" }}
-      className={`onlypump-floating-nav-button fixed bottom-24 right-6 z-[120] flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-red-700 to-red-500 text-black shadow-2xl shadow-red-500/40 transition duration-300 hover:scale-105 lg:hidden ${open ? "pointer-events-none opacity-0" : ""}`}
+      className={`onlypump-floating-nav-button fixed bottom-24 right-6 z-[220] flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-red-700 to-red-500 text-black shadow-2xl shadow-red-500/40 transition duration-300 hover:scale-105 active:scale-95 lg:hidden ${open ? "onlypump-nav-open" : ""} ${mode === "analytics" ? "onlypump-nav-analytics" : ""}`}
     >
-      <MobileMenuAssetIcon src={menuIcon("menu-open")} alt="Открыть меню" FallbackIcon={Plus} className="h-7 w-7 object-contain" fallbackSize={28}/>
+      {open && mode === "analytics" ? <ArrowLeft className="onlypump-floating-nav-symbol" size={28} strokeWidth={2.6}/> : <Plus className="onlypump-floating-nav-symbol" size={30} strokeWidth={2.7}/>}
     </button>
   </>;
 }
