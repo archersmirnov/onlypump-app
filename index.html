@@ -559,6 +559,83 @@
     .theme-light .onlypump-mobile-menu-icon {
       box-shadow: 0 18px 38px rgba(15, 23, 42, 0.18);
     }
+    .onlypump-secondary-nav-bar {
+      position: fixed;
+      left: 50%;
+      bottom: calc(var(--onlypump-safe-bottom) + 0.85rem);
+      z-index: 180;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      width: min(calc(100vw - 2rem), 22rem);
+      padding: 0.36rem;
+      border-radius: 1.7rem;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(18, 18, 22, 0.56);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
+      backdrop-filter: blur(22px) saturate(145%);
+      -webkit-backdrop-filter: blur(22px) saturate(145%);
+      transform: translateX(-50%);
+      transition: opacity 180ms ease, transform 220ms ease;
+    }
+    .theme-light .onlypump-secondary-nav-bar {
+      border-color: rgba(17, 24, 39, 0.1);
+      background: rgba(255, 255, 255, 0.78);
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.14);
+    }
+    .onlypump-secondary-nav-bar.is-scroll-hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(-50%) translateY(1.15rem) scale(0.96);
+    }
+    .onlypump-secondary-nav-button {
+      flex: 1 1 0;
+      min-width: 0;
+      height: 3.05rem;
+      border: 0;
+      border-radius: 1.15rem;
+      background: transparent;
+      color: inherit;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+      touch-action: manipulation;
+    }
+    .onlypump-secondary-nav-button:active {
+      transform: scale(0.96);
+    }
+    .onlypump-secondary-nav-button.is-active {
+      background: rgba(255, 255, 255, 0.18);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    }
+    .theme-light .onlypump-secondary-nav-button.is-active {
+      background: rgba(17, 24, 39, 0.08);
+      box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.06);
+    }
+    .onlypump-secondary-nav-icon {
+      display: block;
+      width: 1.78rem;
+      height: 1.78rem;
+      object-fit: contain;
+      pointer-events: none;
+    }
+    html.onlypump-custom-keyboard-open .onlypump-secondary-nav-bar {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(-50%) translateY(0.75rem);
+    }
+    @media (max-width: 1023px) {
+      .onlypump-main-scroll-with-secondary-nav {
+        padding-bottom: calc(var(--onlypump-safe-bottom) + 6.35rem);
+      }
+    }
+    @media (min-width: 1024px) {
+      .onlypump-secondary-nav-bar {
+        display: none;
+      }
+    }
     .onlypump-mobile-analytics-screen {
       padding-top: calc(var(--onlypump-safe-top) + var(--onlypump-telegram-main-top-offset) + 14px);
       padding-bottom: calc(var(--onlypump-safe-bottom) + 18px);
@@ -7131,6 +7208,85 @@ function MobileMenuAssetIcon({ src, alt = "", FallbackIcon, className = "onlypum
   return <img src={src} alt={alt} draggable="false" className={className} onError={() => setFailed(true)}/>;
 }
 
+function MobileSecondaryNavBar({ active, setActive }) {
+  const [hiddenByScroll, setHiddenByScroll] = useState(false);
+
+  useEffect(() => {
+    setHiddenByScroll(false);
+    if (active === "workouts" || typeof document === "undefined") return undefined;
+
+    const scrollNode = document.querySelector(".onlypump-main-scroll");
+    if (!scrollNode) return undefined;
+
+    const showAtTopPx = 8;
+    const fastDownDeltaPx = 26;
+    const fastDownVelocityPxMs = 0.55;
+    let lastScrollTop = scrollNode.scrollTop || 0;
+    let lastTime = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+    let ticking = false;
+
+    setHiddenByScroll(lastScrollTop > showAtTopPx);
+
+    const handleScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        const currentScrollTop = scrollNode.scrollTop || 0;
+        const now = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+        const delta = currentScrollTop - lastScrollTop;
+        const elapsed = Math.max(16, now - lastTime);
+        const velocity = delta / elapsed;
+
+        if (currentScrollTop <= showAtTopPx) {
+          setHiddenByScroll(false);
+        } else if (delta > fastDownDeltaPx || velocity > fastDownVelocityPxMs) {
+          setHiddenByScroll(true);
+        }
+
+        lastScrollTop = currentScrollTop;
+        lastTime = now;
+      });
+    };
+
+    scrollNode.addEventListener("scroll", handleScroll, { passive: true });
+    return () => scrollNode.removeEventListener("scroll", handleScroll);
+  }, [active]);
+
+  if (active === "workouts") return null;
+
+  const secondaryIconSrc = (name, isActive) => `assets/menu-icons/${name}${isActive ? "_open" : ""}.svg`;
+  const items = [
+    { id: "recipes", label: "Рецепты", iconName: "coock", FallbackIcon: Utensils },
+    { id: "home", label: "Главная", iconName: "home", FallbackIcon: Home },
+    { id: "analytics", label: "Аналитика", iconName: "stats", FallbackIcon: BarChart3 },
+    { id: "education", label: "Обучение", iconName: "book", FallbackIcon: GraduationCap },
+  ];
+
+  return <nav className={`onlypump-secondary-nav-bar lg:hidden ${hiddenByScroll ? "is-scroll-hidden" : ""}`} aria-label="Быстрая навигация">
+    {items.map((item) => {
+      const isActive = active === item.id;
+      return <button
+        key={item.id}
+        type="button"
+        aria-label={item.label}
+        aria-current={isActive ? "page" : undefined}
+        onClick={() => setActive(item.id)}
+        className={`onlypump-secondary-nav-button ${isActive ? "is-active" : ""}`}
+      >
+        <MobileMenuAssetIcon
+          src={secondaryIconSrc(item.iconName, isActive)}
+          alt=""
+          FallbackIcon={item.FallbackIcon}
+          className="onlypump-secondary-nav-icon"
+          fallbackSize={28}
+          fallbackStrokeWidth={2.2}
+        />
+      </button>;
+    })}
+  </nav>;
+}
+
 function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState("main");
@@ -10420,6 +10576,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const completionSaveRef = useRef(null);
   const loadedWorkoutProfileRef = useRef(null);
   const workoutsRef = useRef(workouts);
+  const deletedWorkoutIdentityRef = useRef(new Set());
   const deleteScopeOpenedAtRef = useRef(0);
   const repeatSheetOpenedAtRef = useRef(0);
   const pendingWorkoutPatchesRef = useRef({});
@@ -10441,6 +10598,99 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   useEffect(() => {
     workoutsRef.current = workouts;
   }, [workouts]);
+
+  const getWorkoutDeleteKeys = (workoutOrId) => {
+    const raw = typeof workoutOrId === "object" ? (workoutOrId || {}) : { id: workoutOrId };
+    const keys = [];
+    const addKey = (prefix, value) => {
+      if (value === undefined || value === null || value === "") return;
+      keys.push(`${prefix}:${String(value)}`);
+    };
+    addKey("local", raw.id);
+    addKey("supabase", raw.supabaseId);
+    addKey("supabase", raw.supabase_id);
+    addKey("supabase", raw.workout_id);
+    addKey("supabase", raw.workoutId);
+    if (typeof workoutOrId !== "object") addKey("supabase", workoutOrId);
+    return Array.from(new Set(keys));
+  };
+
+  const markWorkoutDeletePending = (workoutOrId) => {
+    getWorkoutDeleteKeys(workoutOrId).forEach(key => deletedWorkoutIdentityRef.current.add(key));
+  };
+
+  const unmarkWorkoutDeletePending = (workoutOrId) => {
+    getWorkoutDeleteKeys(workoutOrId).forEach(key => deletedWorkoutIdentityRef.current.delete(key));
+  };
+
+  const restorePendingWorkoutDeletes = (items = []) => {
+    items.forEach(unmarkWorkoutDeletePending);
+  };
+
+  const isWorkoutDeletePending = (workout) => getWorkoutDeleteKeys(workout).some(key => deletedWorkoutIdentityRef.current.has(key));
+
+  const filterPendingDeletedWorkouts = (items = []) => (Array.isArray(items) ? items : []).filter(item => !isWorkoutDeletePending(item));
+
+  const readDeleteResponseArray = (result, keys = []) => {
+    if (!result || typeof result !== "object") return [];
+    for (const key of keys) {
+      const value = result[key];
+      if (Array.isArray(value)) return value;
+      if (value !== undefined && value !== null) return [value];
+    }
+    return [];
+  };
+
+  const WORKOUT_DELETE_RESPONSE_ID_KEYS = [
+    "deleted_workout_ids",
+    "deletedWorkoutIds",
+    "deleted_ids",
+    "deletedIds",
+    "workout_ids",
+    "workoutIds",
+  ];
+
+  const WORKOUT_DELETE_RESPONSE_COUNT_KEYS = [
+    "deleted_count",
+    "deletedCount",
+    "deleted_workouts_count",
+    "deletedWorkoutsCount",
+    "affected_count",
+    "affectedCount",
+    "count",
+  ];
+
+  const getDeletedWorkoutResponseIds = (result) => new Set(readDeleteResponseArray(result, WORKOUT_DELETE_RESPONSE_ID_KEYS).map(item => String(item)));
+
+  const hasDeletedWorkoutResponseIds = (result) => Boolean(
+    result
+      && typeof result === "object"
+      && WORKOUT_DELETE_RESPONSE_ID_KEYS.some(key => Object.prototype.hasOwnProperty.call(result, key))
+  );
+
+  const getDeleteResponseCount = (result) => {
+    if (!result || typeof result !== "object") return null;
+    for (const key of WORKOUT_DELETE_RESPONSE_COUNT_KEYS) {
+      if (!Object.prototype.hasOwnProperty.call(result, key)) continue;
+      const count = Number(result[key]);
+      return Number.isFinite(count) ? count : null;
+    }
+    return null;
+  };
+
+  const isDeleteResponseOk = (result) => Boolean(result) && result.ok !== false && result.success !== false && !result.error;
+
+  const isWorkoutDeleteResponseConfirmed = (result, workout) => {
+    if (!isDeleteResponseOk(result)) return false;
+    const deletedCount = getDeleteResponseCount(result);
+    if (deletedCount !== null && deletedCount <= 0) return false;
+    const deletedIds = getDeletedWorkoutResponseIds(result);
+    if (hasDeletedWorkoutResponseIds(result) && !deletedIds.size) return false;
+    if (!deletedIds.size) return true;
+    return getWorkoutDeleteKeys(workout)
+      .map(key => key.split(":").slice(1).join(":"))
+      .some(value => deletedIds.has(String(value)));
+  };
 
   useEffect(() => {
     restTimerStateRef.current = restTimerState;
@@ -12152,10 +12402,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const deleteWorkoutOnly = async (id, options = {}) => {
     const restoreOnFailure = options.restoreOnFailure !== false;
     const workout = workoutsRef.current.find(item => item.id === id) || (selectedWorkout?.id === id ? selectedWorkout : null);
+    const deleteTarget = workout || { id };
     console.log("Deleting workout:", workout);
     if (canUseWorkoutApi && workout?.supabaseId) {
       const previousWorkouts = workoutsRef.current;
       const previousSelectedWorkout = selectedWorkout;
+      markWorkoutDeletePending(workout);
       clearWorkoutSaveQueue(id);
       setWorkouts(prev => prev.filter(item => item.id !== id));
       setSelectedWorkout(null);
@@ -12164,6 +12416,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       const deleted = await deleteWorkoutViaApi(workout);
       if (!deleted) {
         console.error("Workout delete was not confirmed by API:", { id: workout.id, supabaseId: workout.supabaseId, restoreOnFailure });
+        unmarkWorkoutDeletePending(workout);
         if (restoreOnFailure) {
           setWorkouts(previousWorkouts);
           setSelectedWorkout(previousSelectedWorkout);
@@ -12173,6 +12426,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       }
       return;
     }
+    markWorkoutDeletePending(deleteTarget);
     setWorkouts(prev => prev.filter(workout => workout.id !== id));
     setSelectedWorkout(null);
     setWeekMenuGroup(null);
@@ -12221,10 +12475,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }
     const apiScope = scope === "program" ? "program" : scope === "program_workout" ? "program_workout" : "repeat";
     const matches = getScopedWorkoutMatches(target, apiScope, range);
-    const localIds = new Set(matches.map(item => item.id));
+    const deleteTargets = matches.length ? matches : [target];
+    const localIds = new Set(deleteTargets.map(item => item.id).filter(Boolean));
     const previousWorkouts = workoutsRef.current;
     const previousSelectedWorkout = selectedWorkout;
-    matches.forEach(item => clearWorkoutSaveQueue(item.id));
+    deleteTargets.forEach(item => {
+      markWorkoutDeletePending(item);
+      clearWorkoutSaveQueue(item.id);
+    });
     setWorkouts(prev => prev.filter(item => !localIds.has(item.id)));
     setSelectedWorkout(prev => prev && localIds.has(prev.id) ? null : prev);
     setWeekMenuGroup(null);
@@ -12241,7 +12499,17 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         time_scope: range === "previous" ? "with_previous" : range === "future" ? "with_future" : "all",
       });
       console.log("delete_workout_scope response:", result);
-      const deletedSupabaseIds = new Set(readApiArray(result, "deleted_workout_ids", ["deletedWorkoutIds"]).map(item => String(item)));
+      if (!isDeleteResponseOk(result)) {
+        throw new Error(result?.error || "delete_workout_scope was not confirmed");
+      }
+      const deletedSupabaseIds = getDeletedWorkoutResponseIds(result);
+      const deletedCount = getDeleteResponseCount(result);
+      if (deletedCount !== null && deletedCount <= 0) {
+        throw new Error("delete_workout_scope returned zero deleted rows");
+      }
+      if (hasDeletedWorkoutResponseIds(result) && !deletedSupabaseIds.size) {
+        throw new Error("delete_workout_scope returned no deleted ids");
+      }
       if (deletedSupabaseIds.size) {
         setWorkouts(prev => prev.filter(item => !deletedSupabaseIds.has(String(item.supabaseId || item.id))));
         setSelectedWorkout(prev => prev && deletedSupabaseIds.has(String(prev.supabaseId || prev.id)) ? null : prev);
@@ -12249,6 +12517,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       await loadWorkoutsFromApi({ preserveSelected: false });
     } catch (error) {
       console.error("delete_workout_scope error:", error);
+      restorePendingWorkoutDeletes(deleteTargets);
       setWorkouts(previousWorkouts);
       setSelectedWorkout(previousSelectedWorkout);
     }
@@ -13473,7 +13742,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     console.log("delete_workout payload:", payload);
     try {
       const result = await callWorkoutsApi("delete_workout", payload);
-      if (result) {
+      const confirmed = isWorkoutDeleteResponseConfirmed(result, workout);
+      if (confirmed) {
         console.log("delete_workout response:", result);
         console.log("Workout deleted", { id: workout.supabaseId });
         return true;
@@ -13738,7 +14008,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     } catch (error) {
       logSupabaseWorkoutError({ action: "load", error });
       loadedWorkoutProfileRef.current = null;
-      const rescued = await loadWorkoutsFromSupabaseTables(profile, selectedDateKey);
+      const rescued = filterPendingDeletedWorkouts(await loadWorkoutsFromSupabaseTables(profile, selectedDateKey));
       if (rescued.length) {
         console.warn("Workouts restored from Supabase tables inside WorkoutsPage", {
           requested_profile_id: profile?.id,
@@ -13750,13 +14020,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       }
       return null;
     }
-    const loadedWorkouts = buildWorkoutTreeFromApi(result);
+    const loadedWorkouts = filterPendingDeletedWorkouts(buildWorkoutTreeFromApi(result));
     syncStaleLoadedWorkoutTotals(loadedWorkouts);
-    const mergedWorkouts = mergeLoadedWorkoutsWithDirtyState(loadedWorkouts);
-    const fallbackWorkouts = Array.isArray(workoutsRef.current) ? workoutsRef.current : [];
+    const mergedWorkouts = filterPendingDeletedWorkouts(mergeLoadedWorkoutsWithDirtyState(loadedWorkouts));
+    const fallbackWorkouts = filterPendingDeletedWorkouts(Array.isArray(workoutsRef.current) ? workoutsRef.current : []);
     if (!mergedWorkouts.length) {
       const responseProfile = result?.profile ? normalizeProfileRecord(result.profile, profile || DEFAULT_PROFILE) : profile;
-      const rescued = await loadWorkoutsFromSupabaseTables(responseProfile || profile, selectedDateKey);
+      const rescued = filterPendingDeletedWorkouts(await loadWorkoutsFromSupabaseTables(responseProfile || profile, selectedDateKey));
       if (rescued.length) {
         console.warn("Workouts restored from Supabase tables after empty API load", {
           requested_profile_id: profile?.id,
@@ -15532,6 +15802,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	    const safeStartedDate = Number.isNaN(startedDate.getTime()) ? new Date() : startedDate;
 	    const durationParts = durationPartsFromMinutes(safeWorkoutNumber(workout.durationMinutes ?? workout.duration_minutes ?? (workout.duration_seconds ? Number(workout.duration_seconds) / 60 : 60), 60));
 	    setDetailMenuOpen(false);
+	    setWeekMenuGroup(null);
 	    setRepeatScheduler({
 	      workout,
 	      mode: "edit_completed",
@@ -15544,8 +15815,29 @@ const toggleExerciseMeasurementSetting = (field) => {
 	    });
 	  };
 
+	  const openPlannedWorkoutTimingEditor = (workout) => {
+	    if (!workout) return;
+	    const plannedDate = workout.startedAt || workout.started_at ? new Date(workout.startedAt || workout.started_at) : parseDateKey(workout.date || workout.workout_date || selectedDateKey);
+	    const fallbackDate = parseDateKey(workout.date || workout.workout_date || selectedDateKey);
+	    const safePlannedDate = Number.isNaN(plannedDate.getTime())
+	      ? (Number.isNaN(fallbackDate.getTime()) ? new Date() : fallbackDate)
+	      : plannedDate;
+	    setDetailMenuOpen(false);
+	    setWeekMenuGroup(null);
+	    setRepeatScheduler({
+	      workout,
+	      mode: "edit_planned",
+	      workoutType: normalizeWorkoutType(workout?.workoutType),
+	      dateKey: workout.date || workout.workout_date || formatDateKey(safePlannedDate),
+	      hour: String(safePlannedDate.getHours()).padStart(2, "0"),
+	      minute: String(safePlannedDate.getMinutes()).padStart(2, "0"),
+	      durationHours: "0",
+	      durationMinutes: "0",
+	    });
+	  };
+
 	  const getSchedulerActionLabel = (mode) => {
-	    if (mode === "edit_completed") return "Сохранить";
+	    if (mode === "edit_completed" || mode === "edit_planned") return "Сохранить";
 	    if (mode === "completed" || mode === "new_completed") return "Добавить выполненную";
 	    if (mode === "new_planned") return "Добавить запланированную";
 	    if (mode === "planned") return "Запланировать";
@@ -15553,7 +15845,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	  };
 
 	  const getSchedulerEyebrow = (mode) => {
-	    if (mode === "edit_completed") return "Редактирование";
+	    if (mode === "edit_completed" || mode === "edit_planned") return "Редактирование";
 	    if (mode === "completed" || mode === "new_completed") return "Выполненная";
 	    if (mode === "new_planned") return "Новая тренировка";
 	    return "План";
@@ -15740,10 +16032,46 @@ const toggleExerciseMeasurementSetting = (field) => {
 	    }
 	  };
 
+	  const updatePlannedWorkoutTimingFromScheduler = async (scheduler) => {
+	    const workout = scheduler?.workout;
+	    if (!workout) return;
+	    const startedAt = buildWorkoutDateTimeIso(scheduler.dateKey, scheduler.hour, scheduler.minute);
+	    const patchTiming = (item) => ({
+	      ...item,
+	      date: scheduler.dateKey,
+	      workout_date: scheduler.dateKey,
+	      status: "planned",
+	      durationMinutes: 0,
+	      duration_minutes: 0,
+	      duration_seconds: 0,
+	      calories: 0,
+	      estimatedCaloriesBurned: 0,
+	      estimated_calories_burned: 0,
+	      startedAt,
+	      started_at: startedAt,
+	      finishedAt: null,
+	      finished_at: null,
+	      updatedAt: new Date().toISOString(),
+	    });
+	    const nextWorkout = patchTiming(workout);
+	    setRepeatScheduler(null);
+	    setSelectedDateKey(scheduler.dateKey);
+	    patchWorkoutInState(workout.id, patchTiming);
+	    if (nextWorkout.supabaseId) {
+	      queueWorkoutPatch(nextWorkout.id, {
+	        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
+	      }, { immediate: true });
+	    }
+	  };
+
 	  const confirmRepeatScheduler = () => {
 	    if (!repeatScheduler) return;
 	    if (repeatScheduler.mode === "edit_completed") {
 	      updateCompletedWorkoutTimingFromScheduler(repeatScheduler);
+	      return;
+	    }
+	    if (repeatScheduler.mode === "edit_planned") {
+	      updatePlannedWorkoutTimingFromScheduler(repeatScheduler);
 	      return;
 	    }
 	    if (repeatScheduler.mode === "new_planned") {
@@ -17044,6 +17372,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 	            <button onClick={() => { setIsEditingWorkout(true); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Редактировать название</button>
 	            <button onClick={() => { setIsEditingWorkout(true); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Редактировать тренировку</button>
 	            {selectedWorkout.status === "completed" && <button type="button" onClick={() => openCompletedWorkoutTimingEditor(selectedWorkout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Изменить время и длительность</button>}
+	            {selectedWorkout.status === "planned" && <button type="button" onClick={() => openPlannedWorkoutTimingEditor(selectedWorkout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Перенести на другую дату</button>}
 	            <button onClick={() => setDetailMenuOpen(false)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Поделиться</button>
             {selectedWorkout.status === "active" && <button onClick={() => { finishActiveWorkout(); setDetailMenuOpen(false); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Завершить</button>}
             <button type="button" onClick={() => openDeleteSheet(selectedWorkout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
@@ -18738,10 +19067,11 @@ const toggleExerciseMeasurementSetting = (field) => {
             <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Скрыть неделю</button>
           </div>
         </> : <>
-          <h2 className="text-xl font-black tracking-[-0.03em]">{weekMenuGroup.workout.title}</h2>
+	          <h2 className="text-xl font-black tracking-[-0.03em]">{weekMenuGroup.workout.title}</h2>
 	          <div className="mt-5 space-y-2">
 	            <button onClick={() => openRepeatSheet(weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Повторить тренировку</button>
-	            {weekMenuGroup.workout.status === "completed" ? <button type="button" onClick={() => { setWeekMenuGroup(null); openCompletedWorkoutTimingEditor(weekMenuGroup.workout); }} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Изменить время и длительность</button> : <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Перенести на другую дату</button>}
+	            {weekMenuGroup.workout.status === "completed" && <button type="button" onClick={() => openCompletedWorkoutTimingEditor(weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Изменить время и длительность</button>}
+	            {weekMenuGroup.workout.status === "planned" && <button type="button" onClick={() => openPlannedWorkoutTimingEditor(weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Перенести на другую дату</button>}
 	            <button onClick={() => setWeekMenuGroup(null)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold hover:bg-white/8">Превратить в программу</button>
             <button type="button" onClick={() => openDeleteSheet(weekMenuGroup.workout)} className="w-full rounded-2xl px-4 py-4 text-left font-semibold text-red-400 hover:bg-red-500/10">Удалить</button>
           </div>
@@ -27407,6 +27737,7 @@ function OnlyPumpPlatform() {
     home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionDay={nutritionDay} nutritionMarkedDateKeys={nutritionMarkedDateKeys} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} personalTrackers={personalTrackers} setPersonalTrackers={setPersonalTrackers} profile={profile} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} profileSaving={profileSaving} pumpXpSummary={pumpXpSummary} onOpenPumpXpDetails={() => setPumpXpDetailsOpen(true)} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onOpenAnalytics={openAnalyticsType}/>,
     workouts: <WorkoutsPage workouts={workouts} setWorkouts={setWorkouts} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} profile={profile} telegramInitData={telegramInitData}/>,
     nutrition: <NutritionPage nutritionDay={nutritionDay} setNutritionDay={setNutritionDay} nutritionGoal={nutritionGoal} setNutritionGoal={setNutritionGoal} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} markedDateKeys={nutritionMarkedDateKeys} profile={profile} telegramInitData={telegramInitData} onNutritionAction={handleNutritionAction} nutritionLoading={nutritionRefreshing}/>,
+    recipes: <UnderConstructionPage title="Рецепты" subtitle="Думаю, как тут все расположить"/>,
     students: <StudentsPage profile={profile} telegramInitData={telegramInitData}/>,
     calculators: <CalculatorsPage/>,
     education: <EducationPage/>,
@@ -27450,7 +27781,7 @@ function OnlyPumpPlatform() {
     <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_5%,rgba(239,68,68,0.13),transparent_30%),radial-gradient(circle_at_30%_35%,rgba(255,255,255,0.05),transparent_30%)]"/>
     <div className="onlypump-app-frame relative mx-auto flex max-w-[1720px] rounded-3xl border border-white/10 bg-black/70">
       <DesktopSidebar active={active} setActive={setActive} profile={profile}/>
-      <main className="onlypump-main-scroll min-w-0 w-full px-4 md:px-8 lg:px-12">{page}</main>
+      <main className={`onlypump-main-scroll min-w-0 w-full px-4 md:px-8 lg:px-12 ${active !== "workouts" ? "onlypump-main-scroll-with-secondary-nav" : ""}`}>{page}</main>
       <MobilePreview active={active}/>
     </div>
 	    <PumpXpToast key={pumpXpToast?.id || "pump-xp-toast"} toast={pumpXpToast} pumpXp={pumpXpSummary} onClose={() => setPumpXpToast(null)} onOpen={() => setPumpXpDetailsOpen(true)}/>
@@ -27458,6 +27789,7 @@ function OnlyPumpPlatform() {
 	    {pumpXpDetailsOpen && <PumpXpDetailSheet pumpXp={pumpXpSummary} onClose={() => setPumpXpDetailsOpen(false)}/>}
 	    {profileWelcomeOpen && <ProfileWelcomeSheet profile={profile || DEFAULT_PROFILE} pumpXp={pumpXpSummary} onClose={closeProfileWelcome} onStartTour={() => startInteractiveTour("home", { force: true, full: true })}/>}
 	    {tourState.active && <InteractiveTourOverlay step={activeTourStep} stepIndex={tourState.stepIndex} totalSteps={activeTourSteps.length} onNext={nextTourStep} onSkip={skipTour} onTargetAction={handleTourTargetAction}/>}
+	    <MobileSecondaryNavBar active={active} setActive={setActive}/>
 	    <FloatingNavMenu active={active} setActive={setActive} profile={profile} onOpenAnalytics={openAnalyticsType}/>
 	  </div>;
 }
