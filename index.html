@@ -5955,6 +5955,21 @@ const writeCachedAnalyticsForProfile = (profile, type, metric, period, selectedD
   }
 };
 
+const clearCachedAnalyticsForProfile = (profile) => {
+  try {
+    const telegramId = profile?.telegram_id || profile?.telegramId || profile?.id || "local";
+    const prefix = `onlypump_analytics_cache_${telegramId}_`;
+    const keysToRemove = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (key && key.startsWith(prefix)) keysToRemove.push(key);
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+  } catch (error) {
+    console.log("Analytics cache error", error);
+  }
+};
+
 const normalizeAnalyticsRemotePayload = (data = {}) => ({
   measurements: Array.isArray(data.measurements) ? data.measurements : [],
   health_logs: Array.isArray(data.health_logs) ? data.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : [],
@@ -21400,6 +21415,94 @@ const analyticsTypeConfigs = {
   training_load: { title: "Тренировочная нагрузка", source: "training", metrics: trainingAnalyticsMetrics, defaultMetric: "sets" },
 };
 
+const mobileAnalyticsTabs = [
+  { id: "weight", label: "Вес", title: "Экран веса" },
+  { id: "bodyFat", label: "% жира", title: "Экран процента жира" },
+  { id: "measurements", label: "Замеры", title: "Экран замеров" },
+  { id: "photo", label: "Фото", title: "Экран фотоотчета" },
+];
+
+const mobileAnalyticsIntentTabs = {
+  mobile_weight: "weight",
+  mobile_body_fat: "bodyFat",
+  mobile_measurements: "measurements",
+  mobile_photo_report: "photo",
+};
+
+const mobileMeasurementFields = progressMeasurementFields.filter(item => !["weight", "bodyFat", "neck", "waist"].includes(item.field));
+const mobilePhotoAngles = [
+  { id: "front", label: "Спереди", shoulderClass: "w-16", bodyClass: "w-8" },
+  { id: "side", label: "Сбоку", shoulderClass: "w-8", bodyClass: "w-4" },
+  { id: "back", label: "Сзади", shoulderClass: "w-16", bodyClass: "w-9" },
+];
+const mobileAnalyticsInfoContent = {
+  weight: {
+    title: "Зачем взвешиваться чаще?",
+    body: [
+      "На вес влияет много факторов: соль, поздний ужин, вода, тренировка, стресс, фаза цикла и заполненность ЖКТ. Поэтому один замер может показывать случайный скачок, а не реальный прогресс.",
+      "Лучше смотреть средний или медианный вес по нескольким измерениям: так разовые колебания сглаживаются, а тренд становится точнее.",
+    ],
+    footer: "Оптимально: каждый день для лучшей точности или минимум 3 раза в неделю.",
+  },
+  bodyFat: {
+    title: "Зачем считать процент жира?",
+    body: [
+      "Процент жира помогает оценивать изменения состава тела, а не только изменение веса. Вес сам по себе не показывает, что именно меняется: жир, мышцы, вода или гликоген.",
+      "Расчет по весу, шее и талии не является медицинской диагностикой, но помогает отслеживать динамику. Важно смотреть не на одно число, а на тренд вместе с весом, замерами и фото.",
+    ],
+    footer: "Оптимально: обновлять вместе с замерами раз в 7 дней.",
+  },
+  bodyFatWeight: {
+    title: "Зачем нужен вес?",
+    body: [
+      "Вес используется как один из параметров расчета процента жира. Если вес уже заполнен в профиле или последнем взвешивании, поле должно подтягиваться автоматически.",
+      "Разовый вес может колебаться, поэтому для анализа важнее не отдельное значение, а динамика.",
+    ],
+    footer: "Оптимально: использовать актуальный средний вес.",
+  },
+  neck: {
+    title: "Зачем измерять шею?",
+    body: [
+      "Окружность шеи используется в расчетах процента жира как один из контрольных параметров. Измерение должно выполняться в одинаковых условиях и в одном и том же месте.",
+    ],
+    footer: "Оптимально: раз в 7 дней.",
+  },
+  waist: {
+    title: "Зачем измерять талию?",
+    body: [
+      "Окружность талии — один из самых полезных параметров для оценки прогресса. Она помогает видеть изменения, которые не всегда заметны по весу.",
+      "Например, вес может стоять на месте, но талия уменьшаться — это уже признак положительных изменений состава тела.",
+    ],
+    footer: "Оптимально: раз в 7 дней.",
+  },
+  measurements: {
+    title: "Зачем делать замеры?",
+    body: [
+      "Чтобы оценивать прогресс полноценно, лучше смотреть не только на вес, а на комбинацию объективных параметров: вес, процент жира, окружность талии и другие замеры.",
+      "Вес отдельно не учитывает рост или потерю мышечной массы. Дополнительные замеры помогают видеть картину шире и отслеживать изменения тела по зонам.",
+    ],
+    footer: "Оптимально: раз в 7 дней.",
+  },
+  measurement: {
+    title: "Зачем отслеживать этот замер?",
+    body: [
+      "Дополнительные замеры не показывают процент жира напрямую, но помогают видеть локальные изменения тела. Они полезны для понимания прогресса, особенно когда вес меняется медленно или временно стоит на месте.",
+      "Важно измерять в одинаковых условиях: в одно и то же время суток, одной и той же лентой и в одной и той же точке.",
+    ],
+    footer: "Оптимально: раз в 7 дней.",
+  },
+  photo: {
+    title: "Зачем делать фото?",
+    body: [
+      "Фотоотчет помогает увидеть визуальные изменения, которые не всегда понятны по весу и цифрам. Тело может выглядеть лучше даже при небольших изменениях веса.",
+      "Чтобы сравнение было честным, условия должны быть одинаковыми: локация, фон, освещение, белье/одежда, ракурс, поза и расстояние до камеры.",
+    ],
+    footer: "Оптимально: раз в 14 дней.",
+  },
+};
+const isMobileAnalyticsIntentType = (type = "") => Boolean(mobileAnalyticsIntentTabs[type]);
+const normalizeMobileAnalyticsTab = (tab = "weight") => mobileAnalyticsTabs.some(item => item.id === tab) ? tab : "weight";
+
 const analyticsMainPeriods = [
   { id: "day", label: "за день" },
   { id: "week", label: "за неделю" },
@@ -21690,7 +21793,20 @@ const healthLogHasValue = (log = {}, key) => {
 };
 const nutritionCaloriesValue = (day = {}) => safeWorkoutModelNumber(day?.totals?.calories ?? day?.calories_total ?? day?.caloriesTotal ?? day?.calories, 0);
 const nutritionDayHasAnalyticsData = (day = {}) => nutritionCaloriesValue(day) > 0 || nutritionDayHasFood(day);
-const measurementDateKey = (item = {}) => String(item.measurement_date || item.date || "").slice(0, 10);
+const measurementDateKey = (item = {}) => {
+  const source = item || {};
+  return String(source.measurement_date || source.date || "").slice(0, 10);
+};
+const mergeAnalyticsMeasurementRows = (rows = [], overlay = null) => {
+  const overlayKey = measurementDateKey(overlay);
+  const baseRows = Array.isArray(rows) ? rows : [];
+  if (!overlayKey) return baseRows;
+  const previous = baseRows.find(item => measurementDateKey(item) === overlayKey) || {};
+  return [
+    ...baseRows.filter(item => measurementDateKey(item) !== overlayKey),
+    { ...previous, ...overlay, measurement_date: overlayKey, date: overlayKey },
+  ].sort((a, b) => measurementDateKey(a).localeCompare(measurementDateKey(b)));
+};
 
 const averageDefined = (items = [], getter = item => item) => {
   const values = items.map(getter).map(Number).filter(value => Number.isFinite(value) && value > 0);
@@ -22112,7 +22228,7 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
   </div>;
 }
 
-function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutritionDays = [], workouts, selectedDateKey, initialMetric = "", profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", onClose, onOpenEditor }) {
+function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutritionDays = [], workouts, selectedDateKey, initialMetric = "", profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", measurementOverlay = null, onClose, onOpenEditor }) {
   const typeConfig = analyticsTypeConfigs[type] || analyticsTypeConfigs.measurements;
   const usePalmNutritionDetail = typeConfig.source === "nutrition" && profileUsesPalmNutrition(profile);
   const metricOptions = usePalmNutritionDetail
@@ -22128,7 +22244,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
   const [loadError, setLoadError] = useState("");
   const metricConfig = metricOptions.find(item => item.key === metric) || metricOptions[0];
   const canLoadRemote = typeConfig.source !== "training" && profileStatus === "verified" && Boolean(hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id);
-  const sourceMeasurements = remoteData.measurements.length ? remoteData.measurements : measurements;
+  const sourceMeasurements = mergeAnalyticsMeasurementRows(remoteData.measurements.length ? remoteData.measurements : measurements, measurementOverlay);
   const sourceHealthLogs = remoteData.health_logs.length ? remoteData.health_logs : healthLogs;
   const sourceNutritionDays = remoteData.nutrition_days.length ? remoteData.nutrition_days : nutritionDays;
   const allPoints = typeConfig.source === "training"
@@ -22237,12 +22353,543 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
   </div>;
 }
 
-function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements, nutritionDay, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], personalTrackers = [], healthSaving = false, healthRefreshing = false, profileSaving = false, selectedDateKey = formatDateKey(new Date()), setSelectedDateKey = () => {}, telegramInitData = "", profileStatus = "local", analyticsIntent = null, onSaveHealthLog, onSaveWeightMeasurement, onSaveAnalyticsCardSettings, onOpenNutrition, onOpenProgress }) {
+function MobileAnalyticsScreen({ initialTab = "weight", onClose, profile = DEFAULT_PROFILE, measurements = {}, latestMeasurement = {}, selectedDateKey = formatDateKey(new Date()), saving = false, onSaveWeightMeasurement }) {
+  const [activeTab, setActiveTab] = useState(() => normalizeMobileAnalyticsTab(initialTab));
+  const [mascotFailed, setMascotFailed] = useState(false);
+  const readMobileMeasurementValue = useCallback((candidates = [], fallback = "") => {
+    for (const candidate of candidates) {
+      const value = profileNumber(candidate, null);
+      if (value) return value;
+    }
+    return fallback;
+  }, []);
+  const initialWeight = useMemo(() => {
+    return readMobileMeasurementValue([
+      latestMeasurement?.weight_kg,
+      latestMeasurement?.weight,
+      measurements?.weight,
+      profile?.weight_kg,
+    ], null);
+  }, [latestMeasurement?.weight_kg, latestMeasurement?.weight, measurements?.weight, profile?.weight_kg, readMobileMeasurementValue]);
+  const initialNeck = useMemo(() => {
+    return readMobileMeasurementValue([
+      latestMeasurement?.neck_cm,
+      latestMeasurement?.neck,
+      measurements?.neck,
+      profile?.neck_cm,
+    ], "");
+  }, [latestMeasurement?.neck_cm, latestMeasurement?.neck, measurements?.neck, profile?.neck_cm, readMobileMeasurementValue]);
+  const initialWaist = useMemo(() => {
+    return readMobileMeasurementValue([
+      latestMeasurement?.waist_cm,
+      latestMeasurement?.waist,
+      measurements?.waist,
+      profile?.waist_cm,
+    ], "");
+  }, [latestMeasurement?.waist_cm, latestMeasurement?.waist, measurements?.waist, profile?.waist_cm, readMobileMeasurementValue]);
+  const initialMeasurementsDraft = useMemo(() => mobileMeasurementFields.reduce((draft, item) => {
+    draft[item.db] = readMobileMeasurementValue([
+      latestMeasurement?.[item.db],
+      latestMeasurement?.[item.field],
+      measurements?.[item.field],
+      profile?.[item.db],
+    ], "");
+    return draft;
+  }, {}), [latestMeasurement, measurements, profile, readMobileMeasurementValue]);
+  const initialMeasurementsDraftKey = JSON.stringify(initialMeasurementsDraft);
+  const [weightDraft, setWeightDraft] = useState(() => initialWeight || 70);
+  const [bodyFatDraft, setBodyFatDraft] = useState(() => ({
+    weight_kg: initialWeight || "",
+    neck_cm: initialNeck || "",
+    waist_cm: initialWaist || "",
+  }));
+  const [measurementsDraft, setMeasurementsDraft] = useState(() => initialMeasurementsDraft);
+  const [weightSaveError, setWeightSaveError] = useState("");
+  const [bodyFatSaveError, setBodyFatSaveError] = useState("");
+  const [measurementSaveError, setMeasurementSaveError] = useState("");
+  const [savedWeightDraft, setSavedWeightDraft] = useState(() => initialWeight || 70);
+  const [savedBodyFatDraft, setSavedBodyFatDraft] = useState(() => ({
+    weight_kg: initialWeight || "",
+    neck_cm: initialNeck || "",
+    waist_cm: initialWaist || "",
+  }));
+  const [savedMeasurementsDraft, setSavedMeasurementsDraft] = useState(() => initialMeasurementsDraft);
+  const [infoSheetKey, setInfoSheetKey] = useState("");
+  const [unsavedWarningOpen, setUnsavedWarningOpen] = useState(false);
+  const [pendingMobileAction, setPendingMobileAction] = useState(null);
+  const activeConfig = mobileAnalyticsTabs.find(item => item.id === activeTab) || mobileAnalyticsTabs[0];
+
+  useEffect(() => {
+    setActiveTab(normalizeMobileAnalyticsTab(initialTab));
+  }, [initialTab]);
+
+  useEffect(() => {
+    setWeightDraft(initialWeight || 70);
+    setSavedWeightDraft(initialWeight || 70);
+    setWeightSaveError("");
+  }, [initialWeight]);
+
+  useEffect(() => {
+    const nextDraft = {
+      weight_kg: initialWeight || "",
+      neck_cm: initialNeck || "",
+      waist_cm: initialWaist || "",
+    };
+    setBodyFatDraft(nextDraft);
+    setSavedBodyFatDraft(nextDraft);
+    setBodyFatSaveError("");
+  }, [initialWeight, initialNeck, initialWaist]);
+
+  useEffect(() => {
+    setMeasurementsDraft(initialMeasurementsDraft);
+    setSavedMeasurementsDraft(initialMeasurementsDraft);
+    setMeasurementSaveError("");
+  }, [initialMeasurementsDraftKey]);
+
+  const mobileFieldChanged = (current, saved, key) => profileNumber(current?.[key], 0) !== profileNumber(saved?.[key], 0);
+  const hasWeightDraftChanges = () => profileNumber(weightDraft, 0) !== profileNumber(savedWeightDraft, 0);
+  const hasBodyFatDraftChanges = () => ["weight_kg", "neck_cm", "waist_cm"].some(key => mobileFieldChanged(bodyFatDraft, savedBodyFatDraft, key));
+  const hasMeasurementsDraftChanges = () => mobileMeasurementFields.some(item => mobileFieldChanged(measurementsDraft, savedMeasurementsDraft, item.db));
+  const hasActiveTabChanges = () => {
+    if (activeTab === "weight") return hasWeightDraftChanges();
+    if (activeTab === "bodyFat") return hasBodyFatDraftChanges();
+    if (activeTab === "measurements") return hasMeasurementsDraftChanges();
+    return false;
+  };
+
+  const resetActiveTabDraft = () => {
+    if (activeTab === "weight") {
+      setWeightDraft(savedWeightDraft);
+      setBodyFatDraft(prev => ({ ...prev, weight_kg: savedWeightDraft || "" }));
+      setWeightSaveError("");
+    } else if (activeTab === "bodyFat") {
+      setBodyFatDraft(savedBodyFatDraft);
+      setWeightDraft(profileNumber(savedBodyFatDraft.weight_kg, 0) || savedWeightDraft || 70);
+      setBodyFatSaveError("");
+    } else if (activeTab === "measurements") {
+      setMeasurementsDraft(savedMeasurementsDraft);
+      setMeasurementSaveError("");
+    }
+  };
+
+  const performMobileAction = (action) => {
+    if (!action) return;
+    if (action.type === "tab") setActiveTab(action.tabId);
+    if (action.type === "close") onClose?.();
+  };
+
+  const requestMobileAction = (action) => {
+    if (action?.type === "tab" && action.tabId === activeTab) return;
+    if (hasActiveTabChanges()) {
+      setPendingMobileAction(action);
+      setUnsavedWarningOpen(true);
+      return;
+    }
+    performMobileAction(action);
+  };
+
+  const saveWeight = async () => {
+    const nextWeight = profileNumber(weightDraft, 0);
+    if (!nextWeight) {
+      setWeightSaveError("Укажи вес.");
+      return false;
+    }
+    setWeightSaveError("");
+    const ok = await onSaveWeightMeasurement?.({
+      date: selectedDateKey,
+      measurement_date: selectedDateKey,
+      weight_kg: nextWeight,
+    });
+    if (ok === false) {
+      setWeightSaveError("Не удалось сохранить вес. Попробуй еще раз.");
+      return false;
+    }
+    setSavedWeightDraft(nextWeight);
+    setSavedBodyFatDraft(prev => ({ ...prev, weight_kg: nextWeight }));
+    setBodyFatDraft(prev => ({ ...prev, weight_kg: nextWeight }));
+    return true;
+  };
+
+  const bodyFatCalculationDraft = {
+    ...(profile || DEFAULT_PROFILE),
+    height_cm: latestMeasurement?.height_cm || profile?.height_cm,
+    weight_kg: bodyFatDraft.weight_kg,
+    neck_cm: bodyFatDraft.neck_cm,
+    waist_cm: bodyFatDraft.waist_cm,
+  };
+  const calculatedBodyFat = calculateProfileBodyFat(bodyFatCalculationDraft);
+
+  const updateBodyFatDraft = (key, value) => {
+    setBodyFatDraft(prev => ({ ...prev, [key]: value }));
+    if (key === "weight_kg") {
+      const syncedWeight = profileNumber(value, 0);
+      if (syncedWeight) setWeightDraft(syncedWeight);
+    }
+    setBodyFatSaveError("");
+  };
+
+  const saveBodyFat = async () => {
+    const nextWeight = profileNumber(bodyFatDraft.weight_kg, 0);
+    const nextNeck = profileNumber(bodyFatDraft.neck_cm, 0);
+    const nextWaist = profileNumber(bodyFatDraft.waist_cm, 0);
+    if (!nextWeight || !nextNeck || !nextWaist) {
+      setBodyFatSaveError("Заполни вес, шею и талию.");
+      return false;
+    }
+    const payload = {
+      date: selectedDateKey,
+      measurement_date: selectedDateKey,
+      weight_kg: nextWeight,
+      neck_cm: nextNeck,
+      waist_cm: nextWaist,
+    };
+    if (calculatedBodyFat !== null) payload.body_fat_percent = calculatedBodyFat;
+    setBodyFatSaveError("");
+    const ok = await onSaveWeightMeasurement?.(payload);
+    if (ok === false) {
+      setBodyFatSaveError("Не удалось сохранить замер. Попробуй еще раз.");
+      return false;
+    }
+    const nextDraft = { weight_kg: nextWeight, neck_cm: nextNeck, waist_cm: nextWaist };
+    setSavedBodyFatDraft(nextDraft);
+    setSavedWeightDraft(nextWeight);
+    setWeightDraft(nextWeight);
+    return true;
+  };
+
+  const updateMeasurementDraft = (key, value) => {
+    setMeasurementsDraft(prev => ({ ...prev, [key]: value }));
+    setMeasurementSaveError("");
+  };
+
+  const saveMeasurements = async () => {
+    const payload = {
+      date: selectedDateKey,
+      measurement_date: selectedDateKey,
+    };
+    mobileMeasurementFields.forEach(item => {
+      const value = profileNumber(measurementsDraft[item.db], 0);
+      if (value) payload[item.db] = value;
+    });
+    if (!mobileMeasurementFields.some(item => profileNumber(measurementsDraft[item.db], 0))) {
+      setMeasurementSaveError("Заполни хотя бы один замер.");
+      return false;
+    }
+    setMeasurementSaveError("");
+    const ok = await onSaveWeightMeasurement?.(payload);
+    if (ok === false) {
+      setMeasurementSaveError("Не удалось сохранить замеры. Попробуй еще раз.");
+      return false;
+    }
+    setSavedMeasurementsDraft({ ...measurementsDraft });
+    return true;
+  };
+
+  const savePhotoReport = () => true;
+
+  const saveActiveTab = async () => {
+    if (activeTab === "weight") return saveWeight();
+    if (activeTab === "bodyFat") return saveBodyFat();
+    if (activeTab === "measurements") return saveMeasurements();
+    if (activeTab === "photo") return savePhotoReport();
+    return true;
+  };
+
+  const discardAndContinue = () => {
+    const action = pendingMobileAction;
+    resetActiveTabDraft();
+    setUnsavedWarningOpen(false);
+    setPendingMobileAction(null);
+    performMobileAction(action);
+  };
+
+  const saveAndContinue = async () => {
+    const action = pendingMobileAction;
+    const ok = await saveActiveTab();
+    if (!ok) {
+      setUnsavedWarningOpen(false);
+      setPendingMobileAction(null);
+      return;
+    }
+    setUnsavedWarningOpen(false);
+    setPendingMobileAction(null);
+    performMobileAction(action);
+  };
+
+  const infoButton = (key, label = "") => <button
+    type="button"
+    onClick={(event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setInfoSheetKey(key);
+    }}
+    className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)] text-[9px] font-black leading-none text-[var(--onlypump-text)] transition active:scale-95"
+    aria-label={label ? `Информация: ${label}` : "Информация"}
+  >
+    i
+  </button>;
+
+  const renderFooterText = (text = "") => {
+    const [prefix, ...rest] = String(text).split(":");
+    if (!rest.length) return text;
+    return <><b>{prefix}:</b>{rest.join(":")}</>;
+  };
+  const activeInfoSheet = mobileAnalyticsInfoContent[infoSheetKey];
+
+  const bodyFatField = ({ keyName, label, unit, infoKey }) => <label key={keyName} className="block rounded-[24px] border border-[var(--onlypump-border)] bg-[var(--onlypump-input)] p-4">
+    <span className="flex items-center justify-between gap-2">
+      <span className="text-xs font-black uppercase tracking-[0.16em] text-[var(--onlypump-muted)]">{label}</span>
+      {infoButton(infoKey, label)}
+    </span>
+    <div className="mt-3 flex items-end gap-2">
+      <input
+        type="number"
+        min="0"
+        step="0.1"
+        inputMode="decimal"
+        value={bodyFatDraft[keyName] ?? ""}
+        onChange={(event) => updateBodyFatDraft(keyName, event.target.value)}
+        placeholder="0"
+        className="min-w-0 flex-1 bg-transparent text-3xl font-black text-[var(--onlypump-text)] outline-none placeholder:text-[var(--onlypump-faint)]"
+      />
+      <span className="pb-1 text-sm font-black text-[var(--onlypump-muted)]">{unit}</span>
+    </div>
+  </label>;
+
+  const renderWeightTab = () => <Card className="flex min-h-[420px] flex-col border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-5 text-[var(--onlypump-text)]">
+    <div className="flex items-start justify-between gap-3">
+      <span aria-hidden="true" className="h-9 w-9 shrink-0"/>
+      <div className="flex flex-1 justify-center">
+        {!mascotFailed ? <img
+          src="./assets/mascot/loader-think.gif"
+          alt=""
+          className="h-28 w-28 object-contain"
+          onError={() => setMascotFailed(true)}
+        /> : <div aria-hidden="true" className="h-28 w-28 rounded-full bg-white/[0.06]"/>}
+      </div>
+      {infoButton("weight", "Вес")}
+    </div>
+    <div className="mt-5">
+      <QuizHorizontalRuler
+        label="Вес"
+        value={weightDraft}
+        onChange={(value) => {
+          setWeightDraft(value);
+          setBodyFatDraft(prev => ({ ...prev, weight_kg: value }));
+          setWeightSaveError("");
+        }}
+        min={35}
+        max={200}
+        fallback={initialWeight || 70}
+        unit="кг"
+        step={0.1}
+      />
+    </div>
+    {weightSaveError && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{weightSaveError}</p>}
+  </Card>;
+
+  const renderBodyFatTab = () => <Card className="flex min-h-[520px] flex-col border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-5 text-[var(--onlypump-text)]">
+    <div className="flex items-start justify-between gap-3">
+      <span aria-hidden="true" className="h-9 w-9 shrink-0"/>
+      <div className="flex flex-1 justify-center">
+        {!mascotFailed ? <img
+          src="./assets/mascot/loader-think.gif"
+          alt=""
+          className="h-28 w-28 object-contain"
+          onError={() => setMascotFailed(true)}
+        /> : <div aria-hidden="true" className="h-28 w-28 rounded-full bg-white/[0.06]"/>}
+      </div>
+      {infoButton("bodyFat", "Процент жира")}
+    </div>
+    <div className="mt-5 grid gap-3">
+      {bodyFatField({ keyName: "weight_kg", label: "Вес", unit: "кг", infoKey: "bodyFatWeight" })}
+      {bodyFatField({ keyName: "neck_cm", label: "Шея", unit: "см", infoKey: "neck" })}
+      {bodyFatField({ keyName: "waist_cm", label: "Талия", unit: "см", infoKey: "waist" })}
+    </div>
+    <div className="mt-auto pt-6 text-center">
+      <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--onlypump-muted)]">% жира</p>
+      <div className="mt-2 text-6xl font-black leading-none tracking-[-0.06em] text-red-500">{calculatedBodyFat === null ? "—%" : `${calculatedBodyFat}%`}</div>
+    </div>
+    {bodyFatSaveError && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{bodyFatSaveError}</p>}
+  </Card>;
+
+  const measurementField = (item) => <label key={item.db} className="block rounded-[22px] border border-[var(--onlypump-border)] bg-[var(--onlypump-input)] p-3">
+    <span className="flex items-center justify-between gap-2">
+      <span className="block truncate text-[10px] font-black uppercase tracking-[0.14em] text-[var(--onlypump-muted)]">{item.label}</span>
+      {infoButton("measurement", item.label)}
+    </span>
+    <div className="mt-2 flex items-end gap-2">
+      <input
+        type="number"
+        min="0"
+        step="0.1"
+        inputMode="decimal"
+        value={measurementsDraft[item.db] ?? ""}
+        onChange={(event) => updateMeasurementDraft(item.db, event.target.value)}
+        placeholder="0"
+        className="min-w-0 flex-1 bg-transparent text-2xl font-black text-[var(--onlypump-text)] outline-none placeholder:text-[var(--onlypump-faint)]"
+      />
+      <span className="pb-1 text-xs font-black text-[var(--onlypump-muted)]">{item.unit}</span>
+    </div>
+  </label>;
+
+  const renderMeasurementsTab = () => <Card className="flex min-h-[520px] flex-col border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-5 text-[var(--onlypump-text)]">
+    <div className="flex items-start justify-between gap-3">
+      <span aria-hidden="true" className="h-9 w-9 shrink-0"/>
+      <div className="flex flex-1 justify-center">
+        {!mascotFailed ? <img
+          src="./assets/mascot/loader-think.gif"
+          alt=""
+          className="h-28 w-28 object-contain"
+          onError={() => setMascotFailed(true)}
+        /> : <div aria-hidden="true" className="h-28 w-28 rounded-full bg-white/[0.06]"/>}
+      </div>
+      {infoButton("measurements", "Замеры")}
+    </div>
+    <div className="mt-5 grid grid-cols-2 gap-3">
+      {mobileMeasurementFields.map(measurementField)}
+    </div>
+    {measurementSaveError && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{measurementSaveError}</p>}
+  </Card>;
+
+  const photoPlaceholder = (item) => <div key={item.id} className="flex min-h-[154px] flex-col rounded-[24px] border border-dashed border-[var(--onlypump-border)] bg-[var(--onlypump-input)] p-3">
+    <div className="flex flex-1 items-center justify-center rounded-[20px] bg-[var(--onlypump-soft)]">
+      <div className="flex flex-col items-center">
+        <span className="h-9 w-9 rounded-full border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)]"/>
+        <span className={`mt-2 h-4 rounded-full border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] ${item.shoulderClass}`}/>
+        <span className={`mt-1 h-16 rounded-[999px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] ${item.bodyClass}`}/>
+      </div>
+    </div>
+    <span className="mt-3 text-center text-xs font-black uppercase tracking-[0.14em] text-[var(--onlypump-muted)]">{item.label}</span>
+  </div>;
+
+  const renderPhotoTab = () => <Card className="flex min-h-[520px] flex-col border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-5 text-[var(--onlypump-text)]">
+    <div className="flex items-start justify-between gap-3">
+      <span aria-hidden="true" className="h-9 w-9 shrink-0"/>
+      <div className="flex flex-1 justify-center">
+        {!mascotFailed ? <img
+          src="./assets/mascot/loader-think.gif"
+          alt=""
+          className="h-28 w-28 object-contain"
+          onError={() => setMascotFailed(true)}
+        /> : <div aria-hidden="true" className="h-28 w-28 rounded-full bg-white/[0.06]"/>}
+      </div>
+      {infoButton("photo", "Фото")}
+    </div>
+    <div className="mt-5 grid grid-cols-3 gap-3">
+      {mobilePhotoAngles.map(photoPlaceholder)}
+    </div>
+  </Card>;
+
+  const renderPlaceholderTab = () => <Card className="flex min-h-[280px] flex-col p-5">
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-red-400">{activeConfig.label}</p>
+        <h2 className="mt-3 text-2xl font-black tracking-[-0.04em]">{activeConfig.title}</h2>
+      </div>
+    </div>
+    <div className="mt-6 flex min-h-[140px] flex-1 items-center justify-center rounded-[24px] border border-dashed border-white/12 bg-white/[0.03]">
+      <p className="text-center text-lg font-black text-zinc-500">{activeConfig.title}</p>
+    </div>
+  </Card>;
+
+  return <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col pb-2">
+    <div className="mb-5 flex items-center justify-between gap-3">
+      <button type="button" onClick={() => requestMobileAction({ type: "close" })} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--onlypump-soft)] text-[var(--onlypump-text)] transition active:scale-95" aria-label="Назад в аналитику">
+        <ArrowLeft size={20}/>
+      </button>
+      <h1 className="min-w-0 flex-1 text-center text-xl font-black tracking-[-0.03em] text-[var(--onlypump-text)]">Аналитика</h1>
+      <button type="button" onClick={() => requestMobileAction({ type: "close" })} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--onlypump-soft)] text-[var(--onlypump-text)] transition active:scale-95" aria-label="Закрыть">
+        ×
+      </button>
+    </div>
+
+    <div className="rounded-[26px] border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)] p-1">
+      <div className="grid grid-cols-4 gap-1">
+        {mobileAnalyticsTabs.map(tab => {
+          const active = activeTab === tab.id;
+          return <button
+            key={tab.id}
+            type="button"
+            onClick={() => requestMobileAction({ type: "tab", tabId: tab.id })}
+            className={`min-h-11 rounded-[22px] px-2 text-xs font-black transition ${active ? "bg-red-500 text-black" : "text-[var(--onlypump-muted)] active:bg-white/[0.08]"}`}
+          >
+            {tab.label}
+          </button>;
+        })}
+      </div>
+    </div>
+
+    <div className="mt-5 grid flex-1 gap-4">
+      {activeTab === "weight" ? renderWeightTab() : activeTab === "bodyFat" ? renderBodyFatTab() : activeTab === "measurements" ? renderMeasurementsTab() : activeTab === "photo" ? renderPhotoTab() : renderPlaceholderTab()}
+    </div>
+
+    <div className="mt-5 rounded-[26px] border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)] p-2">
+      {activeTab === "weight"
+        ? <Button type="button" onClick={saveWeight} disabled={saving} className="h-14 w-full rounded-[22px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+        : activeTab === "bodyFat"
+        ? <Button type="button" onClick={saveBodyFat} disabled={saving} className="h-14 w-full rounded-[22px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+        : activeTab === "measurements"
+        ? <Button type="button" onClick={saveMeasurements} disabled={saving} className="h-14 w-full rounded-[22px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+        : activeTab === "photo"
+        ? <Button type="button" onClick={savePhotoReport} className="h-14 w-full rounded-[22px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black">Сохранить</Button>
+        : <div aria-hidden="true" className="h-14"/>}
+    </div>
+
+    {activeInfoSheet && <div className="fixed inset-0 z-[240] flex items-end justify-center bg-black/70 px-3 pt-10 backdrop-blur-sm" onClick={() => setInfoSheetKey("")}>
+      <div className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-[34px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] text-[var(--onlypump-text)] shadow-2xl shadow-black/50" onClick={(event) => event.stopPropagation()}>
+        <div className="sticky top-0 z-10 border-b border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-5 pb-3 pt-3">
+          <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-[var(--onlypump-border)]"/>
+          <div className="flex items-center justify-between gap-3">
+            <span aria-hidden="true" className="h-10 w-10 shrink-0"/>
+            <h2 className="min-w-0 flex-1 text-center text-lg font-black tracking-[-0.03em]">Информация</h2>
+            <button type="button" onClick={() => setInfoSheetKey("")} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--onlypump-soft)] text-[var(--onlypump-text)]" aria-label="Закрыть информацию">×</button>
+          </div>
+        </div>
+        <div className="px-5 pb-5 pt-5">
+          <div className="flex min-h-[150px] items-center justify-center rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)]">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] text-3xl font-black text-red-500">i</div>
+          </div>
+          <h3 className="mt-6 text-2xl font-black leading-tight tracking-[-0.04em]">{activeInfoSheet.title}</h3>
+          <div className="mt-4 space-y-4 text-base font-semibold leading-7 text-[var(--onlypump-muted)]">
+            {activeInfoSheet.body.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+          </div>
+          <div className="my-5 h-px bg-[var(--onlypump-border)]"/>
+          <p className="rounded-[22px] bg-[var(--onlypump-soft)] p-4 text-sm font-semibold leading-6 text-[var(--onlypump-text)]">{renderFooterText(activeInfoSheet.footer)}</p>
+        </div>
+        <div className="sticky bottom-0 border-t border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-4">
+          <Button type="button" onClick={() => setInfoSheetKey("")} className="h-14 w-full rounded-[22px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black">Понятно!</Button>
+        </div>
+      </div>
+    </div>}
+
+    {unsavedWarningOpen && <div className="fixed inset-0 z-[245] flex items-end justify-center bg-black/70 px-3 pt-10 backdrop-blur-sm" onClick={() => setUnsavedWarningOpen(false)}>
+      <div className="w-full max-w-xl rounded-t-[34px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-5 text-[var(--onlypump-text)] shadow-2xl shadow-black/50" onClick={(event) => event.stopPropagation()}>
+        <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-[var(--onlypump-border)]"/>
+        <div className="flex items-center justify-between gap-3">
+          <span aria-hidden="true" className="h-10 w-10 shrink-0"/>
+          <h2 className="min-w-0 flex-1 text-center text-lg font-black tracking-[-0.03em]">Есть несохраненные изменения</h2>
+          <button type="button" onClick={() => setUnsavedWarningOpen(false)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--onlypump-soft)] text-[var(--onlypump-text)]" aria-label="Закрыть предупреждение">×</button>
+        </div>
+        <div className="mt-5 rounded-[26px] border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)] p-5">
+          <p className="text-base font-semibold leading-7 text-[var(--onlypump-muted)]">Ты изменил данные на этой вкладке. Можно выйти без сохранения или сохранить изменения и продолжить.</p>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <Button type="button" onClick={discardAndContinue} className="h-14 rounded-[22px] border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)] text-sm font-black text-[var(--onlypump-text)]">Хочу выйти</Button>
+          <Button type="button" onClick={saveAndContinue} disabled={saving} className="h-14 rounded-[22px] bg-gradient-to-r from-red-700 to-red-500 text-sm font-black text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
+function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements, nutritionDay, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], personalTrackers = [], healthSaving = false, healthRefreshing = false, profileSaving = false, selectedDateKey = formatDateKey(new Date()), setSelectedDateKey = () => {}, telegramInitData = "", profileStatus = "local", analyticsIntent = null, measurementOverlay = null, onSaveHealthLog, onSaveWeightMeasurement, onSaveAnalyticsCardSettings, onOpenNutrition, onOpenProgress }) {
   const [detail, setDetail] = useState(null);
   const [tableViewOpen, setTableViewOpen] = useState(false);
   const [trackerDetail, setTrackerDetail] = useState(null);
   const [editorType, setEditorType] = useState(null);
   const [editorMetric, setEditorMetric] = useState(null);
+  const [mobileAnalyticsTab, setMobileAnalyticsTab] = useState(null);
   const [analyticsPeriod, setAnalyticsPeriod] = useState("day");
   const [activitiesCollapsed, setActivitiesCollapsed] = useState(() => {
     try {
@@ -22302,6 +22949,13 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       calf_cm: measurements?.calf || profile?.calf_cm,
   }), [measurements, profile, selectedDateKey]);
   const localMeasurementHasData = Object.entries(localMeasurementRecord).some(([key, value]) => key !== "measurement_date" && Number(value || 0) > 0);
+  const canLoadAnalyticsOverview = profileStatus === "verified" && profileHasTestAccess(profile) && Boolean(hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id);
+  const activeMeasurementOverlay = measurementDateKey(measurementOverlay) === selectedDateKey ? measurementOverlay : null;
+  const analyticsMeasurementRows = useMemo(() => {
+    const fallbackRows = localMeasurementHasData && (!canLoadAnalyticsOverview || remotePeriodError) ? [localMeasurementRecord] : [];
+    const baseRows = remotePeriodData.measurements.length ? remotePeriodData.measurements : fallbackRows;
+    return mergeAnalyticsMeasurementRows(baseRows, activeMeasurementOverlay);
+  }, [activeMeasurementOverlay, canLoadAnalyticsOverview, localMeasurementHasData, localMeasurementRecord, remotePeriodData.measurements, remotePeriodError]);
   const selectedNutritionRecord = selectedNutritionDayMatches && nutritionDayHasAnalyticsData(nutritionDay) ? {
       ...nutritionDay,
       nutrition_date: selectedDateKey,
@@ -22310,7 +22964,6 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       fat_total: Number(nutritionDay?.totals?.fat ?? nutritionDay?.fat_total ?? 0),
       carbs_total: Number(nutritionDay?.totals?.carbs ?? nutritionDay?.carbs_total ?? 0),
     } : null;
-  const canLoadAnalyticsOverview = profileStatus === "verified" && profileHasTestAccess(profile) && Boolean(hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id);
 
   useEffect(() => {
     let cancelled = false;
@@ -22367,15 +23020,13 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       .filter(Boolean)
       .map(log => normalizeHealthLog(log, log.log_date || log.date || selectedDateKey));
     return {
-      measurements: remotePeriodData.measurements.length
-        ? remotePeriodData.measurements
-        : (localMeasurementHasData && (!canLoadAnalyticsOverview || remotePeriodError) ? [localMeasurementRecord] : []),
+      measurements: analyticsMeasurementRows,
       health_logs: remotePeriodData.health_logs.length ? remotePeriodData.health_logs : localHealthRows,
       nutrition_days: remotePeriodData.nutrition_days.length
         ? remotePeriodData.nutrition_days
         : (selectedNutritionRecord ? [selectedNutritionRecord] : []),
     };
-  }, [canLoadAnalyticsOverview, currentHealthLog, healthLogs, localMeasurementHasData, localMeasurementRecord, remotePeriodData, remotePeriodError, selectedDateKey, selectedNutritionRecord]);
+  }, [analyticsMeasurementRows, currentHealthLog, healthLogs, remotePeriodData, selectedDateKey, selectedNutritionRecord]);
   const selfAnalyticsTableData = useMemo(() => ({
     workouts,
     health_logs: analyticsData.health_logs.length ? analyticsData.health_logs : [currentHealthLog],
@@ -22410,16 +23061,25 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
 
   useEffect(() => {
     if (!analyticsIntent?.type) return;
+    if (isMobileAnalyticsIntentType(analyticsIntent.type)) {
+      setDetail(null);
+      setTrackerDetail(null);
+      setEditorType(null);
+      setMobileAnalyticsTab(mobileAnalyticsIntentTabs[analyticsIntent.type]);
+      return;
+    }
     if (analyticsIntent.type === "personal_tracker") {
       const tracker = personalTrackers.find(item => item.id === analyticsIntent.trackerId);
       if (tracker) {
         setDetail(null);
+        setMobileAnalyticsTab(null);
         setTrackerDetail(normalizePersonalTracker(tracker));
       }
       return;
     }
     const config = analyticsTypeConfigs[analyticsIntent.type];
     if (!config) return;
+    setMobileAnalyticsTab(null);
     setTrackerDetail(null);
     setDetail({ type: analyticsIntent.type, title: config.title });
   }, [analyticsIntent?.nonce, analyticsIntent?.type, analyticsIntent?.trackerId, personalTrackers]);
@@ -22742,6 +23402,19 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     </Card>;
   };
 
+  if (mobileAnalyticsTab) {
+    return <MobileAnalyticsScreen
+      initialTab={mobileAnalyticsTab}
+      onClose={() => setMobileAnalyticsTab(null)}
+      profile={profile}
+      measurements={measurements}
+      latestMeasurement={latestMeasurement}
+      selectedDateKey={selectedDateKey}
+      saving={profileSaving}
+      onSaveWeightMeasurement={onSaveWeightMeasurement}
+    />;
+  }
+
   return <>
     <div className="mb-6 flex items-start justify-between gap-4">
       <Header title="Аналитика" subtitle="Календарь, карточки, тоннаж, активность и ачивки."/>
@@ -22763,7 +23436,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       {visibleCardIds.map(renderAnalyticsCard)}
       {personalTrackers.map(renderPersonalTrackerAnalyticsCard)}
     </PageGrid>
-    {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} nutritionDays={analyticsData.nutrition_days} workouts={workouts} selectedDateKey={selectedDateKey} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onClose={() => setDetail(null)} onOpenEditor={detail.type === "training_load" || analyticsPeriod !== "day" ? null : openEditorForDetail}/>}
+    {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} nutritionDays={analyticsData.nutrition_days} workouts={workouts} selectedDateKey={selectedDateKey} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} measurementOverlay={activeMeasurementOverlay} onClose={() => setDetail(null)} onOpenEditor={detail.type === "training_load" || analyticsPeriod !== "day" ? null : openEditorForDetail}/>}
     {tableViewOpen && <TrainerStudentDashboardSheet
       student={profile}
       telegramInitData={telegramInitData}
@@ -26324,7 +26997,7 @@ function OnlyPumpPlatform() {
 	  }, [scrollMainScreenToTop]);
 
   const openAnalyticsType = useCallback((type, payload = {}) => {
-    if (type !== "personal_tracker") {
+    if (type !== "personal_tracker" && !isMobileAnalyticsIntentType(type)) {
       const config = analyticsTypeConfigs[type];
       if (!config) return;
     }
@@ -26558,6 +27231,7 @@ function OnlyPumpPlatform() {
     thigh: "",
     calf: "",
   });
+  const [measurementOverlay, setMeasurementOverlay] = useState(null);
   const [profile, setProfile] = useState(null);
   const [themeTick, setThemeTick] = useState(() => Date.now());
   const [profileStatus, setProfileStatus] = useState("local");
@@ -26840,11 +27514,19 @@ function OnlyPumpPlatform() {
   const handleSaveWeightMeasurement = useCallback(async (payload = {}) => {
     const dateKey = payload.date || payload.measurement_date || globalSelectedDateKey;
     const nextWeight = profileNumber(payload.weight_kg, profile?.weight_kg || measurements.weight || 0);
-    const optimisticMeasurements = progressMeasurementsFromRecord(payload, { ...measurements, weight: nextWeight });
+    const payloadWithDate = { ...payload, date: dateKey, measurement_date: dateKey };
+    const optimisticMeasurements = progressMeasurementsFromRecord(payloadWithDate, { ...measurements, weight: nextWeight });
+    const optimisticRecord = progressMeasurementFields.reduce((record, item) => {
+      const value = optimisticMeasurements[item.field];
+      if (profileNumber(value, 0)) record[item.db] = profileNumber(value, 0);
+      return record;
+    }, { date: dateKey, measurement_date: dateKey });
     setMeasurements(prev => ({ ...prev, ...optimisticMeasurements, weight: nextWeight }));
+    setMeasurementOverlay(optimisticRecord);
+    clearCachedAnalyticsForProfile(profile || DEFAULT_PROFILE);
 
     if (!(profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id)) {
-      const localProfile = normalizeProfileRecord({ ...(profile || DEFAULT_PROFILE), ...payload, weight_kg: nextWeight, source: profile?.source || "fallback" }, profile || DEFAULT_PROFILE);
+      const localProfile = normalizeProfileRecord({ ...(profile || DEFAULT_PROFILE), ...payloadWithDate, weight_kg: nextWeight, source: profile?.source || "fallback" }, profile || DEFAULT_PROFILE);
       applyProfileState(localProfile);
       return true;
     }
@@ -26852,7 +27534,7 @@ function OnlyPumpPlatform() {
     setProfileSaving(true);
     try {
       const result = await callOnlyPumpProfileApi(telegramInitData, "save_progress_measurement", {
-        ...payload,
+        ...payloadWithDate,
         date: dateKey,
         measurement_date: dateKey,
         weight_kg: nextWeight,
@@ -26860,6 +27542,7 @@ function OnlyPumpPlatform() {
       const savedProfile = handleProgressProfileSaved(result.profile, { syncNutrition: true, nutritionTargetsFromDate: formatDateKey(new Date()) });
       if (result.effective_measurement || result.measurement) {
         const measurement = result.effective_measurement || result.measurement;
+        setMeasurementOverlay({ ...measurement, date: measurementDateKey(measurement) || dateKey, measurement_date: measurementDateKey(measurement) || dateKey });
         setMeasurements(prev => progressMeasurementsFromRecord(measurement, { ...prev, weight: nextWeight }));
       }
       return Boolean(savedProfile);
@@ -27743,10 +28426,10 @@ function OnlyPumpPlatform() {
     education: <EducationPage/>,
     lectures: <LecturesPage lectureItems={lectureItems} setLectureItems={setLectureItems}/>,
     progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} onProgressProfileSaved={handleProgressProfileSaved}/>,
-    analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} nutritionDay={nutritionDay} healthLog={healthLog} healthLogs={healthLogs} personalTrackers={personalTrackers} healthSaving={healthSaving} healthRefreshing={healthRefreshing} profileSaving={profileSaving} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} analyticsIntent={analyticsIntent} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onSaveAnalyticsCardSettings={handleSaveAnalyticsCardSettings} onOpenNutrition={() => setActive("nutrition")} onOpenProgress={() => setActive("progress")}/>,
+    analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} nutritionDay={nutritionDay} healthLog={healthLog} healthLogs={healthLogs} personalTrackers={personalTrackers} healthSaving={healthSaving} healthRefreshing={healthRefreshing} profileSaving={profileSaving} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} analyticsIntent={analyticsIntent} measurementOverlay={measurementOverlay} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onSaveAnalyticsCardSettings={handleSaveAnalyticsCardSettings} onOpenNutrition={() => setActive("nutrition")} onOpenProgress={() => setActive("progress")}/>,
     community: <CommunityPage/>,
 	    profile: <ProfilePage profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} onSaveProfileQuiz={completeOnboardingProfile} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings} onStartTutorial={(screen = "home", options = {}) => startInteractiveTour(screen, { force: true, ...options })}/>,
-	  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, progressGoal, lectureItems, homeWidgets, personalTrackers, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, pumpXpSummary, handleNutritionAction, handleSaveProfile, completeOnboardingProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog, startInteractiveTour]);
+	  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, measurementOverlay, progressGoal, lectureItems, homeWidgets, personalTrackers, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, pumpXpSummary, handleNutritionAction, handleSaveProfile, completeOnboardingProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog, startInteractiveTour]);
 
   if (appLoading || profileLoading) {
     return <LoadingScreen theme={activeTheme}/>;
