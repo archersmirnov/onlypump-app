@@ -873,6 +873,16 @@
       max-width: 1.15rem;
       max-height: 1.15rem;
     }
+    .onlypump-metric-widget .onlypump-weight-chart-svg {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: none !important;
+      max-height: none !important;
+    }
+    .onlypump-weight-chart-layer {
+      -webkit-mask-image: radial-gradient(ellipse 62% 62% at 18% 8%, transparent 0%, transparent 28%, rgba(0,0,0,0.08) 39%, rgba(0,0,0,0.58) 55%, #000 76%);
+      mask-image: radial-gradient(ellipse 62% 62% at 18% 8%, transparent 0%, transparent 28%, rgba(0,0,0,0.08) 39%, rgba(0,0,0,0.58) 55%, #000 76%);
+    }
     .onlypump-metric-widget > div {
       min-height: 0;
       overflow: hidden;
@@ -1268,47 +1278,49 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      border-radius: 0.95rem 0.95rem 1.1rem 1.1rem;
-      border: 1px solid rgba(255, 255, 255, 0.18);
+      border: 0;
+      background: transparent;
       font-weight: 900;
       line-height: 1;
       transition: transform 0.16s ease, filter 0.16s ease;
     }
-    .onlypump-water-glass::before {
-      content: "";
+    .onlypump-water-glass-icon {
       position: absolute;
-      left: 0.42rem;
-      right: 0.42rem;
-      top: 0.34rem;
-      height: 0.22rem;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.5);
+      left: 50%;
+      top: 50%;
+      width: calc(200% - 0.96rem);
+      height: calc(200% - 0.96rem);
+      transform: translate(-50%, -50%);
+      object-fit: contain;
+      pointer-events: none;
+      z-index: 0;
     }
     .onlypump-water-glass:active {
       transform: scale(0.95);
       filter: brightness(1.05);
     }
     .onlypump-water-glass-plus {
-      background: linear-gradient(180deg, rgba(56, 189, 248, 0.38), rgba(14, 165, 233, 0.18));
       color: #0284c7;
-      box-shadow: inset 0 -0.8rem 1.2rem rgba(14, 165, 233, 0.16);
     }
     .theme-dark .onlypump-water-glass-plus {
       color: #7dd3fc;
     }
     .onlypump-water-glass-minus {
-      background: rgba(148, 163, 184, 0.16);
       color: rgba(100, 116, 139, 0.9);
     }
     .theme-dark .onlypump-water-glass-minus {
       color: rgba(226, 232, 240, 0.72);
     }
     .onlypump-water-glass-count {
+      position: relative;
+      z-index: 1;
       max-width: 100%;
       font-size: 0.98rem;
       letter-spacing: 0;
     }
     .onlypump-water-glass-symbol {
+      position: relative;
+      z-index: 1;
       margin-top: 0.2rem;
       font-size: 0.9rem;
     }
@@ -3082,6 +3094,172 @@ const homeWidgetCatalog = [
   { id: "education", label: "Обучение", description: "Лекции для продолжения", default: false, size: "4x2" },
   { id: "tools", label: "Инструменты", description: "Калькуляторы ONLYPUMP", default: false, size: "4x2" },
 ];
+
+const WIDGET_INFO_BY_KEY = {
+  calories: {
+    title: "Как считаются калории",
+    how: "Калории — это дневной ориентир по энергии. В приложении цель строится из данных профиля и цели пользователя: вес, рост, активность, цель снижения, набора или поддержания и текущий прогресс. Если часть данных не заполнена, приложение использует доступные значения и безопасные базовые ориентиры.",
+    accuracy: "Заполняй вес, рост и цель в профиле. Взвешивай продукты, особенно крупы, масла, орехи, сладости и соусы. Учитывай перекусы, напитки и добавки. Чем честнее и регулярнее учет, тем точнее картина.",
+  },
+  macros: {
+    title: "Как считаются КБЖУ",
+    how: "КБЖУ — это распределение калорий между белками, жирами и углеводами. Приложение собирает эти показатели из всех приемов пищи за день и сравнивает с твоей целью.",
+    accuracy: "Используй одинаковый способ учета: сырой или готовый вес, не смешивай их. Проверяй этикетки, не забывай про масло при жарке, соусы, напитки и маленькие перекусы.",
+  },
+  protein: {
+    title: "Зачем отслеживать белок",
+    how: "Белок считается из всех продуктов, которые ты добавил за день. Он помогает сохранять мышцы на дефиците, восстанавливаться после тренировок и лучше контролировать сытость.",
+    accuracy: "Записывай реальные порции мясных, рыбных, молочных продуктов, яиц, протеина и бобовых. Не округляй белок слишком грубо: на больших порциях ошибка быстро накапливается.",
+  },
+  fats: {
+    title: "Зачем отслеживать жиры",
+    how: "Жиры считаются из всех продуктов за день. Они важны для гормональной системы, здоровья кожи, усвоения жирорастворимых витаминов и нормального самочувствия.",
+    accuracy: "Особенно внимательно учитывай масло, орехи, сыр, жирное мясо, соусы и десерты. Именно жиры чаще всего незаметно добавляют много калорий.",
+  },
+  carbs: {
+    title: "Зачем отслеживать углеводы",
+    how: "Углеводы считаются из всех продуктов за день. Они дают энергию для тренировок, шагов, работы и восстановления. Их цель зависит от общей калорийности, белка, жиров и твоей активности.",
+    accuracy: "Взвешивай крупы, макароны, хлеб, фрукты и сладости. Для круп и макарон особенно важно не путать сухой и готовый вес.",
+  },
+  nutrition: {
+    title: "Что показывает питание",
+    how: "Виджет собирает дневные калории и основные макронутриенты из уже добавленных приемов пищи. Он помогает быстро понять, насколько день близок к цели.",
+    accuracy: "Заполняй питание в выбранный день и не пропускай небольшие продукты: напитки, соусы, масло и перекусы часто сильно меняют итог.",
+  },
+  weight: {
+    title: "Как считается вес",
+    how: "Виджет показывает последний вес или актуальное значение из истории замеров. Разовый вес может прыгать из-за воды, соли, еды, тренировок и сна.",
+    accuracy: "Взвешивайся утром после туалета, в одинаковых условиях. Для анализа важнее среднее значение и тренд, а не одно число.",
+  },
+  bodyFat: {
+    title: "Как считается процент жира",
+    how: "Процент жира — это оценка состава тела. Он может рассчитываться по введенным параметрам вроде веса, шеи и талии. Это не медицинская диагностика, а ориентир для отслеживания динамики.",
+    accuracy: "Измеряй параметры в одинаковых условиях и одной лентой. Не оценивай прогресс только по проценту жира — смотри вместе с весом, замерами, фото и тренировками.",
+  },
+  measurements: {
+    title: "Зачем нужны замеры",
+    how: "Замеры показывают изменения тела по зонам. Они помогают видеть прогресс, даже если вес временно стоит на месте.",
+    accuracy: "Делай замеры раз в 7 дней, в одно и то же время, одной и той же лентой и в одинаковых точках.",
+  },
+  photos: {
+    title: "Зачем нужен фотоотчет",
+    how: "Фотоотчет помогает сравнивать визуальные изменения. Иногда тело выглядит лучше, даже если вес изменился незначительно.",
+    accuracy: "Делай фото раз в 14 дней. Сохраняй одинаковые условия: свет, фон, расстояние до камеры, ракурс, позу и одежду.",
+  },
+  tonnage: {
+    title: "Как считается тоннаж",
+    how: "Тоннаж — это общий объем поднятого веса. Обычно он считается как вес × повторения × подходы. Например, 100 кг × 10 повторений = 1000 кг тоннажа.",
+    accuracy: "Записывай вес и повторения в каждом рабочем подходе. Если используешь гантели, следи за настройкой учета: считать одну гантель или общий вес пары.",
+  },
+  sets: {
+    title: "Как считаются подходы",
+    how: "Подходы показывают, сколько рабочих сетов ты выполнил за выбранный период. Это помогает оценивать объем нагрузки на тренировках и по мышечным группам.",
+    accuracy: "Отмечай выполненные подходы, не оставляй тренировку незавершенной и не записывай разминку как тяжелые рабочие подходы, если она не должна учитываться в объеме.",
+  },
+  workouts: {
+    title: "Как считаются тренировки",
+    how: "Виджет учитывает запланированные и выполненные тренировки. Он помогает видеть регулярность и понимать, насколько ты придерживаешься плана.",
+    accuracy: "Завершай тренировку после выполнения, не создавай дубли и отмечай дату правильно, особенно если добавляешь тренировку задним числом.",
+  },
+  recovery: {
+    title: "Как оценивается восстановление",
+    how: "Восстановление — это ориентир, который помогает понять, насколько организм готов к нагрузке. Оно может учитывать сон, самочувствие, активность, тренировочную нагрузку и другие доступные данные приложения.",
+    accuracy: "Регулярно отмечай сон, самочувствие, тренировки и активность. Не воспринимай показатель как абсолютный запрет или разрешение тренироваться — используй его как подсказку.",
+  },
+  sleep: {
+    title: "Что показывает сон",
+    how: "Сон помогает оценивать восстановление и общий фон нагрузки. Виджет показывает данные, которые уже внесены за выбранный день.",
+    accuracy: "Записывай сон в одинаковом формате: время сна, пробуждения и качество. Чем регулярнее отметки, тем полезнее подсказки по восстановлению.",
+  },
+  steps: {
+    title: "Как считаются шаги",
+    how: "Шаги показывают дневную активность. Это простой способ оценить, сколько ты двигался вне тренировок.",
+    accuracy: "Носи телефон или часы с собой в течение дня. Смотри не только на один день, а на среднее за неделю.",
+  },
+  activity: {
+    title: "Как считается активность",
+    how: "Активность собирает движение, шаги, тренировки и другие доступные показатели. Она помогает понять, насколько день был активным.",
+    accuracy: "Регулярно фиксируй тренировки и не забывай про обычную бытовую активность. Именно она часто сильно влияет на расход энергии.",
+  },
+  water: {
+    title: "Что показывает вода",
+    how: "Виджет показывает количество воды, которое уже отмечено за выбранный день, и сравнивает его с дневной целью.",
+    accuracy: "Отмечай воду сразу в течение дня. Если добавляешь данные вечером, старайся не округлять слишком грубо.",
+  },
+  mood: {
+    title: "Что показывают самочувствие и настроение",
+    how: "Виджет помогает связать тренировки, питание, сон и субъективное состояние за день. Это не диагноз, а дневник наблюдений.",
+    accuracy: "Отмечай состояние честно и регулярно. Полезнее видеть динамику по неделям, чем оценивать один случайный день.",
+  },
+  dailyNote: {
+    title: "Зачем нужны заметки",
+    how: "Заметки сохраняют контекст дня: стресс, поездки, болезнь, необычную тренировку или любые факторы, которые могут объяснить цифры.",
+    accuracy: "Пиши коротко и по делу. Даже одна фраза помогает потом понять, почему вес, сон или тренировка отличались от обычного дня.",
+  },
+  personalTracker: {
+    title: "Как работает трекер",
+    how: "Персональный трекер показывает уже настроенную привычку, лимит или цель за выбранный день. Он использует только текущие данные этого трекера.",
+    accuracy: "Отмечай значение в тот день, к которому оно относится. Для привычек важна регулярность, для числовых целей — честная величина.",
+  },
+  education: {
+    title: "Как считается прогресс обучения",
+    how: "Виджет показывает, какие материалы уже открыты или пройдены. Он помогает двигаться по обучению системно, а не хаотично.",
+    accuracy: "Проходи уроки внутри приложения и не пропускай отметку завершения, если она есть. Так прогресс будет отображаться корректнее.",
+  },
+  lectures: {
+    title: "Как считается прогресс лекций",
+    how: "Прогресс лекций показывает, сколько материалов уже изучено. Это помогает видеть не только тренировки и питание, но и развитие понимания процесса.",
+    accuracy: "Открывай лекции из приложения и завершай их после изучения. Если есть чекбоксы или отметки прохождения, используй их.",
+  },
+  analytics: {
+    title: "Что показывает аналитика",
+    how: "Аналитика собирает уже существующие данные приложения: тренировки, питание, активность, замеры и другие доступные показатели.",
+    accuracy: "Регулярно заполняй исходные данные. Чем меньше пропусков в дневнике, тем понятнее тренды и сравнения.",
+  },
+  community: {
+    title: "Что показывает виджет сообщества",
+    how: "Виджет показывает активность или элементы сообщества, если они уже есть в приложении.",
+    accuracy: "Используй только существующие данные. Новые источники и backend для этого виджета не подключаются.",
+  },
+  students: {
+    title: "Что показывает виджет учеников",
+    how: "Виджет помогает быстро видеть данные по ученикам, их активности или статусам, если эта логика уже есть в приложении.",
+    accuracy: "Точность зависит от уже заполненных данных учеников. Новая серверная логика для этого не добавляется.",
+  },
+  profile: {
+    title: "Что показывает личный кабинет",
+    how: "Виджет показывает данные профиля и настройки пользователя, которые уже есть в приложении.",
+    accuracy: "Чем полнее заполнен профиль, тем точнее работают связанные расчеты и подсказки.",
+  },
+  calculators: {
+    title: "Что показывают калькуляторы",
+    how: "Калькуляторы помогают быстро оценить отдельные тренировочные или пищевые параметры по уже заданным формулам приложения.",
+    accuracy: "Заполняй исходные значения внимательно и проверяй единицы измерения. Калькулятор дает ориентир, а не медицинское назначение.",
+  },
+};
+
+const HOME_WIDGET_INFO_KEYS = {
+  metricWeight: "weight",
+  metricBodyFat: "bodyFat",
+  metricTonnage: "tonnage",
+  metricSets: "sets",
+  metricCalories: "calories",
+  metricProtein: "protein",
+  metricRecovery: "recovery",
+  metricSleep: "sleep",
+  metricSteps: "steps",
+  macros: "macros",
+  water: "water",
+  moodWellbeing: "mood",
+  dailyNote: "dailyNote",
+  workout: "workouts",
+  nutrition: "nutrition",
+  weekProgress: "analytics",
+  goalProgress: "analytics",
+  miniActions: "workouts",
+  education: "lectures",
+  tools: "calculators",
+};
 
 const defaultHomeWidgets = homeWidgetCatalog.filter(w => w.default).map(w => w.id);
 
@@ -8081,7 +8259,220 @@ function DayDataModal({ dateKey, context = "home", onClose, setActive, workout, 
   </div>;
 }
 
-function MetricWidgetCard({ title, value, sub, delta, progress, icon: Icon, onClick, children, accent = "red" }) {
+function WidgetInfoIcon({ widgetKey, label, onOpen, children, className = "" }) {
+  const info = WIDGET_INFO_BY_KEY[widgetKey];
+  if (!info || !onOpen) return <span className={className}>{children}</span>;
+
+  const openInfo = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onOpen(widgetKey);
+  };
+
+  return <button
+    type="button"
+    data-no-drag="true"
+    onPointerDown={(event) => event.stopPropagation()}
+    onClick={openInfo}
+    className={`inline-flex items-center justify-center rounded-full transition hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60 ${className}`}
+    aria-label={`Информация о виджете ${label || info.title}`}
+  >
+    {children}
+  </button>;
+}
+
+function WidgetInfoSheet({ widgetKey, onClose }) {
+  const info = widgetKey ? WIDGET_INFO_BY_KEY[widgetKey] : null;
+
+  useEffect(() => {
+    if (!info) return undefined;
+    document.documentElement.classList.add("onlypump-mobile-modal-open");
+    return () => document.documentElement.classList.remove("onlypump-mobile-modal-open");
+  }, [info]);
+
+  if (!info) return null;
+
+  return <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/70 px-3 pt-10 backdrop-blur-sm" onClick={onClose}>
+    <BottomSheetPanel onClose={onClose} priority={240} onClick={(event) => event.stopPropagation()} className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-[34px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] text-[var(--onlypump-text)] shadow-2xl shadow-black/50">
+      <div className="sticky top-0 z-10 border-b border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-5 pb-3 pt-3">
+        <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-[var(--onlypump-border)]"/>
+        <div className="flex items-center justify-between gap-3">
+          <span aria-hidden="true" className="h-10 w-10 shrink-0"/>
+          <h2 className="min-w-0 flex-1 text-center text-lg font-black tracking-[-0.03em]">Информация</h2>
+          <button type="button" onClick={onClose} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--onlypump-soft)] text-[var(--onlypump-text)]" aria-label="Закрыть информацию">×</button>
+        </div>
+      </div>
+      <div className="px-5 pb-5 pt-5">
+        <div className="flex min-h-[150px] items-center justify-center rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)]">
+          <div className="flex h-20 w-20 items-center justify-center rounded-full border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] text-red-500">
+            <Info size={36} strokeWidth={2.8}/>
+          </div>
+        </div>
+        <h3 className="mt-6 text-2xl font-black leading-tight tracking-[-0.04em]">{info.title}</h3>
+        <div className="mt-5 grid gap-3">
+          <section className="rounded-[22px] bg-[var(--onlypump-soft)] p-4">
+            <h4 className="text-xs font-black uppercase tracking-[0.16em] text-red-500">Как считается</h4>
+            <p className="mt-3 text-sm font-semibold leading-6 text-[var(--onlypump-muted)]">{info.how}</p>
+          </section>
+          <section className="rounded-[22px] bg-[var(--onlypump-soft)] p-4">
+            <h4 className="text-xs font-black uppercase tracking-[0.16em] text-red-500">Как повысить точность</h4>
+            <p className="mt-3 text-sm font-semibold leading-6 text-[var(--onlypump-muted)]">{info.accuracy}</p>
+          </section>
+        </div>
+      </div>
+      <div className="sticky bottom-0 border-t border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-4 pb-[calc(var(--onlypump-safe-bottom)+1rem)] pt-4">
+        <Button type="button" onClick={onClose} className="h-14 w-full rounded-[22px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black">Понятно!</Button>
+      </div>
+    </BottomSheetPanel>
+  </div>;
+}
+
+const readWeightTrendValue = (record = {}) => {
+  const raw = record?.weight ?? record?.weight_kg ?? record?.weightKg;
+  const number = Number(String(raw ?? "").replace(",", "."));
+  return Number.isFinite(number) && number > 0 ? number : 0;
+};
+
+const readWeightTrendDate = (record = {}) => String(record?.measurement_date || record?.date || record?.log_date || record?.created_at || "").slice(0, 10);
+
+const collectWeightTrendRows = (measurements = {}) => {
+  const sources = [];
+  if (Array.isArray(measurements)) sources.push(measurements);
+  [
+    measurements?.weightHistory,
+    measurements?.weight_history,
+    measurements?.history,
+    measurements?.measurementHistory,
+    measurements?.measurement_history,
+    measurements?.measurementRecords,
+    measurements?.measurement_records,
+    measurements?.measurements,
+    measurements?.records,
+    measurements?.rows,
+  ].forEach(source => {
+    if (Array.isArray(source)) sources.push(source);
+  });
+
+  const rows = sources.flat().map((record, index) => ({
+    date: readWeightTrendDate(record),
+    value: readWeightTrendValue(record),
+    index,
+  })).filter(point => point.value > 0);
+
+  return rows.sort((a, b) => {
+    if (a.date && b.date) return a.date.localeCompare(b.date);
+    if (a.date) return -1;
+    if (b.date) return 1;
+    return a.index - b.index;
+  });
+};
+
+const buildWeightTrendPoints = ({ measurements = {}, measurementRecords = [], selectedDateKey = "", currentWeight = 0 }) => {
+  const byKey = new Map();
+  [
+    ...collectWeightTrendRows(measurementRecords),
+    ...collectWeightTrendRows(measurements),
+  ].forEach((point, index) => {
+    const key = point.date || `row-${index}`;
+    byKey.set(key, point);
+  });
+
+  const current = Number(currentWeight);
+  if (Number.isFinite(current) && current > 0) {
+    const key = selectedDateKey || "current";
+    byKey.set(key, { date: key, value: current, current: true, index: byKey.size });
+  }
+
+  return Array.from(byKey.values())
+    .filter(point => Number.isFinite(Number(point.value)) && Number(point.value) > 0)
+    .sort((a, b) => {
+      if (a.current) return 1;
+      if (b.current) return -1;
+      if (a.date && b.date) return a.date.localeCompare(b.date);
+      return (a.index || 0) - (b.index || 0);
+    })
+    .slice(-10);
+};
+
+function WeightTrendMiniChart({ points = [] }) {
+  const values = points.map(point => Number(point.value)).filter(value => Number.isFinite(value) && value > 0);
+  if (!values.length) return null;
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(0.8, max - min);
+  const count = Math.max(1, values.length);
+  const left = 7;
+  const right = 94;
+  const top = 6;
+  const bottom = 45;
+  const yMin = top;
+  const yMax = 34;
+  const chartPoints = values.map((value, index) => {
+    const x = count === 1 ? right : left + ((right - left) * index) / Math.max(1, count - 1);
+    const y = yMax - ((value - min) / range) * (yMax - yMin);
+    return { x, y };
+  });
+  const neutralY = chartPoints[0]?.y ?? 27;
+  const linePoints = count === 1
+    ? [
+        { x: left, y: Math.min(yMax, neutralY + 6) },
+        { x: 34, y: Math.min(yMax, neutralY + 3) },
+        { x: 62, y: Math.min(yMax, neutralY + 4) },
+        chartPoints[0],
+      ]
+    : chartPoints;
+  const linePath = linePoints.reduce((path, point, index) => {
+    if (index === 0) return `M ${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
+    const previous = linePoints[index - 1];
+    const midX = (previous.x + point.x) / 2;
+    return `${path} C ${midX.toFixed(2)} ${previous.y.toFixed(2)} ${midX.toFixed(2)} ${point.y.toFixed(2)} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
+  }, "");
+  const areaPath = `${linePath} L ${linePoints[linePoints.length - 1].x.toFixed(2)} ${bottom} L ${linePoints[0].x.toFixed(2)} ${bottom} Z`;
+  const gradientId = `weightTrendGradient-${count}-${Math.round(values[values.length - 1] * 10)}`;
+
+  return <div className="onlypump-weight-chart-layer pointer-events-none absolute inset-x-1 bottom-0 z-0 h-[72%]" aria-hidden="true">
+    <svg className="onlypump-weight-chart-svg block" viewBox="0 0 100 52" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor="rgb(248 113 113)" stopOpacity="0.28"/>
+          <stop offset="58%" stopColor="rgb(248 113 113)" stopOpacity="0.12"/>
+          <stop offset="100%" stopColor="rgb(248 113 113)" stopOpacity="0"/>
+        </linearGradient>
+      </defs>
+      {chartPoints.map((point, index) => <line key={`guide-${index}`} x1={point.x} x2={point.x} y1={point.y + 2} y2={bottom} stroke="rgb(248 113 113)" strokeOpacity="0.42" strokeWidth="1" strokeDasharray="2 3"/>)}
+      <path d={areaPath} fill={`url(#${gradientId})`}/>
+      <path d={linePath} fill="none" stroke="rgb(239 68 68)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
+    </svg>
+    {chartPoints.map((point, index) => <span
+      key={`point-${index}`}
+      className="absolute block h-[0.22rem] w-[0.22rem] rounded-full border border-red-600 bg-[var(--onlypump-card-solid)]"
+      style={{
+        left: `${point.x}%`,
+        top: `${(point.y / 52) * 100}%`,
+        transform: "translate(-50%, -50%)",
+      }}
+    />)}
+  </div>;
+}
+
+function WeightMetricWidgetCard({ title, value, trendPoints = [], icon: Icon, onClick, widgetKey = "", onInfoOpen }) {
+  return <Card onClick={onClick} className="onlypump-home-widget-card onlypump-metric-widget onlypump-weight-metric-widget cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
+    <WeightTrendMiniChart points={trendPoints}/>
+    <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="onlypump-line-clamp-1 text-[11px] text-zinc-500 sm:text-xs">{title}</p>
+          <div className="onlypump-home-widget-value mt-1 break-words text-[clamp(1.35rem,4.4vw,1.75rem)] font-semibold leading-tight">{value}</div>
+        </div>
+        {Icon && <WidgetInfoIcon widgetKey={widgetKey} label={title} onOpen={onInfoOpen} className="shrink-0 text-red-500"><Icon size={18}/></WidgetInfoIcon>} 
+      </div>
+      <div className="mt-auto min-h-[1rem]"/>
+    </div>
+  </Card>;
+}
+
+function MetricWidgetCard({ title, value, sub, delta, progress, icon: Icon, onClick, children, accent = "red", widgetKey = "", onInfoOpen }) {
   const ringColor = accent === "sky" ? "#38bdf8" : "#ef4444";
   return <Card onClick={onClick} className="onlypump-home-widget-card onlypump-metric-widget cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
     <div className="flex min-h-0 flex-1 flex-col">
@@ -8091,7 +8482,7 @@ function MetricWidgetCard({ title, value, sub, delta, progress, icon: Icon, onCl
           <div className="onlypump-home-widget-value mt-1 break-words text-[clamp(1.35rem,4.4vw,1.75rem)] font-semibold leading-tight">{value}</div>
           {sub && <p className="onlypump-line-clamp-2 mt-1 text-[10px] leading-tight text-zinc-500 sm:text-[11px]">{sub}</p>}
         </div>
-        {Icon && <Icon size={18} className={`shrink-0 ${accent === "sky" ? "text-sky-400" : "text-red-500"}`}/>} 
+        {Icon && <WidgetInfoIcon widgetKey={widgetKey} label={title} onOpen={onInfoOpen} className={`shrink-0 ${accent === "sky" ? "text-sky-400" : "text-red-500"}`}><Icon size={18}/></WidgetInfoIcon>} 
       </div>
       {children && <div className="onlypump-home-widget-extra mt-2">{children}</div>}
       <div className="mt-auto space-y-2 pt-2">
@@ -8102,7 +8493,7 @@ function MetricWidgetCard({ title, value, sub, delta, progress, icon: Icon, onCl
   </Card>;
 }
 
-function MoodWellbeingWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
+function MoodWellbeingWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen, widgetKey = "", onInfoOpen }) {
   const mood = findDailyChoice(dailyMoodOptions, healthLog?.mood_key || healthLog?.mood);
   const wellbeing = findDailyChoice(dailyWellbeingOptions, healthLog?.wellbeing_key || healthLog?.wellbeing);
 
@@ -8111,7 +8502,7 @@ function MoodWellbeingWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
       <div className="min-w-0">
         <p className="onlypump-mood-title onlypump-line-clamp-2 text-[11px] text-zinc-500">Настроение и самочувствие</p>
       </div>
-      <Smile size={18} className="shrink-0 text-red-500"/>
+      <WidgetInfoIcon widgetKey={widgetKey} label="Настроение и самочувствие" onOpen={onInfoOpen} className="shrink-0 text-red-500"><Smile size={18}/></WidgetInfoIcon>
     </div>
     <div className="onlypump-mood-icon-grid">
       <div className="onlypump-mood-icon-slot">
@@ -8124,7 +8515,7 @@ function MoodWellbeingWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
   </Card>;
 }
 
-function DailyNoteWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
+function DailyNoteWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen, widgetKey = "", onInfoOpen }) {
   const note = String(healthLog?.notes || "").trim();
   return <Card
     onClick={onOpen}
@@ -8137,7 +8528,7 @@ function DailyNoteWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen }) {
 	      <div className="min-w-0">
 	        <p className="onlypump-line-clamp-1 text-[11px] text-yellow-800/70">Заметки</p>
 	      </div>
-	      <StickyNote size={18} className="shrink-0 text-yellow-800"/>
+	      <WidgetInfoIcon widgetKey={widgetKey} label="Заметки" onOpen={onInfoOpen} className="shrink-0 text-yellow-800"><StickyNote size={18}/></WidgetInfoIcon>
 	    </div>
     <div
       className="onlypump-note-paper mt-3 min-h-0 flex-1 rounded-2xl border border-yellow-700/20 px-3 py-2 text-sm font-bold text-zinc-900"
@@ -8984,7 +9375,7 @@ function PersonalTrackerRing({ tracker, value = 0, progress = 0, label }) {
   </div>;
 }
 
-function PersonalTrackerCard({ tracker, dateKey, onOpen, onQuickAdd }) {
+function PersonalTrackerCard({ tracker, dateKey, onOpen, onQuickAdd, widgetKey = "", onInfoOpen }) {
   const entry = getPersonalTrackerEntry(tracker, dateKey);
   const config = getPersonalTrackerTypeConfig(tracker.type);
   const accent = getPersonalTrackerAccent(tracker);
@@ -8999,7 +9390,7 @@ function PersonalTrackerCard({ tracker, dateKey, onOpen, onQuickAdd }) {
 	      <div className="min-w-0">
 	        <p className="onlypump-line-clamp-2 text-[11px] text-zinc-500">{tracker.title || config.shortLabel}</p>
 	      </div>
-		      <PersonalTrackerIcon tracker={tracker} done={entry.done}/>
+		      <WidgetInfoIcon widgetKey={widgetKey} label={tracker.title || config.shortLabel} onOpen={onInfoOpen} className="shrink-0"><PersonalTrackerIcon tracker={tracker} done={entry.done}/></WidgetInfoIcon>
 	    </div>
     {isBinary ? <div className="mt-2 flex min-h-0 flex-1 flex-col">
       <div className="flex items-end justify-between gap-3">
@@ -9461,7 +9852,7 @@ function MasonryGrid({ children, className = "" }) {
   return <div ref={gridRef} className={`onlypump-masonry-grid ${className}`}>{children}</div>;
 }
 
-function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutritionMarkedDateKeys = [], nutritionGoal, measurements, progressGoal, lectureItems, homeWidgets, setHomeWidgets, personalTrackers = [], setPersonalTrackers = () => {}, profile, selectedDateKey: controlledSelectedDateKey, setSelectedDateKey: controlledSetSelectedDateKey, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], healthSaving = false, profileSaving = false, pumpXpSummary = null, onOpenPumpXpDetails = () => {}, onSaveHealthLog, onSaveWeightMeasurement, onOpenAnalytics }) {
+function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutritionMarkedDateKeys = [], nutritionGoal, measurements, measurementRecords = [], progressGoal, lectureItems, homeWidgets, setHomeWidgets, personalTrackers = [], setPersonalTrackers = () => {}, profile, selectedDateKey: controlledSelectedDateKey, setSelectedDateKey: controlledSetSelectedDateKey, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], healthSaving = false, profileSaving = false, pumpXpSummary = null, onOpenPumpXpDetails = () => {}, onSaveHealthLog, onSaveWeightMeasurement, onOpenAnalytics }) {
   const nutritionTotals = useMemo(() => nutritionMeals.reduce((acc, meal) => ({
     calories: acc.calories + Number(meal.calories || 0),
     protein: acc.protein + Number(meal.protein || 0),
@@ -9578,8 +9969,13 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const selectedWater = profileNonNegativeNumber(selectedHealthLog.water_ml, 0);
   const waterGoal = Math.max(1, profileNonNegativeNumber(selectedHealthLog.water_target_ml, DEFAULT_HEALTH_LOG.water_target_ml));
   const waterProgress = Math.min(100, Math.round((selectedWater / waterGoal) * 100));
-  const profileStartWeight = profileNumber(profile?.start_weight_kg ?? profile?.weight_start_kg ?? null);
-  const weightDelta = selectedMeasurements?.weight && profileStartWeight ? Number((Number(selectedMeasurements.weight) - profileStartWeight).toFixed(1)) : null;
+  const currentWeightForWidget = profileNumber(selectedMeasurements?.weight, 0);
+  const weightTrendPoints = useMemo(() => buildWeightTrendPoints({
+    measurements,
+    measurementRecords,
+    selectedDateKey,
+    currentWeight: currentWeightForWidget,
+  }), [measurements, measurementRecords, selectedDateKey, currentWeightForWidget]);
   const displayName = getProfileDisplayName(profile);
   const pumpXp = pumpXpSummary || emptyPumpXpSummary();
   const homeVolumeUnit = normalizeWeightUnit(profile?.default_weight_unit || DEFAULT_PROFILE.default_weight_unit);
@@ -9617,6 +10013,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const [stepsSheetOpen, setStepsSheetOpen] = useState(false);
   const [moodSheetOpen, setMoodSheetOpen] = useState(false);
   const [dailyNoteSheetOpen, setDailyNoteSheetOpen] = useState(false);
+  const [widgetInfoKey, setWidgetInfoKey] = useState("");
   const [activeTrackerId, setActiveTrackerId] = useState(null);
   const [trackerSettingsDraft, setTrackerSettingsDraft] = useState(null);
   const mobileHiddenWidgetIds = [];
@@ -9662,6 +10059,10 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
 
   const savePersonalTrackerEntry = (trackerId, dateKey, patch) => {
     setPersonalTrackers(prev => upsertPersonalTrackerEntry(prev, trackerId, dateKey, patch));
+  };
+
+  const openWidgetInfo = (widgetKey) => {
+    if (WIDGET_INFO_BY_KEY[widgetKey]) setWidgetInfoKey(widgetKey);
   };
 
   const moveWidgetToIndex = (dragId, targetId, insertAfter = false) => {
@@ -9713,6 +10114,8 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       return <PersonalTrackerCard
         tracker={tracker}
         dateKey={selectedDateKey}
+        widgetKey="personalTracker"
+        onInfoOpen={openWidgetInfo}
         onOpen={() => setActiveTrackerId(tracker.id)}
         onQuickAdd={(amount) => {
           const entry = getPersonalTrackerEntry(tracker, selectedDateKey);
@@ -9722,25 +10125,25 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     }
     switch (id) {
       case "metricWeight":
-        return <MetricWidgetCard title="Вес" value={formatOptionalMetric(selectedMeasurements?.weight, "кг")} delta={weightDelta == null ? "нет данных" : `${weightDelta > 0 ? "+" : ""}${weightDelta} кг от старта`} progress={bodyProgress} icon={Scale} onClick={() => setWeightSheetOpen(true)}/>;
+        return <WeightMetricWidgetCard title="Вес" value={formatOptionalMetric(currentWeightForWidget, "кг")} trendPoints={weightTrendPoints} icon={Scale} widgetKey="weight" onInfoOpen={openWidgetInfo} onClick={() => setWeightSheetOpen(true)}/>;
       case "metricBodyFat":
-        return <MetricWidgetCard title="Процент жира" value={formatOptionalMetric(selectedMeasurements?.bodyFat, "%")} delta={hasPositiveMetric(selectedMeasurements?.bodyFat) ? "по замерам" : "нет данных"} progress={hasPositiveMetric(selectedMeasurements?.bodyFat) ? Math.max(0, 100 - Number(selectedMeasurements.bodyFat) * 4) : 0} icon={Ruler} onClick={() => setActive("progress")}/>;
+        return <MetricWidgetCard title="Процент жира" value={formatOptionalMetric(selectedMeasurements?.bodyFat, "%")} delta={hasPositiveMetric(selectedMeasurements?.bodyFat) ? "по замерам" : "нет данных"} progress={hasPositiveMetric(selectedMeasurements?.bodyFat) ? Math.max(0, 100 - Number(selectedMeasurements.bodyFat) * 4) : 0} icon={Ruler} widgetKey="bodyFat" onInfoOpen={openWidgetInfo} onClick={() => setActive("progress")}/>;
       case "metricTonnage":
-        return <MetricWidgetCard title="Тоннаж" value={formatHomeVolumeKg(currentWeekWorkoutSummary.completedVolume)} sub={`из ${formatHomeVolumeKg(currentWeekWorkoutSummary.plannedVolume)} запланировано`} progress={currentWeekTonnageProgress} icon={Dumbbell} onClick={() => setActive("workouts")}/>;
+        return <MetricWidgetCard title="Тоннаж" value={formatHomeVolumeKg(currentWeekWorkoutSummary.completedVolume)} sub={`из ${formatHomeVolumeKg(currentWeekWorkoutSummary.plannedVolume)} запланировано`} progress={currentWeekTonnageProgress} icon={Dumbbell} widgetKey="tonnage" onInfoOpen={openWidgetInfo} onClick={() => setActive("workouts")}/>;
       case "metricSets":
-        return <MetricWidgetCard title="Подходы" value={currentWeekWorkoutSummary.completedSets} sub={`из ${currentWeekWorkoutSummary.plannedSets} запланировано`} progress={currentWeekWorkoutSummary.progress} icon={CheckCircle2} onClick={() => setActive("workouts")}/>;
+        return <MetricWidgetCard title="Подходы" value={currentWeekWorkoutSummary.completedSets} sub={`из ${currentWeekWorkoutSummary.plannedSets} запланировано`} progress={currentWeekWorkoutSummary.progress} icon={CheckCircle2} widgetKey="sets" onInfoOpen={openWidgetInfo} onClick={() => setActive("workouts")}/>;
       case "metricCalories":
-        return <MetricWidgetCard title={homeUsesPalmNutrition ? "Ладони" : "Калории"} value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.total) : selectedNutritionTotals.calories} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.target)}` : `/ ${nutritionGoal.calories} ккал`} delta={`${homeUsesPalmNutrition ? palmNutritionPercent : caloriesPercent}% цели`} progress={homeUsesPalmNutrition ? palmNutritionPercent : caloriesPercent} icon={Apple} onClick={openNutritionFromHome}/>;
+        return <MetricWidgetCard title={homeUsesPalmNutrition ? "Ладони" : "Калории"} value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.total) : selectedNutritionTotals.calories} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.target)}` : `/ ${nutritionGoal.calories} ккал`} delta={`${homeUsesPalmNutrition ? palmNutritionPercent : caloriesPercent}% цели`} progress={homeUsesPalmNutrition ? palmNutritionPercent : caloriesPercent} icon={Apple} widgetKey="calories" onInfoOpen={openWidgetInfo} onClick={openNutritionFromHome}/>;
       case "metricProtein":
-        return <MetricWidgetCard title="Белок" value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.actual.protein) : `${selectedNutritionTotals.protein} г`} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.targets.protein)}` : `/ ${nutritionGoal.protein} г`} delta={`${homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}% цели`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent} icon={Utensils} onClick={openNutritionFromHome}/>;
+        return <MetricWidgetCard title="Белок" value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.actual.protein) : `${selectedNutritionTotals.protein} г`} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.targets.protein)}` : `/ ${nutritionGoal.protein} г`} delta={`${homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}% цели`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent} icon={Utensils} widgetKey="protein" onInfoOpen={openWidgetInfo} onClick={openNutritionFromHome}/>;
       case "metricRecovery":
-        return <MetricWidgetCard title="Восстановление" value={recovery == null ? "—" : `${recovery}%`} sub={selectedHealthLog.sleep_duration_minutes ? sleepQualityLabel(selectedHealthLog) : "сон не добавлен"} progress={recovery || 0} icon={HeartPulse} onClick={() => openAnalyticsFromHome("recovery")}/>;
+        return <MetricWidgetCard title="Восстановление" value={recovery == null ? "—" : `${recovery}%`} sub={selectedHealthLog.sleep_duration_minutes ? sleepQualityLabel(selectedHealthLog) : "сон не добавлен"} progress={recovery || 0} icon={HeartPulse} widgetKey="recovery" onInfoOpen={openWidgetInfo} onClick={() => openAnalyticsFromHome("recovery")}/>;
       case "metricSleep":
-        return <MetricWidgetCard title="Сон" value={formatSleepDuration(selectedHealthLog.sleep_duration_minutes)} sub={selectedHealthLog.sleep_duration_minutes ? `${selectedHealthLog.sleep_latency_minutes || 0} мин засыпание · ${selectedHealthLog.sleep_awakenings || 0} проб.` : "нажми, чтобы добавить"} progress={selectedHealthLog.sleep_duration_minutes ? Math.min(100, Math.round((selectedHealthLog.sleep_duration_minutes / 480) * 100)) : 0} icon={Moon} onClick={() => setSleepSheetOpen(true)}/>;
+        return <MetricWidgetCard title="Сон" value={formatSleepDuration(selectedHealthLog.sleep_duration_minutes)} sub={selectedHealthLog.sleep_duration_minutes ? `${selectedHealthLog.sleep_latency_minutes || 0} мин засыпание · ${selectedHealthLog.sleep_awakenings || 0} проб.` : "нажми, чтобы добавить"} progress={selectedHealthLog.sleep_duration_minutes ? Math.min(100, Math.round((selectedHealthLog.sleep_duration_minutes / 480) * 100)) : 0} icon={Moon} widgetKey="sleep" onInfoOpen={openWidgetInfo} onClick={() => setSleepSheetOpen(true)}/>;
       case "metricSteps":
-        return <MetricWidgetCard title="Шаги" value={selectedSteps.toLocaleString("ru-RU")} sub={`цель ${stepsGoal.toLocaleString("ru-RU")}`} progress={stepsProgress} icon={Activity} onClick={() => setStepsSheetOpen(true)}/>;
+        return <MetricWidgetCard title="Шаги" value={selectedSteps.toLocaleString("ru-RU")} sub={`цель ${stepsGoal.toLocaleString("ru-RU")}`} progress={stepsProgress} icon={Activity} widgetKey="steps" onInfoOpen={openWidgetInfo} onClick={() => setStepsSheetOpen(true)}/>;
       case "macros":
-        return <MetricWidgetCard title={homeUsesPalmNutrition ? "Ладони" : "БЖУ"} value={`${homeUsesPalmNutrition ? palmNutritionPercent : proteinPercent}%`} sub={homeUsesPalmNutrition ? `${palmLabel(selectedPalmSummary.actual.protein)} белк. · ${palmLabel(selectedPalmSummary.actual.carbs)} угл.` : `${selectedNutritionTotals.protein} Б · ${selectedNutritionTotals.fat} Ж · ${selectedNutritionTotals.carbs} У`} icon={Utensils} onClick={openNutritionFromHome}>
+        return <MetricWidgetCard title={homeUsesPalmNutrition ? "Ладони" : "БЖУ"} value={`${homeUsesPalmNutrition ? palmNutritionPercent : proteinPercent}%`} sub={homeUsesPalmNutrition ? `${palmLabel(selectedPalmSummary.actual.protein)} белк. · ${palmLabel(selectedPalmSummary.actual.carbs)} угл.` : `${selectedNutritionTotals.protein} Б · ${selectedNutritionTotals.fat} Ж · ${selectedNutritionTotals.carbs} У`} icon={Utensils} widgetKey="macros" onInfoOpen={openWidgetInfo} onClick={openNutritionFromHome}>
           <div className="onlypump-macro-lines">
             <HomeMacroLine label="Б" value={homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.protein)}/${roundMacro(selectedPalmSummary.targets.protein)}` : `${selectedNutritionTotals.protein}/${nutritionGoal.protein}`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}/>
             <HomeMacroLine label="Ж" value={homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.fat)}/${roundMacro(selectedPalmSummary.targets.fat)}` : `${selectedNutritionTotals.fat}/${nutritionGoal.fat}`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.fat / Math.max(1, selectedPalmSummary.targets.fat)) * 100)) : fatPercent}/>
@@ -9760,25 +10163,27 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
 	                    <span className="truncate text-[10px] text-zinc-500">/ {waterGoal.toLocaleString("ru-RU")} мл</span>
 	                  </div>
 	                </div>
-	                <Droplets size={18} className="shrink-0 text-sky-400"/>
+	                <WidgetInfoIcon widgetKey="water" label="Вода" onOpen={openWidgetInfo} className="shrink-0 text-sky-400"><Droplets size={18}/></WidgetInfoIcon>
 	              </div>
 	              <div className="mt-2"><Progress value={waterProgress} tone="sky"/></div>
 	            </div>
 	            <div className="onlypump-water-glass-actions" aria-label="Быстро изменить воду">
 	              <button type="button" onClick={(e) => { e.stopPropagation(); saveWaterQuick(250); }} className="onlypump-water-glass onlypump-water-glass-plus" aria-label="Добавить стакан воды">
+	                <img className="onlypump-water-glass-icon" src="assets/glass_full.svg" alt="" aria-hidden="true"/>
 	                <span className="onlypump-water-glass-count">{glassCount}</span>
 	                <span className="onlypump-water-glass-symbol">+</span>
 	              </button>
 	              <button type="button" onClick={(e) => { e.stopPropagation(); saveWaterQuick(-250); }} className="onlypump-water-glass onlypump-water-glass-minus" aria-label="Убрать стакан воды">
+	                <img className="onlypump-water-glass-icon" src="assets/glass.svg" alt="" aria-hidden="true"/>
 	                <span className="onlypump-water-glass-symbol">−</span>
 	              </button>
 	            </div>
 	          </Card>;
 	        }
       case "moodWellbeing":
-        return <MoodWellbeingWidgetCard healthLog={selectedHealthLog} onOpen={() => setMoodSheetOpen(true)}/>;
+        return <MoodWellbeingWidgetCard healthLog={selectedHealthLog} widgetKey="mood" onInfoOpen={openWidgetInfo} onOpen={() => setMoodSheetOpen(true)}/>;
       case "dailyNote":
-        return <DailyNoteWidgetCard healthLog={selectedHealthLog} onOpen={() => setDailyNoteSheetOpen(true)}/>;
+        return <DailyNoteWidgetCard healthLog={selectedHealthLog} widgetKey="dailyNote" onInfoOpen={openWidgetInfo} onOpen={() => setDailyNoteSheetOpen(true)}/>;
       case "workout":
         return <Card key={id} onClick={() => setActive("workouts")} className="onlypump-home-widget-card cursor-pointer overflow-hidden p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
           <div className="flex items-start justify-between gap-3">
@@ -9786,7 +10191,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
               <p className="onlypump-line-clamp-1 text-[11px] text-zinc-500">Тренировка</p>
               <h3 className="onlypump-line-clamp-2 mt-1 text-sm font-semibold leading-tight">Тренировка за выбранный день</h3>
             </div>
-            <Dumbbell size={18} className="shrink-0 text-red-500"/>
+            <WidgetInfoIcon widgetKey="workouts" label="Тренировка" onOpen={openWidgetInfo} className="shrink-0 text-red-500"><Dumbbell size={18}/></WidgetInfoIcon>
           </div>
           <div className="relative mt-3 min-h-0 flex-1 rounded-2xl bg-[url('https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?q=80&w=900&auto=format&fit=crop')] bg-cover bg-center grayscale">
             <div className="absolute inset-0 rounded-2xl bg-gradient-to-t from-black/85 via-black/25"/>
@@ -9842,7 +10247,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
           return <Card key={id} onClick={openNutritionFromHome} className="onlypump-home-widget-card onlypump-nutrition-widget cursor-pointer transition hover:border-red-500/50 hover:bg-red-500/5">
             <div className="flex items-start justify-between gap-2">
               <p className="onlypump-line-clamp-1 text-[11px] text-zinc-500">Питание</p>
-              <Apple size={16} className="shrink-0 text-red-500"/>
+              <WidgetInfoIcon widgetKey="nutrition" label="Питание" onOpen={openWidgetInfo} className="shrink-0 text-red-500"><Apple size={16}/></WidgetInfoIcon>
             </div>
               <div className="onlypump-nutrition-layout">
                 <div className="onlypump-nutrition-summary">
@@ -9907,7 +10312,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         return <Card key={id} onClick={() => setActive("lectures")} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
           <div className="flex items-center justify-between gap-3">
             <h3 className="onlypump-line-clamp-1 text-sm font-black">Продолжить обучение</h3>
-            <BookOpen size={18} className="shrink-0 text-red-500"/>
+            <WidgetInfoIcon widgetKey="lectures" label="Обучение" onOpen={openWidgetInfo} className="shrink-0 text-red-500"><BookOpen size={18}/></WidgetInfoIcon>
           </div>
           <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-hidden">
             {lectureItems.slice(0, 3).map(lecture => <div key={lecture.id} className="rounded-2xl border border-white/10 bg-white/[0.04] p-2">
@@ -9922,7 +10327,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         return <Card key={id} onClick={() => setActive("calculators")} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
           <div className="flex items-center justify-between gap-3">
             <h3 className="onlypump-line-clamp-1 text-sm font-black">Твои инструменты</h3>
-            <Calculator size={18} className="shrink-0 text-red-500"/>
+            <WidgetInfoIcon widgetKey="calculators" label="Инструменты" onOpen={openWidgetInfo} className="shrink-0 text-red-500"><Calculator size={18}/></WidgetInfoIcon>
           </div>
           <div className="mt-3 grid min-h-0 flex-1 grid-cols-2 gap-2 overflow-hidden">
             {calculators.slice(0, 4).map(({icon: Icon, title}) => <div key={title} className="min-h-0 rounded-2xl border border-white/10 bg-white/[0.04] p-2">
@@ -10086,6 +10491,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       onDelete={deletePersonalTracker}
       onClose={() => setTrackerSettingsDraft(null)}
     />}
+    <WidgetInfoSheet widgetKey={widgetInfoKey} onClose={() => setWidgetInfoKey("")}/>
     <InlineDateDataCard
       context="home"
       dateKey={selectedDateKey}
@@ -27248,6 +27654,7 @@ function OnlyPumpPlatform() {
     thigh: "",
     calf: "",
   });
+  const [measurementRecords, setMeasurementRecords] = useState([]);
   const [measurementOverlay, setMeasurementOverlay] = useState(null);
   const [profile, setProfile] = useState(null);
   const [themeTick, setThemeTick] = useState(() => Date.now());
@@ -27540,6 +27947,7 @@ function OnlyPumpPlatform() {
     }, { date: dateKey, measurement_date: dateKey });
     setMeasurements(prev => ({ ...prev, ...optimisticMeasurements, weight: nextWeight }));
     setMeasurementOverlay(optimisticRecord);
+    setMeasurementRecords(prev => mergeAnalyticsMeasurementRows(prev, optimisticRecord));
     clearCachedAnalyticsForProfile(profile || DEFAULT_PROFILE);
 
     if (!(profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id)) {
@@ -27561,6 +27969,7 @@ function OnlyPumpPlatform() {
         const measurement = result.effective_measurement || result.measurement;
         setMeasurementOverlay({ ...measurement, date: measurementDateKey(measurement) || dateKey, measurement_date: measurementDateKey(measurement) || dateKey });
         setMeasurements(prev => progressMeasurementsFromRecord(measurement, { ...prev, weight: nextWeight }));
+        setMeasurementRecords(prev => mergeAnalyticsMeasurementRows(prev, { ...measurement, date: measurementDateKey(measurement) || dateKey, measurement_date: measurementDateKey(measurement) || dateKey }));
       }
       return Boolean(savedProfile);
     } catch (error) {
@@ -27629,6 +28038,51 @@ function OnlyPumpPlatform() {
         return progressMeasurementsEqual(prev, next) ? prev : next;
       });
       return null;
+    }
+  }, [globalSelectedDateKey]);
+
+  const loadMeasurementHistoryForProfile = useCallback(async (activeProfile, initData, dateKey = globalSelectedDateKey) => {
+    if (!activeProfile) return [];
+
+    const localRecord = progressMeasurementFields.reduce((record, item) => {
+      const value = activeProfile?.[item.db] ?? activeProfile?.[item.field];
+      const number = profileNumber(value, 0);
+      if (number > 0) record[item.db] = number;
+      return record;
+    }, { date: dateKey, measurement_date: dateKey });
+    const hasLocalRecord = progressMeasurementFields.some(item => profileNumber(localRecord[item.db], 0) > 0);
+
+    if (!hasOnlyPumpRemoteAuth(initData) || !activeProfile.id) {
+      if (hasLocalRecord) setMeasurementRecords(prev => mergeAnalyticsMeasurementRows(prev, localRecord));
+      return hasLocalRecord ? [localRecord] : [];
+    }
+
+    const range = analyticsPeriodRange("year", dateKey);
+    const cached = readCachedAnalyticsForProfile(activeProfile, "overview", "all", "year", dateKey);
+    if (cached) {
+      const cachedRows = normalizeAnalyticsRemotePayload(cached).measurements;
+      if (cachedRows.length) setMeasurementRecords(cachedRows);
+    }
+
+    try {
+      const result = await callOnlyPumpProfileApi(initData, "load_analytics", {
+        date: dateKey,
+        start_date: range.startKey,
+        end_date: range.endKey,
+        scope: "overview",
+        metric: "all",
+      });
+      const next = normalizeAnalyticsRemotePayload(result);
+      const nextRows = next.measurements.length
+        ? next.measurements
+        : (hasLocalRecord ? [localRecord] : []);
+      setMeasurementRecords(nextRows);
+      writeCachedAnalyticsForProfile(activeProfile, "overview", "all", "year", dateKey, next);
+      return nextRows;
+    } catch (error) {
+      console.error("onlypump-profile-api measurement history error:", error);
+      if (hasLocalRecord) setMeasurementRecords(prev => mergeAnalyticsMeasurementRows(prev, localRecord));
+      return hasLocalRecord ? [localRecord] : [];
     }
   }, [globalSelectedDateKey]);
 
@@ -28202,6 +28656,7 @@ function OnlyPumpPlatform() {
         loadNutritionForProfile(savedProfile, telegramInitData, globalSelectedDateKey, { useCache: true }),
         loadHealthForProfile(savedProfile, telegramInitData, globalSelectedDateKey),
         loadProgressForProfile(savedProfile, telegramInitData, globalSelectedDateKey),
+        loadMeasurementHistoryForProfile(savedProfile, telegramInitData, globalSelectedDateKey),
       ]).then((results) => console.log("Access granted data refreshed", results.map(item => item.status)));
       return true;
     } catch (error) {
@@ -28213,7 +28668,7 @@ function OnlyPumpPlatform() {
       setProfileLoading(false);
       setAppLoading(false);
     }
-  }, [applyProfileState, globalSelectedDateKey, loadHealthForProfile, loadNutritionForProfile, loadProgressForProfile, loadWorkoutsForProfile, profile, telegramInitData]);
+  }, [applyProfileState, globalSelectedDateKey, loadHealthForProfile, loadMeasurementHistoryForProfile, loadNutritionForProfile, loadProgressForProfile, loadWorkoutsForProfile, profile, telegramInitData]);
 
   useEffect(() => {
     if (!profile) return;
@@ -28326,6 +28781,7 @@ function OnlyPumpPlatform() {
 	        loadNutritionForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey, { useCache: true }),
 	        loadHealthForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey),
 	        loadProgressForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey),
+	        loadMeasurementHistoryForProfile(activeProfile, result.status === "verified" ? initData : "", globalSelectedDateKey),
 	      ]);
 	      const initialDataResults = await Promise.race([
 	        initialDataPromise,
@@ -28391,6 +28847,13 @@ function OnlyPumpPlatform() {
   }, [accessGateStatus, globalSelectedDateKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData, loadProgressForProfile]);
 
   useEffect(() => {
+    if (!profile) return;
+    if (accessGateStatus) return;
+    const canUseRemoteMeasurements = profileStatus === "verified" && profileHasTestAccess(profile) && Boolean(hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id);
+    loadMeasurementHistoryForProfile(profile, canUseRemoteMeasurements ? telegramInitData : "", globalSelectedDateKey);
+  }, [accessGateStatus, globalSelectedDateKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData, loadMeasurementHistoryForProfile]);
+
+  useEffect(() => {
     if (!profile || !nutritionDay?.date) return;
     writeCachedNutritionForProfile(profile, nutritionDay.date, nutritionDay);
     const nextMarkers = nutritionDayHasFood(nutritionDay)
@@ -28434,7 +28897,7 @@ function OnlyPumpPlatform() {
   }, [homeLayoutMode, homeStateReady, JSON.stringify(homeWidgets), JSON.stringify(personalTrackers), personalTrackersOwnerKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData]);
 
   const page = useMemo(() => ({
-    home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionDay={nutritionDay} nutritionMarkedDateKeys={nutritionMarkedDateKeys} nutritionGoal={nutritionGoal} measurements={measurements} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} personalTrackers={personalTrackers} setPersonalTrackers={setPersonalTrackers} profile={profile} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} profileSaving={profileSaving} pumpXpSummary={pumpXpSummary} onOpenPumpXpDetails={() => setPumpXpDetailsOpen(true)} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onOpenAnalytics={openAnalyticsType}/>,
+    home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionDay={nutritionDay} nutritionMarkedDateKeys={nutritionMarkedDateKeys} nutritionGoal={nutritionGoal} measurements={measurements} measurementRecords={measurementRecords} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} personalTrackers={personalTrackers} setPersonalTrackers={setPersonalTrackers} profile={profile} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} profileSaving={profileSaving} pumpXpSummary={pumpXpSummary} onOpenPumpXpDetails={() => setPumpXpDetailsOpen(true)} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onOpenAnalytics={openAnalyticsType}/>,
     workouts: <WorkoutsPage workouts={workouts} setWorkouts={setWorkouts} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} profile={profile} telegramInitData={telegramInitData}/>,
     nutrition: <NutritionPage nutritionDay={nutritionDay} setNutritionDay={setNutritionDay} nutritionGoal={nutritionGoal} setNutritionGoal={setNutritionGoal} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} markedDateKeys={nutritionMarkedDateKeys} profile={profile} telegramInitData={telegramInitData} onNutritionAction={handleNutritionAction} nutritionLoading={nutritionRefreshing}/>,
     recipes: <UnderConstructionPage title="Рецепты" subtitle="Думаю, как тут все расположить"/>,
@@ -28446,7 +28909,7 @@ function OnlyPumpPlatform() {
     analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} nutritionDay={nutritionDay} healthLog={healthLog} healthLogs={healthLogs} personalTrackers={personalTrackers} healthSaving={healthSaving} healthRefreshing={healthRefreshing} profileSaving={profileSaving} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} analyticsIntent={analyticsIntent} measurementOverlay={measurementOverlay} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onSaveAnalyticsCardSettings={handleSaveAnalyticsCardSettings} onOpenNutrition={() => setActive("nutrition")} onOpenProgress={() => setActive("progress")}/>,
     community: <CommunityPage/>,
 	    profile: <ProfilePage profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} onSaveProfileQuiz={completeOnboardingProfile} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings} onStartTutorial={(screen = "home", options = {}) => startInteractiveTour(screen, { force: true, ...options })}/>,
-	  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, measurementOverlay, progressGoal, lectureItems, homeWidgets, personalTrackers, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, pumpXpSummary, handleNutritionAction, handleSaveProfile, completeOnboardingProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog, startInteractiveTour]);
+	  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, measurementRecords, measurementOverlay, progressGoal, lectureItems, homeWidgets, personalTrackers, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, pumpXpSummary, handleNutritionAction, handleSaveProfile, completeOnboardingProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog, startInteractiveTour]);
 
   if (appLoading || profileLoading) {
     return <LoadingScreen theme={activeTheme}/>;
