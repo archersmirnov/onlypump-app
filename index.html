@@ -626,6 +626,17 @@
       pointer-events: none;
       transform: translateX(-50%) translateY(0.75rem);
     }
+    html.onlypump-mobile-modal-open .onlypump-secondary-nav-bar,
+    html.onlypump-mobile-modal-open .onlypump-floating-nav-button,
+    html.onlypump-mobile-modal-open .onlypump-fullscreen-layer {
+      opacity: 0 !important;
+      pointer-events: none !important;
+      transform: translateX(-50%) translateY(1rem) scale(0.96);
+    }
+    html.onlypump-mobile-modal-open .onlypump-floating-nav-button,
+    html.onlypump-mobile-modal-open .onlypump-fullscreen-layer {
+      transform: translateY(1rem) scale(0.96);
+    }
     @media (max-width: 1023px) {
       .onlypump-main-scroll-with-secondary-nav {
         padding-bottom: calc(var(--onlypump-safe-bottom) + 6.35rem);
@@ -638,7 +649,7 @@
     }
     .onlypump-mobile-analytics-screen {
       padding-top: calc(var(--onlypump-safe-top) + var(--onlypump-telegram-main-top-offset) + 14px);
-      padding-bottom: calc(var(--onlypump-safe-bottom) + 18px);
+      padding-bottom: calc(var(--onlypump-safe-bottom) + 6.75rem);
     }
     @media (min-width: 1024px) {
       .onlypump-main-scroll {
@@ -22446,6 +22457,12 @@ function MobileAnalyticsScreen({ initialTab = "weight", onClose, profile = DEFAU
     setMeasurementSaveError("");
   }, [initialMeasurementsDraftKey]);
 
+  useEffect(() => {
+    const modalOpen = Boolean(infoSheetKey || unsavedWarningOpen);
+    document.documentElement.classList.toggle("onlypump-mobile-modal-open", modalOpen);
+    return () => document.documentElement.classList.remove("onlypump-mobile-modal-open");
+  }, [infoSheetKey, unsavedWarningOpen]);
+
   const mobileFieldChanged = (current, saved, key) => profileNumber(current?.[key], 0) !== profileNumber(saved?.[key], 0);
   const hasWeightDraftChanges = () => profileNumber(weightDraft, 0) !== profileNumber(savedWeightDraft, 0);
   const hasBodyFatDraftChanges = () => ["weight_kg", "neck_cm", "waist_cm"].some(key => mobileFieldChanged(bodyFatDraft, savedBodyFatDraft, key));
@@ -22636,12 +22653,12 @@ function MobileAnalyticsScreen({ initialTab = "weight", onClose, profile = DEFAU
   };
   const activeInfoSheet = mobileAnalyticsInfoContent[infoSheetKey];
 
-  const bodyFatField = ({ keyName, label, unit, infoKey }) => <label key={keyName} className="block rounded-[24px] border border-[var(--onlypump-border)] bg-[var(--onlypump-input)] p-4">
+  const bodyFatField = ({ keyName, label, unit, infoKey }) => <label key={keyName} className="block w-full min-w-0 overflow-hidden rounded-[20px] border border-[var(--onlypump-border)] bg-[var(--onlypump-input)] p-3">
     <span className="flex items-center justify-between gap-2">
       <span className="text-xs font-black uppercase tracking-[0.16em] text-[var(--onlypump-muted)]">{label}</span>
       {infoButton(infoKey, label)}
     </span>
-    <div className="mt-3 flex items-end gap-2">
+    <div className="mt-2 flex min-w-0 items-end gap-2">
       <input
         type="number"
         min="0"
@@ -22650,9 +22667,9 @@ function MobileAnalyticsScreen({ initialTab = "weight", onClose, profile = DEFAU
         value={bodyFatDraft[keyName] ?? ""}
         onChange={(event) => updateBodyFatDraft(keyName, event.target.value)}
         placeholder="0"
-        className="min-w-0 flex-1 bg-transparent text-3xl font-black text-[var(--onlypump-text)] outline-none placeholder:text-[var(--onlypump-faint)]"
+        className="min-w-0 flex-1 bg-transparent text-[2rem] font-black leading-none text-[var(--onlypump-text)] outline-none placeholder:text-[var(--onlypump-faint)]"
       />
-      <span className="pb-1 text-sm font-black text-[var(--onlypump-muted)]">{unit}</span>
+      <span className="pb-0.5 text-xs font-black text-[var(--onlypump-muted)]">{unit}</span>
     </div>
   </label>;
 
@@ -22688,37 +22705,37 @@ function MobileAnalyticsScreen({ initialTab = "weight", onClose, profile = DEFAU
     {weightSaveError && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{weightSaveError}</p>}
   </Card>;
 
-  const renderBodyFatTab = () => <Card className="flex min-h-[520px] flex-col border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-5 text-[var(--onlypump-text)]">
+  const renderBodyFatTab = () => <Card className="flex min-h-0 w-full min-w-0 flex-col overflow-hidden border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-4 text-[var(--onlypump-text)]">
     <div className="flex items-start justify-between gap-3">
       <span aria-hidden="true" className="h-9 w-9 shrink-0"/>
       <div className="flex flex-1 justify-center">
         {!mascotFailed ? <img
           src="./assets/mascot/loader-think.gif"
           alt=""
-          className="h-28 w-28 object-contain"
+          className="h-20 w-20 object-contain"
           onError={() => setMascotFailed(true)}
-        /> : <div aria-hidden="true" className="h-28 w-28 rounded-full bg-white/[0.06]"/>}
+        /> : <div aria-hidden="true" className="h-20 w-20 rounded-full bg-white/[0.06]"/>}
       </div>
       {infoButton("bodyFat", "Процент жира")}
     </div>
-    <div className="mt-5 grid gap-3">
+    <div className="mt-3 grid w-full min-w-0 gap-2">
       {bodyFatField({ keyName: "weight_kg", label: "Вес", unit: "кг", infoKey: "bodyFatWeight" })}
       {bodyFatField({ keyName: "neck_cm", label: "Шея", unit: "см", infoKey: "neck" })}
       {bodyFatField({ keyName: "waist_cm", label: "Талия", unit: "см", infoKey: "waist" })}
     </div>
-    <div className="mt-auto pt-6 text-center">
-      <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--onlypump-muted)]">% жира</p>
-      <div className="mt-2 text-6xl font-black leading-none tracking-[-0.06em] text-red-500">{calculatedBodyFat === null ? "—%" : `${calculatedBodyFat}%`}</div>
+    <div className="mt-auto pt-4 text-center">
+      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--onlypump-muted)]">% жира</p>
+      <div className="mt-1 text-5xl font-black leading-none tracking-[-0.05em] text-red-500">{calculatedBodyFat === null ? "—%" : `${calculatedBodyFat}%`}</div>
     </div>
     {bodyFatSaveError && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{bodyFatSaveError}</p>}
   </Card>;
 
-  const measurementField = (item) => <label key={item.db} className="block rounded-[22px] border border-[var(--onlypump-border)] bg-[var(--onlypump-input)] p-3">
+  const measurementField = (item) => <label key={item.db} className="block min-w-0 rounded-[18px] border border-[var(--onlypump-border)] bg-[var(--onlypump-input)] p-2.5">
     <span className="flex items-center justify-between gap-2">
-      <span className="block truncate text-[10px] font-black uppercase tracking-[0.14em] text-[var(--onlypump-muted)]">{item.label}</span>
+      <span className="block truncate text-[9px] font-black uppercase tracking-[0.12em] text-[var(--onlypump-muted)]">{item.label}</span>
       {infoButton("measurement", item.label)}
     </span>
-    <div className="mt-2 flex items-end gap-2">
+    <div className="mt-1.5 flex min-w-0 items-end gap-1.5">
       <input
         type="number"
         min="0"
@@ -22727,26 +22744,26 @@ function MobileAnalyticsScreen({ initialTab = "weight", onClose, profile = DEFAU
         value={measurementsDraft[item.db] ?? ""}
         onChange={(event) => updateMeasurementDraft(item.db, event.target.value)}
         placeholder="0"
-        className="min-w-0 flex-1 bg-transparent text-2xl font-black text-[var(--onlypump-text)] outline-none placeholder:text-[var(--onlypump-faint)]"
+        className="min-w-0 flex-1 bg-transparent text-[1.65rem] font-black leading-none text-[var(--onlypump-text)] outline-none placeholder:text-[var(--onlypump-faint)]"
       />
-      <span className="pb-1 text-xs font-black text-[var(--onlypump-muted)]">{item.unit}</span>
+      <span className="pb-0.5 text-[11px] font-black text-[var(--onlypump-muted)]">{item.unit}</span>
     </div>
   </label>;
 
-  const renderMeasurementsTab = () => <Card className="flex min-h-[520px] flex-col border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-5 text-[var(--onlypump-text)]">
+  const renderMeasurementsTab = () => <Card className="flex min-h-0 flex-col border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-4 text-[var(--onlypump-text)]">
     <div className="flex items-start justify-between gap-3">
       <span aria-hidden="true" className="h-9 w-9 shrink-0"/>
       <div className="flex flex-1 justify-center">
         {!mascotFailed ? <img
           src="./assets/mascot/loader-think.gif"
           alt=""
-          className="h-28 w-28 object-contain"
+          className="h-20 w-20 object-contain"
           onError={() => setMascotFailed(true)}
-        /> : <div aria-hidden="true" className="h-28 w-28 rounded-full bg-white/[0.06]"/>}
+        /> : <div aria-hidden="true" className="h-20 w-20 rounded-full bg-white/[0.06]"/>}
       </div>
       {infoButton("measurements", "Замеры")}
     </div>
-    <div className="mt-5 grid grid-cols-2 gap-3">
+    <div className="mt-3 grid grid-cols-2 gap-2">
       {mobileMeasurementFields.map(measurementField)}
     </div>
     {measurementSaveError && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{measurementSaveError}</p>}
@@ -22793,7 +22810,7 @@ function MobileAnalyticsScreen({ initialTab = "weight", onClose, profile = DEFAU
     </div>
   </Card>;
 
-  return <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col pb-2">
+  return <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col pb-[calc(var(--onlypump-safe-bottom)+6.75rem)]">
     <div className="mb-5 flex items-center justify-between gap-3">
       <button type="button" onClick={() => requestMobileAction({ type: "close" })} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--onlypump-soft)] text-[var(--onlypump-text)] transition active:scale-95" aria-label="Назад в аналитику">
         <ArrowLeft size={20}/>
@@ -22824,19 +22841,19 @@ function MobileAnalyticsScreen({ initialTab = "weight", onClose, profile = DEFAU
       {activeTab === "weight" ? renderWeightTab() : activeTab === "bodyFat" ? renderBodyFatTab() : activeTab === "measurements" ? renderMeasurementsTab() : activeTab === "photo" ? renderPhotoTab() : renderPlaceholderTab()}
     </div>
 
-    <div className="mt-5 rounded-[26px] border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)] p-2">
+    <div className="mt-3 rounded-[24px] border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)] p-1.5 shadow-xl shadow-black/10">
       {activeTab === "weight"
-        ? <Button type="button" onClick={saveWeight} disabled={saving} className="h-14 w-full rounded-[22px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+        ? <Button type="button" onClick={saveWeight} disabled={saving} className="h-12 w-full rounded-[20px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
         : activeTab === "bodyFat"
-        ? <Button type="button" onClick={saveBodyFat} disabled={saving} className="h-14 w-full rounded-[22px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+        ? <Button type="button" onClick={saveBodyFat} disabled={saving} className="h-12 w-full rounded-[20px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
         : activeTab === "measurements"
-        ? <Button type="button" onClick={saveMeasurements} disabled={saving} className="h-14 w-full rounded-[22px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
+        ? <Button type="button" onClick={saveMeasurements} disabled={saving} className="h-12 w-full rounded-[20px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black disabled:opacity-50">{saving ? "Сохраняю..." : "Сохранить"}</Button>
         : activeTab === "photo"
-        ? <Button type="button" onClick={savePhotoReport} className="h-14 w-full rounded-[22px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black">Сохранить</Button>
-        : <div aria-hidden="true" className="h-14"/>}
+        ? <Button type="button" onClick={savePhotoReport} className="h-12 w-full rounded-[20px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black">Сохранить</Button>
+        : <div aria-hidden="true" className="h-12"/>}
     </div>
 
-    {activeInfoSheet && <div className="fixed inset-0 z-[240] flex items-end justify-center bg-black/70 px-3 pt-10 backdrop-blur-sm" onClick={() => setInfoSheetKey("")}>
+    {activeInfoSheet && <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/70 px-3 pt-10 backdrop-blur-sm" onClick={() => setInfoSheetKey("")}>
       <div className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-t-[34px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] text-[var(--onlypump-text)] shadow-2xl shadow-black/50" onClick={(event) => event.stopPropagation()}>
         <div className="sticky top-0 z-10 border-b border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-5 pb-3 pt-3">
           <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-[var(--onlypump-border)]"/>
@@ -22857,14 +22874,14 @@ function MobileAnalyticsScreen({ initialTab = "weight", onClose, profile = DEFAU
           <div className="my-5 h-px bg-[var(--onlypump-border)]"/>
           <p className="rounded-[22px] bg-[var(--onlypump-soft)] p-4 text-sm font-semibold leading-6 text-[var(--onlypump-text)]">{renderFooterText(activeInfoSheet.footer)}</p>
         </div>
-        <div className="sticky bottom-0 border-t border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-4">
+        <div className="sticky bottom-0 border-t border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-4 pb-[calc(var(--onlypump-safe-bottom)+1rem)] pt-4">
           <Button type="button" onClick={() => setInfoSheetKey("")} className="h-14 w-full rounded-[22px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black">Понятно!</Button>
         </div>
       </div>
     </div>}
 
-    {unsavedWarningOpen && <div className="fixed inset-0 z-[245] flex items-end justify-center bg-black/70 px-3 pt-10 backdrop-blur-sm" onClick={() => setUnsavedWarningOpen(false)}>
-      <div className="w-full max-w-xl rounded-t-[34px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-5 text-[var(--onlypump-text)] shadow-2xl shadow-black/50" onClick={(event) => event.stopPropagation()}>
+    {unsavedWarningOpen && <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/70 px-3 pt-10 backdrop-blur-sm" onClick={() => setUnsavedWarningOpen(false)}>
+      <div className="w-full max-w-xl rounded-t-[34px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-5 pb-[calc(var(--onlypump-safe-bottom)+1rem)] pt-5 text-[var(--onlypump-text)] shadow-2xl shadow-black/50" onClick={(event) => event.stopPropagation()}>
         <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-[var(--onlypump-border)]"/>
         <div className="flex items-center justify-between gap-3">
           <span aria-hidden="true" className="h-10 w-10 shrink-0"/>
