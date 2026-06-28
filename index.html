@@ -2118,6 +2118,42 @@ console.log("ONLYPUMP START");
 console.log("ONLYPUMP BUILD", ONLYPUMP_FRONTEND_BUILD);
 console.log("Telegram object exists", Boolean(telegramWebApp || window.Telegram?.WebApp));
 
+const ONLYPUMP_HAPTIC_THROTTLE_MS = 85;
+let onlyPumpLastSelectionHapticAt = 0;
+let onlyPumpLastHapticAt = 0;
+let onlyPumpLastHapticType = "";
+
+function triggerOnlyPumpHaptic(type = "light") {
+  if (typeof window === "undefined") return false;
+  const feedback = window.Telegram?.WebApp?.HapticFeedback;
+  if (!feedback) return false;
+
+  try {
+    const now = Date.now();
+    if (type === "selection") {
+      if (now - onlyPumpLastSelectionHapticAt < ONLYPUMP_HAPTIC_THROTTLE_MS) return false;
+      onlyPumpLastSelectionHapticAt = now;
+      feedback.selectionChanged?.();
+      return true;
+    }
+
+    if (type === onlyPumpLastHapticType && now - onlyPumpLastHapticAt < 60) return false;
+    onlyPumpLastHapticType = type;
+    onlyPumpLastHapticAt = now;
+
+    if (type === "success" || type === "error" || type === "warning") {
+      feedback.notificationOccurred?.(type);
+      return true;
+    }
+
+    const impactType = ["light", "medium", "heavy", "rigid", "soft"].includes(type) ? type : "light";
+    feedback.impactOccurred?.(impactType);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
 document.addEventListener("focusin", (event) => {
   const target = event.target;
   if (!target?.matches?.("input, textarea, select")) return;
@@ -3153,8 +3189,12 @@ function BottomSheetPanel({ children, className = "", onClose, priority = 150, s
   const dragRef = useRef(null);
   const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
+  const closeWithHaptic = useCallback(() => {
+    triggerOnlyPumpHaptic("light");
+    onClose?.();
+  }, [onClose]);
 
-  useAppBackLayer(idRef.current, true, onClose, priority);
+  useAppBackLayer(idRef.current, true, closeWithHaptic, priority);
 
   useEffect(() => {
     updateOnlyPumpSheetLock(1);
@@ -3223,7 +3263,7 @@ function BottomSheetPanel({ children, className = "", onClose, priority = 150, s
     setDragging(false);
     if (shouldClose) {
       setDragY(0);
-      onClose?.();
+      closeWithHaptic();
     } else {
       setDragY(0);
     }
@@ -7228,6 +7268,37 @@ function Button({ children, className = "", as = "button", href, ...props }) {
   );
 }
 
+function getOnlyPumpButtonHapticType(element) {
+  const explicitType = element?.dataset?.haptic;
+  if (explicitType) return explicitType;
+  const text = [
+    element?.getAttribute?.("aria-label"),
+    element?.getAttribute?.("title"),
+    element?.textContent,
+  ].filter(Boolean).join(" ").trim().toLowerCase();
+
+  if (/удал|delete|remove|trash|🗑/.test(text)) return "heavy";
+  if (/ошиб|error/.test(text)) return "error";
+  if (/сохран|готово|заверш|выполн|создат|добав|начать|запуск|повтор|выбрать|отметить|войти|проверяю|подтверд/.test(text)) return "medium";
+  return "light";
+}
+
+function useOnlyPumpHapticFeedback() {
+  useEffect(() => {
+    const handleButtonPointerUp = (event) => {
+      if (event.defaultPrevented) return;
+      const button = event.target?.closest?.('button, [role="button"], a[href], input[type="button"], input[type="submit"]');
+      if (!button) return;
+      if (button.disabled || button.getAttribute?.("aria-disabled") === "true") return;
+      if (button.closest?.('[data-no-haptic="true"]')) return;
+      triggerOnlyPumpHaptic(getOnlyPumpButtonHapticType(button));
+    };
+
+    document.addEventListener("pointerup", handleButtonPointerUp, true);
+    return () => document.removeEventListener("pointerup", handleButtonPointerUp, true);
+  }, []);
+}
+
 const emptyPumpXpSummary = () => ({
   totalXp: 0,
   level: getPumpXpLevel(0),
@@ -8196,6 +8267,7 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
     dragging.current = false;
     try { event?.currentTarget?.releasePointerCapture?.(event.pointerId); } catch {}
     const shouldOpen = latestOffset.current < maxOffset * 0.35;
+    if (shouldOpen && latestOffset.current > maxOffset + 4) triggerOnlyPumpHaptic("medium");
     setRowOffset(shouldOpen ? maxOffset : 0);
     if (rowId != null) setSwipedId?.(shouldOpen ? rowId : null);
     setTimeout(() => { didDrag.current = false; }, 120);
@@ -8208,6 +8280,7 @@ function SwipeActionRow({ children, actions = [], actionWidth = 68, className = 
     const now = Date.now();
     if (actionTriggerRef.current.label === action.label && now - actionTriggerRef.current.time < 350) return;
     actionTriggerRef.current = { label: action.label, time: now };
+    triggerOnlyPumpHaptic(getOnlyPumpButtonHapticType({ dataset: {}, getAttribute: () => "", textContent: action.label || "" }));
     action.onClick?.(event);
     window.setTimeout(() => {
       setRowOffset(0);
@@ -8480,62 +8553,224 @@ function InlineDateDataCard({ context = "home", dateKey, nutritionTotals, nutrit
 const clampProgress = (value = 0) => Math.max(0, Math.min(100, Number.isFinite(Number(value)) ? Number(value) : 0));
 const normalizeRingProgress = (value = 0) => Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0);
 
-const buildDayActivityRingProgress = (log = {}, stepsGoal = DEFAULT_PROFILE.steps_per_day) => {
-  const safeStepsGoal = Math.max(1, profileNonNegativeNumber(stepsGoal, DEFAULT_PROFILE.steps_per_day));
-  const normalized = normalizeHealthLog(log || {}, log?.log_date || log?.date || formatDateKey(new Date()));
-  const steps = profileNonNegativeNumber(normalized.steps_count, 0);
-  const sleepMinutes = profileNonNegativeNumber(normalized.sleep_duration_minutes, 0);
-  const recovery = normalized.recovery_score === null || normalized.recovery_score === undefined
-    ? null
-    : profileNonNegativeNumber(normalized.recovery_score, 0);
-  return {
-    steps: steps > 0 ? normalizeRingProgress((steps / safeStepsGoal) * 100) : null,
-    sleep: sleepMinutes > 0 ? normalizeRingProgress((sleepMinutes / 480) * 100) : null,
-    recovery: recovery !== null ? normalizeRingProgress(recovery) : null,
-  };
+const ACTIVITY_RING_SETTINGS_STORAGE_KEY = "onlypump_activity_ring_settings_v1";
+const defaultActivityRingConfig = { outer: "steps", middle: "sleep", inner: "recovery" };
+const activityRingSlots = [
+  { key: "outer", label: "Внешнее кольцо", shortLabel: "Внешнее", radius: 20, color: "#ef4444", track: "rgba(239,68,68,0.16)" },
+  { key: "middle", label: "Среднее кольцо", shortLabel: "Среднее", radius: 15, color: "#22d3ee", track: "rgba(34,211,238,0.16)" },
+  { key: "inner", label: "Внутреннее кольцо", shortLabel: "Внутреннее", radius: 10, color: "#84f23f", track: "rgba(132,242,63,0.18)" },
+];
+const activityRingMetricOptions = [
+  { id: "steps", label: "Шаги", unit: "шагов" },
+  { id: "calories", label: "Калории", unit: "ккал" },
+  { id: "protein", label: "Белки", unit: "г" },
+  { id: "fat", label: "Жиры", unit: "г" },
+  { id: "carbs", label: "Углеводы", unit: "г" },
+  { id: "fatCarbs", label: "Жиры + углеводы", unit: "ккал" },
+  { id: "sleep", label: "Сон", unit: "мин" },
+  { id: "recovery", label: "Восстановление", unit: "%" },
+  { id: "workoutDone", label: "Выполненная тренировка", unit: "шт" },
+  { id: "water", label: "Вода", unit: "мл" },
+  { id: "tonnage", label: "Тоннаж за день", unit: "кг" },
+  { id: "sets", label: "Подходы за день", unit: "подх." },
+];
+const activityRingMetricIds = activityRingMetricOptions.map(option => option.id);
+const activityRingFallbackGoalMetrics = new Set(["sleep", "recovery", "workoutDone", "tonnage", "sets", "fatCarbs"]);
+
+const normalizeActivityRingConfig = (config = {}) => {
+  const next = { ...defaultActivityRingConfig };
+  activityRingSlots.forEach(slot => {
+    const value = config?.[slot.key];
+    next[slot.key] = activityRingMetricIds.includes(value) ? value : defaultActivityRingConfig[slot.key];
+  });
+  return next;
 };
+
+const normalizeActivityRingGoals = (goals = {}) => activityRingMetricIds.reduce((acc, metricId) => {
+  const value = Number(goals?.[metricId]);
+  if (Number.isFinite(value) && value > 0) acc[metricId] = value;
+  return acc;
+}, {});
+
+const getActivityRingSettingsKeys = (profile = DEFAULT_PROFILE) => {
+  const roots = [
+    profile?.telegram_id,
+    profile?.telegramId,
+    profile?.id,
+    profile?.email ? `email_${String(profile.email).trim().toLowerCase()}` : "",
+    "local",
+  ].filter(Boolean);
+  return Array.from(new Set(roots.map(value => `${ACTIVITY_RING_SETTINGS_STORAGE_KEY}_${String(value)}`)));
+};
+
+const readActivityRingSettings = (profile = DEFAULT_PROFILE) => {
+  const fallback = { config: defaultActivityRingConfig, goals: {} };
+  if (typeof window === "undefined") return fallback;
+  try {
+    for (const key of getActivityRingSettingsKeys(profile)) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      return {
+        config: normalizeActivityRingConfig(parsed?.config || parsed),
+        goals: normalizeActivityRingGoals(parsed?.goals || {}),
+      };
+    }
+  } catch (error) {
+    console.log("Activity ring settings cache error", error);
+  }
+  return fallback;
+};
+
+const writeActivityRingSettings = (profile = DEFAULT_PROFILE, config = defaultActivityRingConfig, goals = {}) => {
+  if (typeof window === "undefined") return;
+  try {
+    const payload = JSON.stringify({ config: normalizeActivityRingConfig(config), goals: normalizeActivityRingGoals(goals) });
+    getActivityRingSettingsKeys(profile).forEach(key => localStorage.setItem(key, payload));
+  } catch (error) {
+    console.log("Activity ring settings cache error", error);
+  }
+};
+
+const getActivityRingMetricOption = (metricId) => activityRingMetricOptions.find(option => option.id === metricId) || activityRingMetricOptions[0];
+
+const formatActivityRingNumber = (value, maximumFractionDigits = 0) => Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits });
+const formatActivityRingValue = (value, unit = "") => {
+  const safe = Number(value || 0);
+  if (unit === "мин") return formatSleepDuration(safe);
+  if (unit === "кг") return `${formatActivityRingNumber(Math.round(safe * 10) / 10, 1)} ${unit}`;
+  if (unit === "%") return `${formatActivityRingNumber(Math.round(safe))}%`;
+  return `${formatActivityRingNumber(Math.round(safe))}${unit ? ` ${unit}` : ""}`;
+};
+
+const getRingHealthLogForDate = ({ dateKey, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [] }) => {
+  const currentKey = healthLog?.log_date || healthLog?.date;
+  const row = currentKey === dateKey ? healthLog : healthLogs.find(log => (log.log_date || log.date) === dateKey);
+  return normalizeHealthLog(row || {}, dateKey);
+};
+
+const getRingNutritionTotalsForDate = ({ dateKey, nutritionDay = null, nutritionTotals = {} }) => {
+  if (nutritionDay?.date === dateKey || nutritionDay?.log_date === dateKey) {
+    return buildNutritionTotalsForDate(dateKey, nutritionDay?.totals || nutritionTotals);
+  }
+  return buildNutritionTotalsForDate(dateKey, {});
+};
+
+const getRingWorkoutsForDate = ({ dateKey, workouts = [] }) => workouts.filter(workout => workout.date === dateKey);
+
+const getActivityRingMetricGoal = (metricId, context = {}) => {
+  const { profile = DEFAULT_PROFILE, nutritionGoal = initialNutritionGoal, healthLog = DEFAULT_HEALTH_LOG, workouts = [], dateKey = formatDateKey(new Date()), goals = {} } = context;
+  const overrideGoal = Number(goals?.[metricId]);
+  if (activityRingFallbackGoalMetrics.has(metricId) && Number.isFinite(overrideGoal) && overrideGoal > 0) return overrideGoal;
+  if (metricId === "steps") return Math.max(1, profileNonNegativeNumber(profile?.steps_per_day, DEFAULT_PROFILE.steps_per_day));
+  if (metricId === "calories") return Math.max(1, profileNonNegativeNumber(nutritionGoal?.calories, initialNutritionGoal.calories));
+  if (metricId === "protein") return Math.max(1, profileNonNegativeNumber(nutritionGoal?.protein, initialNutritionGoal.protein));
+  if (metricId === "fat") return Math.max(1, profileNonNegativeNumber(nutritionGoal?.fat, initialNutritionGoal.fat));
+  if (metricId === "carbs") return Math.max(1, profileNonNegativeNumber(nutritionGoal?.carbs, initialNutritionGoal.carbs));
+  if (metricId === "fatCarbs") return Math.max(1, profileNonNegativeNumber(nutritionGoal?.fat, initialNutritionGoal.fat) * 9 + profileNonNegativeNumber(nutritionGoal?.carbs, initialNutritionGoal.carbs) * 4);
+  if (metricId === "sleep") return 480;
+  if (metricId === "recovery") return 100;
+  if (metricId === "workoutDone") return 1;
+  if (metricId === "water") return Math.max(1, profileNonNegativeNumber(healthLog?.water_target_ml, DEFAULT_HEALTH_LOG.water_target_ml));
+  if (metricId === "tonnage") {
+    const weekSummary = summarizeCurrentWeekWorkouts(workouts, parseDateKeyLocal(dateKey));
+    return Math.max(1, Math.round((weekSummary.plannedVolume || 0) / 7) || 1000);
+  }
+  if (metricId === "sets") {
+    const weekSummary = summarizeCurrentWeekWorkouts(workouts, parseDateKeyLocal(dateKey));
+    return Math.max(1, Math.round((weekSummary.plannedSets || weekSummary.totalSets || 0) / 7) || 1);
+  }
+  return 1;
+};
+
+const buildActivityRingMetricDetails = (context = {}) => {
+  const { dateKey = formatDateKey(new Date()) } = context;
+  const healthLog = getRingHealthLogForDate(context);
+  const nutritionTotals = getRingNutritionTotalsForDate(context);
+  const dayWorkouts = getRingWorkoutsForDate(context);
+  const completedWorkouts = dayWorkouts.filter(workout => workout.status === "completed" || workout.done);
+  const workoutSummary = summarizeWorkouts(completedWorkouts.length ? completedWorkouts : dayWorkouts.filter(workout => workout.status === "completed"));
+  const values = {
+    steps: profileNonNegativeNumber(healthLog.steps_count, 0),
+    calories: profileNonNegativeNumber(nutritionTotals.calories, 0),
+    protein: profileNonNegativeNumber(nutritionTotals.protein, 0),
+    fat: profileNonNegativeNumber(nutritionTotals.fat, 0),
+    carbs: profileNonNegativeNumber(nutritionTotals.carbs, 0),
+    fatCarbs: profileNonNegativeNumber(nutritionTotals.fat, 0) * 9 + profileNonNegativeNumber(nutritionTotals.carbs, 0) * 4,
+    sleep: profileNonNegativeNumber(healthLog.sleep_duration_minutes, 0),
+    recovery: healthLog.recovery_score === null || healthLog.recovery_score === undefined ? null : profileNonNegativeNumber(healthLog.recovery_score, 0),
+    workoutDone: completedWorkouts.length,
+    water: profileNonNegativeNumber(healthLog.water_ml, 0),
+    tonnage: profileNonNegativeNumber(workoutSummary.completedVolume, 0),
+    sets: profileNonNegativeNumber(workoutSummary.completedSets, 0),
+  };
+  return activityRingMetricOptions.reduce((acc, option) => {
+    const value = values[option.id];
+    const goal = getActivityRingMetricGoal(option.id, { ...context, dateKey, healthLog });
+    const hasData = value !== null && value !== undefined && Number(value) > 0;
+    acc[option.id] = {
+      ...option,
+      value: value === null || value === undefined ? 0 : Number(value),
+      goal,
+      progress: hasData ? normalizeRingProgress((Number(value) / Math.max(1, goal)) * 100) : null,
+      hasData,
+    };
+    return acc;
+  }, {});
+};
+
+const buildActivityRingProgressForConfig = (details = {}, config = defaultActivityRingConfig) => {
+  const progress = {};
+  let hasAnyData = false;
+  const normalizedConfig = normalizeActivityRingConfig(config);
+  activityRingSlots.forEach(slot => {
+    const detail = details?.[normalizedConfig[slot.key]];
+    if (detail?.hasData) {
+      progress[slot.key] = detail.progress;
+      hasAnyData = true;
+    } else {
+      progress[slot.key] = null;
+    }
+  });
+  return hasAnyData ? progress : null;
+};
+
+function ActivityRingsSvg({ progress = null, className = "", strokeWidth = 4, trackOpacity = 1 }) {
+  const emptyDay = !progress;
+  return <svg viewBox="0 0 48 48" className={`-rotate-90 overflow-visible ${className}`} aria-hidden="true">
+    {activityRingSlots.map(ring => {
+      const circumference = 2 * Math.PI * ring.radius;
+      const rawValue = progress?.[ring.key];
+      const hasMetricData = rawValue !== null && rawValue !== undefined;
+      if (!emptyDay && !hasMetricData) return null;
+      const value = clampProgress(rawValue);
+      const renderArc = (arcValue, key) => <circle
+        key={key}
+        cx="24"
+        cy="24"
+        r={ring.radius}
+        fill="none"
+        stroke={ring.color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={circumference - (circumference * clampProgress(arcValue)) / 100}
+      />;
+      return <g key={ring.key}>
+        <circle cx="24" cy="24" r={ring.radius} fill="none" stroke={ring.track} strokeWidth={strokeWidth} opacity={trackOpacity}/>
+        {hasMetricData && value > 0 && renderArc(value, `${ring.key}-base`)}
+      </g>;
+    })}
+  </svg>;
+}
 
 function ActivityRingDay({ date, progress = null, selected = false, visibleDays = 7, marked = false, markerClassName = "bg-red-500" }) {
   const weekday = date.toLocaleDateString('ru-RU', { weekday: 'short' }).replace(".", "");
   const sizeClass = visibleDays === 14 ? "h-9 w-9 sm:h-10 sm:w-10 xl:h-11 xl:w-11" : "h-10 w-10 sm:h-11 sm:w-11";
-  const rings = [
-    { key: "steps", radius: 20, color: "#ef4444", track: "rgba(239,68,68,0.16)" },
-    { key: "sleep", radius: 15, color: "#22d3ee", track: "rgba(34,211,238,0.16)" },
-    { key: "recovery", radius: 10, color: "#84f23f", track: "rgba(132,242,63,0.18)" },
-  ];
-  const emptyDay = !progress;
   return <div className={`mx-auto flex flex-col items-center transition-transform duration-200 ${selected ? "scale-125" : "scale-100"}`} style={{ transformOrigin: "center center" }}>
     <span className="h-4 text-sm font-black leading-none text-[var(--onlypump-text)] sm:text-base">{date.getDate()}</span>
     <span className={`relative mt-0.5 flex ${sizeClass} items-center justify-center`}>
-      <svg viewBox="0 0 48 48" className="absolute inset-0 h-full w-full -rotate-90 overflow-visible" aria-hidden="true">
-        {rings.map(ring => {
-          const circumference = 2 * Math.PI * ring.radius;
-          const rawValue = progress?.[ring.key];
-          const hasMetricData = rawValue !== null && rawValue !== undefined;
-          if (!emptyDay && !hasMetricData) return null;
-          const value = normalizeRingProgress(rawValue);
-          const baseValue = Math.min(value, 100);
-          const overlapValue = value > 100 ? value % 100 || 100 : 0;
-          const renderArc = (arcValue, key, overlap = false) => <circle
-            key={key}
-            cx="24"
-            cy="24"
-            r={ring.radius}
-            fill="none"
-            stroke={ring.color}
-            strokeWidth={overlap ? "5.2" : "4"}
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={circumference - (circumference * clampProgress(arcValue)) / 100}
-            opacity={overlap ? "0.86" : "1"}
-          />;
-          return <g key={ring.key}>
-            <circle cx="24" cy="24" r={ring.radius} fill="none" stroke={ring.track} strokeWidth="4" />
-            {hasMetricData && baseValue > 0 && renderArc(baseValue, `${ring.key}-base`)}
-            {hasMetricData && overlapValue > 0 && renderArc(overlapValue, `${ring.key}-overlap`, true)}
-          </g>;
-        })}
-      </svg>
+      <ActivityRingsSvg progress={progress} className="absolute inset-0 h-full w-full"/>
       <span className="relative z-10 text-[8px] font-normal uppercase leading-none text-[var(--onlypump-text)] sm:text-[9px]">{weekday}</span>
     </span>
     <span className="mt-1 flex h-2 items-center justify-center">
@@ -8544,7 +8779,7 @@ function ActivityRingDay({ date, progress = null, selected = false, visibleDays 
   </div>;
 }
 
-function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSelect, markedDateKeys = [], historyByDate = {}, className = "", markerClassName = "bg-red-500", activityRingsByDate = null }) {
+function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSelect, markedDateKeys = [], historyByDate = {}, className = "", markerClassName = "bg-red-500", activityRingsByDate = null, onOpenActivityRings = null }) {
   const layoutMode = useOnlyPumpHomeLayoutMode();
   const visibleDays = layoutMode === HOME_LAYOUT_DESKTOP ? 14 : 7;
   const [startOffset, setStartOffset] = useState(() => visibleDays === 14 ? -6 : -3);
@@ -8556,6 +8791,7 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
   const suppressCalendarHistoryRef = useRef(false);
   const suppressResetRef = useRef(null);
   const suppressHistoryResetRef = useRef(null);
+  const lastDayTapRef = useRef({ key: "", at: 0 });
   useAppBackLayer(`calendar-history-${title}`, historyOpen, () => setHistoryOpen(false), 130);
   useEffect(() => {
     setStartOffset(visibleDays === 14 ? -6 : -3);
@@ -8568,6 +8804,23 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
     const key = formatDateKey(date);
     return { date, key };
   });
+
+  const activateCalendarDate = (targetKey) => {
+    if (!targetKey) return;
+    suppressCalendarHistoryRef.current = true;
+    clearTimeout(suppressHistoryResetRef.current);
+    suppressHistoryResetRef.current = setTimeout(() => {
+      suppressCalendarHistoryRef.current = false;
+    }, 160);
+    const now = Date.now();
+    const repeatedTap = selectedDateKey === targetKey;
+    const doubleTap = lastDayTapRef.current.key === targetKey && now - lastDayTapRef.current.at < 360;
+    lastDayTapRef.current = { key: targetKey, at: now };
+    onSelect?.(targetKey);
+    if (activityRingsByDate && onOpenActivityRings && (repeatedTap || doubleTap)) {
+      onOpenActivityRings(targetKey);
+    }
+  };
 
   const startCalendarDrag = (event) => {
     clearTimeout(suppressResetRef.current);
@@ -8626,7 +8879,7 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
           suppressCalendarHistoryRef.current = false;
         }, 160);
         suppressCalendarClickRef.current = false;
-        onSelect?.(targetKey);
+        activateCalendarDate(targetKey);
         return;
       }
       clearTimeout(suppressResetRef.current);
@@ -8688,7 +8941,7 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
               const marked = markedDateKeys.includes(key);
               const useActivityRings = Boolean(activityRingsByDate);
               const circleSizeClass = visibleDays === 14 ? "h-10 w-10 sm:h-11 sm:w-11 xl:h-14 xl:w-14" : "h-11 w-11 sm:h-14 sm:w-14";
-              return <button key={key} type="button" data-calendar-date-key={key} onClick={(event) => { event.stopPropagation(); suppressCalendarHistoryRef.current = true; clearTimeout(suppressHistoryResetRef.current); suppressHistoryResetRef.current = setTimeout(() => { suppressCalendarHistoryRef.current = false; }, 160); if (event.detail !== 0 || suppressCalendarClickRef.current) return; onSelect?.(key); }} className="min-w-0 text-center touch-manipulation">
+              return <button key={key} type="button" data-calendar-date-key={key} onClick={(event) => { event.stopPropagation(); if (event.detail !== 0 || suppressCalendarClickRef.current) return; activateCalendarDate(key); }} className="min-w-0 text-center touch-manipulation">
                 {useActivityRings
                   ? <ActivityRingDay date={date} selected={selected} visibleDays={visibleDays} progress={activityRingsByDate?.[key]} marked={marked} markerClassName={markerClassName}/>
                   : <div className={`mx-auto flex ${circleSizeClass} flex-col items-center justify-center rounded-full border transition ${selected ? "border-red-500 bg-red-500 text-black" : isToday ? "border-red-500/50 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-red-500/40 hover:bg-white/[0.07]"}`}>
@@ -8706,6 +8959,123 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
     </div>
     {historyOpen && <CalendarHistoryModal initialDateKey={selectedDateKey} historyByDate={historyByDate} onClose={() => setHistoryOpen(false)} />}
   </>;
+}
+
+function ActivityRingsSettingsSheet({ dateKey, initialConfig = defaultActivityRingConfig, initialGoals = {}, context = {}, onSave, onClose }) {
+  const [draftConfig, setDraftConfig] = useState(() => normalizeActivityRingConfig(initialConfig));
+  const [draftGoals, setDraftGoals] = useState(() => normalizeActivityRingGoals(initialGoals));
+
+  useEffect(() => {
+    setDraftConfig(normalizeActivityRingConfig(initialConfig));
+    setDraftGoals(normalizeActivityRingGoals(initialGoals));
+  }, [dateKey, JSON.stringify(initialConfig), JSON.stringify(initialGoals)]);
+
+  const details = useMemo(() => buildActivityRingMetricDetails({ ...context, dateKey, goals: draftGoals }), [context, dateKey, JSON.stringify(draftGoals)]);
+  const progress = useMemo(() => buildActivityRingProgressForConfig(details, draftConfig), [details, draftConfig]);
+  const dateLabel = getCalendarDateLabel(dateKey);
+
+  const setSlotMetric = (slotKey, metricId) => {
+    setDraftConfig(prev => normalizeActivityRingConfig({ ...prev, [slotKey]: metricId }));
+  };
+  const setMetricGoal = (metricId, value) => {
+    setDraftGoals(prev => ({ ...prev, [metricId]: value }));
+  };
+  const getGoalInputValue = (metricId) => draftGoals?.[metricId] ?? details?.[metricId]?.goal ?? "";
+
+  return <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/70 px-3 pt-10 backdrop-blur-sm" onClick={onClose}>
+    <BottomSheetPanel onClose={onClose} priority={245} onClick={(event) => event.stopPropagation()} className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-t-[34px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] text-[var(--onlypump-text)] shadow-2xl shadow-black/50">
+      <div className="sticky top-0 z-10 border-b border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-5 pb-3 pt-3">
+        <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-[var(--onlypump-border)]"/>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-[var(--onlypump-muted)]">{dateLabel}</p>
+            <h2 className="mt-1 text-2xl font-black leading-tight text-[var(--onlypump-text)]">Кольца активности</h2>
+          </div>
+          <button type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--onlypump-soft)] text-2xl leading-none text-[var(--onlypump-text)] transition hover:scale-105 active:scale-95">×</button>
+        </div>
+      </div>
+
+      <div className="space-y-4 px-5 py-5">
+        <div className="flex flex-col items-center rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-5">
+          <div className="relative flex h-36 w-36 items-center justify-center">
+            <ActivityRingsSvg progress={progress} className="h-full w-full" strokeWidth={4.4}/>
+          </div>
+          <div className="mt-5 grid w-full gap-2">
+            {activityRingSlots.map(slot => {
+              const metric = getActivityRingMetricOption(draftConfig[slot.key]);
+              return <div key={slot.key} className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--onlypump-soft)] px-3 py-2">
+                <span className="flex items-center gap-2 text-sm font-black text-[var(--onlypump-text)]">
+                  <span className="h-3 w-3 rounded-full" style={{ backgroundColor: slot.color }}/>
+                  {slot.label}
+                </span>
+                <span className="text-sm font-semibold text-[var(--onlypump-muted)]">{metric.label}</span>
+              </div>;
+            })}
+          </div>
+        </div>
+
+        <div className="grid gap-3">
+          {activityRingSlots.map(slot => {
+            const metricId = draftConfig[slot.key];
+            const detail = details?.[metricId] || getActivityRingMetricOption(metricId);
+            const percent = detail?.hasData ? Math.round(detail.progress || 0) : 0;
+            return <div key={`${slot.key}-analytics`} className="rounded-[24px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-[var(--onlypump-muted)]">{slot.shortLabel}</p>
+                  <h3 className="mt-1 text-lg font-black text-[var(--onlypump-text)]">{detail.label}</h3>
+                </div>
+                <span className="rounded-full px-3 py-1 text-sm font-black" style={{ color: slot.color, backgroundColor: `${slot.color}1A` }}>{detail?.hasData ? `${percent}%` : "нет данных"}</span>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                <div className="rounded-2xl bg-[var(--onlypump-soft)] p-3">
+                  <span className="block text-xs font-bold text-[var(--onlypump-muted)]">Факт</span>
+                  <b className="mt-1 block text-[var(--onlypump-text)]">{formatActivityRingValue(detail.value, detail.unit)}</b>
+                </div>
+                <div className="rounded-2xl bg-[var(--onlypump-soft)] p-3">
+                  <span className="block text-xs font-bold text-[var(--onlypump-muted)]">Цель</span>
+                  <b className="mt-1 block text-[var(--onlypump-text)]">{formatActivityRingValue(detail.goal, detail.unit)}</b>
+                </div>
+              </div>
+            </div>;
+          })}
+        </div>
+
+        <div className="rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-4">
+          <h3 className="text-lg font-black text-[var(--onlypump-text)]">Настройка колец</h3>
+          <div className="mt-4 space-y-3">
+            {activityRingSlots.map(slot => {
+              const metricId = draftConfig[slot.key];
+              const metric = getActivityRingMetricOption(metricId);
+              return <div key={`${slot.key}-settings`} className="grid gap-2 rounded-[22px] bg-[var(--onlypump-soft)] p-3">
+                <label className="text-xs font-black uppercase tracking-[0.18em] text-[var(--onlypump-muted)]">{slot.label}</label>
+                <select
+                  value={metricId}
+                  onChange={(event) => setSlotMetric(slot.key, event.target.value)}
+                  className="h-11 rounded-2xl border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-3 text-sm font-bold text-[var(--onlypump-text)] outline-none focus:border-red-500"
+                >
+                  {activityRingMetricOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+                </select>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    inputMode="decimal"
+                    value={getGoalInputValue(metricId)}
+                    onChange={(event) => setMetricGoal(metricId, event.target.value)}
+                    className="h-11 min-w-0 flex-1 rounded-2xl border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-3 text-sm font-black text-[var(--onlypump-text)] outline-none focus:border-red-500"
+                  />
+                  <span className="w-16 text-sm font-bold text-[var(--onlypump-muted)]">{metric.unit}</span>
+                </div>
+              </div>;
+            })}
+          </div>
+        </div>
+
+        <button type="button" onClick={() => onSave?.(draftConfig, draftGoals)} className="sticky bottom-3 h-14 w-full rounded-[24px] bg-red-500 text-base font-black text-black shadow-xl shadow-red-500/25 transition hover:scale-[1.01] active:scale-[0.98]">Сохранить</button>
+      </div>
+    </BottomSheetPanel>
+  </div>;
 }
 
 function DayDataModal({ dateKey, context = "home", onClose, setActive, workout, nutritionMeals = [], nutritionTotals, nutritionGoal = initialNutritionGoal, nutritionDay = null, measurements = {}, workoutSummary, profile }) {
@@ -10705,7 +11075,7 @@ function MasonryGrid({ children, className = "" }) {
   return <div ref={gridRef} className={`onlypump-masonry-grid ${className}`}>{children}</div>;
 }
 
-function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutritionMarkedDateKeys = [], nutritionGoal, measurements, measurementRecords = [], progressGoal, lectureItems, homeWidgets, setHomeWidgets, personalTrackers = [], setPersonalTrackers = () => {}, profile, selectedDateKey: controlledSelectedDateKey, setSelectedDateKey: controlledSetSelectedDateKey, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], healthSaving = false, profileSaving = false, pumpXpSummary = null, onOpenPumpXpDetails = () => {}, onSaveHealthLog, onSaveWeightMeasurement, onOpenAnalytics }) {
+function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutritionMarkedDateKeys = [], nutritionGoal, measurements, measurementRecords = [], progressGoal, lectureItems, homeWidgets, setHomeWidgets, personalTrackers = [], setPersonalTrackers = () => {}, profile, selectedDateKey: controlledSelectedDateKey, setSelectedDateKey: controlledSetSelectedDateKey, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], healthSaving = false, profileSaving = false, pumpXpSummary = null, onOpenPumpXpDetails = () => {}, onSaveHealthLog, onSaveWeightMeasurement, onOpenAnalytics, onSaveProfile }) {
   const nutritionTotals = useMemo(() => nutritionMeals.reduce((acc, meal) => ({
     calories: acc.calories + Number(meal.calories || 0),
     protein: acc.protein + Number(meal.protein || 0),
@@ -10742,15 +11112,38 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     ...healthLogs.filter(healthLogHasRealData).map(log => log.log_date || log.date).filter(Boolean),
     ...personalTrackerMarkedDateKeys,
   ])).sort(), [workouts, nutritionMarkedDateKeys, healthLogs, personalTrackerMarkedDateKeys]);
+  const [activityRingSettings, setActivityRingSettings] = useState(() => readActivityRingSettings(profile || DEFAULT_PROFILE));
+  const [activityRingSheetDateKey, setActivityRingSheetDateKey] = useState("");
+  useEffect(() => {
+    setActivityRingSettings(readActivityRingSettings(profile || DEFAULT_PROFILE));
+  }, [profile?.id, profile?.telegram_id, profile?.telegramId, profile?.email]);
+  const activityRingConfig = activityRingSettings.config;
+  const activityRingGoalOverrides = activityRingSettings.goals;
+  const activityRingContext = useMemo(() => ({
+    profile: profile || DEFAULT_PROFILE,
+    nutritionGoal,
+    nutritionDay,
+    nutritionTotals,
+    healthLog,
+    healthLogs,
+    workouts,
+    goals: activityRingGoalOverrides,
+  }), [profile, nutritionGoal, nutritionDay, nutritionTotals, healthLog, healthLogs, workouts, activityRingGoalOverrides]);
   const homeActivityRingsByDate = useMemo(() => {
     const map = {};
-    [...healthLogs, healthLog].filter(healthLogHasRealData).forEach(log => {
-      const date = normalizeDateKey(log.log_date || log.date, "");
-      if (!date) return;
-      map[date] = buildDayActivityRingProgress(log, profile?.steps_per_day);
+    const dateKeys = new Set([
+      ...healthLogs.filter(healthLogHasRealData).map(log => normalizeDateKey(log.log_date || log.date, "")).filter(Boolean),
+      ...(healthLogHasRealData(healthLog) ? [normalizeDateKey(healthLog.log_date || healthLog.date, "")].filter(Boolean) : []),
+      ...workouts.map(workout => normalizeDateKey(workout.date, "")).filter(Boolean),
+      ...(nutritionDayHasFood(nutritionDay) ? [normalizeDateKey(nutritionDay.date || nutritionDay.log_date, "")].filter(Boolean) : []),
+    ]);
+    dateKeys.forEach(date => {
+      const details = buildActivityRingMetricDetails({ ...activityRingContext, dateKey: date });
+      const progress = buildActivityRingProgressForConfig(details, activityRingConfig);
+      if (progress) map[date] = progress;
     });
     return map;
-  }, [healthLogs, healthLog, profile?.steps_per_day]);
+  }, [activityRingContext, activityRingConfig, healthLogs, healthLog, workouts, nutritionDay]);
   const homeHistoryByDate = useMemo(() => {
     const map = {};
     const push = (date, event) => {
@@ -10837,6 +11230,64 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const selectedWater = profileNonNegativeNumber(selectedHealthLog.water_ml, 0);
   const waterGoal = Math.max(1, profileNonNegativeNumber(selectedHealthLog.water_target_ml, DEFAULT_HEALTH_LOG.water_target_ml));
   const waterProgress = Math.min(100, Math.round((selectedWater / waterGoal) * 100));
+  const saveActivityRingSettings = useCallback(async (nextConfig, nextGoals) => {
+    const normalizedConfig = normalizeActivityRingConfig(nextConfig);
+    const normalizedGoals = normalizeActivityRingGoals(nextGoals);
+    const activeMetrics = new Set(activityRingSlots.map(slot => normalizedConfig[slot.key]));
+    const fallbackGoals = { ...activityRingGoalOverrides };
+    const profileDraft = profileDraftFromProfile(profile || DEFAULT_PROFILE);
+    const targetDateKey = activityRingSheetDateKey || selectedDateKey;
+    let shouldSaveProfile = false;
+    let waterTarget = null;
+
+    activeMetrics.forEach(metricId => {
+      const value = Number(normalizedGoals[metricId]);
+      if (!Number.isFinite(value) || value <= 0) return;
+      if (metricId === "steps") {
+        profileDraft.steps_per_day = value;
+        shouldSaveProfile = true;
+        delete fallbackGoals[metricId];
+      } else if (metricId === "calories") {
+        profileDraft.calories_target = value;
+        profileDraft.manual_nutrition_targets_enabled = true;
+        shouldSaveProfile = true;
+        delete fallbackGoals[metricId];
+      } else if (metricId === "protein") {
+        profileDraft.protein_target = value;
+        profileDraft.manual_nutrition_targets_enabled = true;
+        shouldSaveProfile = true;
+        delete fallbackGoals[metricId];
+      } else if (metricId === "fat") {
+        profileDraft.fat_target = value;
+        profileDraft.manual_nutrition_targets_enabled = true;
+        shouldSaveProfile = true;
+        delete fallbackGoals[metricId];
+      } else if (metricId === "carbs") {
+        profileDraft.carbs_target = value;
+        profileDraft.manual_nutrition_targets_enabled = true;
+        shouldSaveProfile = true;
+        delete fallbackGoals[metricId];
+      } else if (metricId === "water") {
+        waterTarget = value;
+        delete fallbackGoals[metricId];
+      } else {
+        fallbackGoals[metricId] = value;
+      }
+    });
+
+    if (shouldSaveProfile && onSaveProfile) await onSaveProfile(profileDraft);
+    if (waterTarget && onSaveHealthLog) {
+      const targetHealthLog = getRingHealthLogForDate({ dateKey: targetDateKey, healthLog, healthLogs });
+      await onSaveHealthLog({ ...targetHealthLog, date: targetDateKey, log_date: targetDateKey, water_target_ml: waterTarget });
+    } else if (waterTarget) {
+      fallbackGoals.water = waterTarget;
+    }
+
+    const nextSettings = { config: normalizedConfig, goals: normalizeActivityRingGoals(fallbackGoals) };
+    setActivityRingSettings(nextSettings);
+    writeActivityRingSettings(profile || DEFAULT_PROFILE, nextSettings.config, nextSettings.goals);
+    setActivityRingSheetDateKey("");
+  }, [activityRingGoalOverrides, activityRingSheetDateKey, healthLog, healthLogs, onSaveHealthLog, onSaveProfile, profile, selectedDateKey]);
   const currentWeightForWidget = profileNumber(selectedMeasurements?.weight, 0);
   const weightTrendPoints = useMemo(() => buildWeightTrendPoints({
     measurements,
@@ -11382,6 +11833,10 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const openDayFromCalendar = (dateKey) => {
     setSelectedDateKey(dateKey);
   };
+  const openActivityRingsFromCalendar = (dateKey) => {
+    setSelectedDateKey(dateKey);
+    setActivityRingSheetDateKey(dateKey);
+  };
 
   const renderedHomeWidgets = widgetPreviewOrder || homeWidgets;
   const draggedHomeWidgetPortal = widgetDragVisual?.id && typeof document !== "undefined" && document.body
@@ -11414,8 +11869,17 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         markedDateKeys={homeMarkedDateKeys}
         historyByDate={homeHistoryByDate}
         activityRingsByDate={homeActivityRingsByDate}
+        onOpenActivityRings={openActivityRingsFromCalendar}
       />
     </div>
+    {activityRingSheetDateKey && <ActivityRingsSettingsSheet
+      dateKey={activityRingSheetDateKey}
+      initialConfig={activityRingConfig}
+      initialGoals={activityRingGoalOverrides}
+      context={activityRingContext}
+      onSave={saveActivityRingSettings}
+      onClose={() => setActivityRingSheetDateKey("")}
+    />}
     <div className="mt-4 flex items-center justify-between gap-2">
       <button type="button" data-tour="home-level" onClick={onOpenPumpXpDetails} className="rounded-full border border-red-400/30 bg-red-500 px-3 py-1.5 text-xs font-black text-black shadow-xl shadow-red-500/25 sm:hidden">
         Lvl {pumpXp.level.current.level}
@@ -16488,6 +16952,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
   const removeActiveExercise = async () => {
     if (!selectedWorkout) return;
+    triggerOnlyPumpHaptic("heavy");
     const removedExercise = (selectedWorkout.exercises || [])[activeExerciseIndex];
     if (canUseWorkoutApi && removedExercise?.supabaseId) {
       console.log("Delete exercise clicked:", removedExercise);
@@ -16512,6 +16977,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       });
       const deleted = patchResult || await deleteExerciseViaApi(removedExercise);
       if (!deleted) {
+        triggerOnlyPumpHaptic("error");
         setWorkouts(previousWorkouts);
         setSelectedWorkout(previousSelectedWorkout);
       }
@@ -16531,6 +16997,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
   const removeExerciseFromSelectedWorkout = async (exerciseId) => {
     if (!selectedWorkout) return;
+    triggerOnlyPumpHaptic("heavy");
     const currentExercises = selectedWorkout.exercises || [];
     const removedIndex = currentExercises.findIndex(exercise => exercise.id === exerciseId);
     const removedExercise = currentExercises.find(exercise => exercise.id === exerciseId);
@@ -16558,6 +17025,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       });
       const deleted = patchResult || await deleteExerciseViaApi(removedExercise);
       if (!deleted) {
+        triggerOnlyPumpHaptic("error");
         setWorkouts(previousWorkouts);
         setSelectedWorkout(previousSelectedWorkout);
       }
@@ -16595,6 +17063,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
   const addSetToActiveExercise = (type = "working", afterSetId = null) => {
     if (!selectedWorkout) return;
+    triggerOnlyPumpHaptic("medium");
     const currentExercise = (selectedWorkout.exercises || [])[activeExerciseIndex];
     const sets = currentExercise?.sets || [];
     const afterIndex = afterSetId ? sets.findIndex(set => set.id === afterSetId) : sets.length - 1;
@@ -16641,6 +17110,7 @@ const toggleExerciseMeasurementSetting = (field) => {
   };
 
   const removeSetFromActiveExercise = async (setId) => {
+    triggerOnlyPumpHaptic("heavy");
     const currentExercise = (selectedWorkout?.exercises || [])[activeExerciseIndex];
     const removedSet = (currentExercise?.sets || []).find(set => set.id === setId);
     const remaining = (currentExercise?.sets || []).filter(set => set.id !== setId);
@@ -16668,6 +17138,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       });
       const deleted = patchResult || await deleteSetViaApi(removedSet);
       if (!deleted) {
+        triggerOnlyPumpHaptic("error");
         setWorkouts(previousWorkouts);
         setSelectedWorkout(previousSelectedWorkout);
       }
@@ -17015,6 +17486,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
   const addExercisesToSelectedWorkout = async (items = []) => {
     if (!selectedWorkout) return;
+    if (items.length) triggerOnlyPumpHaptic("medium");
     const completedByDefault = normalizeWorkoutStatus(selectedWorkout.status) === "completed";
     const completedAt = completedByDefault ? new Date().toISOString() : null;
     const selectedWorkoutType = normalizeWorkoutType(selectedWorkout.workoutType);
@@ -17218,6 +17690,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
   const startWorkout = (workout) => {
     if (!workout) return;
+    triggerOnlyPumpHaptic("medium");
     const startedAt = new Date().toISOString();
     const patch = (item) => ({
       ...setWorkoutSetCompletionState(item, false),
@@ -17462,7 +17935,10 @@ const toggleExerciseMeasurementSetting = (field) => {
       const option = readCenteredOption();
       if (!option) return;
       scrollToIndex(option.virtualIndex, behavior);
-      if (String(option.value) !== String(value)) onChange(option.value);
+      if (String(option.value) !== String(value)) {
+        triggerOnlyPumpHaptic("selection");
+        onChange(option.value);
+      }
       normalizeScrollPosition(option);
     };
 
@@ -17498,7 +17974,7 @@ const toggleExerciseMeasurementSetting = (field) => {
           return <button
             key={`${option.value}-${option.virtualIndex}`}
             type="button"
-            onClick={() => { onChange(option.value); scrollToIndex(option.virtualIndex, "smooth"); normalizeScrollPosition(option); }}
+            onClick={() => { if (String(option.value) !== String(value)) triggerOnlyPumpHaptic("selection"); onChange(option.value); scrollToIndex(option.virtualIndex, "smooth"); normalizeScrollPosition(option); }}
             className={`onlypump-wheel-item relative z-10 flex w-full items-center justify-center rounded-2xl px-2 text-center text-base font-black transition ${selected ? "onlypump-wheel-selected text-red-100" : "text-zinc-500"}`}
             style={{ height: `${itemHeight}px` }}
           >
@@ -17932,6 +18408,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       console.error("Supabase workout error", error);
       setCompletionSaving(false);
       setCompletionSaveError("Не удалось сохранить. Повторить?");
+      triggerOnlyPumpHaptic("error");
       patchWorkoutInState(workout.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true, pendingPatch: patch }));
       return null;
     }
@@ -17944,6 +18421,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
   const completeWorkoutAsIs = (workout = selectedWorkout) => {
     if (!workout) return;
+    triggerOnlyPumpHaptic("success");
     const durationSeconds = normalizeWorkoutStatus(workout.status) === "active"
       ? getWorkoutElapsedSeconds(workout, safeWorkoutNumber(elapsedWorkoutTime, 0))
       : getWorkoutDurationSeconds(workout);
@@ -25726,7 +26204,10 @@ function QuizHorizontalRuler({ label, value, onChange, min = 35, max = 200, fall
     const nextIndex = Math.max(0, Math.min(values.length - 1, Math.round(node.scrollLeft / itemWidth)));
     const nextValue = values[nextIndex];
     scrollToIndex(nextIndex, behavior);
-    if (nextValue !== selectedValue) onChange(nextValue);
+    if (nextValue !== selectedValue) {
+      triggerOnlyPumpHaptic("selection");
+      onChange(nextValue);
+    }
   }, [itemWidth, onChange, scrollToIndex, selectedValue, values]);
 
   const handleScroll = () => {
@@ -25772,6 +26253,7 @@ function QuizHorizontalRuler({ label, value, onChange, min = 35, max = 200, fall
             className="onlypump-quiz-ruler-item flex h-full shrink-0 flex-col items-center justify-end gap-3 pb-2 text-center"
             style={{ width: `${itemWidth}px`, flexBasis: `${itemWidth}px` }}
             onClick={() => {
+              if (item !== selectedValue) triggerOnlyPumpHaptic("selection");
               onChange(item);
               scrollToIndex(index, "smooth");
             }}
@@ -25806,7 +26288,10 @@ function QuizVerticalRuler({ label, value, onChange, min = 120, max = 220, fallb
     const nextIndex = Math.max(0, Math.min(values.length - 1, Math.round(node.scrollTop / itemHeight)));
     const nextValue = values[nextIndex];
     scrollToIndex(nextIndex, behavior);
-    if (nextValue !== selectedValue) onChange(nextValue);
+    if (nextValue !== selectedValue) {
+      triggerOnlyPumpHaptic("selection");
+      onChange(nextValue);
+    }
   }, [itemHeight, onChange, scrollToIndex, selectedValue, values]);
 
   const handleScroll = () => {
@@ -25852,6 +26337,7 @@ function QuizVerticalRuler({ label, value, onChange, min = 120, max = 220, fallb
             className="onlypump-quiz-ruler-item grid w-full grid-cols-[1fr_auto_1fr] items-center gap-4 text-center"
             style={{ height: `${itemHeight}px` }}
             onClick={() => {
+              if (item !== selectedValue) triggerOnlyPumpHaptic("selection");
               onChange(item);
               scrollToIndex(index, "smooth");
             }}
@@ -26601,6 +27087,7 @@ function LoopWheelColumn({ label, value, options, onChange, suffix }) {
     setAnimating(true);
     setDragOffset(-safeDelta * itemHeight);
     window.setTimeout(() => {
+      triggerOnlyPumpHaptic("selection");
       onChange?.(options[normalizeIndex(currentIndex + safeDelta)]);
       setAnimating(false);
       setDragOffset(0);
@@ -28733,6 +29220,7 @@ function LoadingScreen({ theme = "dark" }) {
 }
 
 function OnlyPumpPlatform() {
+  useOnlyPumpHapticFeedback();
   const telegramBootInitData = telegramWebApp?.initData || window.Telegram?.WebApp?.initData || "";
   const [active, setActiveState] = useState("home");
   const [navigationStack, setNavigationStack] = useState([]);
@@ -29147,12 +29635,14 @@ function OnlyPumpPlatform() {
         clearCachedNutritionForProfileFromDate(savedProfile, targetsFromDate);
         setProfileStatus("verified");
         if (typeof window !== "undefined") window.__ONLYPUMP_LAST_PROFILE_SAVE_ERROR__ = "";
+        triggerOnlyPumpHaptic(savedProfile ? "success" : "error");
         return Boolean(savedProfile);
       } catch (error) {
         console.error("onlypump-profile-api error:", error);
         if (action === "update_profile" || action === "complete_onboarding") console.log("PROFILE MEASUREMENT ERROR", error);
         const message = profileSaveErrorMessage(error);
         if (typeof window !== "undefined") window.__ONLYPUMP_LAST_PROFILE_SAVE_ERROR__ = message;
+        triggerOnlyPumpHaptic("error");
         return { ok: false, error: message };
       } finally {
         setProfileSaving(false);
@@ -29177,6 +29667,7 @@ function OnlyPumpPlatform() {
     }, profile || DEFAULT_PROFILE);
     applyProfileState(localProfile, { updateNutritionDay: true, nutritionTargetsFromDate: targetsFromDate });
     clearCachedNutritionForProfileFromDate(localProfile, targetsFromDate);
+    triggerOnlyPumpHaptic("success");
     return true;
   }, [applyProfileState, globalSelectedDateKey, profile, profileStatus, telegramInitData]);
 
@@ -29190,16 +29681,21 @@ function OnlyPumpPlatform() {
     }, profile || DEFAULT_PROFILE);
     applyProfileState(optimisticProfile);
 
-    if (!(profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id)) return true;
+    if (!(profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id)) {
+      triggerOnlyPumpHaptic("success");
+      return true;
+    }
 
     setThemeSaving(true);
     try {
       const result = await callOnlyPumpProfileApi(telegramInitData, "update_theme_settings", payload);
       const savedProfile = applyProfileState(result.profile || optimisticProfile);
       setProfileStatus("verified");
+      triggerOnlyPumpHaptic(savedProfile ? "success" : "error");
       return Boolean(savedProfile);
     } catch (error) {
       console.error("onlypump-profile-api theme error:", error);
+      triggerOnlyPumpHaptic("error");
       return false;
     } finally {
       setThemeSaving(false);
@@ -29220,16 +29716,21 @@ function OnlyPumpPlatform() {
     applyProfileState(optimisticProfile);
     writeCachedAnalyticsCardSettings(optimisticProfile, payload.analytics_cards_order, payload.analytics_cards_hidden);
 
-    if (!(profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id)) return true;
+    if (!(profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id)) {
+      triggerOnlyPumpHaptic("success");
+      return true;
+    }
 
     try {
       const result = await callOnlyPumpProfileApi(telegramInitData, "update_analytics_card_settings", payload);
       const savedProfile = applyProfileState(result.profile || optimisticProfile);
       writeCachedAnalyticsCardSettings(savedProfile, payload.analytics_cards_order, payload.analytics_cards_hidden);
       setProfileStatus("verified");
+      triggerOnlyPumpHaptic(savedProfile ? "success" : "error");
       return Boolean(savedProfile);
     } catch (error) {
       console.error("onlypump-profile-api analytics card settings error:", error);
+      triggerOnlyPumpHaptic("error");
       return false;
     }
   }, [applyProfileState, profile, profileStatus, telegramInitData]);
@@ -29341,6 +29842,7 @@ function OnlyPumpPlatform() {
     if (!(profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id)) {
       const localProfile = normalizeProfileRecord({ ...(profile || DEFAULT_PROFILE), ...payloadWithDate, weight_kg: nextWeight, source: profile?.source || "fallback" }, profile || DEFAULT_PROFILE);
       applyProfileState(localProfile);
+      triggerOnlyPumpHaptic("success");
       return true;
     }
 
@@ -29359,9 +29861,11 @@ function OnlyPumpPlatform() {
         setMeasurements(prev => progressMeasurementsFromRecord(measurement, { ...prev, weight: nextWeight }));
         setMeasurementRecords(prev => mergeAnalyticsMeasurementRows(prev, { ...measurement, date: measurementDateKey(measurement) || dateKey, measurement_date: measurementDateKey(measurement) || dateKey }));
       }
+      triggerOnlyPumpHaptic(savedProfile ? "success" : "error");
       return Boolean(savedProfile);
     } catch (error) {
       console.error("onlypump-profile-api weight save error:", error);
+      triggerOnlyPumpHaptic("error");
       return false;
     } finally {
       setProfileSaving(false);
@@ -29488,7 +29992,10 @@ function OnlyPumpPlatform() {
 	      writeCachedHealthLogsForProfile(profile, optimisticLogs);
 	    }
 
-    if (!(profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id)) return true;
+    if (!(profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id)) {
+      triggerOnlyPumpHaptic("success");
+      return true;
+    }
 
     setHealthSaving(true);
     try {
@@ -29500,9 +30007,11 @@ function OnlyPumpPlatform() {
 	      setHealthLogs(prev => mergeHealthLogLists(prev, logs || [], savedLog));
 	      writeCachedHealthForProfile(profile, dateKey, savedLog);
 	      writeCachedHealthLogsForProfile(profile, mergedLogs);
+	      triggerOnlyPumpHaptic("success");
 	      return true;
     } catch (error) {
       console.error("onlypump-profile-api health save error:", error);
+      triggerOnlyPumpHaptic("error");
       return false;
     } finally {
       setHealthSaving(false);
@@ -29603,6 +30112,7 @@ function OnlyPumpPlatform() {
           return nextMarkers;
         });
         writeCachedNutritionForProfile(profile, updatedDay.date || dateKey, updatedDay);
+        triggerOnlyPumpHaptic("success");
         return result;
       } catch (error) {
         console.error("Supabase nutrition error", { action, error });
@@ -29613,6 +30123,7 @@ function OnlyPumpPlatform() {
           writeCachedNutritionForProfile(profile, previousDay.date || dateKey, previousDay);
           writeCachedNutritionMarkersForProfile(profile, previousMarkers);
         }
+        triggerOnlyPumpHaptic("error");
         return { ok: false, error };
       } finally {
         setNutritionRefreshing(false);
@@ -29621,6 +30132,7 @@ function OnlyPumpPlatform() {
 
     const localDay = applyLocalNutritionAction(baseNutritionDay, action, payloadWithDate);
     applyNutritionDay(localDay);
+    triggerOnlyPumpHaptic("success");
     return { ok: true, ...localDay };
   }, [globalSelectedDateKey, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, profile, profileStatus, telegramInitData]);
 
@@ -30285,7 +30797,7 @@ function OnlyPumpPlatform() {
   }, [homeLayoutMode, homeStateReady, JSON.stringify(homeWidgets), JSON.stringify(personalTrackers), personalTrackersOwnerKey, profile?.id, profile?.telegram_id, profileStatus, telegramInitData]);
 
   const page = useMemo(() => ({
-    home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionDay={nutritionDay} nutritionMarkedDateKeys={nutritionMarkedDateKeys} nutritionGoal={nutritionGoal} measurements={measurements} measurementRecords={measurementRecords} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} personalTrackers={personalTrackers} setPersonalTrackers={setPersonalTrackers} profile={profile} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} profileSaving={profileSaving} pumpXpSummary={pumpXpSummary} onOpenPumpXpDetails={() => setPumpXpDetailsOpen(true)} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onOpenAnalytics={openAnalyticsType}/>,
+    home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionDay={nutritionDay} nutritionMarkedDateKeys={nutritionMarkedDateKeys} nutritionGoal={nutritionGoal} measurements={measurements} measurementRecords={measurementRecords} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} personalTrackers={personalTrackers} setPersonalTrackers={setPersonalTrackers} profile={profile} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} profileSaving={profileSaving} pumpXpSummary={pumpXpSummary} onOpenPumpXpDetails={() => setPumpXpDetailsOpen(true)} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onOpenAnalytics={openAnalyticsType} onSaveProfile={handleSaveProfile}/>,
     workouts: <WorkoutsPage workouts={workouts} setWorkouts={setWorkouts} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} profile={profile} telegramInitData={telegramInitData}/>,
     nutrition: <NutritionPage nutritionDay={nutritionDay} setNutritionDay={setNutritionDay} nutritionGoal={nutritionGoal} setNutritionGoal={setNutritionGoal} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} markedDateKeys={nutritionMarkedDateKeys} profile={profile} telegramInitData={telegramInitData} onNutritionAction={handleNutritionAction} nutritionLoading={nutritionRefreshing}/>,
     recipes: <UnderConstructionPage title="Рецепты" subtitle="Думаю, как тут все расположить"/>,
