@@ -13239,18 +13239,45 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   }, [sortedWorkouts, todayDateKey]);
   const plannedAndMissedWorkoutsKey = plannedAndMissedWorkouts.map(item => `${item.workout.id}:${item.workout.date}:${item.diaryStatus}`).join("|");
   const hasMissedWorkouts = plannedAndMissedWorkouts.some(item => item.diaryStatus === "missed");
+  const clampPlannedWorkoutsScrollLeft = (node, left) => {
+    if (!node) return 0;
+    const maxLeft = Math.max(0, node.scrollWidth - node.clientWidth);
+    return Math.max(0, Math.min(maxLeft, left));
+  };
+  const getPlannedWorkoutsAlignedScrollLeft = (node, target) => {
+    if (!node || !target) return 0;
+    const nodeRect = node.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    return clampPlannedWorkoutsScrollLeft(node, node.scrollLeft + targetRect.left - nodeRect.left);
+  };
+  const getPlannedWorkoutsDefaultScrollLeft = (node) => {
+    const nearestPlanned = node?.querySelector?.('[data-workout-timeline-status="planned"]');
+    return nearestPlanned ? getPlannedWorkoutsAlignedScrollLeft(node, nearestPlanned) : 0;
+  };
   const scrollPlannedWorkoutsToStatus = (status) => {
     const node = plannedWorkoutsScrollRef.current;
     const target = node?.querySelector?.(`[data-workout-timeline-status="${status}"]`);
     if (!node || !target) return;
-    node.scrollTo({ left: Math.max(0, target.offsetLeft - 16), behavior: "smooth" });
+    node.scrollTo({ left: getPlannedWorkoutsAlignedScrollLeft(node, target), behavior: "smooth" });
   };
 
   useEffect(() => {
     const node = plannedWorkoutsScrollRef.current;
     if (!node || !plannedAndMissedWorkouts.length) return;
-    const nearestPlanned = node.querySelector('[data-workout-timeline-status="planned"]');
-    if (nearestPlanned) node.scrollLeft = Math.max(0, nearestPlanned.offsetLeft - 16);
+    let frameId = 0;
+    let secondFrameId = 0;
+    const syncDefaultPosition = () => {
+      node.scrollLeft = getPlannedWorkoutsDefaultScrollLeft(node);
+    };
+    syncDefaultPosition();
+    frameId = window.requestAnimationFrame(() => {
+      syncDefaultPosition();
+      secondFrameId = window.requestAnimationFrame(syncDefaultPosition);
+    });
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.cancelAnimationFrame(secondFrameId);
+    };
   }, [plannedAndMissedWorkoutsKey]);
 
 	  const groupedWeeks = useMemo(() => {
@@ -19657,13 +19684,35 @@ const toggleExerciseMeasurementSetting = (field) => {
     </button>;
   };
 
-  const PlannedWorkoutsTimeline = () => {
-    const timelineDragRef = useRef(null);
-    const timelineDraggingRef = useRef(false);
-    const suppressTimelineClickRef = useRef(false);
-    const suppressTimelineResetRef = useRef(null);
-    useEffect(() => () => window.clearTimeout(suppressTimelineResetRef.current), []);
-    if (!plannedAndMissedWorkouts.length) return null;
+	  const PlannedWorkoutsTimeline = () => {
+	    const timelineDragRef = useRef(null);
+	    const timelineDraggingRef = useRef(false);
+	    const suppressTimelineClickRef = useRef(false);
+	    const suppressTimelineResetRef = useRef(null);
+	    useEffect(() => () => window.clearTimeout(suppressTimelineResetRef.current), []);
+	    useEffect(() => {
+	      const node = plannedWorkoutsScrollRef.current;
+	      if (!node || !plannedAndMissedWorkouts.length) return undefined;
+	      let frameId = 0;
+	      let secondFrameId = 0;
+	      let timeoutId = 0;
+	      const syncDefaultPosition = () => {
+	        node.scrollLeft = getPlannedWorkoutsDefaultScrollLeft(node);
+	      };
+	      syncDefaultPosition();
+	      frameId = window.requestAnimationFrame(() => {
+	        syncDefaultPosition();
+	        secondFrameId = window.requestAnimationFrame(syncDefaultPosition);
+	      });
+	      timeoutId = window.setTimeout(syncDefaultPosition, 120);
+	      return () => {
+	        window.cancelAnimationFrame(frameId);
+	        window.cancelAnimationFrame(secondFrameId);
+	        window.clearTimeout(timeoutId);
+	      };
+	    }, [plannedAndMissedWorkoutsKey]);
+	    if (!plannedAndMissedWorkouts.length) return null;
+	    const shouldReserveTimelineEndSpace = hasMissedWorkouts && plannedAndMissedWorkouts.some(item => item.diaryStatus === "planned");
     const startTimelineDrag = (event) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
       window.clearTimeout(suppressTimelineResetRef.current);
@@ -19729,10 +19778,11 @@ const toggleExerciseMeasurementSetting = (field) => {
       onPointerMoveCapture={moveTimelineDrag}
       onPointerUpCapture={endTimelineDrag}
       onPointerCancelCapture={endTimelineDrag}
-    >
-      {plannedAndMissedWorkouts.map(item => <PlannedWorkoutMiniCard key={item.workout.id} item={item} suppressTimelineClickRef={suppressTimelineClickRef} timelineDraggingRef={timelineDraggingRef} />)}
-    </div>;
-  };
+	    >
+	      {plannedAndMissedWorkouts.map(item => <PlannedWorkoutMiniCard key={item.workout.id} item={item} suppressTimelineClickRef={suppressTimelineClickRef} timelineDraggingRef={timelineDraggingRef} />)}
+	      {shouldReserveTimelineEndSpace && <span aria-hidden="true" className="block shrink-0" style={{ width: "calc(100% - clamp(9rem, 44vw, 11.5rem))" }} />}
+	    </div>;
+	  };
 
   const ActiveWorkoutBanner = () => {
     if (!activeWorkout) return null;
