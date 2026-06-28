@@ -2118,40 +2118,107 @@ console.log("ONLYPUMP START");
 console.log("ONLYPUMP BUILD", ONLYPUMP_FRONTEND_BUILD);
 console.log("Telegram object exists", Boolean(telegramWebApp || window.Telegram?.WebApp));
 
-const ONLYPUMP_HAPTIC_THROTTLE_MS = 85;
+const ONLYPUMP_HAPTIC_THROTTLE_MS = 32;
 let onlyPumpLastSelectionHapticAt = 0;
 let onlyPumpLastHapticAt = 0;
 let onlyPumpLastHapticType = "";
 
+function normalizeOnlyPumpHapticType(type = "light") {
+  if (type === "tick" || type === "wheel" || type === "selectionChanged") return "selection";
+  if (type === "long-press") return "longPress";
+  return type;
+}
+
+function getOnlyPumpVibratePattern(type) {
+  if (type === "selection") return 6;
+  if (type === "longPress") return 22;
+  if (type === "success") return [18, 28, 18];
+  if (type === "error") return [26, 36, 26];
+  return null;
+}
+
 function triggerOnlyPumpHaptic(type = "light") {
   if (typeof window === "undefined") return false;
+  const hapticType = normalizeOnlyPumpHapticType(type);
   const feedback = window.Telegram?.WebApp?.HapticFeedback;
-  if (!feedback) return false;
 
   try {
     const now = Date.now();
-    if (type === "selection") {
+    if (hapticType === "selection") {
       if (now - onlyPumpLastSelectionHapticAt < ONLYPUMP_HAPTIC_THROTTLE_MS) return false;
       onlyPumpLastSelectionHapticAt = now;
-      feedback.selectionChanged?.();
-      return true;
+      if (feedback?.selectionChanged) {
+        feedback.selectionChanged();
+        return true;
+      }
+      if (feedback?.impactOccurred) {
+        feedback.impactOccurred("light");
+        return true;
+      }
+      const pattern = getOnlyPumpVibratePattern(hapticType);
+      if (pattern && typeof navigator !== "undefined" && navigator.vibrate) {
+        navigator.vibrate(pattern);
+        return true;
+      }
+      return false;
     }
 
-    if (type === onlyPumpLastHapticType && now - onlyPumpLastHapticAt < 60) return false;
-    onlyPumpLastHapticType = type;
+    if (hapticType === onlyPumpLastHapticType && now - onlyPumpLastHapticAt < 60) return false;
+    onlyPumpLastHapticType = hapticType;
     onlyPumpLastHapticAt = now;
 
-    if (type === "success" || type === "error" || type === "warning") {
-      feedback.notificationOccurred?.(type);
+    if (hapticType === "success" || hapticType === "error" || hapticType === "warning") {
+      if (feedback?.notificationOccurred) {
+        feedback.notificationOccurred(hapticType);
+        return true;
+      }
+      const pattern = getOnlyPumpVibratePattern(hapticType);
+      if (pattern && typeof navigator !== "undefined" && navigator.vibrate) {
+        navigator.vibrate(pattern);
+        return true;
+      }
+      return false;
+    }
+
+    if (hapticType === "longPress") {
+      if (feedback?.impactOccurred) {
+        feedback.impactOccurred("medium");
+        return true;
+      }
+      const pattern = getOnlyPumpVibratePattern(hapticType);
+      if (pattern && typeof navigator !== "undefined" && navigator.vibrate) {
+        navigator.vibrate(pattern);
+        return true;
+      }
+      return false;
+    }
+
+    const impactType = ["light", "medium", "heavy", "rigid", "soft"].includes(hapticType) ? hapticType : "light";
+    if (feedback?.impactOccurred) {
+      feedback.impactOccurred(impactType);
       return true;
     }
 
-    const impactType = ["light", "medium", "heavy", "rigid", "soft"].includes(type) ? type : "light";
-    feedback.impactOccurred?.(impactType);
-    return true;
+    return false;
   } catch (error) {
     return false;
   }
+}
+
+function triggerOnlyPumpSelectionHaptic() {
+  return triggerOnlyPumpHaptic("selection");
+}
+
+function triggerOnlyPumpLongPressHaptic() {
+  return triggerOnlyPumpHaptic("longPress");
+}
+
+function triggerOnlyPumpValueHaptic(value, lastValueRef) {
+  if (!lastValueRef) return triggerOnlyPumpSelectionHaptic();
+  const key = String(value ?? "");
+  if (!key || key === lastValueRef.current) return false;
+  lastValueRef.current = key;
+  return triggerOnlyPumpSelectionHaptic();
 }
 
 document.addEventListener("focusin", (event) => {
@@ -17897,10 +17964,11 @@ const toggleExerciseMeasurementSetting = (field) => {
 	    return "План";
 	  };
 
-  const SchedulerWheelColumn = ({ label, value, options = [], onChange, className = "", size = "large" }) => {
-    const scrollRef = useRef(null);
-    const settleTimerRef = useRef(null);
-    const itemHeight = size === "small" ? 44 : 52;
+	  const SchedulerWheelColumn = ({ label, value, options = [], onChange, className = "", size = "large" }) => {
+	    const scrollRef = useRef(null);
+	    const settleTimerRef = useRef(null);
+	    const lastHapticValueRef = useRef(String(value ?? ""));
+	    const itemHeight = size === "small" ? 44 : 52;
     const repeatCount = options.length > 1 ? 9 : 1;
     const centerRepeat = Math.floor(repeatCount / 2);
     const selectedIndex = Math.max(0, options.findIndex(option => String(option.value) === String(value)));
@@ -17925,35 +17993,41 @@ const toggleExerciseMeasurementSetting = (field) => {
       return wheelOptions[virtualIndex] || null;
     };
 
-    const normalizeScrollPosition = (option) => {
-      if (!option || options.length <= 1) return;
-      const centeredIndex = centerRepeat * options.length + option.baseIndex;
-      window.setTimeout(() => scrollToIndex(centeredIndex, "auto"), 220);
-    };
+	    const normalizeScrollPosition = (option) => {
+	      if (!option || options.length <= 1) return;
+	      const centeredIndex = centerRepeat * options.length + option.baseIndex;
+	      window.setTimeout(() => scrollToIndex(centeredIndex, "auto"), 220);
+	    };
+	    const triggerOptionHaptic = (option) => {
+	      if (!option) return;
+	      triggerOnlyPumpValueHaptic(option.value, lastHapticValueRef);
+	    };
 
-    const commitCenteredOption = (behavior = "smooth") => {
-      const option = readCenteredOption();
-      if (!option) return;
-      scrollToIndex(option.virtualIndex, behavior);
-      if (String(option.value) !== String(value)) {
-        triggerOnlyPumpHaptic("selection");
-        onChange(option.value);
-      }
-      normalizeScrollPosition(option);
-    };
+	    const commitCenteredOption = (behavior = "smooth") => {
+	      const option = readCenteredOption();
+	      if (!option) return;
+	      scrollToIndex(option.virtualIndex, behavior);
+	      triggerOptionHaptic(option);
+	      if (String(option.value) !== String(value)) {
+	        onChange(option.value);
+	      }
+	      normalizeScrollPosition(option);
+	    };
 
-    const handleScroll = () => {
-      window.clearTimeout(settleTimerRef.current);
-      settleTimerRef.current = window.setTimeout(() => commitCenteredOption("smooth"), 180);
-    };
+	    const handleScroll = () => {
+	      triggerOptionHaptic(readCenteredOption());
+	      window.clearTimeout(settleTimerRef.current);
+	      settleTimerRef.current = window.setTimeout(() => commitCenteredOption("smooth"), 180);
+	    };
 
-    useEffect(() => {
-      if (!options.length) return undefined;
-      scrollToIndex(centerRepeat * options.length + selectedIndex, "auto");
-      return () => {
-        window.clearTimeout(settleTimerRef.current);
-      };
-    }, [options, selectedIndex, centerRepeat, itemHeight]);
+	    useEffect(() => {
+	      if (!options.length) return undefined;
+	      lastHapticValueRef.current = String(value ?? "");
+	      scrollToIndex(centerRepeat * options.length + selectedIndex, "auto");
+	      return () => {
+	        window.clearTimeout(settleTimerRef.current);
+	      };
+	    }, [options, selectedIndex, centerRepeat, itemHeight]);
 
     return <div className={`onlypump-field-surface rounded-[24px] bg-black/28 p-3 ${className}`}>
       <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">{label}</div>
@@ -17974,7 +18048,7 @@ const toggleExerciseMeasurementSetting = (field) => {
           return <button
             key={`${option.value}-${option.virtualIndex}`}
             type="button"
-            onClick={() => { if (String(option.value) !== String(value)) triggerOnlyPumpHaptic("selection"); onChange(option.value); scrollToIndex(option.virtualIndex, "smooth"); normalizeScrollPosition(option); }}
+	            onClick={() => { triggerOptionHaptic(option); onChange(option.value); scrollToIndex(option.virtualIndex, "smooth"); normalizeScrollPosition(option); }}
             className={`onlypump-wheel-item relative z-10 flex w-full items-center justify-center rounded-2xl px-2 text-center text-base font-black transition ${selected ? "onlypump-wheel-selected text-red-100" : "text-zinc-500"}`}
             style={{ height: `${itemHeight}px` }}
           >
@@ -18757,10 +18831,13 @@ const toggleExerciseMeasurementSetting = (field) => {
       setWorkoutCardOffset(isOpen ? -148 : 0);
     }, [isOpen]);
 
-    const startLongPress = () => {
-      clearTimeout(pointerTimerRef.current);
-      pointerTimerRef.current = setTimeout(() => setWeekMenuGroup({ type: "workout", workout }), 550);
-    };
+	    const startLongPress = () => {
+	      clearTimeout(pointerTimerRef.current);
+	      pointerTimerRef.current = setTimeout(() => {
+	        triggerOnlyPumpLongPressHaptic();
+	        setWeekMenuGroup({ type: "workout", workout });
+	      }, 550);
+	    };
 
     const cancelLongPress = () => {
       clearTimeout(pointerTimerRef.current);
@@ -18970,7 +19047,7 @@ const toggleExerciseMeasurementSetting = (field) => {
         onPointerUp={handleCardPointerUp}
         onPointerCancel={handleCardPointerUp}
         onPointerLeave={cancelLongPress}
-        onContextMenu={(event) => { event.preventDefault(); setWeekMenuGroup({ type: "workout", workout }); }}
+	        onContextMenu={(event) => { event.preventDefault(); triggerOnlyPumpLongPressHaptic(); setWeekMenuGroup({ type: "workout", workout }); }}
         className={cardButtonClass}
         style={{
           transform: `translate3d(${cardOffset}px, 0, 0)`,
@@ -19043,11 +19120,12 @@ const toggleExerciseMeasurementSetting = (field) => {
     const handleMiniPointerDown = (event) => {
       clearMiniLongPress();
       longPressRef.current = { startX: event.clientX, startY: event.clientY, triggered: false };
-      longPressTimerRef.current = window.setTimeout(() => {
-        if (suppressTimelineClickRef?.current || timelineDraggingRef?.current) return;
-        longPressRef.current.triggered = true;
-        setWeekMenuGroup({ type: "workout", workout });
-      }, 550);
+	      longPressTimerRef.current = window.setTimeout(() => {
+	        if (suppressTimelineClickRef?.current || timelineDraggingRef?.current) return;
+	        longPressRef.current.triggered = true;
+	        triggerOnlyPumpLongPressHaptic();
+	        setWeekMenuGroup({ type: "workout", workout });
+	      }, 550);
     };
     const handleMiniPointerMove = (event) => {
       const state = longPressRef.current;
@@ -19072,7 +19150,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       onPointerUp={handleMiniPointerEnd}
       onPointerCancel={handleMiniPointerEnd}
       onPointerLeave={handleMiniPointerEnd}
-      onContextMenu={(event) => { event.preventDefault(); setWeekMenuGroup({ type: "workout", workout }); }}
+	      onContextMenu={(event) => { event.preventDefault(); triggerOnlyPumpLongPressHaptic(); setWeekMenuGroup({ type: "workout", workout }); }}
       data-workout-timeline-status={diaryStatus}
       className="shrink-0 rounded-[20px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-3 py-2 text-left transition active:scale-[0.98] hover:border-red-500/35"
       style={{ width: "clamp(9rem, 44vw, 11.5rem)", touchAction: "manipulation" }}
@@ -26191,6 +26269,7 @@ function QuizHorizontalRuler({ label, value, onChange, min = 35, max = 200, fall
   const selectedIndex = Math.max(0, values.findIndex(item => item === selectedValue));
   const scrollRef = useRef(null);
   const settleTimerRef = useRef(null);
+  const lastHapticValueRef = useRef(String(selectedValue));
 
   const scrollToIndex = useCallback((index, behavior = "auto") => {
     const node = scrollRef.current;
@@ -26204,18 +26283,24 @@ function QuizHorizontalRuler({ label, value, onChange, min = 35, max = 200, fall
     const nextIndex = Math.max(0, Math.min(values.length - 1, Math.round(node.scrollLeft / itemWidth)));
     const nextValue = values[nextIndex];
     scrollToIndex(nextIndex, behavior);
+    triggerOnlyPumpValueHaptic(nextValue, lastHapticValueRef);
     if (nextValue !== selectedValue) {
-      triggerOnlyPumpHaptic("selection");
       onChange(nextValue);
     }
   }, [itemWidth, onChange, scrollToIndex, selectedValue, values]);
 
   const handleScroll = () => {
+    const node = scrollRef.current;
+    if (node && values.length) {
+      const nextIndex = Math.max(0, Math.min(values.length - 1, Math.round(node.scrollLeft / itemWidth)));
+      triggerOnlyPumpValueHaptic(values[nextIndex], lastHapticValueRef);
+    }
     window.clearTimeout(settleTimerRef.current);
     settleTimerRef.current = window.setTimeout(() => commitCenteredValue("smooth"), 120);
   };
 
   useEffect(() => {
+    lastHapticValueRef.current = String(selectedValue);
     const id = window.setTimeout(() => scrollToIndex(selectedIndex, "auto"), 0);
     return () => {
       window.clearTimeout(id);
@@ -26253,7 +26338,7 @@ function QuizHorizontalRuler({ label, value, onChange, min = 35, max = 200, fall
             className="onlypump-quiz-ruler-item flex h-full shrink-0 flex-col items-center justify-end gap-3 pb-2 text-center"
             style={{ width: `${itemWidth}px`, flexBasis: `${itemWidth}px` }}
             onClick={() => {
-              if (item !== selectedValue) triggerOnlyPumpHaptic("selection");
+              triggerOnlyPumpValueHaptic(item, lastHapticValueRef);
               onChange(item);
               scrollToIndex(index, "smooth");
             }}
@@ -26275,6 +26360,7 @@ function QuizVerticalRuler({ label, value, onChange, min = 120, max = 220, fallb
   const selectedIndex = Math.max(0, values.findIndex(item => item === selectedValue));
   const scrollRef = useRef(null);
   const settleTimerRef = useRef(null);
+  const lastHapticValueRef = useRef(String(selectedValue));
 
   const scrollToIndex = useCallback((index, behavior = "auto") => {
     const node = scrollRef.current;
@@ -26288,18 +26374,24 @@ function QuizVerticalRuler({ label, value, onChange, min = 120, max = 220, fallb
     const nextIndex = Math.max(0, Math.min(values.length - 1, Math.round(node.scrollTop / itemHeight)));
     const nextValue = values[nextIndex];
     scrollToIndex(nextIndex, behavior);
+    triggerOnlyPumpValueHaptic(nextValue, lastHapticValueRef);
     if (nextValue !== selectedValue) {
-      triggerOnlyPumpHaptic("selection");
       onChange(nextValue);
     }
   }, [itemHeight, onChange, scrollToIndex, selectedValue, values]);
 
   const handleScroll = () => {
+    const node = scrollRef.current;
+    if (node && values.length) {
+      const nextIndex = Math.max(0, Math.min(values.length - 1, Math.round(node.scrollTop / itemHeight)));
+      triggerOnlyPumpValueHaptic(values[nextIndex], lastHapticValueRef);
+    }
     window.clearTimeout(settleTimerRef.current);
     settleTimerRef.current = window.setTimeout(() => commitCenteredValue("smooth"), 120);
   };
 
   useEffect(() => {
+    lastHapticValueRef.current = String(selectedValue);
     const id = window.setTimeout(() => scrollToIndex(selectedIndex, "auto"), 0);
     return () => {
       window.clearTimeout(id);
@@ -26337,7 +26429,7 @@ function QuizVerticalRuler({ label, value, onChange, min = 120, max = 220, fallb
             className="onlypump-quiz-ruler-item grid w-full grid-cols-[1fr_auto_1fr] items-center gap-4 text-center"
             style={{ height: `${itemHeight}px` }}
             onClick={() => {
-              if (item !== selectedValue) triggerOnlyPumpHaptic("selection");
+              triggerOnlyPumpValueHaptic(item, lastHapticValueRef);
               onChange(item);
               scrollToIndex(index, "smooth");
             }}
@@ -27069,8 +27161,12 @@ function LoopWheelColumn({ label, value, options, onChange, suffix }) {
   const touchStateRef = useRef({ startY: 0, lastY: 0, lastTime: 0, velocity: 0, offset: 0, dragging: false });
   const animatingRef = useRef(false);
   const wheelLockRef = useRef(false);
+  const lastHapticValueRef = useRef(String(value ?? ""));
   const [dragOffset, setDragOffset] = useState(0);
   const [animating, setAnimating] = useState(false);
+  useEffect(() => {
+    lastHapticValueRef.current = String(value ?? "");
+  }, [value]);
   if (!options.length) return null;
   const normalizeIndex = (index) => ((index % options.length) + options.length) % options.length;
   const currentIndex = Math.max(0, options.indexOf(value));
@@ -27079,6 +27175,10 @@ function LoopWheelColumn({ label, value, options, onChange, suffix }) {
   const visibleItems = Array.from({ length: maxStep * 2 + 1 }, (_, index) => index - maxStep);
   const baseOffset = -((visibleItems.length - 3) / 2) * itemHeight;
   const clampOffset = (offset) => Math.max(-itemHeight * maxStep, Math.min(itemHeight * maxStep, offset));
+  const triggerWheelDeltaHaptic = (delta) => {
+    const nextValue = options[normalizeIndex(currentIndex + delta)];
+    triggerOnlyPumpValueHaptic(nextValue, lastHapticValueRef);
+  };
   const commitMove = (delta) => {
     const safeDelta = Math.max(-maxStep, Math.min(maxStep, Math.round(delta)));
     if (!safeDelta || animatingRef.current || !options.length) return;
@@ -27087,7 +27187,7 @@ function LoopWheelColumn({ label, value, options, onChange, suffix }) {
     setAnimating(true);
     setDragOffset(-safeDelta * itemHeight);
     window.setTimeout(() => {
-      triggerOnlyPumpHaptic("selection");
+      triggerWheelDeltaHaptic(safeDelta);
       onChange?.(options[normalizeIndex(currentIndex + safeDelta)]);
       setAnimating(false);
       setDragOffset(0);
@@ -27145,6 +27245,8 @@ function LoopWheelColumn({ label, value, options, onChange, suffix }) {
     const offset = clampOffset(y - state.startY);
     touchStateRef.current = { ...state, lastY: y, lastTime: now, velocity, offset };
     setDragOffset(offset);
+    const hapticDelta = Math.max(-maxStep, Math.min(maxStep, Math.round(-offset / itemHeight)));
+    triggerWheelDeltaHaptic(hapticDelta);
   };
   const handleTouchEnd = (event) => {
     event.preventDefault();
