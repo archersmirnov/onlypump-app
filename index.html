@@ -1003,6 +1003,10 @@
       -webkit-mask-image: radial-gradient(ellipse 62% 62% at 18% 8%, transparent 0%, transparent 28%, rgba(0,0,0,0.08) 39%, rgba(0,0,0,0.58) 55%, #000 76%);
       mask-image: radial-gradient(ellipse 62% 62% at 18% 8%, transparent 0%, transparent 28%, rgba(0,0,0,0.08) 39%, rgba(0,0,0,0.58) 55%, #000 76%);
     }
+    .onlypump-steps-chart-layer {
+      -webkit-mask-image: linear-gradient(135deg, rgba(0,0,0,0.02) 0%, rgba(0,0,0,0.12) 30%, rgba(0,0,0,0.62) 56%, #000 78%);
+      mask-image: linear-gradient(135deg, rgba(0,0,0,0.02) 0%, rgba(0,0,0,0.12) 30%, rgba(0,0,0,0.62) 56%, #000 78%);
+    }
     .onlypump-metric-widget > div {
       min-height: 0;
       overflow: hidden;
@@ -1282,6 +1286,7 @@
 	      padding: 0.7rem !important;
 	      display: flex !important;
 	      flex-direction: column;
+	      gap: 0.42rem;
 	    }
 	    .onlypump-mood-widget > * {
 	      min-height: 0;
@@ -1290,31 +1295,72 @@
       font-size: clamp(0.76rem, 3.4cqw, 0.95rem);
       line-height: 1.1;
     }
-	    .onlypump-mood-icon-grid {
-	      display: grid;
-	      grid-template-columns: repeat(2, minmax(0, 1fr));
-	      flex: 1 1 auto;
-	      align-content: center;
-	      align-items: center;
-	      justify-items: center;
-	      gap: 0.35rem;
-	      margin-top: 0;
-	      padding-top: 0.2rem;
-	    }
-	    .onlypump-mood-icon-slot {
-	      display: flex;
-	      width: 100%;
-	      min-height: clamp(3.6rem, 18cqw, 5rem);
-	      align-items: center;
-	      justify-content: center;
-	      border-radius: 1rem;
-	      border: 0;
-	      background: transparent;
-	    }
-		    .onlypump-mood-icon-slot > * {
-		      transform: scale(1.75);
-		      transform-origin: center;
-		    }
+    .onlypump-mood-primary {
+      margin-top: 0.16rem;
+      color: var(--onlypump-text);
+      font-size: clamp(0.9rem, 4cqw, 1.18rem);
+      font-weight: 900;
+      line-height: 1;
+    }
+    .onlypump-mood-character {
+      display: flex;
+      min-height: 0;
+      flex: 1 1 auto;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 0.08rem 0;
+    }
+    .onlypump-mood-character > * {
+      width: min(54%, 4.8rem) !important;
+      height: min(54%, 4.8rem) !important;
+      max-width: 100%;
+      max-height: 100%;
+      transform: scale(1.35);
+      transform-origin: center;
+    }
+    .onlypump-mood-stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.28rem;
+      flex: 0 0 auto;
+      border-radius: 0.95rem;
+      background: rgba(255, 255, 255, 0.035);
+      padding: 0.28rem;
+    }
+    .onlypump-mood-stat {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.12rem;
+      border-radius: 0.76rem;
+      background: rgba(255, 255, 255, 0.035);
+      padding: 0.26rem 0.14rem;
+    }
+    .onlypump-mood-stat-label {
+      max-width: 100%;
+      overflow: hidden;
+      color: var(--onlypump-faint);
+      font-size: clamp(0.46rem, 1.9cqw, 0.58rem);
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      line-height: 1;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .onlypump-mood-stat-value {
+      max-width: 100%;
+      overflow: hidden;
+      color: var(--onlypump-text);
+      font-size: clamp(0.58rem, 2.4cqw, 0.72rem);
+      font-weight: 900;
+      line-height: 1;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .onlypump-note-widget {
       padding: 0.72rem !important;
     }
@@ -3469,6 +3515,89 @@ function DailyChoiceIcon({ option, size = "md" }) {
 
   return <span className={`inline-flex ${sizeClass} shrink-0 items-center justify-center rounded-full bg-white/8`}>{option.icon || "—"}</span>;
 }
+
+function StateScaleSelector({ options = [], value = "", fallbackId = "", onChange }) {
+  const trackRef = useRef(null);
+  const draggingRef = useRef(false);
+  const fallbackIndex = Math.max(0, options.findIndex(option => option.id === fallbackId));
+  const selectedIndex = options.findIndex(option => option.id === value);
+  const activeIndex = selectedIndex >= 0 && value ? selectedIndex : fallbackIndex;
+  const activeOption = options[activeIndex] || options[0];
+  const percent = options.length > 1 ? (activeIndex / (options.length - 1)) * 100 : 0;
+
+  const selectIndex = useCallback((index) => {
+    const next = options[Math.max(0, Math.min(options.length - 1, index))];
+    if (next) onChange?.(next.id);
+  }, [onChange, options]);
+
+  const selectFromClientX = useCallback((clientX) => {
+    const node = trackRef.current;
+    if (!node || !options.length) return;
+    const rect = node.getBoundingClientRect();
+    const ratio = rect.width ? (clientX - rect.left) / rect.width : 0;
+    const nextIndex = Math.round(Math.max(0, Math.min(1, ratio)) * (options.length - 1));
+    selectIndex(nextIndex);
+  }, [options.length, selectIndex]);
+
+  const handlePointerDown = (event) => {
+    event.stopPropagation();
+    draggingRef.current = true;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    selectFromClientX(event.clientX);
+  };
+
+  const handlePointerMove = (event) => {
+    if (!draggingRef.current) return;
+    event.stopPropagation();
+    selectFromClientX(event.clientX);
+  };
+
+  const stopDragging = (event) => {
+    if (!draggingRef.current) return;
+    event.stopPropagation();
+    draggingRef.current = false;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  };
+
+  return <div className="mt-3 rounded-[26px] border border-white/10 bg-white/[0.035] px-3 pb-4 pt-3" style={{ touchAction: "pan-y" }}>
+    <div className="grid grid-cols-6 items-end gap-1">
+      {options.map((option, index) => {
+        const active = index === activeIndex;
+        return <button
+          key={option.id}
+          type="button"
+          onClick={() => selectIndex(index)}
+          onPointerDown={(event) => event.stopPropagation()}
+          className="flex min-w-0 flex-col items-center justify-end rounded-2xl py-1 transition active:scale-95"
+          aria-label={option.label}
+          aria-pressed={active}
+        >
+          <span className={`flex h-12 w-full items-center justify-center transition duration-200 ${active ? "scale-125" : "scale-90 opacity-55"}`}>
+            <DailyChoiceIcon option={option} size="lg"/>
+          </span>
+        </button>;
+      })}
+    </div>
+    <div
+      ref={trackRef}
+      className="relative mx-2 mt-2 h-8 cursor-pointer select-none touch-pan-y"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={stopDragging}
+      onPointerCancel={stopDragging}
+    >
+      <div className="absolute left-0 right-0 top-1/2 h-[3px] -translate-y-1/2 overflow-hidden rounded-full bg-zinc-800">
+        <div className="h-full rounded-full bg-gradient-to-r from-red-700 to-red-500" style={{ width: `${percent}%` }}/>
+      </div>
+      <div className="absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-between">
+        {options.map((option, index) => <span key={`${option.id}-stop`} className={`h-2 w-2 rounded-full ${index <= activeIndex ? "bg-red-500" : "bg-zinc-700"}`}/>)}
+      </div>
+      <span className="absolute top-1/2 h-4 w-4 rounded-full border-2 border-zinc-950 bg-red-500 shadow-sm shadow-black/40" style={{ left: `${percent}%`, transform: "translate(-50%, -50%)" }}/>
+    </div>
+    <div className="mt-1 text-center text-sm font-black text-zinc-100">{activeOption?.label || ""}</div>
+  </div>;
+}
+
 const personalTrackerWidgetId = (trackerId = "") => `${PERSONAL_TRACKER_WIDGET_PREFIX}${trackerId}`;
 const personalTrackerIdFromWidget = (widgetId = "") => String(widgetId).slice(PERSONAL_TRACKER_WIDGET_PREFIX.length);
 const getHomeCatalogWidgetSize = (id = "") => {
@@ -6911,9 +7040,10 @@ const initialNutritionGoal = {
   carbs: 250,
 };
 
-function Progress({ value = 0, tone = "red" }) {
+function Progress({ value = 0, tone = "red", thin = false }) {
   const fillClass = tone === "sky" ? "bg-gradient-to-r from-sky-500 to-cyan-300" : "bg-gradient-to-r from-red-700 to-red-500";
-  return <div className="h-1.5 w-full rounded-full bg-zinc-800"><div style={{ width: `${value}%` }} className={`h-full rounded-full ${fillClass}`} /></div>;
+  const thinStyle = thin ? { height: "3px" } : undefined;
+  return <div style={thinStyle} className="h-1.5 w-full rounded-full bg-zinc-800"><div style={{ width: `${value}%` }} className={`h-full rounded-full ${fillClass}`} /></div>;
 }
 
 function Card({ children, className = "", ...props }) {
@@ -8200,7 +8330,9 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
   const dragRef = useRef(null);
   const shellTapRef = useRef(null);
   const suppressCalendarClickRef = useRef(false);
+  const suppressCalendarHistoryRef = useRef(false);
   const suppressResetRef = useRef(null);
+  const suppressHistoryResetRef = useRef(null);
   useAppBackLayer(`calendar-history-${title}`, historyOpen, () => setHistoryOpen(false), 130);
   useEffect(() => {
     setStartOffset(visibleDays === 14 ? -6 : -3);
@@ -8265,6 +8397,11 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
       dragRef.current = null;
       setDragX(0);
       if (!wasDragged && targetKey) {
+        suppressCalendarHistoryRef.current = true;
+        clearTimeout(suppressHistoryResetRef.current);
+        suppressHistoryResetRef.current = setTimeout(() => {
+          suppressCalendarHistoryRef.current = false;
+        }, 160);
         suppressCalendarClickRef.current = false;
         onSelect?.(targetKey);
         return;
@@ -8290,12 +8427,14 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
     const tap = shellTapRef.current;
     shellTapRef.current = null;
     if (!tap || tap.pointerId !== event.pointerId) return;
+    if (suppressCalendarHistoryRef.current) return;
     if (suppressCalendarClickRef.current) return;
     if (event.target?.closest?.("[data-calendar-date-key]")) return;
     if (Math.hypot(event.clientX - tap.startX, event.clientY - tap.startY) > 12) return;
     setHistoryOpen(true);
   };
   const openHistoryFromCalendarShell = (event) => {
+    if (suppressCalendarHistoryRef.current) return;
     if (suppressCalendarClickRef.current) return;
     if (event.target?.closest?.("[data-calendar-date-key]")) return;
     setHistoryOpen(true);
@@ -8325,7 +8464,7 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
               const isToday = todayKey === key;
               const marked = markedDateKeys.includes(key);
               const circleSizeClass = visibleDays === 14 ? "h-10 w-10 sm:h-11 sm:w-11 xl:h-14 xl:w-14" : "h-11 w-11 sm:h-14 sm:w-14";
-              return <button key={key} type="button" data-calendar-date-key={key} onClick={(event) => { if (event.detail !== 0 || suppressCalendarClickRef.current) return; onSelect?.(key); }} className="min-w-0 text-center touch-manipulation">
+              return <button key={key} type="button" data-calendar-date-key={key} onClick={(event) => { event.stopPropagation(); suppressCalendarHistoryRef.current = true; clearTimeout(suppressHistoryResetRef.current); suppressHistoryResetRef.current = setTimeout(() => { suppressCalendarHistoryRef.current = false; }, 160); if (event.detail !== 0 || suppressCalendarClickRef.current) return; onSelect?.(key); }} className="min-w-0 text-center touch-manipulation">
                 <div className={`mx-auto flex ${circleSizeClass} flex-col items-center justify-center rounded-full border transition ${selected ? "border-red-500 bg-red-500 text-black" : isToday ? "border-red-500/50 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-red-500/40 hover:bg-white/[0.07]"}`}>
                   <span className="text-[8px] uppercase leading-none sm:text-[10px]">{date.toLocaleDateString('ru-RU', { weekday: 'short' })}</span>
                   <span className="mt-1 text-sm font-semibold leading-none sm:text-xl">{date.getDate()}</span>
@@ -8447,6 +8586,23 @@ function WidgetInfoIcon({ widgetKey, label, onOpen, children, className = "" }) 
   </button>;
 }
 
+const homeWidgetIconPaths = {
+  nutritionIcon: "assets/menu-icons/home-widget-nutrition.svg",
+  stepsIcon: "assets/menu-icons/home-widget-steps.svg",
+  sleepIcon: "assets/menu-icons/home-widget-sleep.svg",
+  bodyFatIcon: "assets/menu-icons/home-widget-body-fat.svg",
+  weightIcon: "assets/menu-icons/home-widget-weight.svg",
+  wellbeingIcon: "assets/menu-icons/home-widget-wellbeing.svg",
+  recoveryIcon: "assets/menu-icons/home-widget-recovery.svg",
+  tonnageIcon: "assets/menu-icons/home-widget-tonnage.svg",
+  setsIcon: "assets/menu-icons/home-widget-sets.svg",
+  habitTrackerIcon: "assets/menu-icons/home-widget-habit-tracker.svg",
+};
+
+function HomeWidgetAssetIcon({ src, alt = "", className = "" }) {
+  return <img src={src} alt={alt} aria-hidden={alt ? undefined : true} draggable="false" className={`block h-[1.15rem] w-[1.15rem] object-contain ${className}`}/>;
+}
+
 function WidgetInfoSheet({ widgetKey, onClose }) {
   const info = widgetKey ? WIDGET_INFO_BY_KEY[widgetKey] : null;
 
@@ -8560,6 +8716,35 @@ const buildWeightTrendPoints = ({ measurements = {}, measurementRecords = [], se
     .slice(-10);
 };
 
+const readStepsTrendDate = (record = {}) => String(record?.log_date || record?.date || "").slice(0, 10);
+
+const readStepsTrendValue = (record = {}) => profileNonNegativeNumber(record?.steps_count, 0);
+
+const buildStepsTrendPoints = ({ healthLogs = [], selectedHealthLog = DEFAULT_HEALTH_LOG, selectedDateKey = "", goal = DEFAULT_PROFILE.steps_per_day }) => {
+  const endKey = selectedDateKey || readStepsTrendDate(selectedHealthLog) || formatDateKey(new Date());
+  const endDate = parseDateKeyLocal(endKey);
+  const safeGoal = Math.max(1, profileNonNegativeNumber(goal, DEFAULT_PROFILE.steps_per_day));
+  const byDate = new Map();
+
+  (healthLogs || []).forEach(log => {
+    const date = readStepsTrendDate(log);
+    if (date) byDate.set(date, readStepsTrendValue(log));
+  });
+
+  if (selectedHealthLog) {
+    byDate.set(endKey, readStepsTrendValue(selectedHealthLog));
+  }
+
+  return Array.from({ length: 14 }, (_, index) => {
+    const date = formatDateKey(addLocalDaysToDate(endDate, index - 13));
+    return {
+      date,
+      steps: byDate.has(date) ? byDate.get(date) : 0,
+      goal: safeGoal,
+    };
+  });
+};
+
 function WeightTrendMiniChart({ points = [] }) {
   const values = points.map(point => Number(point.value)).filter(value => Number.isFinite(value) && value > 0);
   if (!values.length) return null;
@@ -8622,7 +8807,7 @@ function WeightTrendMiniChart({ points = [] }) {
   </div>;
 }
 
-function WeightMetricWidgetCard({ title, value, trendPoints = [], icon: Icon, onClick, widgetKey = "", onInfoOpen }) {
+function WeightMetricWidgetCard({ title, value, trendPoints = [], icon: Icon, iconSrc = "", iconAlt = "", onClick, widgetKey = "", onInfoOpen }) {
   return <Card onClick={onClick} className="onlypump-home-widget-card onlypump-metric-widget onlypump-weight-metric-widget cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
     <WeightTrendMiniChart points={trendPoints}/>
     <div className="relative z-10 flex min-h-0 flex-1 flex-col">
@@ -8631,14 +8816,117 @@ function WeightMetricWidgetCard({ title, value, trendPoints = [], icon: Icon, on
           <p className="onlypump-line-clamp-1 text-[11px] text-zinc-500 sm:text-xs">{title}</p>
           <div className="onlypump-home-widget-value mt-1 break-words text-[clamp(1.35rem,4.4vw,1.75rem)] font-semibold leading-tight">{value}</div>
         </div>
-        {Icon && <WidgetInfoIcon widgetKey={widgetKey} label={title} onOpen={onInfoOpen} className="shrink-0 text-red-500"><Icon size={18}/></WidgetInfoIcon>} 
+        {(iconSrc || Icon) && <WidgetInfoIcon widgetKey={widgetKey} label={title} onOpen={onInfoOpen} className="shrink-0 text-red-500">{iconSrc ? <HomeWidgetAssetIcon src={iconSrc} alt={iconAlt}/> : <Icon size={18}/>}</WidgetInfoIcon>} 
       </div>
       <div className="mt-auto min-h-[1rem]"/>
     </div>
   </Card>;
 }
 
-function MetricWidgetCard({ title, value, sub, delta, progress, icon: Icon, onClick, children, accent = "red", widgetKey = "", onInfoOpen }) {
+function StepsTrendBarChart({ points = [], goal = DEFAULT_PROFILE.steps_per_day }) {
+  if (!points.length) return null;
+  const safeGoal = Math.max(1, profileNonNegativeNumber(goal, DEFAULT_PROFILE.steps_per_day));
+  const maxScale = safeGoal * 2;
+
+  return <div className="onlypump-steps-chart-layer pointer-events-none absolute inset-x-2 bottom-2 z-0 h-[68%]" aria-hidden="true">
+    <div className="absolute left-1 right-1 top-1/2 border-t border-dashed border-red-400/35"/>
+    <div className="absolute inset-x-1 bottom-0 top-0 flex items-end gap-[3px]">
+      {points.slice(-14).map(point => {
+        const steps = profileNonNegativeNumber(point.steps, 0);
+        const height = Math.min(100, (steps / maxScale) * 100);
+        const isGhost = steps <= 0;
+        return <span
+          key={point.date}
+          className="block min-w-0 flex-1 rounded-t-[5px]"
+          style={{
+            height: isGhost ? "3px" : `max(5px, ${height.toFixed(2)}%)`,
+            opacity: isGhost ? 0.26 : 0.92,
+            background: isGhost
+              ? "rgba(248, 113, 113, 0.32)"
+              : "linear-gradient(to top, rgba(239, 68, 68, 0.30), rgba(248, 113, 113, 0.88))",
+          }}
+        />;
+      })}
+    </div>
+  </div>;
+}
+
+function StepsMetricWidgetCard({ title, value, sub, progress, trendPoints = [], goal, icon: Icon, iconSrc = "", iconAlt = "", onClick, widgetKey = "", onInfoOpen }) {
+  return <Card onClick={onClick} className="onlypump-home-widget-card onlypump-metric-widget onlypump-steps-metric-widget cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
+    <StepsTrendBarChart points={trendPoints} goal={goal}/>
+    <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="onlypump-line-clamp-1 text-[11px] text-zinc-500 sm:text-xs">{title}</p>
+          <div className="onlypump-home-widget-value mt-1 break-words text-[clamp(1.35rem,4.4vw,1.75rem)] font-semibold leading-tight">{value}</div>
+          {sub && <p className="onlypump-line-clamp-2 mt-1 text-[10px] leading-tight text-zinc-500 sm:text-[11px]">{sub}</p>}
+        </div>
+        {(iconSrc || Icon) && <WidgetInfoIcon widgetKey={widgetKey} label={title} onOpen={onInfoOpen} className="shrink-0 text-red-500">{iconSrc ? <HomeWidgetAssetIcon src={iconSrc} alt={iconAlt}/> : <Icon size={18}/>}</WidgetInfoIcon>} 
+      </div>
+      <div className="mt-auto min-h-[1rem]"/>
+    </div>
+  </Card>;
+}
+
+const bodyFatRangeScaleConfigs = {
+  male: {
+    min: 3,
+    max: 35,
+    zones: [
+      { from: 3, to: 6, tone: "bright" },
+      { from: 6, to: 8, tone: "muted" },
+      { from: 8, to: 18, tone: "normal" },
+      { from: 18, to: 25, tone: "muted" },
+      { from: 25, to: 35, tone: "bright" },
+    ],
+  },
+  female: {
+    min: 10,
+    max: 45,
+    zones: [
+      { from: 10, to: 15, tone: "bright" },
+      { from: 15, to: 18, tone: "muted" },
+      { from: 18, to: 28, tone: "normal" },
+      { from: 28, to: 35, tone: "muted" },
+      { from: 35, to: 45, tone: "bright" },
+    ],
+  },
+};
+
+const getBodyFatScaleProfileSex = (profile = {}) => {
+  const raw = String(profile?.sex || profile?.gender || "").trim().toLowerCase();
+  return raw === "female" || raw === "woman" || raw === "женщина" ? "female" : "male";
+};
+
+function BodyFatRangeScale({ value, profile = DEFAULT_PROFILE }) {
+  const sex = getBodyFatScaleProfileSex(profile);
+  const config = bodyFatRangeScaleConfigs[sex] || bodyFatRangeScaleConfigs.male;
+  const numericValue = Number(String(value ?? "").replace(",", "."));
+  const hasValue = Number.isFinite(numericValue) && numericValue > 0;
+  const markerPosition = hasValue
+    ? Math.max(0, Math.min(100, ((numericValue - config.min) / Math.max(1, config.max - config.min)) * 100))
+    : null;
+  const zoneColor = (tone) => {
+    if (tone === "bright") return "rgb(239, 68, 68)";
+    if (tone === "muted") return "rgba(239, 68, 68, 0.34)";
+    return "var(--chart-track)";
+  };
+
+  return <div className="relative h-4 w-full" aria-hidden="true">
+    <div className="absolute left-0 right-0 top-1/2 flex h-[3px] -translate-y-1/2 overflow-hidden rounded-full bg-[var(--chart-track)]">
+      {config.zones.map((zone) => {
+        const width = ((zone.to - zone.from) / (config.max - config.min)) * 100;
+        return <span key={`${sex}-${zone.from}-${zone.to}`} className="h-full" style={{ flex: `0 0 ${width}%`, backgroundColor: zoneColor(zone.tone) }}/>;
+      })}
+    </div>
+    {hasValue && <span
+      className="absolute top-1/2 h-3 w-3 rounded-full border-2 border-[var(--onlypump-card-solid)] bg-[var(--onlypump-text)] shadow-sm shadow-black/30"
+      style={{ left: `${markerPosition}%`, transform: "translate(-50%, -50%)" }}
+    />}
+  </div>;
+}
+
+function MetricWidgetCard({ title, value, sub, delta, progress, progressContent = null, icon: Icon, iconSrc = "", iconAlt = "", onClick, children, accent = "red", thinProgress = false, widgetKey = "", onInfoOpen }) {
   const ringColor = accent === "sky" ? "#38bdf8" : "#ef4444";
   return <Card onClick={onClick} className="onlypump-home-widget-card onlypump-metric-widget cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
     <div className="flex min-h-0 flex-1 flex-col">
@@ -8648,34 +8936,152 @@ function MetricWidgetCard({ title, value, sub, delta, progress, icon: Icon, onCl
           <div className="onlypump-home-widget-value mt-1 break-words text-[clamp(1.35rem,4.4vw,1.75rem)] font-semibold leading-tight">{value}</div>
           {sub && <p className="onlypump-line-clamp-2 mt-1 text-[10px] leading-tight text-zinc-500 sm:text-[11px]">{sub}</p>}
         </div>
-        {Icon && <WidgetInfoIcon widgetKey={widgetKey} label={title} onOpen={onInfoOpen} className={`shrink-0 ${accent === "sky" ? "text-sky-400" : "text-red-500"}`}><Icon size={18}/></WidgetInfoIcon>} 
+        {(iconSrc || Icon) && <WidgetInfoIcon widgetKey={widgetKey} label={title} onOpen={onInfoOpen} className={`shrink-0 ${accent === "sky" ? "text-sky-400" : "text-red-500"}`}>{iconSrc ? <HomeWidgetAssetIcon src={iconSrc} alt={iconAlt}/> : <Icon size={18}/>}</WidgetInfoIcon>} 
       </div>
       {children && <div className="onlypump-home-widget-extra mt-2">{children}</div>}
       <div className="mt-auto space-y-2 pt-2">
-        {typeof progress === "number" && <Progress value={Math.min(100, Math.max(0, progress))}/>}
+        {progressContent || (typeof progress === "number" && <Progress value={Math.min(100, Math.max(0, progress))} thin={thinProgress}/>)}
         {delta && <div className="onlypump-line-clamp-1 text-[10px] text-zinc-400 sm:text-[11px]">{delta}</div>}
       </div>
     </div>
   </Card>;
 }
 
-function MoodWellbeingWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen, widgetKey = "", onInfoOpen }) {
+const moodEnergyScores = {
+  great: 10,
+  good: 8,
+  calm: 7,
+  tired: 4,
+  stress: 3,
+  bad: 2,
+};
+
+const wellbeingEnergyScores = {
+  strong: 9,
+  recovered: 8,
+  normal: 7,
+  low: 4,
+  sore: 3,
+  sick: 2,
+};
+
+const moodStressScores = {
+  great: 1,
+  good: 2,
+  calm: 3,
+  tired: 5,
+  stress: 9,
+  bad: 8,
+};
+
+const wellbeingStressScores = {
+  strong: 2,
+  recovered: 2,
+  normal: 3,
+  low: 5,
+  sore: 7,
+  sick: 8,
+};
+
+const clampWellbeingScore = (value) => Math.round(clampNumber(Number(value), 0, 10));
+const pickWellbeingScore = (scores, id, fallback = 5) => {
+  const value = scores[String(id || "")];
+  return Number.isFinite(value) ? value : fallback;
+};
+const readHealthLogNumber = (log = {}, keys = []) => {
+  for (const key of keys) {
+    const rawValue = log?.[key];
+    if (rawValue === null || rawValue === undefined || rawValue === "") continue;
+    const value = Number(rawValue);
+    if (Number.isFinite(value)) return value;
+  }
+  return null;
+};
+const getSleepEnergyScore = (minutes) => {
+  if (!minutes) return 5;
+  if (minutes >= 540) return 10;
+  if (minutes >= 480) return 9;
+  if (minutes >= 420) return 8;
+  if (minutes >= 360) return 6;
+  if (minutes >= 300) return 4;
+  return 2;
+};
+const getSleepStressScore = (minutes) => {
+  if (!minutes) return 5;
+  if (minutes >= 480) return 2;
+  if (minutes >= 420) return 3;
+  if (minutes >= 360) return 5;
+  if (minutes >= 300) return 7;
+  return 9;
+};
+const getRecoveryEnergyScore = (recovery) => recovery === null ? 5 : clampWellbeingScore(clampNumber(recovery, 0, 100) / 10);
+const getRecoveryStressScore = (recovery) => recovery === null ? 5 : clampWellbeingScore(10 - clampNumber(recovery, 0, 100) / 10);
+
+function calculateEnergyScore(healthLog = {}, mood = null, wellbeing = null) {
+  const sleepMinutes = readHealthLogNumber(healthLog, ["sleep_duration_minutes", "sleepDurationMinutes"]);
+  const recovery = readHealthLogNumber(healthLog, ["recovery_score", "recoveryScore", "recovery"]);
+  const scores = [
+    pickWellbeingScore(moodEnergyScores, mood?.id),
+    pickWellbeingScore(wellbeingEnergyScores, wellbeing?.id),
+    getSleepEnergyScore(sleepMinutes),
+    getRecoveryEnergyScore(recovery),
+  ];
+  return clampWellbeingScore(scores.reduce((sum, value) => sum + value, 0) / scores.length);
+}
+
+function calculateStressScore(healthLog = {}, mood = null, wellbeing = null) {
+  const sleepMinutes = readHealthLogNumber(healthLog, ["sleep_duration_minutes", "sleepDurationMinutes"]);
+  const recovery = readHealthLogNumber(healthLog, ["recovery_score", "recoveryScore", "recovery"]);
+  const scores = [
+    pickWellbeingScore(moodStressScores, mood?.id),
+    pickWellbeingScore(wellbeingStressScores, wellbeing?.id),
+    getSleepStressScore(sleepMinutes),
+    getRecoveryStressScore(recovery),
+  ];
+  return clampWellbeingScore(scores.reduce((sum, value) => sum + value, 0) / scores.length);
+}
+
+function calculateWellbeingSummary(healthLog = DEFAULT_HEALTH_LOG, mood = null, wellbeing = null) {
+  const fallbackCharacter = dailyMoodOptions.find(option => option.id === "calm") || dailyMoodOptions[0] || dailyWellbeingOptions[0] || null;
+  const character = mood || wellbeing || fallbackCharacter;
+  const label = mood?.label || wellbeing?.label || fallbackCharacter?.label || "Спокойное";
+  return {
+    label,
+    character,
+    moodLabel: mood?.label || label,
+    energy: calculateEnergyScore(healthLog, mood, wellbeing),
+    stress: calculateStressScore(healthLog, mood, wellbeing),
+  };
+}
+
+function MoodWellbeingWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen, iconSrc = "", iconAlt = "", widgetKey = "", onInfoOpen }) {
   const mood = findDailyChoice(dailyMoodOptions, healthLog?.mood_key || healthLog?.mood);
   const wellbeing = findDailyChoice(dailyWellbeingOptions, healthLog?.wellbeing_key || healthLog?.wellbeing);
+  const summary = calculateWellbeingSummary(healthLog, mood, wellbeing);
 
   return <Card onClick={onOpen} className="onlypump-home-widget-card onlypump-mood-widget cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         <p className="onlypump-mood-title onlypump-line-clamp-2 text-[11px] text-zinc-500">Настроение и самочувствие</p>
+        <div className="onlypump-mood-primary onlypump-line-clamp-1">{summary.label}</div>
       </div>
-      <WidgetInfoIcon widgetKey={widgetKey} label="Настроение и самочувствие" onOpen={onInfoOpen} className="shrink-0 text-red-500"><Smile size={18}/></WidgetInfoIcon>
+      <WidgetInfoIcon widgetKey={widgetKey} label="Настроение и самочувствие" onOpen={onInfoOpen} className="shrink-0 text-red-500">{iconSrc ? <HomeWidgetAssetIcon src={iconSrc} alt={iconAlt}/> : <Smile size={18}/>}</WidgetInfoIcon>
     </div>
-    <div className="onlypump-mood-icon-grid">
-      <div className="onlypump-mood-icon-slot">
-        <DailyChoiceIcon option={mood} size="lg"/>
+    <div className="onlypump-mood-character">
+      <DailyChoiceIcon option={summary.character} size="lg"/>
+    </div>
+    <div className="onlypump-mood-stats">
+      <div className="onlypump-mood-stat">
+        <span className="onlypump-mood-stat-label">Настр.</span>
+        <span className="onlypump-mood-stat-value">{summary.moodLabel}</span>
       </div>
-      <div className="onlypump-mood-icon-slot">
-        <DailyChoiceIcon option={wellbeing} size="lg"/>
+      <div className="onlypump-mood-stat">
+        <span className="onlypump-mood-stat-label">Энерг.</span>
+        <span className="onlypump-mood-stat-value">{summary.energy} / 10</span>
+      </div>
+      <div className="onlypump-mood-stat">
+        <span className="onlypump-mood-stat-label">Стресс</span>
+        <span className="onlypump-mood-stat-value">{summary.stress} / 10</span>
       </div>
     </div>
   </Card>;
@@ -9264,8 +9670,12 @@ function MoodWellbeingEditorSheet({ dateKey, healthLog, onSave, onClose, saving 
   const [moodDraft, setMoodDraft] = useState(String(healthLog?.mood_key || healthLog?.mood || ""));
   const [wellbeingDraft, setWellbeingDraft] = useState(String(healthLog?.wellbeing_key || healthLog?.wellbeing || ""));
   const [error, setError] = useState("");
-
-  const optionClass = (active) => `flex min-w-0 items-center gap-2 rounded-2xl border px-3 py-3 text-left text-sm font-black transition ${active ? "border-red-500 bg-red-500 text-black" : "border-white/10 bg-white/[0.04] text-zinc-200 hover:border-red-500/50 hover:bg-red-500/10"}`;
+  const moodScaleOptions = ["bad", "stress", "tired", "calm", "good", "great"]
+    .map(id => dailyMoodOptions.find(option => option.id === id))
+    .filter(Boolean);
+  const wellbeingScaleOptions = ["sore", "sick", "low", "normal", "strong", "recovered"]
+    .map(id => dailyWellbeingOptions.find(option => option.id === id))
+    .filter(Boolean);
 
   const save = async () => {
     setError("");
@@ -9302,12 +9712,7 @@ function MoodWellbeingEditorSheet({ dateKey, healthLog, onSave, onClose, saving 
             <h3 className="text-xs font-black uppercase tracking-[0.16em] text-zinc-500">Настроение</h3>
             {moodDraft && <button type="button" onClick={() => setMoodDraft("")} className="text-xs font-bold text-zinc-500">очистить</button>}
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {dailyMoodOptions.map(option => <button key={option.id} type="button" onClick={() => setMoodDraft(option.id)} className={optionClass(moodDraft === option.id)}>
-              <DailyChoiceIcon option={option} size="lg"/>
-              <span className="min-w-0 truncate">{option.label}</span>
-            </button>)}
-          </div>
+          <StateScaleSelector options={moodScaleOptions} value={moodDraft} fallbackId="calm" onChange={setMoodDraft}/>
         </section>
 
         <section>
@@ -9315,12 +9720,7 @@ function MoodWellbeingEditorSheet({ dateKey, healthLog, onSave, onClose, saving 
             <h3 className="text-xs font-black uppercase tracking-[0.16em] text-zinc-500">Самочувствие</h3>
             {wellbeingDraft && <button type="button" onClick={() => setWellbeingDraft("")} className="text-xs font-bold text-zinc-500">очистить</button>}
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {dailyWellbeingOptions.map(option => <button key={option.id} type="button" onClick={() => setWellbeingDraft(option.id)} className={optionClass(wellbeingDraft === option.id)}>
-              <DailyChoiceIcon option={option} size="lg"/>
-              <span className="min-w-0 truncate">{option.label}</span>
-            </button>)}
-          </div>
+          <StateScaleSelector options={wellbeingScaleOptions} value={wellbeingDraft} fallbackId="normal" onChange={setWellbeingDraft}/>
         </section>
       </div>
 
@@ -9607,6 +10007,7 @@ function PersonalTrackerCard({ tracker, dateKey, onOpen, onQuickAdd, widgetKey =
   const accent = getPersonalTrackerAccent(tracker);
   const value = profileNonNegativeNumber(entry.value, 0);
   const isBinary = tracker.type === "habit" || tracker.type === "abstinence";
+  const isHabitTracker = tracker.type === "habit";
   const stats = isBinary ? getPersonalTrackerStreakStats(tracker, dateKey) : null;
   const progress = getPersonalTrackerProgress(tracker, entry, dateKey);
   const titlePrefix = tracker.mode === "limit" && !isBinary ? "лимит" : "цель";
@@ -9616,7 +10017,7 @@ function PersonalTrackerCard({ tracker, dateKey, onOpen, onQuickAdd, widgetKey =
 	      <div className="min-w-0">
 	        <p className="onlypump-line-clamp-2 text-[11px] text-zinc-500">{tracker.title || config.shortLabel}</p>
 	      </div>
-		      <WidgetInfoIcon widgetKey={widgetKey} label={tracker.title || config.shortLabel} onOpen={onInfoOpen} className="shrink-0"><PersonalTrackerIcon tracker={tracker} done={entry.done}/></WidgetInfoIcon>
+		      <WidgetInfoIcon widgetKey={widgetKey} label={tracker.title || config.shortLabel} onOpen={onInfoOpen} className="shrink-0">{isHabitTracker ? <HomeWidgetAssetIcon src={homeWidgetIconPaths.habitTrackerIcon}/> : <PersonalTrackerIcon tracker={tracker} done={entry.done}/>}</WidgetInfoIcon>
 	    </div>
     {isBinary ? <div className="mt-2 flex min-h-0 flex-1 flex-col">
       <div className="flex items-end justify-between gap-3">
@@ -10192,6 +10593,12 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const selectedSteps = profileNonNegativeNumber(selectedHealthLog.steps_count, 0);
   const stepsGoal = profileNonNegativeNumber(profile?.steps_per_day, DEFAULT_PROFILE.steps_per_day);
   const stepsProgress = Math.min(100, Math.round((selectedSteps / Math.max(1, stepsGoal)) * 100));
+  const stepsTrendPoints = useMemo(() => buildStepsTrendPoints({
+    healthLogs,
+    selectedHealthLog,
+    selectedDateKey,
+    goal: stepsGoal,
+  }), [healthLogs, selectedHealthLog, selectedDateKey, stepsGoal]);
   const selectedWater = profileNonNegativeNumber(selectedHealthLog.water_ml, 0);
   const waterGoal = Math.max(1, profileNonNegativeNumber(selectedHealthLog.water_target_ml, DEFAULT_HEALTH_LOG.water_target_ml));
   const waterProgress = Math.min(100, Math.round((selectedWater / waterGoal) * 100));
@@ -10351,23 +10758,23 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     }
     switch (id) {
       case "metricWeight":
-        return <WeightMetricWidgetCard title="Вес" value={formatOptionalMetric(currentWeightForWidget, "кг")} trendPoints={weightTrendPoints} icon={Scale} widgetKey="weight" onInfoOpen={openWidgetInfo} onClick={() => setWeightSheetOpen(true)}/>;
+        return <WeightMetricWidgetCard title="Вес" value={formatOptionalMetric(currentWeightForWidget, "кг")} trendPoints={weightTrendPoints} icon={Scale} iconSrc={homeWidgetIconPaths.weightIcon} widgetKey="weight" onInfoOpen={openWidgetInfo} onClick={() => setWeightSheetOpen(true)}/>;
       case "metricBodyFat":
-        return <MetricWidgetCard title="Процент жира" value={formatOptionalMetric(selectedMeasurements?.bodyFat, "%")} delta={hasPositiveMetric(selectedMeasurements?.bodyFat) ? "по замерам" : "нет данных"} progress={hasPositiveMetric(selectedMeasurements?.bodyFat) ? Math.max(0, 100 - Number(selectedMeasurements.bodyFat) * 4) : 0} icon={Ruler} widgetKey="bodyFat" onInfoOpen={openWidgetInfo} onClick={() => setActive("progress")}/>;
+        return <MetricWidgetCard title="Процент жира" value={formatOptionalMetric(selectedMeasurements?.bodyFat, "%")} progressContent={<BodyFatRangeScale value={selectedMeasurements?.bodyFat} profile={profile}/>} icon={Ruler} iconSrc={homeWidgetIconPaths.bodyFatIcon} widgetKey="bodyFat" onInfoOpen={openWidgetInfo} onClick={() => setActive("progress")}/>;
       case "metricTonnage":
-        return <MetricWidgetCard title="Тоннаж" value={formatHomeVolumeKg(currentWeekWorkoutSummary.completedVolume)} sub={`из ${formatHomeVolumeKg(currentWeekWorkoutSummary.plannedVolume)} запланировано`} progress={currentWeekTonnageProgress} icon={Dumbbell} widgetKey="tonnage" onInfoOpen={openWidgetInfo} onClick={() => setActive("workouts")}/>;
+        return <MetricWidgetCard title="Тоннаж" value={formatHomeVolumeKg(currentWeekWorkoutSummary.completedVolume)} sub={`из ${formatHomeVolumeKg(currentWeekWorkoutSummary.plannedVolume)} запланировано`} progress={currentWeekTonnageProgress} icon={Dumbbell} iconSrc={homeWidgetIconPaths.tonnageIcon} thinProgress widgetKey="tonnage" onInfoOpen={openWidgetInfo} onClick={() => setActive("workouts")}/>;
       case "metricSets":
-        return <MetricWidgetCard title="Подходы" value={currentWeekWorkoutSummary.completedSets} sub={`из ${currentWeekWorkoutSummary.plannedSets} запланировано`} progress={currentWeekWorkoutSummary.progress} icon={CheckCircle2} widgetKey="sets" onInfoOpen={openWidgetInfo} onClick={() => setActive("workouts")}/>;
+        return <MetricWidgetCard title="Подходы" value={currentWeekWorkoutSummary.completedSets} sub={`из ${currentWeekWorkoutSummary.plannedSets} запланировано`} progress={currentWeekWorkoutSummary.progress} icon={CheckCircle2} iconSrc={homeWidgetIconPaths.setsIcon} thinProgress widgetKey="sets" onInfoOpen={openWidgetInfo} onClick={() => setActive("workouts")}/>;
       case "metricCalories":
         return <MetricWidgetCard title={homeUsesPalmNutrition ? "Ладони" : "Калории"} value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.total) : selectedNutritionTotals.calories} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.target)}` : `/ ${nutritionGoal.calories} ккал`} delta={`${homeUsesPalmNutrition ? palmNutritionPercent : caloriesPercent}% цели`} progress={homeUsesPalmNutrition ? palmNutritionPercent : caloriesPercent} icon={Apple} widgetKey="calories" onInfoOpen={openWidgetInfo} onClick={openNutritionFromHome}/>;
       case "metricProtein":
         return <MetricWidgetCard title="Белок" value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.actual.protein) : `${selectedNutritionTotals.protein} г`} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.targets.protein)}` : `/ ${nutritionGoal.protein} г`} delta={`${homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}% цели`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent} icon={Utensils} widgetKey="protein" onInfoOpen={openWidgetInfo} onClick={openNutritionFromHome}/>;
       case "metricRecovery":
-        return <MetricWidgetCard title="Восстановление" value={recovery == null ? "—" : `${recovery}%`} sub={selectedHealthLog.sleep_duration_minutes ? sleepQualityLabel(selectedHealthLog) : "сон не добавлен"} progress={recovery || 0} icon={HeartPulse} widgetKey="recovery" onInfoOpen={openWidgetInfo} onClick={() => openAnalyticsFromHome("recovery")}/>;
+        return <MetricWidgetCard title="Восстановление" value={recovery == null ? "—" : `${recovery}%`} sub={selectedHealthLog.sleep_duration_minutes ? sleepQualityLabel(selectedHealthLog) : "сон не добавлен"} progress={recovery || 0} icon={HeartPulse} iconSrc={homeWidgetIconPaths.recoveryIcon} thinProgress widgetKey="recovery" onInfoOpen={openWidgetInfo} onClick={() => openAnalyticsFromHome("recovery")}/>;
       case "metricSleep":
-        return <MetricWidgetCard title="Сон" value={formatSleepDuration(selectedHealthLog.sleep_duration_minutes)} sub={selectedHealthLog.sleep_duration_minutes ? `${selectedHealthLog.sleep_latency_minutes || 0} мин засыпание · ${selectedHealthLog.sleep_awakenings || 0} проб.` : "нажми, чтобы добавить"} progress={selectedHealthLog.sleep_duration_minutes ? Math.min(100, Math.round((selectedHealthLog.sleep_duration_minutes / 480) * 100)) : 0} icon={Moon} widgetKey="sleep" onInfoOpen={openWidgetInfo} onClick={() => setSleepSheetOpen(true)}/>;
+        return <MetricWidgetCard title="Сон" value={formatSleepDuration(selectedHealthLog.sleep_duration_minutes)} sub={selectedHealthLog.sleep_duration_minutes ? `${selectedHealthLog.sleep_latency_minutes || 0} мин засыпание · ${selectedHealthLog.sleep_awakenings || 0} проб.` : "нажми, чтобы добавить"} progress={selectedHealthLog.sleep_duration_minutes ? Math.min(100, Math.round((selectedHealthLog.sleep_duration_minutes / 480) * 100)) : 0} icon={Moon} iconSrc={homeWidgetIconPaths.sleepIcon} thinProgress widgetKey="sleep" onInfoOpen={openWidgetInfo} onClick={() => setSleepSheetOpen(true)}/>;
       case "metricSteps":
-        return <MetricWidgetCard title="Шаги" value={selectedSteps.toLocaleString("ru-RU")} sub={`цель ${stepsGoal.toLocaleString("ru-RU")}`} progress={stepsProgress} icon={Activity} widgetKey="steps" onInfoOpen={openWidgetInfo} onClick={() => setStepsSheetOpen(true)}/>;
+        return <StepsMetricWidgetCard title="Шаги" value={selectedSteps.toLocaleString("ru-RU")} sub={`цель ${stepsGoal.toLocaleString("ru-RU")}`} progress={stepsProgress} trendPoints={stepsTrendPoints} goal={stepsGoal} icon={Activity} iconSrc={homeWidgetIconPaths.stepsIcon} widgetKey="steps" onInfoOpen={openWidgetInfo} onClick={() => setStepsSheetOpen(true)}/>;
       case "macros":
         return <MetricWidgetCard title={homeUsesPalmNutrition ? "Ладони" : "БЖУ"} value={`${homeUsesPalmNutrition ? palmNutritionPercent : proteinPercent}%`} sub={homeUsesPalmNutrition ? `${palmLabel(selectedPalmSummary.actual.protein)} белк. · ${palmLabel(selectedPalmSummary.actual.carbs)} угл.` : `${selectedNutritionTotals.protein} Б · ${selectedNutritionTotals.fat} Ж · ${selectedNutritionTotals.carbs} У`} icon={Utensils} widgetKey="macros" onInfoOpen={openWidgetInfo} onClick={openNutritionFromHome}>
           <div className="onlypump-macro-lines">
@@ -10407,7 +10814,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
 	          </Card>;
 	        }
       case "moodWellbeing":
-        return <MoodWellbeingWidgetCard healthLog={selectedHealthLog} widgetKey="mood" onInfoOpen={openWidgetInfo} onOpen={() => setMoodSheetOpen(true)}/>;
+        return <MoodWellbeingWidgetCard healthLog={selectedHealthLog} iconSrc={homeWidgetIconPaths.wellbeingIcon} widgetKey="mood" onInfoOpen={openWidgetInfo} onOpen={() => setMoodSheetOpen(true)}/>;
       case "dailyNote":
         return <DailyNoteWidgetCard healthLog={selectedHealthLog} widgetKey="dailyNote" onInfoOpen={openWidgetInfo} onOpen={() => setDailyNoteSheetOpen(true)}/>;
       case "workout":
@@ -10473,7 +10880,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
           return <Card key={id} onClick={openNutritionFromHome} className="onlypump-home-widget-card onlypump-nutrition-widget cursor-pointer transition hover:border-red-500/50 hover:bg-red-500/5">
             <div className="flex items-start justify-between gap-2">
               <p className="onlypump-line-clamp-1 text-[11px] text-zinc-500">Питание</p>
-              <WidgetInfoIcon widgetKey="nutrition" label="Питание" onOpen={openWidgetInfo} className="shrink-0 text-red-500"><Apple size={16}/></WidgetInfoIcon>
+              <WidgetInfoIcon widgetKey="nutrition" label="Питание" onOpen={openWidgetInfo} className="shrink-0 text-red-500"><HomeWidgetAssetIcon src={homeWidgetIconPaths.nutritionIcon}/></WidgetInfoIcon>
             </div>
               <div className="onlypump-nutrition-layout">
                 <div className="onlypump-nutrition-summary">
