@@ -224,6 +224,18 @@
     .onlypump-workouts-screen {
       display: contents;
     }
+    .onlypump-workouts-screen button,
+    .onlypump-workout-session button,
+    .onlypump-workout-session [role="button"] {
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .onlypump-workout-session [data-custom-set-keyboard="true"],
+    .onlypump-workout-session [data-custom-set-keyboard="true"] * {
+      touch-action: manipulation;
+      -webkit-user-select: none;
+      user-select: none;
+    }
     .theme-dark .onlypump-workouts-screen .onlypump-modal-layer,
     .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) {
       background: rgba(0, 0, 0, 0.74) !important;
@@ -5556,6 +5568,16 @@ const workoutTemplates = {
   ]),
 };
 
+const makeTrainingProgramSets = (count, reps) => Array.from({ length: Math.max(1, Number(count || 1)) }, () => [0, Number(reps || 8)]);
+const makeTrainingProgramExercise = (name, muscleGroup, targetSets, repMin, repMax) => ({
+  name,
+  muscleGroup,
+  sets: makeTrainingProgramSets(targetSets, repMin),
+  targetSets,
+  repMin,
+  repMax,
+});
+
 const availableTrainingPrograms = [
   {
     id: "samson-shoulders",
@@ -5748,6 +5770,85 @@ const availableTrainingPrograms = [
           { name: "Шаги на платформу", muscleGroup: "Ягодицы", sets: [[0, 12], [0, 12], [0, 12]] },
           { name: "Сгибания ног", muscleGroup: "Ноги", sets: [[0, 15], [0, 15], [0, 15]] },
           { name: "Подъёмы на икры", muscleGroup: "Ноги", sets: [[0, 15], [0, 15], [0, 15]] },
+        ],
+      },
+    ],
+  },
+  {
+    id: "sasha-yurin-program-owner",
+    title: "Саша Юрин ПРОГРАММА",
+    audience: "мужская",
+    focus: "FRONT/BACK",
+    description: "Четырехдневная программа FRONT/BACK. Добавлена как личная программа владельца @archer_ss.",
+    isUserCreated: true,
+    createdByRole: "owner",
+    visibilityScope: "private",
+    ownerOnlyUsername: "archer_ss",
+    defaultDurationWeeks: 8,
+    minDurationWeeks: 1,
+    maxDurationWeeks: 52,
+    schedulePattern: "manual",
+    cycleLengthDays: 7,
+    workoutCount: 4,
+    progressionType: "double_progression",
+    days: [
+      {
+        title: "День 1 — FRONT",
+        durationMinutes: 72,
+        calories: 210,
+        offsetDays: 0,
+        exercises: [
+          makeTrainingProgramExercise("Жим гантелей на наклонной", "Грудь", 3, 8, 12),
+          makeTrainingProgramExercise("Горизонтальные приведения", "Грудь", 2, 10, 15),
+          makeTrainingProgramExercise("Отведения по одной в кроссовере", "Плечи", 2, 15, 25),
+          makeTrainingProgramExercise("Жим ногами", "Ноги", 3, 8, 12),
+          makeTrainingProgramExercise("Разгибания голени", "Ноги", 2, 10, 15),
+          makeTrainingProgramExercise("Подъём штанги на бицепс", "Руки", 3, 8, 12),
+          makeTrainingProgramExercise("Подъём ног", "Пресс", 3, 10, 15),
+        ],
+      },
+      {
+        title: "День 2 — BACK",
+        durationMinutes: 72,
+        calories: 215,
+        offsetDays: 2,
+        exercises: [
+          makeTrainingProgramExercise("Подъём на носки стоя", "Ноги", 3, 10, 15),
+          makeTrainingProgramExercise("Подтягивания", "Спина", 3, 8, 12),
+          makeTrainingProgramExercise("Ягодичный мост в Смите", "Ягодицы", 2, 8, 12),
+          makeTrainingProgramExercise("Тяга гантели в наклоне", "Спина", 3, 8, 12),
+          makeTrainingProgramExercise("Сгибания голени сидя", "Ноги", 2, 8, 12),
+          makeTrainingProgramExercise("Отведения горизонтальные", "Плечи", 2, 10, 15),
+          makeTrainingProgramExercise("Французский жим", "Руки", 2, 8, 12),
+        ],
+      },
+      {
+        title: "День 3 — FRONT",
+        durationMinutes: 72,
+        calories: 210,
+        offsetDays: 4,
+        exercises: [
+          makeTrainingProgramExercise("Отведения плеч через стороны", "Плечи", 2, 10, 15),
+          makeTrainingProgramExercise("Присед со штангой", "Ноги", 3, 8, 12),
+          makeTrainingProgramExercise("Разгибания голени", "Ноги", 2, 8, 12),
+          makeTrainingProgramExercise("Горизонтальные приведения", "Грудь", 2, 8, 12),
+          makeTrainingProgramExercise("Жим в блоке", "Грудь", 3, 8, 12),
+          makeTrainingProgramExercise("Сгибания с упором в скамью", "Руки", 3, 8, 12),
+          makeTrainingProgramExercise("Молитва", "Пресс", 3, 15, 25),
+        ],
+      },
+      {
+        title: "День 4 — BACK",
+        durationMinutes: 72,
+        calories: 215,
+        offsetDays: 6,
+        exercises: [
+          makeTrainingProgramExercise("Румынская тяга", "Ноги", 3, 8, 12),
+          makeTrainingProgramExercise("Сгибания голени стоя", "Ноги", 3, 8, 12),
+          makeTrainingProgramExercise("Горизонтальная широкая тяга", "Спина", 2, 8, 12),
+          makeTrainingProgramExercise("Вертикальная тяга", "Спина", 2, 8, 15),
+          makeTrainingProgramExercise("Разгибания в кроссовере из-за головы", "Руки", 3, 10, 15),
+          makeTrainingProgramExercise("Подъём на носки с гантелью", "Ноги", 3, 10, 15),
         ],
       },
     ],
@@ -12571,6 +12672,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const reorderTargetRef = useRef(null);
   const workoutScrollRef = useRef(null);
   const plannedWorkoutsScrollRef = useRef(null);
+  const customKeyboardClickGuardRef = useRef(0);
   const restAdvanceRef = useRef(null);
   const restTimerStateRef = useRef(null);
   const completionSaveRef = useRef(null);
@@ -12811,7 +12913,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   useEffect(() => {
     const closeOpenSwipeRows = (event) => {
-      if (event.target?.closest?.('[data-swipe-row="true"]')) return;
+      if (event.target?.closest?.('[data-swipe-row="true"], [data-custom-set-keyboard="true"], [data-custom-set-field="true"]')) return;
       setSwipedWorkoutId(null);
       setSwipedExerciseId(null);
       setSwipedSetId(null);
@@ -16256,8 +16358,32 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     if (!input) return;
     requestAnimationFrame(() => {
       const field = document.querySelector(`[data-custom-set-field-id="${getCustomSetFieldId(input.setId, input.field)}"]`);
-      field?.scrollIntoView?.({ block: "center", inline: "nearest", behavior: "smooth" });
+      field?.scrollIntoView?.({ block: "center", inline: "nearest", behavior: "auto" });
     });
+  };
+
+  const armCustomKeyboardClickGuard = () => {
+    const token = Date.now();
+    customKeyboardClickGuardRef.current = token;
+    window.setTimeout(() => {
+      if (customKeyboardClickGuardRef.current === token) customKeyboardClickGuardRef.current = 0;
+    }, 360);
+  };
+
+  const runCustomKeyboardPointerAction = (event, action) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    armCustomKeyboardClickGuard();
+    action?.();
+  };
+
+  const runCustomKeyboardClickAction = (event, action) => {
+    event?.stopPropagation?.();
+    if (customKeyboardClickGuardRef.current) {
+      event?.preventDefault?.();
+      return;
+    }
+    action?.();
   };
 
   const openCustomSetInput = (exercise, set, field) => {
@@ -18795,31 +18921,39 @@ const toggleExerciseMeasurementSetting = (field) => {
     }
   }, [programBuilderSheet?.draft]);
 
-	  const visibleTrainingPrograms = useMemo(() => {
-	    const byId = new Map();
-	    [...availableTrainingPrograms, ...customTrainingPrograms, programBuilderListPreview].filter(Boolean).forEach(program => {
-	      if (!program?.id || byId.has(program.id)) return;
-	      byId.set(program.id, program);
-	    });
-	    const query = programSearch.trim().toLowerCase();
-	    return Array.from(byId.values())
-	      .filter(program => {
-	        if (!query) return true;
-	        return [
-	          program.title,
-	          program.description,
-	          program.focus,
-	          program.audience,
-	          getProgramVisibilityLabel(program),
-	        ].some(value => String(value || "").toLowerCase().includes(query));
-	      })
-	      .map((program, index) => ({ program, index, assigned: isProgramAssignedToCurrentProfile(program) }))
-	      .sort((a, b) => {
-	        if (a.assigned !== b.assigned) return a.assigned ? -1 : 1;
-	        return a.index - b.index;
-	      })
-	      .map(item => item.program);
-	  }, [customTrainingPrograms, programBuilderListPreview, programSearch, profile?.id]);
+  const isTrainingProgramVisibleForProfile = (program = {}) => {
+    const ownerOnlyUsername = String(program.ownerOnlyUsername || program.owner_only_username || "").replace(/^@/, "").trim().toLowerCase();
+    if (!ownerOnlyUsername) return true;
+    const profileUsername = String(profile?.telegram_username || profile?.telegramUsername || "").replace(/^@/, "").trim().toLowerCase();
+    return profileUsername === ownerOnlyUsername;
+  };
+
+  const visibleTrainingPrograms = useMemo(() => {
+    const byId = new Map();
+    [...availableTrainingPrograms, ...customTrainingPrograms, programBuilderListPreview].filter(Boolean).forEach(program => {
+      if (!isTrainingProgramVisibleForProfile(program)) return;
+      if (!program?.id || byId.has(program.id)) return;
+      byId.set(program.id, program);
+    });
+    const query = programSearch.trim().toLowerCase();
+    return Array.from(byId.values())
+      .filter(program => {
+        if (!query) return true;
+        return [
+          program.title,
+          program.description,
+          program.focus,
+          program.audience,
+          getProgramVisibilityLabel(program),
+        ].some(value => String(value || "").toLowerCase().includes(query));
+      })
+      .map((program, index) => ({ program, index, assigned: isProgramAssignedToCurrentProfile(program) }))
+      .sort((a, b) => {
+        if (a.assigned !== b.assigned) return a.assigned ? -1 : 1;
+        return a.index - b.index;
+      })
+      .map(item => item.program);
+  }, [customTrainingPrograms, programBuilderListPreview, programSearch, profile?.id, profile?.telegram_username, profile?.telegramUsername]);
 
   const canCreateProgramTemplates = profileHasAnyRole(profile, ["owner", "trainer"]);
   const programBuilderExerciseItems = useMemo(() => {
@@ -20103,7 +20237,15 @@ const toggleExerciseMeasurementSetting = (field) => {
             </div>
           </div>
 
-          {activeSetInput && keyboardContext && <div data-custom-set-keyboard="true" className="fixed bottom-0 left-0 right-0 z-[184] border-t border-white/10 bg-zinc-950/96 px-3 pb-[calc(var(--onlypump-safe-bottom)+10px)] pt-3 shadow-2xl shadow-black/80 backdrop-blur-2xl">
+          {activeSetInput && keyboardContext && <div
+            data-custom-set-keyboard="true"
+            data-no-edge-back="true"
+            data-no-sheet-drag="true"
+            onPointerDown={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            className="fixed bottom-0 left-0 right-0 z-[184] border-t border-white/10 bg-zinc-950/96 px-3 pb-[calc(var(--onlypump-safe-bottom)+10px)] pt-3 shadow-2xl shadow-black/80 backdrop-blur-2xl"
+          >
             <div className="mx-auto max-w-[430px]">
               <div className="mb-2 flex items-center justify-between gap-3 px-1">
                 <div className="text-xs font-black uppercase tracking-[0.16em] text-red-400">
@@ -20119,7 +20261,8 @@ const toggleExerciseMeasurementSetting = (field) => {
                       key={key}
                       type="button"
                       disabled={disabled}
-                      onClick={() => pressCustomSetInputKey(key)}
+                      onPointerDown={(event) => runCustomKeyboardPointerAction(event, () => pressCustomSetInputKey(key))}
+                      onClick={(event) => runCustomKeyboardClickAction(event, () => pressCustomSetInputKey(key))}
                       className={`h-14 rounded-2xl text-2xl font-black transition active:scale-[0.97] ${disabled ? 'bg-white/[0.025] text-zinc-800' : 'bg-white/[0.07] text-white hover:bg-white/[0.11]'}`}
                     >
                       {key === "backspace" ? "⌫" : key}
@@ -20127,9 +20270,9 @@ const toggleExerciseMeasurementSetting = (field) => {
                   })}
                 </div>
                 <div className="grid grid-rows-3 gap-2">
-                  <button type="button" onClick={moveToNextCustomSetInput} className="rounded-2xl bg-red-500 px-2 text-xs font-black uppercase leading-tight text-black transition active:scale-[0.97]">След.</button>
-                  <button type="button" onClick={copyCustomSetInputDown} className="rounded-2xl bg-white text-xs font-black uppercase leading-tight text-black transition active:scale-[0.97]">Вниз</button>
-                  <button type="button" onClick={closeCustomSetKeyboard} className="rounded-2xl bg-white/[0.08] px-2 text-xs font-black uppercase leading-tight text-zinc-200 transition active:scale-[0.97]">Скрыть</button>
+                  <button type="button" onPointerDown={(event) => runCustomKeyboardPointerAction(event, moveToNextCustomSetInput)} onClick={(event) => runCustomKeyboardClickAction(event, moveToNextCustomSetInput)} className="rounded-2xl bg-red-500 px-2 text-xs font-black uppercase leading-tight text-black transition active:scale-[0.97]">След.</button>
+                  <button type="button" onPointerDown={(event) => runCustomKeyboardPointerAction(event, copyCustomSetInputDown)} onClick={(event) => runCustomKeyboardClickAction(event, copyCustomSetInputDown)} className="rounded-2xl bg-white text-xs font-black uppercase leading-tight text-black transition active:scale-[0.97]">Вниз</button>
+                  <button type="button" onPointerDown={(event) => runCustomKeyboardPointerAction(event, closeCustomSetKeyboard)} onClick={(event) => runCustomKeyboardClickAction(event, closeCustomSetKeyboard)} className="rounded-2xl bg-white/[0.08] px-2 text-xs font-black uppercase leading-tight text-zinc-200 transition active:scale-[0.97]">Скрыть</button>
                 </div>
               </div>
             </div>
@@ -25310,8 +25453,11 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
   const [trackerDetail, setTrackerDetail] = useState(null);
   const [editorType, setEditorType] = useState(null);
   const [editorMetric, setEditorMetric] = useState(null);
-  const [mobileAnalyticsTab, setMobileAnalyticsTab] = useState(null);
-  const [mobileAnalyticsReturnTo, setMobileAnalyticsReturnTo] = useState("");
+  const initialMobileAnalyticsTab = isMobileAnalyticsIntentType(analyticsIntent?.type)
+    ? mobileAnalyticsIntentTabs[analyticsIntent.type]
+    : null;
+  const [mobileAnalyticsTab, setMobileAnalyticsTab] = useState(initialMobileAnalyticsTab);
+  const [mobileAnalyticsReturnTo, setMobileAnalyticsReturnTo] = useState(initialMobileAnalyticsTab ? (analyticsIntent?.returnTo || "") : "");
   const [analyticsPeriod, setAnalyticsPeriod] = useState("day");
   const [activitiesCollapsed, setActivitiesCollapsed] = useState(() => {
     try {
