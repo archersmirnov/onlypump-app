@@ -502,6 +502,14 @@
         box-shadow: 0 22px 56px rgba(239, 68, 68, 0.56), 0 0 0 11px rgba(239, 68, 68, 0);
       }
     }
+    @keyframes onlypump-floating-home-attention {
+      0%, 100% {
+        box-shadow: 0 18px 42px rgba(107, 114, 128, 0.34), 0 0 0 0 rgba(148, 163, 184, 0.26);
+      }
+      50% {
+        box-shadow: 0 22px 56px rgba(107, 114, 128, 0.48), 0 0 0 11px rgba(148, 163, 184, 0);
+      }
+    }
     .onlypump-mobile-menu-overlay {
       background: rgba(10, 15, 20, 0.48);
       backdrop-filter: blur(18px);
@@ -527,7 +535,7 @@
       text-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
     }
     .onlypump-mobile-menu-label.is-active {
-      color: #111827 !important;
+      color: #ffffff !important;
       text-shadow: none;
     }
     .onlypump-mobile-menu-icon-img {
@@ -558,6 +566,9 @@
     }
     .theme-light .onlypump-mobile-menu-icon {
       box-shadow: 0 18px 38px rgba(15, 23, 42, 0.18);
+    }
+    .theme-light .onlypump-mobile-menu-label.is-active {
+      color: #111827 !important;
     }
     .onlypump-secondary-nav-bar {
       position: fixed;
@@ -621,18 +632,127 @@
       object-fit: contain;
       pointer-events: none;
     }
-    html.onlypump-custom-keyboard-open .onlypump-secondary-nav-bar {
+    .onlypump-workouts-nav-bar {
+      position: fixed;
+      left: 50%;
+      bottom: calc(var(--onlypump-safe-bottom) + 0.85rem);
+      z-index: 95;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      align-items: center;
+      gap: 0.35rem;
+      width: min(calc(100vw - 2rem), 22rem);
+      padding: 0.36rem;
+      border-radius: 1.7rem;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(18, 18, 22, 0.56);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
+      backdrop-filter: blur(22px) saturate(145%);
+      -webkit-backdrop-filter: blur(22px) saturate(145%);
+      transform: translateX(-50%);
+      transition: opacity 180ms ease, transform 220ms ease;
+    }
+    .theme-light .onlypump-workouts-nav-bar {
+      border-color: rgba(17, 24, 39, 0.1);
+      background: rgba(255, 255, 255, 0.78);
+      box-shadow: 0 18px 42px rgba(15, 23, 42, 0.14);
+    }
+    .onlypump-workouts-nav-bar.is-scroll-hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(-50%) translateY(1.15rem) scale(0.96);
+    }
+    .onlypump-workouts-nav-button {
+      min-width: 0;
+      height: 3.05rem;
+      border: 0;
+      border-radius: 1.15rem;
+      background: transparent;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+      touch-action: manipulation;
+    }
+    .onlypump-workouts-nav-button:active,
+    .onlypump-workouts-nav-add:active,
+    .onlypump-floating-home-button:active {
+      transform: scale(0.96);
+    }
+    .onlypump-workouts-nav-button.is-active {
+      background: rgba(255, 255, 255, 0.18);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    }
+    .theme-light .onlypump-workouts-nav-button.is-active {
+      background: rgba(17, 24, 39, 0.08);
+      box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.06);
+    }
+    .onlypump-workouts-nav-icon {
+      display: block;
+      width: 1.86rem;
+      height: 1.86rem;
+      object-fit: contain;
+      pointer-events: none;
+    }
+    .onlypump-workouts-nav-add {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      height: 3.95rem;
+      width: 3.95rem;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #dc2626, #ef4444);
+      color: #050505;
+      box-shadow: 0 18px 36px rgba(239, 68, 68, 0.34), 0 0 0 0.55rem rgba(239, 68, 68, 0.12);
+      transform: translate(-50%, -50%);
+      transition: transform 160ms ease, filter 160ms ease;
+      touch-action: manipulation;
+    }
+    .onlypump-workouts-nav-add:active {
+      transform: translate(-50%, -50%) scale(0.96);
+      filter: brightness(1.05);
+    }
+    .onlypump-workouts-nav-spacer {
+      height: 3.05rem;
+      pointer-events: none;
+    }
+    .onlypump-floating-home-button {
+      animation: onlypump-floating-home-attention 2.45s ease-in-out infinite;
+      background: linear-gradient(135deg, #f3f4f6, #cbd5e1);
+      color: #111827;
+      box-shadow: 0 18px 42px rgba(107, 114, 128, 0.34), 0 0 0 0 rgba(148, 163, 184, 0.26);
+    }
+    .onlypump-floating-home-icon {
+      display: block;
+      width: 1.85rem;
+      height: 1.85rem;
+      object-fit: contain;
+      pointer-events: none;
+    }
+    html.onlypump-custom-keyboard-open .onlypump-secondary-nav-bar,
+    html.onlypump-custom-keyboard-open .onlypump-workouts-nav-bar,
+    html.onlypump-custom-keyboard-open .onlypump-floating-home-button {
       opacity: 0;
       pointer-events: none;
       transform: translateX(-50%) translateY(0.75rem);
     }
+    html.onlypump-custom-keyboard-open .onlypump-floating-home-button {
+      transform: translateY(0.75rem);
+    }
     html.onlypump-mobile-modal-open .onlypump-secondary-nav-bar,
+    html.onlypump-mobile-modal-open .onlypump-workouts-nav-bar,
+    html.onlypump-mobile-modal-open .onlypump-floating-home-button,
     html.onlypump-mobile-modal-open .onlypump-floating-nav-button,
     html.onlypump-mobile-modal-open .onlypump-fullscreen-layer {
       opacity: 0 !important;
       pointer-events: none !important;
       transform: translateX(-50%) translateY(1rem) scale(0.96);
     }
+    html.onlypump-mobile-modal-open .onlypump-floating-home-button,
     html.onlypump-mobile-modal-open .onlypump-floating-nav-button,
     html.onlypump-mobile-modal-open .onlypump-fullscreen-layer {
       transform: translateY(1rem) scale(0.96);
@@ -6837,7 +6957,7 @@ const onlyPumpAvailableTourScreens = onlyPumpTourScreens.filter(screen => !onlyP
 
 const onlyPumpTourDefinitions = {
   home: [
-    { target: '[data-tour="home-calendar"]', title: "Календарь недели", text: "Здесь выбирается день. Главная, питание, сон, шаги и трекеры подстраиваются под выбранную дату." },
+    { target: '[data-tour="home-calendar"]', title: "Выбор дня", text: "Здесь выбирается день. Главная, питание, сон, шаги и трекеры подстраиваются под выбранную дату." },
     { target: '[data-tour="home-level"]', title: "Уровень", text: "Нажми на Lvl, чтобы увидеть PUMP XP, шкалу уровня и правила начисления баллов." },
     { target: '[data-tour="home-edit-widgets"]', title: "Настрой вид", text: "Эта кнопка включает настройку карточек главной: можно менять состав и порядок виджетов.", taskId: "home-open-widget-settings", completion: "target-click", task: "Нажми «Настроить вид»." },
     { target: '[data-tour="home-add-widget"]', title: "Открой список", text: "Теперь открой список доступных виджетов.", taskId: "home-open-widget-list", completion: "target-click", task: "Нажми «Добавить виджет»." },
@@ -7414,10 +7534,11 @@ function MobileMenuAssetIcon({ src, alt = "", FallbackIcon, className = "onlypum
 
 function MobileSecondaryNavBar({ active, setActive }) {
   const [hiddenByScroll, setHiddenByScroll] = useState(false);
+  const hiddenOnScreen = active === "workouts" || active === "profile";
 
   useEffect(() => {
     setHiddenByScroll(false);
-    if (active === "workouts" || typeof document === "undefined") return undefined;
+    if (hiddenOnScreen || typeof document === "undefined") return undefined;
 
     const scrollNode = document.querySelector(".onlypump-main-scroll");
     if (!scrollNode) return undefined;
@@ -7455,16 +7576,16 @@ function MobileSecondaryNavBar({ active, setActive }) {
 
     scrollNode.addEventListener("scroll", handleScroll, { passive: true });
     return () => scrollNode.removeEventListener("scroll", handleScroll);
-  }, [active]);
+  }, [active, hiddenOnScreen]);
 
-  if (active === "workouts") return null;
+  if (hiddenOnScreen) return null;
 
   const secondaryIconSrc = (name, isActive) => `assets/menu-icons/${name}${isActive ? "_open" : ""}.svg`;
   const items = [
     { id: "recipes", label: "Рецепты", iconName: "coock", FallbackIcon: Utensils },
     { id: "home", label: "Главная", iconName: "home", FallbackIcon: Home },
-    { id: "analytics", label: "Аналитика", iconName: "stats", FallbackIcon: BarChart3 },
-    { id: "education", label: "Обучение", iconName: "book", FallbackIcon: GraduationCap },
+    { id: "workouts", label: "Тренировки", iconName: "train_bar", FallbackIcon: Dumbbell },
+    { id: "nutrition", label: "Питание", iconName: "nutrition_bar", FallbackIcon: Apple },
   ];
 
   return <nav className={`onlypump-secondary-nav-bar lg:hidden ${hiddenByScroll ? "is-scroll-hidden" : ""}`} aria-label="Быстрая навигация">
@@ -7505,8 +7626,13 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
   }, 140);
 
   useEffect(() => {
+    if (active === "workouts") {
+      setOpen(false);
+      setMode("main");
+      return;
+    }
     if (!open) setMode("main");
-  }, [open]);
+  }, [active, open]);
 
   const mainItems = [
     { id: "home", icon: Home, asset: menuLogo, label: "Главная", useLogo: true },
@@ -7558,6 +7684,25 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
     setOpen(false);
   };
   const floatingLabel = !open ? "Открыть меню" : mode === "analytics" ? "Назад в меню" : "Закрыть меню";
+
+  if (active === "workouts") {
+    return <button
+      type="button"
+      aria-label="На главную"
+      onClick={() => setActive("home")}
+      style={{ bottom: "calc(var(--onlypump-safe-bottom) + 6rem)" }}
+      className="onlypump-floating-home-button fixed right-6 z-[95] flex h-14 w-14 items-center justify-center rounded-full transition duration-300 hover:scale-105 active:scale-95 lg:hidden"
+    >
+      <MobileMenuAssetIcon
+        src={menuIcon("home_open")}
+        alt=""
+        FallbackIcon={Home}
+        className="onlypump-floating-home-icon"
+        fallbackSize={28}
+        fallbackStrokeWidth={2.25}
+      />
+    </button>;
+  }
 
   return <>
     <div className={`onlypump-fullscreen-layer fixed inset-0 z-[210] lg:hidden ${open ? "pointer-events-auto" : "pointer-events-none"}`}>
@@ -8129,50 +8274,48 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
       }, 120);
     }
   };
+  const openHistoryFromCalendarShell = (event) => {
+    if (suppressCalendarClickRef.current) return;
+    if (event.target?.closest?.("[data-calendar-date-key]")) return;
+    setHistoryOpen(true);
+  };
 
   return <>
-    <Card className={`p-4 ${className}`}>
-    <button type="button" onClick={() => setHistoryOpen(true)} className="mb-3 flex w-full items-center justify-between gap-3 rounded-2xl text-left transition hover:bg-white/[0.035]">
-      <div className="px-1 py-1">
-        <h2 className="text-base font-semibold">{title}</h2>
-      </div>
-      <CalendarDays className="mr-1 shrink-0 text-zinc-500" size={18}/>
-    </button>
-
-    <div
-      data-calendar-swipe="true"
-      className="overflow-hidden touch-pan-y select-none"
-      onPointerDown={startCalendarDrag}
-      onPointerMove={moveCalendarDrag}
-      onPointerUp={endCalendarDrag}
-      onPointerCancel={endCalendarDrag}
-    >
+    <div className={`${className} cursor-pointer`} onClick={openHistoryFromCalendarShell}>
       <div
-        className="grid gap-2 will-change-transform"
-        style={{
-          gridTemplateColumns: `repeat(${visibleDays}, minmax(0, 1fr))`,
-          transform: `translate3d(${dragX}px,0,0)`,
-          transition: dragRef.current ? 'none' : 'transform 180ms ease',
-        }}
+        data-calendar-swipe="true"
+        className="overflow-hidden touch-pan-y select-none"
+        onPointerDown={startCalendarDrag}
+        onPointerMove={moveCalendarDrag}
+        onPointerUp={endCalendarDrag}
+        onPointerCancel={endCalendarDrag}
       >
-        {days.map(({ date, key }) => {
-          const selected = selectedDateKey === key;
-          const isToday = todayKey === key;
-          const marked = markedDateKeys.includes(key);
-          const circleSizeClass = visibleDays === 14 ? "h-10 w-10 sm:h-11 sm:w-11 xl:h-14 xl:w-14" : "h-11 w-11 sm:h-14 sm:w-14";
-          return <button key={key} type="button" data-calendar-date-key={key} onClick={(event) => { if (event.detail !== 0 || suppressCalendarClickRef.current) return; onSelect?.(key); }} className="min-w-0 text-center touch-manipulation">
-            <div className={`mx-auto flex ${circleSizeClass} flex-col items-center justify-center rounded-full border transition ${selected ? "border-red-500 bg-red-500 text-black" : isToday ? "border-red-500/50 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-red-500/40 hover:bg-white/[0.07]"}`}>
-              <span className="text-[8px] uppercase leading-none sm:text-[10px]">{date.toLocaleDateString('ru-RU', { weekday: 'short' })}</span>
-              <span className="mt-1 text-sm font-semibold leading-none sm:text-xl">{date.getDate()}</span>
-            </div>
-            <div className="mt-1 flex h-2 items-center justify-center">
-              {marked && <span className={`h-1.5 w-1.5 rounded-full ${selected ? "bg-black" : markerClassName}`}/>} 
-            </div>
-          </button>;
-        })}
+        <div
+          className="grid gap-2 will-change-transform"
+          style={{
+            gridTemplateColumns: `repeat(${visibleDays}, minmax(0, 1fr))`,
+            transform: `translate3d(${dragX}px,0,0)`,
+            transition: dragRef.current ? 'none' : 'transform 180ms ease',
+          }}
+        >
+          {days.map(({ date, key }) => {
+            const selected = selectedDateKey === key;
+            const isToday = todayKey === key;
+            const marked = markedDateKeys.includes(key);
+            const circleSizeClass = visibleDays === 14 ? "h-10 w-10 sm:h-11 sm:w-11 xl:h-14 xl:w-14" : "h-11 w-11 sm:h-14 sm:w-14";
+            return <button key={key} type="button" data-calendar-date-key={key} onClick={(event) => { if (event.detail !== 0 || suppressCalendarClickRef.current) return; onSelect?.(key); }} className="min-w-0 text-center touch-manipulation">
+              <div className={`mx-auto flex ${circleSizeClass} flex-col items-center justify-center rounded-full border transition ${selected ? "border-red-500 bg-red-500 text-black" : isToday ? "border-red-500/50 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-red-500/40 hover:bg-white/[0.07]"}`}>
+                <span className="text-[8px] uppercase leading-none sm:text-[10px]">{date.toLocaleDateString('ru-RU', { weekday: 'short' })}</span>
+                <span className="mt-1 text-sm font-semibold leading-none sm:text-xl">{date.getDate()}</span>
+              </div>
+              <div className="mt-1 flex h-2 items-center justify-center">
+                {marked && <span className={`h-1.5 w-1.5 rounded-full ${selected ? "bg-black" : markerClassName}`}/>} 
+              </div>
+            </button>;
+          })}
+        </div>
       </div>
     </div>
-    </Card>
     {historyOpen && <CalendarHistoryModal initialDateKey={selectedDateKey} historyByDate={historyByDate} onClose={() => setHistoryOpen(false)} />}
   </>;
 }
@@ -8548,12 +8691,71 @@ function DailyNoteWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen, widgetKey
 	  </Card>;
 }
 
-function Header({ title, subtitle, pumpXp, onOpenPumpXp }) {
+const SCREEN_INFO_CONTENT = {
+  workouts: {
+    id: "workouts",
+    title: "Зачем экран тренировок",
+    body: [
+      "Этот экран помогает вести тренировочный дневник: планировать занятия, отмечать выполненные подходы, смотреть упражнения и возвращаться к истории по датам.",
+      "Он нужен, чтобы тренировки не жили отдельно от прогресса: выполненная работа, тоннаж и регулярность дальше используются в аналитике."
+    ],
+    gifSlots: 1,
+  },
+  nutrition: {
+    id: "nutrition",
+    title: "Зачем экран питания",
+    body: [
+      "Этот экран нужен, чтобы фиксировать питание за выбранный день и видеть, насколько рацион совпадает с твоей целью.",
+      "Он помогает связывать питание с тренировками, весом и общей динамикой тела без лишнего ручного пересчета."
+    ],
+    gifSlots: 1,
+  },
+  analytics: {
+    id: "analytics",
+    title: "Зачем экран аналитики",
+    body: [
+      "Этот экран собирает ключевые данные в одну картину: тренировки, активность, питание, замеры, вес и достижения.",
+      "Он нужен, чтобы смотреть не на один показатель, а на общую динамику и понимать, что именно двигает прогресс."
+    ],
+    gifSlots: 1,
+  },
+};
+
+function ScreenInfoSheet({ info, onClose }) {
+  useAppBackLayer(`screen-info-${info?.id || "sheet"}`, Boolean(info), onClose, 190);
+  if (!info) return null;
+  const slots = Math.max(1, Number(info.gifSlots || 1));
+  return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[235] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <BottomSheetPanel onClose={onClose} priority={235} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem] sm:p-6">
+      <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-red-400">Информация</p>
+          <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">{info.title}</h2>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300" aria-label="Закрыть информацию">×</button>
+      </div>
+      <div className="mt-5 space-y-3 text-sm font-semibold leading-6 text-zinc-400">
+        {info.body.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+      </div>
+      <div className="mt-5 grid gap-3">
+        {Array.from({ length: slots }, (_, index) => <div key={index} className="min-h-40 rounded-[28px] border border-dashed border-white/15 bg-white/[0.035]" aria-label="Место для GIF"/>)}
+      </div>
+      <Button type="button" onClick={onClose} className="mt-5 h-14 w-full rounded-[22px] bg-gradient-to-r from-red-700 to-red-500 text-base font-black text-black">Понятно!</Button>
+    </BottomSheetPanel>
+  </div>;
+}
+
+function Header({ title, subtitle, pumpXp, onOpenPumpXp, info }) {
+  const [infoOpen, setInfoOpen] = useState(false);
   const summary = pumpXp || null;
   return <header className="flex items-start justify-between gap-6">
     <div>
-      <h1 className="text-2xl font-semibold md:text-3xl">{title}</h1>
-      <p className="mt-2 break-words text-sm text-zinc-400">{subtitle}</p>
+      <div className="flex items-center gap-2">
+        <h1 className="text-2xl font-semibold md:text-3xl">{title}</h1>
+        {info && <button type="button" onClick={() => setInfoOpen(true)} className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[0.06] text-[11px] font-black leading-none text-zinc-300 transition hover:border-red-500/40 hover:text-red-300" aria-label="Информация об экране">i</button>}
+      </div>
+      {subtitle && <p className="mt-2 break-words text-sm text-zinc-400">{subtitle}</p>}
     </div>
     {summary && <div className="hidden items-center gap-8 md:flex">
 	      <button type="button" onClick={onOpenPumpXp} className="text-left transition hover:text-red-400">
@@ -8572,6 +8774,7 @@ function Header({ title, subtitle, pumpXp, onOpenPumpXp }) {
       </button>
       <Bell className="text-zinc-300"/>
     </div>}
+    {infoOpen && <ScreenInfoSheet info={info} onClose={() => setInfoOpen(false)}/>}
   </header>;
 }
 
@@ -10430,7 +10633,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     <Header title={<>Добро пожаловать, <span className="text-red-500">{displayName}</span></>} subtitle="Продолжай работать. Результат — это система." pumpXp={pumpXp} onOpenPumpXp={onOpenPumpXpDetails} />
     <div className="mt-5" data-tour="home-calendar">
       <IOSWeekCalendar
-        title="Календарь недели"
+        title="История дат"
         selectedDateKey={selectedDateKey}
         onSelect={openDayFromCalendar}
         markedDateKeys={homeMarkedDateKeys}
@@ -10930,6 +11133,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const workouts = controlledWorkouts || fallbackWorkoutState[0];
   const setWorkouts = controlledSetWorkouts || fallbackWorkoutState[1];
   const [activeTab, setActiveTab] = useState("diary");
+  const [workoutsNavHiddenByScroll, setWorkoutsNavHiddenByScroll] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [programSettingsSheet, setProgramSettingsSheet] = useState(null);
@@ -11003,6 +11207,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const reorderExerciseRef = useRef(null);
   const reorderTargetRef = useRef(null);
   const workoutScrollRef = useRef(null);
+  const plannedWorkoutsScrollRef = useRef(null);
   const restAdvanceRef = useRef(null);
   const restTimerStateRef = useRef(null);
   const completionSaveRef = useRef(null);
@@ -11288,10 +11493,60 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return sortedWorkouts.filter(workout => workout.date === selectedDateKey);
   }, [sortedWorkouts, selectedDateKey]);
 
+  const todayDateKey = toDateKey(new Date());
+  const todayDate = parseDateKey(todayDateKey);
+  const currentWeekStart = startOfWeek(todayDate);
+  const currentWeekEnd = addLocalDays(currentWeekStart, 6);
+  const isCompletedWorkoutForDiary = (workout = {}) => {
+    const rawStatus = String(workout.status ?? workout.workout_status ?? "").trim().toLowerCase();
+    if (["completed", "done", "finished", "complete"].includes(rawStatus)) return true;
+    if (["planned", "scheduled", "plan", "active", "started", "in_progress", "in-progress", "pending", "skipped", "missed"].includes(rawStatus)) return false;
+    return workout.done === true || workout.isCompleted === true || Boolean(workout.completedAt || workout.completed_at);
+  };
+
+  const getWorkoutDiaryStatus = (workout = {}) => {
+    if (isCompletedWorkoutForDiary(workout)) return "completed";
+    const workoutDateKey = workout.date || workout.workout_date || todayDateKey;
+    return workoutDateKey < todayDateKey ? "missed" : "planned";
+  };
+  const getWorkoutTimelineDateLabel = (dateKey, diaryStatus = "planned") => {
+    const date = parseDateKey(dateKey);
+    const diffDays = Math.round((date.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return "Сегодня";
+    if (diffDays === -1) return "Вчера";
+    if (diaryStatus === "missed") return formatDayMonth(date);
+    if (diffDays === 1) return "Завтра";
+    if (date >= currentWeekStart && date <= currentWeekEnd) return shortWeekdayNames[date.getDay()].toLowerCase();
+    return formatDayMonth(date);
+  };
+
+  const completedWorkoutsForDiary = useMemo(() => sortedWorkouts.filter(workout => getWorkoutDiaryStatus(workout) === "completed"), [sortedWorkouts, todayDateKey]);
+  const plannedAndMissedWorkouts = useMemo(() => {
+    return sortedWorkouts
+      .map(workout => ({ workout, diaryStatus: getWorkoutDiaryStatus(workout) }))
+      .filter(item => item.diaryStatus !== "completed")
+      .sort((a, b) => parseDateKey(a.workout.date || todayDateKey) - parseDateKey(b.workout.date || todayDateKey));
+  }, [sortedWorkouts, todayDateKey]);
+  const plannedAndMissedWorkoutsKey = plannedAndMissedWorkouts.map(item => `${item.workout.id}:${item.workout.date}:${item.diaryStatus}`).join("|");
+  const hasMissedWorkouts = plannedAndMissedWorkouts.some(item => item.diaryStatus === "missed");
+  const scrollPlannedWorkoutsToStatus = (status) => {
+    const node = plannedWorkoutsScrollRef.current;
+    const target = node?.querySelector?.(`[data-workout-timeline-status="${status}"]`);
+    if (!node || !target) return;
+    node.scrollTo({ left: Math.max(0, target.offsetLeft - 16), behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    const node = plannedWorkoutsScrollRef.current;
+    if (!node || !plannedAndMissedWorkouts.length) return;
+    const nearestPlanned = node.querySelector('[data-workout-timeline-status="planned"]');
+    if (nearestPlanned) node.scrollLeft = Math.max(0, nearestPlanned.offsetLeft - 16);
+  }, [plannedAndMissedWorkoutsKey]);
+
 	  const groupedWeeks = useMemo(() => {
 	    const groups = new Map();
 
-    sortedWorkouts.forEach(workout => {
+    completedWorkoutsForDiary.forEach(workout => {
       const date = parseDateKey(workout.date);
       const weekStartDate = startOfWeek(date);
       const weekEndDate = addLocalDays(weekStartDate, 6);
@@ -11311,13 +11566,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
       const group = groups.get(key);
       group.workouts.push(workout);
-      if (workout.status === "completed") group.totalVolume += Number(getWorkoutVolume(workout));
+      group.totalVolume += Number(getWorkoutVolume(workout));
       group.totalDuration += Number(workout.durationMinutes || 0);
       group.totalCalories += Number(workout.calories || 0);
     });
 
 	    return [...groups.values()].sort((a, b) => parseDateKey(b.weekStart) - parseDateKey(a.weekStart));
-	  }, [sortedWorkouts]);
+	  }, [completedWorkoutsForDiary]);
 
 	  const selectedPlanWeekKey = toDateKey(weekStart);
 
@@ -16946,11 +17201,53 @@ const toggleExerciseMeasurementSetting = (field) => {
   useAppBackLayer("workouts-detail-screen", Boolean(selectedWorkout), closeWorkoutDetails, 80);
   useAppBackLayer("workouts-secondary-tab", activeTab !== "diary", () => setActiveTab("diary"), 35);
 
+  useEffect(() => {
+    setWorkoutsNavHiddenByScroll(false);
+    if (typeof document === "undefined") return undefined;
+
+    const scrollNode = document.querySelector(".onlypump-main-scroll");
+    if (!scrollNode) return undefined;
+
+    const showAtTopPx = 8;
+    const fastDownDeltaPx = 26;
+    const fastDownVelocityPxMs = 0.55;
+    let lastScrollTop = scrollNode.scrollTop || 0;
+    let lastTime = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+    let ticking = false;
+
+    setWorkoutsNavHiddenByScroll(lastScrollTop > showAtTopPx);
+
+    const handleScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        const currentScrollTop = scrollNode.scrollTop || 0;
+        const now = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+        const delta = currentScrollTop - lastScrollTop;
+        const elapsed = Math.max(16, now - lastTime);
+        const velocity = delta / elapsed;
+
+        if (currentScrollTop <= showAtTopPx) {
+          setWorkoutsNavHiddenByScroll(false);
+        } else if (delta > fastDownDeltaPx || velocity > fastDownVelocityPxMs) {
+          setWorkoutsNavHiddenByScroll(true);
+        }
+
+        lastScrollTop = currentScrollTop;
+        lastTime = now;
+      });
+    };
+
+    scrollNode.addEventListener("scroll", handleScroll, { passive: true });
+    return () => scrollNode.removeEventListener("scroll", handleScroll);
+  }, [activeTab, selectedWorkout?.id, workoutViewMode]);
+
   const diaryTabs = [
-    { id: "diary", label: "Тренировки", icon: Dumbbell },
-    { id: "results", label: "Результаты", icon: TrendingUp },
-    { id: "exercises", label: "Упражнения", icon: Activity },
-    { id: "settings", label: "Настройки", icon: Settings },
+    { id: "diary", label: "Тренировки", iconName: "workouts", FallbackIcon: Dumbbell },
+    { id: "results", label: "Результаты", iconName: "results", FallbackIcon: TrendingUp },
+    { id: "exercises", label: "Упражнения", iconName: "exersise", FallbackIcon: Activity },
+    { id: "settings", label: "Настройки", iconName: "workout_settings", FallbackIcon: Settings },
   ];
 
   const [exerciseSearch, setExerciseSearch] = useState("");
@@ -17072,7 +17369,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     return () => window.clearTimeout(timer);
   }, [customExerciseFocusKey, isExerciseBaseOpen, filteredExerciseGroups]);
 
-  const WorkoutCard = ({ workout }) => {
+  const WorkoutCard = ({ workout, compact = false, showDayTitle = true }) => {
     const pointerTimerRef = useRef(null);
     const swipeRef = useRef({ pointerId: null, startX: 0, startY: 0, startOffset: 0, dragging: false, swiping: false, didDrag: false, verticalScrolling: false, captured: false });
     const latestOffsetRef = useRef(0);
@@ -17245,16 +17542,26 @@ const toggleExerciseMeasurementSetting = (field) => {
       openWorkoutDetails(workout);
     };
 
+    const rowWrapperClass = compact
+      ? "relative overflow-hidden"
+      : "relative mb-4 overflow-hidden rounded-[22px]";
+    const actionRevealClass = compact
+      ? "absolute inset-y-0 right-0 z-0 overflow-hidden"
+      : "absolute inset-y-0 right-0 z-0 overflow-hidden rounded-r-[22px]";
+    const cardButtonClass = compact
+      ? "relative z-10 block w-full rounded-none border border-transparent bg-transparent px-4 py-3 text-left transition hover:bg-red-500/5"
+      : "relative z-10 block w-full rounded-[22px] border border-white/10 bg-zinc-950 p-4 text-left transition hover:border-red-500/40 hover:bg-red-500/5";
+
 	    return <div
 	      data-no-edge-back="true"
 	      data-swipe-row="true"
 	      data-workout-swipe-id={workout.id}
 	      data-workout-date-key={workout.date}
-	      className="relative mb-4 overflow-hidden rounded-[22px]"
+	      className={rowWrapperClass}
 	      style={{ touchAction: "pan-y" }}
 	    >
       <div
-        className="absolute inset-y-0 right-0 z-0 overflow-hidden rounded-r-[22px]"
+        className={actionRevealClass}
         style={{
           width: workoutActionRevealWidth,
           pointerEvents: workoutActionsInteractive ? "auto" : "none",
@@ -17300,15 +17607,15 @@ const toggleExerciseMeasurementSetting = (field) => {
         onPointerCancel={handleCardPointerUp}
         onPointerLeave={cancelLongPress}
         onContextMenu={(event) => { event.preventDefault(); setWeekMenuGroup({ type: "workout", workout }); }}
-        className="relative z-10 block w-full rounded-[22px] border border-white/10 bg-zinc-950 p-4 text-left transition hover:border-red-500/40 hover:bg-red-500/5"
+        className={cardButtonClass}
         style={{
           transform: `translate3d(${cardOffset}px, 0, 0)`,
           transition: swipeRef.current.dragging ? "none" : "transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)",
           willChange: "transform",
         }}
       >
-        <div className="text-[17px] font-semibold text-zinc-100">{workout.weekday}</div>
-        <div className="mt-4 flex items-center gap-4">
+        {showDayTitle && <div className="text-[17px] font-semibold text-zinc-100">{workout.weekday}</div>}
+        <div className={`${showDayTitle ? "mt-4" : ""} flex items-center gap-4`}>
           <div className="h-12 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: statusColor }} />
 	          <div className="min-w-0">
 	            {workout.isProgramGenerated && <div className="mb-2 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-[0.12em]">
@@ -17325,6 +17632,170 @@ const toggleExerciseMeasurementSetting = (field) => {
     </div>;
   };
 
+  const getWorkoutDayGroups = (items = []) => {
+    const groups = [];
+    const byDate = new Map();
+    items.forEach(workout => {
+      const dateKey = workout.date || "";
+      if (!byDate.has(dateKey)) {
+        const group = { dateKey, workouts: [] };
+        byDate.set(dateKey, group);
+        groups.push(group);
+      }
+      byDate.get(dateKey).workouts.push(workout);
+    });
+    return groups;
+  };
+
+  const WorkoutDayGroup = ({ dayGroup }) => {
+    const items = dayGroup.workouts || [];
+    if (!items.length) return null;
+    if (items.length === 1) return <WorkoutCard workout={items[0]} />;
+    const dayDate = parseDateKey(dayGroup.dateKey);
+    const dayTitle = items[0].weekday || weekdayNames[dayDate.getDay()];
+    return <div data-workout-date-key={dayGroup.dateKey} className="mb-4 overflow-hidden rounded-[22px] border border-white/10 bg-zinc-950">
+      <div className="px-4 pt-4 text-[17px] font-semibold text-zinc-100">{dayTitle}</div>
+      <div className="pt-1">
+        {items.map((workout, index) => <React.Fragment key={workout.id}>
+          {index > 0 && <div className="ml-14 mr-6 h-px bg-white/10" />}
+          <WorkoutCard workout={workout} compact showDayTitle={false} />
+        </React.Fragment>)}
+      </div>
+    </div>;
+  };
+
+  const PlannedWorkoutMiniCard = ({ item, suppressTimelineClickRef, timelineDraggingRef }) => {
+    const workout = item.workout;
+    const diaryStatus = item.diaryStatus;
+    const isPlanned = diaryStatus === "planned";
+    const longPressTimerRef = useRef(null);
+    const longPressRef = useRef({ startX: 0, startY: 0, triggered: false });
+    const programWeekNumber = workout.programWeekNumber ?? workout.program_week_number ?? null;
+    const programWeekLabel = programWeekNumber ? `неделя ${programWeekNumber}` : "";
+    const dateLabel = getWorkoutTimelineDateLabel(workout.date, diaryStatus);
+    const topLabel = programWeekLabel ? `${dateLabel} · ${programWeekLabel}` : dateLabel;
+    const statusLabel = isPlanned ? "Запланированная" : "Пропущенная";
+    const clearMiniLongPress = () => window.clearTimeout(longPressTimerRef.current);
+    const handleMiniPointerDown = (event) => {
+      clearMiniLongPress();
+      longPressRef.current = { startX: event.clientX, startY: event.clientY, triggered: false };
+      longPressTimerRef.current = window.setTimeout(() => {
+        if (suppressTimelineClickRef?.current || timelineDraggingRef?.current) return;
+        longPressRef.current.triggered = true;
+        setWeekMenuGroup({ type: "workout", workout });
+      }, 550);
+    };
+    const handleMiniPointerMove = (event) => {
+      const state = longPressRef.current;
+      if (Math.hypot(event.clientX - state.startX, event.clientY - state.startY) > 12) clearMiniLongPress();
+    };
+    const handleMiniPointerEnd = () => clearMiniLongPress();
+    const handleMiniClick = (event) => {
+      if (longPressRef.current.triggered || suppressTimelineClickRef?.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        longPressRef.current.triggered = false;
+        return;
+      }
+      openWorkoutDetails(workout);
+    };
+    useEffect(() => () => clearMiniLongPress(), []);
+    return <button
+      type="button"
+      onClick={handleMiniClick}
+      onPointerDown={handleMiniPointerDown}
+      onPointerMove={handleMiniPointerMove}
+      onPointerUp={handleMiniPointerEnd}
+      onPointerCancel={handleMiniPointerEnd}
+      onPointerLeave={handleMiniPointerEnd}
+      onContextMenu={(event) => { event.preventDefault(); setWeekMenuGroup({ type: "workout", workout }); }}
+      data-workout-timeline-status={diaryStatus}
+      className="shrink-0 rounded-[20px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-3 py-2 text-left transition active:scale-[0.98] hover:border-red-500/35"
+      style={{ width: "clamp(9rem, 44vw, 11.5rem)", touchAction: "pan-y" }}
+    >
+      <div>
+        <span className="block truncate text-[11px] font-semibold text-zinc-500">{topLabel}</span>
+        <div className="mt-0.5 flex items-stretch gap-3">
+        <span className="relative my-0.5 block w-1.5 shrink-0 overflow-hidden rounded-full bg-red-500">
+          {isPlanned && <span className="absolute left-1/2 top-1 h-[calc(100%-0.5rem)] w-[2px] -translate-x-1/2 rounded-full bg-[var(--onlypump-card-solid)]" />}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="onlypump-line-clamp-2 h-[1.78rem] text-[13px] font-black leading-[1.08] tracking-[-0.04em] text-white">{workout.title || "Тренировка"}</span>
+          <span className={`mt-0.5 block truncate text-[10px] font-medium leading-none ${isPlanned ? "text-zinc-400" : "text-red-400"}`}>
+            {statusLabel}
+          </span>
+        </span>
+        </div>
+      </div>
+    </button>;
+  };
+
+  const PlannedWorkoutsTimeline = () => {
+    const timelineDragRef = useRef(null);
+    const timelineDraggingRef = useRef(false);
+    const suppressTimelineClickRef = useRef(false);
+    const suppressTimelineResetRef = useRef(null);
+    useEffect(() => () => window.clearTimeout(suppressTimelineResetRef.current), []);
+    if (!plannedAndMissedWorkouts.length) return null;
+    const startTimelineDrag = (event) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      window.clearTimeout(suppressTimelineResetRef.current);
+      timelineDragRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startScrollLeft: event.currentTarget.scrollLeft,
+        hasDragged: false,
+      };
+      timelineDraggingRef.current = false;
+      suppressTimelineClickRef.current = false;
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    };
+    const moveTimelineDrag = (event) => {
+      const drag = timelineDragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const dx = event.clientX - drag.startX;
+      const dy = event.clientY - drag.startY;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+      if (!drag.hasDragged && (absX < 18 || absX < absY * 1.25)) return;
+      if (absY > 48 && absY > absX * 1.2) return;
+      drag.hasDragged = true;
+      timelineDraggingRef.current = true;
+      suppressTimelineClickRef.current = true;
+      event.currentTarget.scrollLeft = drag.startScrollLeft - dx;
+      event.preventDefault();
+    };
+    const endTimelineDrag = (event) => {
+      const drag = timelineDragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      timelineDragRef.current = null;
+      try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+      if (!drag.hasDragged) {
+        timelineDraggingRef.current = false;
+        suppressTimelineClickRef.current = false;
+        return;
+      }
+      window.clearTimeout(suppressTimelineResetRef.current);
+      suppressTimelineResetRef.current = window.setTimeout(() => {
+        timelineDraggingRef.current = false;
+        suppressTimelineClickRef.current = false;
+      }, 120);
+    };
+    return <div
+      ref={plannedWorkoutsScrollRef}
+      data-calendar-swipe="true"
+      className="mt-3 flex touch-pan-y select-none gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none"
+      style={{ scrollPaddingLeft: "1rem" }}
+      onPointerDown={startTimelineDrag}
+      onPointerMove={moveTimelineDrag}
+      onPointerUp={endTimelineDrag}
+      onPointerCancel={endTimelineDrag}
+    >
+      {plannedAndMissedWorkouts.map(item => <PlannedWorkoutMiniCard key={item.workout.id} item={item} suppressTimelineClickRef={suppressTimelineClickRef} timelineDraggingRef={timelineDraggingRef} />)}
+    </div>;
+  };
+
   const ActiveWorkoutBanner = () => {
     if (!activeWorkout) return null;
     return <button onClick={() => openWorkoutDetails(activeWorkout)} className="mt-5 flex w-full items-center justify-between gap-4 rounded-[24px] border border-red-500/25 bg-red-500/10 p-5 text-left transition active:scale-[0.99] hover:bg-red-500/15">
@@ -17338,26 +17809,30 @@ const toggleExerciseMeasurementSetting = (field) => {
 	  };
 
 	  const SelectedDateSummary = () => {
-	    return <button type="button" onClick={jumpToSelectedDateInPlan} className="mt-5 block w-full rounded-[24px] border border-white/10 bg-white/[0.035] p-5 text-left transition active:scale-[0.99] hover:border-red-500/35 hover:bg-red-500/5">
+	    const handleCardKeyDown = (event) => {
+	      if (event.key !== "Enter" && event.key !== " ") return;
+	      event.preventDefault();
+	      jumpToSelectedDateInPlan();
+	    };
+	    return <div role="button" tabIndex={0} onClick={jumpToSelectedDateInPlan} onKeyDown={handleCardKeyDown} className="mt-5 w-full cursor-pointer rounded-[24px] border border-white/10 bg-white/[0.035] p-4 text-left transition active:scale-[0.99] hover:border-red-500/35 hover:bg-red-500/5">
 	      <div className="flex items-start justify-between gap-3">
-	        <div>
-	          <p className="text-xs uppercase tracking-[0.18em] text-red-400">Выбранная дата</p>
-	          <h3 className="mt-2 text-xl font-black tracking-[-0.03em]">
-	            {formatDayMonth(selectedDate)} · {weekdayNames[selectedDate.getDay()]}
-	          </h3>
-	          <p className="mt-2 text-sm leading-6 text-zinc-500">Нажми, чтобы перейти к этой дате в тренировочном плане. Новая тренировка через «+» будет создана на этот день.</p>
+	        <div className="min-w-0">
+	          <h3 className="break-words text-xl font-black tracking-[-0.03em]">{formatDayMonth(selectedDate)}</h3>
+	          <p className="mt-1 text-sm font-semibold text-zinc-500">{weekdayNames[selectedDate.getDay()]}</p>
 	        </div>
 	        <span className="shrink-0 rounded-full bg-white/7 px-3 py-1 text-xs font-semibold text-zinc-300">{pluralizeWorkout(workoutsBySelectedDate.length)}</span>
 	      </div>
-	    </button>;
+	      {hasMissedWorkouts && <button type="button" onClick={(event) => { event.stopPropagation(); scrollPlannedWorkoutsToStatus("missed"); }} className="mt-3 inline-flex rounded-full bg-red-500/10 px-3 py-1 text-xs font-black text-red-300 transition hover:bg-red-500/15">есть пропущенные</button>}
+	    </div>;
 	  };
 
   const DiaryContent = () => <>
     <ActiveWorkoutBanner />
     <VolumeLoadBar count={weeklySetCount} title="Объем недели" subtitle="подходов" experiencedAt={volumeStandards.weeklyTotal} onClick={() => setWeekStatsOpen(true)} className="mt-5" />
     <SelectedDateSummary />
+    <PlannedWorkoutsTimeline />
 
-    <div className="mt-14 space-y-10">
+    <div className="mt-5 space-y-8">
       {groupedWeeks.map(group => {
         const collapsed = collapsedWeeks[group.id];
 	        return <section key={group.id} data-workout-week-key={group.id}>
@@ -17367,11 +17842,11 @@ const toggleExerciseMeasurementSetting = (field) => {
             </h2>
             <button onClick={() => setWeekMenuGroup({ type: "week", group })} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/[0.04] text-[26px] text-zinc-400 transition hover:bg-white/10">…</button>
           </div>
-          <div className="mt-5 inline-flex h-9 items-center rounded-full bg-white/[0.06] px-4 text-[17px] font-medium text-zinc-200">
+          <div className="mt-2 inline-flex h-9 items-center rounded-full bg-white/[0.06] px-4 text-[17px] font-medium text-zinc-200">
             {pluralizeWorkout(group.workouts.length)}
           </div>
-          {!collapsed && <div className="mt-5">
-            {group.workouts.map(workout => <WorkoutCard key={workout.id} workout={workout} />)}
+          {!collapsed && <div className="mt-1">
+            {getWorkoutDayGroups(group.workouts).map(dayGroup => <WorkoutDayGroup key={dayGroup.dateKey} dayGroup={dayGroup} />)}
           </div>}
         </section>;
       })}
@@ -18197,9 +18672,38 @@ const toggleExerciseMeasurementSetting = (field) => {
   const customExerciseShowsWeightUnit = customExerciseMode === "weight_reps" || customExerciseMode === "weight_time" || customExerciseMode === "weight_distance";
   const customExerciseShowsDistanceUnit = customExerciseMode === "distance" || customExerciseMode === "weight_distance";
   const customExerciseShowsDoubleCount = customExerciseSheet?.exerciseCategory === "strength";
+  const workoutNavIconSrc = (name, isActive) => `assets/menu-icons/${name}${isActive ? "_open" : ""}.svg`;
+  const isWorkoutNavTabActive = (id) => activeTab === id || (id === "exercises" && isExerciseBaseOpen);
+  const handleWorkoutNavTab = (id) => {
+    if (id === "exercises") {
+      openExerciseBase("view");
+      return;
+    }
+    setActiveTab(id);
+  };
+  const renderWorkoutNavButton = ({ id, label, iconName, FallbackIcon }) => {
+    const isActive = isWorkoutNavTabActive(id);
+    return <button
+      key={id}
+      type="button"
+      aria-label={label}
+      aria-current={isActive ? "page" : undefined}
+      onClick={() => handleWorkoutNavTab(id)}
+      className={`onlypump-workouts-nav-button ${isActive ? "is-active" : ""}`}
+    >
+      <MobileMenuAssetIcon
+        src={workoutNavIconSrc(iconName, isActive)}
+        alt=""
+        FallbackIcon={FallbackIcon}
+        className="onlypump-workouts-nav-icon"
+        fallbackSize={30}
+        fallbackStrokeWidth={2.25}
+      />
+    </button>;
+  };
 
   return <>
-    <Header title="Тренировки" subtitle="Дневник тренировок, готовые программы, недельный объём и упражнения."/>
+    <Header title="Тренировки" info={SCREEN_INFO_CONTENT.workouts}/>
     <div className="mt-6 w-full pb-32">
       <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-6">
         <div className="flex min-h-11 items-center justify-between gap-4">
@@ -18207,14 +18711,14 @@ const toggleExerciseMeasurementSetting = (field) => {
 	            <Grid3X3 size={17}/>
 	            <span>Доступные программы</span>
 	          </button>
-          <button data-tour="workouts-add" onClick={() => setIsAddMenuOpen(true)} className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-3xl font-light leading-none text-zinc-100 transition active:scale-95 hover:text-red-400">
+          <button onClick={() => setIsAddMenuOpen(true)} className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-3xl font-light leading-none text-zinc-100 transition active:scale-95 hover:text-red-400">
             +
           </button>
         </div>
 
         <div className="mt-5" data-tour="workouts-calendar">
           <IOSWeekCalendar
-            title="Календарь недели"
+            title="История дат"
             selectedDateKey={selectedDateKey}
             onSelect={selectDate}
             markedDateKeys={markedDateKeys}
@@ -18276,20 +18780,20 @@ const toggleExerciseMeasurementSetting = (field) => {
       </div>
     </div>
 
-    <div className="fixed bottom-0 left-0 right-0 z-[95] border-t border-white/10 bg-black/70 px-3 pb-[calc(var(--onlypump-safe-bottom)+8px)] pt-2 backdrop-blur-2xl lg:hidden">
-      <div className="mx-auto grid h-[72px] max-w-[430px] grid-cols-4">
-        {diaryTabs.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => {
-          if (id === "exercises") {
-            openExerciseBase("view");
-            return;
-          }
-          setActiveTab(id);
-        }} className={`flex flex-col items-center justify-center rounded-2xl transition ${(activeTab === id || (id === "exercises" && isExerciseBaseOpen)) ? 'text-red-400' : 'text-zinc-600'}`}>
-          <Icon size={26}/>
-          <span className="mt-1 text-[12px] font-semibold">{label}</span>
-        </button>)}
-      </div>
-    </div>
+    <nav className={`onlypump-workouts-nav-bar lg:hidden ${workoutsNavHiddenByScroll ? "is-scroll-hidden" : ""}`} aria-label="Навигация тренировок">
+      {diaryTabs.slice(0, 2).map(renderWorkoutNavButton)}
+      <div className="onlypump-workouts-nav-spacer" aria-hidden="true"/>
+      {diaryTabs.slice(2).map(renderWorkoutNavButton)}
+      <button
+        type="button"
+        data-tour="workouts-add"
+        onClick={() => setIsAddMenuOpen(true)}
+        className="onlypump-workouts-nav-add"
+        aria-label="Добавить тренировку"
+      >
+        <Plus size={34} strokeWidth={2.8}/>
+      </button>
+    </nav>
 
     {isAddMenuOpen && <div onClick={() => setIsAddMenuOpen(false)} className="onlypump-modal-layer fixed inset-0 z-[150] flex items-end bg-black/45 p-4 backdrop-blur-sm">
       <BottomSheetPanel onClose={() => setIsAddMenuOpen(false)} onClick={(e) => e.stopPropagation()} className="mx-auto w-full max-w-[430px] rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-2xl">
@@ -20418,7 +20922,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
     </button>;
   };
 
-  return <><Header title="Питание" subtitle="Добавляй еду на глаз: порции, дополнения, избранное и быстрый поиск."/>
+  return <><Header title="Питание" info={SCREEN_INFO_CONTENT.nutrition}/>
     <div className="mt-6" data-tour="nutrition-calendar">
       <IOSWeekCalendar title="Неделя питания" selectedDateKey={selectedDateKey} onSelect={setSelectedDateKey} markedDateKeys={nutritionMarkedDateKeys}/>
     </div>
@@ -22093,7 +22597,6 @@ function AnalyticsPeriodCalendar({ period, selectedDateKey, onSelect }) {
   }, [visibleItems, period]);
   const items = analyticsPeriodItems(period, todayKey, visibleItems, startOffset, selectedDateKey);
   const currentPeriodKey = analyticsPeriodSelectionKey(period, todayKey);
-  const range = analyticsPeriodRange(period, selectedDateKey);
   const startDrag = (event) => {
     clearTimeout(suppressResetRef.current);
     dragRef.current = {
@@ -22155,15 +22658,7 @@ function AnalyticsPeriodCalendar({ period, selectedDateKey, onSelect }) {
     if (period === "month") return { top: item.sub, main: item.label };
     return { top: "", main: item.label };
   };
-  return <Card data-calendar-swipe="true" className="p-4">
-    <div className="mb-4 flex items-center justify-between gap-3">
-      <div className="px-1 py-1">
-        <h2 className="text-base font-semibold">Календарь аналитики</h2>
-        <p className="mt-1 text-xs text-zinc-500">{range.label}</p>
-      </div>
-      <CalendarDays className="mr-1 shrink-0 text-zinc-500" size={18}/>
-    </div>
-    <div className="overflow-hidden touch-pan-y select-none">
+  return <div data-calendar-swipe="true" className="overflow-hidden touch-pan-y select-none">
     <div
       className="grid gap-2 will-change-transform"
       style={{
@@ -22194,8 +22689,7 @@ function AnalyticsPeriodCalendar({ period, selectedDateKey, onSelect }) {
       </button>;
       })}
     </div>
-    </div>
-  </Card>;
+  </div>;
 }
 
 const workoutDateKey = (workout = {}) => String(workout.date || workout.workout_date || "").slice(0, 10);
@@ -23840,7 +24334,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
 
   return <>
     <div className="mb-6 flex items-start justify-between gap-4">
-      <Header title="Аналитика" subtitle="Календарь, карточки, тоннаж, активность и ачивки."/>
+      <Header title="Аналитика" info={SCREEN_INFO_CONTENT.analytics}/>
       <div className="flex shrink-0 gap-2 pt-1">
 	        <button type="button" onClick={() => setTableViewOpen(true)} className="hidden h-11 items-center rounded-full bg-red-500 px-4 text-xs font-black text-black transition hover:bg-red-400 sm:flex">Смотреть в таблице</button>
 	        <button type="button" onClick={() => setTableViewOpen(true)} className="flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-black transition hover:bg-red-400 sm:hidden" aria-label="Смотреть в таблице"><Grid3X3 size={18}/></button>
@@ -28940,11 +29434,13 @@ function OnlyPumpPlatform() {
     return <OnboardingScreen profile={profile} saving={profileSaving} onComplete={completeOnboardingProfile}/>;
   }
 
+  const showSecondaryNav = active !== "workouts" && active !== "profile";
+
   return <div className={`onlypump-app-shell theme-${activeTheme} bg-black text-zinc-100 selection:bg-red-500/30`}>
     <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_5%,rgba(239,68,68,0.13),transparent_30%),radial-gradient(circle_at_30%_35%,rgba(255,255,255,0.05),transparent_30%)]"/>
     <div className="onlypump-app-frame relative mx-auto flex max-w-[1720px] rounded-3xl border border-white/10 bg-black/70">
       <DesktopSidebar active={active} setActive={setActive} profile={profile}/>
-      <main className={`onlypump-main-scroll min-w-0 w-full px-4 md:px-8 lg:px-12 ${active !== "workouts" ? "onlypump-main-scroll-with-secondary-nav" : ""}`}>{page}</main>
+      <main className={`onlypump-main-scroll min-w-0 w-full px-4 md:px-8 lg:px-12 ${showSecondaryNav ? "onlypump-main-scroll-with-secondary-nav" : ""}`}>{page}</main>
       <MobilePreview active={active}/>
     </div>
 	    <PumpXpToast key={pumpXpToast?.id || "pump-xp-toast"} toast={pumpXpToast} pumpXp={pumpXpSummary} onClose={() => setPumpXpToast(null)} onOpen={() => setPumpXpDetailsOpen(true)}/>
@@ -28952,7 +29448,7 @@ function OnlyPumpPlatform() {
 	    {pumpXpDetailsOpen && <PumpXpDetailSheet pumpXp={pumpXpSummary} onClose={() => setPumpXpDetailsOpen(false)}/>}
 	    {profileWelcomeOpen && <ProfileWelcomeSheet profile={profile || DEFAULT_PROFILE} pumpXp={pumpXpSummary} onClose={closeProfileWelcome} onStartTour={() => startInteractiveTour("home", { force: true, full: true })}/>}
 	    {tourState.active && <InteractiveTourOverlay step={activeTourStep} stepIndex={tourState.stepIndex} totalSteps={activeTourSteps.length} onNext={nextTourStep} onSkip={skipTour} onTargetAction={handleTourTargetAction}/>}
-	    <MobileSecondaryNavBar active={active} setActive={setActive}/>
+	    {showSecondaryNav && <MobileSecondaryNavBar active={active} setActive={setActive}/>}
 	    <FloatingNavMenu active={active} setActive={setActive} profile={profile} onOpenAnalytics={openAnalyticsType}/>
 	  </div>;
 }
