@@ -17765,6 +17765,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       window.clearTimeout(suppressTimelineResetRef.current);
       timelineDragRef.current = {
         pointerId: event.pointerId,
+        pointerType: event.pointerType || "touch",
         startX: event.clientX,
         startY: event.clientY,
         lastX: event.clientX,
@@ -17773,7 +17774,9 @@ const toggleExerciseMeasurementSetting = (field) => {
       };
       timelineDraggingRef.current = false;
       suppressTimelineClickRef.current = false;
-      event.currentTarget.setPointerCapture?.(event.pointerId);
+      if (event.pointerType === "mouse") {
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+      }
     };
     const moveTimelineDrag = (event) => {
       const drag = timelineDragRef.current;
@@ -17782,22 +17785,26 @@ const toggleExerciseMeasurementSetting = (field) => {
       const rawDy = event.clientY - drag.startY;
       const absX = Math.abs(rawDx);
       const absY = Math.abs(rawDy);
-      if (!drag.hasDragged && (absX < 22 || absX < absY * 1.45)) return;
-      if (absY > 48 && absY > absX * 1.2) return;
-      if (absX > 18) {
+      if (!drag.hasDragged && absX > 8 && absX > absY * 1.15) {
         drag.hasDragged = true;
         timelineDraggingRef.current = true;
         suppressTimelineClickRef.current = true;
       }
-      event.currentTarget.scrollLeft = drag.startScrollLeft - rawDx;
+      if (!drag.hasDragged || absX < 22 || absX < absY * 1.45) return;
+      if (absY > 48 && absY > absX * 1.2) return;
+      if (drag.pointerType === "mouse") {
+        event.currentTarget.scrollLeft = drag.startScrollLeft - rawDx;
+        event.preventDefault();
+      }
       drag.lastX = event.clientX;
-      event.preventDefault();
     };
     const endTimelineDrag = (event) => {
       const drag = timelineDragRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
       timelineDragRef.current = null;
-      try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+      if (drag.pointerType === "mouse") {
+        try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+      }
       if (!drag.hasDragged) {
         timelineDraggingRef.current = false;
         suppressTimelineClickRef.current = false;
@@ -17812,8 +17819,8 @@ const toggleExerciseMeasurementSetting = (field) => {
     return <div
       ref={plannedWorkoutsScrollRef}
       data-calendar-swipe="true"
-      className="mt-3 flex touch-pan-y select-none gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none"
-      style={{ scrollPaddingLeft: "1rem", WebkitOverflowScrolling: "touch", overscrollBehaviorX: "contain", touchAction: "pan-y" }}
+      className="mt-3 flex min-w-0 flex-nowrap select-none gap-2 overflow-x-auto overflow-y-hidden pb-1 onlypump-scrollbar-none"
+      style={{ scrollPaddingLeft: "1rem", WebkitOverflowScrolling: "touch", overscrollBehaviorX: "contain", touchAction: "pan-x pan-y" }}
       onPointerDownCapture={startTimelineDrag}
       onPointerMoveCapture={moveTimelineDrag}
       onPointerUpCapture={endTimelineDrag}
