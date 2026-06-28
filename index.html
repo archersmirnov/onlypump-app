@@ -8198,6 +8198,7 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
   const [dragX, setDragX] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
   const dragRef = useRef(null);
+  const shellTapRef = useRef(null);
   const suppressCalendarClickRef = useRef(false);
   const suppressResetRef = useRef(null);
   useAppBackLayer(`calendar-history-${title}`, historyOpen, () => setHistoryOpen(false), 130);
@@ -8274,6 +8275,26 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
       }, 120);
     }
   };
+  const startCalendarShellTap = (event) => {
+    if (event.target?.closest?.("[data-calendar-date-key]")) {
+      shellTapRef.current = null;
+      return;
+    }
+    shellTapRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+  };
+  const endCalendarShellTap = (event) => {
+    const tap = shellTapRef.current;
+    shellTapRef.current = null;
+    if (!tap || tap.pointerId !== event.pointerId) return;
+    if (suppressCalendarClickRef.current) return;
+    if (event.target?.closest?.("[data-calendar-date-key]")) return;
+    if (Math.hypot(event.clientX - tap.startX, event.clientY - tap.startY) > 12) return;
+    setHistoryOpen(true);
+  };
   const openHistoryFromCalendarShell = (event) => {
     if (suppressCalendarClickRef.current) return;
     if (event.target?.closest?.("[data-calendar-date-key]")) return;
@@ -8281,38 +8302,40 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
   };
 
   return <>
-    <div className={`${className} cursor-pointer`} onClick={openHistoryFromCalendarShell}>
-      <div
-        data-calendar-swipe="true"
-        className="overflow-hidden touch-pan-y select-none"
-        onPointerDown={startCalendarDrag}
-        onPointerMove={moveCalendarDrag}
-        onPointerUp={endCalendarDrag}
-        onPointerCancel={endCalendarDrag}
-      >
+    <div className={`${className} cursor-pointer`} onPointerDownCapture={startCalendarShellTap} onPointerUpCapture={endCalendarShellTap} onPointerCancelCapture={() => { shellTapRef.current = null; }} onClick={openHistoryFromCalendarShell}>
+      <div className="-m-2 p-2">
         <div
-          className="grid gap-2 will-change-transform"
-          style={{
-            gridTemplateColumns: `repeat(${visibleDays}, minmax(0, 1fr))`,
-            transform: `translate3d(${dragX}px,0,0)`,
-            transition: dragRef.current ? 'none' : 'transform 180ms ease',
-          }}
+          data-calendar-swipe="true"
+          className="overflow-hidden touch-pan-y select-none"
+          onPointerDown={startCalendarDrag}
+          onPointerMove={moveCalendarDrag}
+          onPointerUp={endCalendarDrag}
+          onPointerCancel={endCalendarDrag}
         >
-          {days.map(({ date, key }) => {
-            const selected = selectedDateKey === key;
-            const isToday = todayKey === key;
-            const marked = markedDateKeys.includes(key);
-            const circleSizeClass = visibleDays === 14 ? "h-10 w-10 sm:h-11 sm:w-11 xl:h-14 xl:w-14" : "h-11 w-11 sm:h-14 sm:w-14";
-            return <button key={key} type="button" data-calendar-date-key={key} onClick={(event) => { if (event.detail !== 0 || suppressCalendarClickRef.current) return; onSelect?.(key); }} className="min-w-0 text-center touch-manipulation">
-              <div className={`mx-auto flex ${circleSizeClass} flex-col items-center justify-center rounded-full border transition ${selected ? "border-red-500 bg-red-500 text-black" : isToday ? "border-red-500/50 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-red-500/40 hover:bg-white/[0.07]"}`}>
-                <span className="text-[8px] uppercase leading-none sm:text-[10px]">{date.toLocaleDateString('ru-RU', { weekday: 'short' })}</span>
-                <span className="mt-1 text-sm font-semibold leading-none sm:text-xl">{date.getDate()}</span>
-              </div>
-              <div className="mt-1 flex h-2 items-center justify-center">
-                {marked && <span className={`h-1.5 w-1.5 rounded-full ${selected ? "bg-black" : markerClassName}`}/>} 
-              </div>
-            </button>;
-          })}
+          <div
+            className="grid gap-2 will-change-transform"
+            style={{
+              gridTemplateColumns: `repeat(${visibleDays}, minmax(0, 1fr))`,
+              transform: `translate3d(${dragX}px,0,0)`,
+              transition: dragRef.current ? 'none' : 'transform 180ms ease',
+            }}
+          >
+            {days.map(({ date, key }) => {
+              const selected = selectedDateKey === key;
+              const isToday = todayKey === key;
+              const marked = markedDateKeys.includes(key);
+              const circleSizeClass = visibleDays === 14 ? "h-10 w-10 sm:h-11 sm:w-11 xl:h-14 xl:w-14" : "h-11 w-11 sm:h-14 sm:w-14";
+              return <button key={key} type="button" data-calendar-date-key={key} onClick={(event) => { if (event.detail !== 0 || suppressCalendarClickRef.current) return; onSelect?.(key); }} className="min-w-0 text-center touch-manipulation">
+                <div className={`mx-auto flex ${circleSizeClass} flex-col items-center justify-center rounded-full border transition ${selected ? "border-red-500 bg-red-500 text-black" : isToday ? "border-red-500/50 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-red-500/40 hover:bg-white/[0.07]"}`}>
+                  <span className="text-[8px] uppercase leading-none sm:text-[10px]">{date.toLocaleDateString('ru-RU', { weekday: 'short' })}</span>
+                  <span className="mt-1 text-sm font-semibold leading-none sm:text-xl">{date.getDate()}</span>
+                </div>
+                <div className="mt-1 flex h-2 items-center justify-center">
+                  {marked && <span className={`h-1.5 w-1.5 rounded-full ${selected ? "bg-black" : markerClassName}`}/>} 
+                </div>
+              </button>;
+            })}
+          </div>
         </div>
       </div>
     </div>
@@ -17244,7 +17267,7 @@ const toggleExerciseMeasurementSetting = (field) => {
   }, [activeTab, selectedWorkout?.id, workoutViewMode]);
 
   const diaryTabs = [
-    { id: "diary", label: "Тренировки", iconName: "workouts", FallbackIcon: Dumbbell },
+    { id: "diary", label: "Тренировки", iconName: "workouts_workouts", FallbackIcon: Dumbbell },
     { id: "results", label: "Результаты", iconName: "results", FallbackIcon: TrendingUp },
     { id: "exercises", label: "Упражнения", iconName: "exersise", FallbackIcon: Activity },
     { id: "settings", label: "Настройки", iconName: "workout_settings", FallbackIcon: Settings },
@@ -17711,7 +17734,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       onContextMenu={(event) => { event.preventDefault(); setWeekMenuGroup({ type: "workout", workout }); }}
       data-workout-timeline-status={diaryStatus}
       className="shrink-0 rounded-[20px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-3 py-2 text-left transition active:scale-[0.98] hover:border-red-500/35"
-      style={{ width: "clamp(9rem, 44vw, 11.5rem)", touchAction: "pan-y" }}
+      style={{ width: "clamp(9rem, 44vw, 11.5rem)", touchAction: "manipulation" }}
     >
       <div>
         <span className="block truncate text-[11px] font-semibold text-zinc-500">{topLabel}</span>
@@ -17786,11 +17809,11 @@ const toggleExerciseMeasurementSetting = (field) => {
       ref={plannedWorkoutsScrollRef}
       data-calendar-swipe="true"
       className="mt-3 flex touch-pan-y select-none gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none"
-      style={{ scrollPaddingLeft: "1rem" }}
-      onPointerDown={startTimelineDrag}
-      onPointerMove={moveTimelineDrag}
-      onPointerUp={endTimelineDrag}
-      onPointerCancel={endTimelineDrag}
+      style={{ scrollPaddingLeft: "1rem", WebkitOverflowScrolling: "touch", overscrollBehaviorX: "contain" }}
+      onPointerDownCapture={startTimelineDrag}
+      onPointerMoveCapture={moveTimelineDrag}
+      onPointerUpCapture={endTimelineDrag}
+      onPointerCancelCapture={endTimelineDrag}
     >
       {plannedAndMissedWorkouts.map(item => <PlannedWorkoutMiniCard key={item.workout.id} item={item} suppressTimelineClickRef={suppressTimelineClickRef} timelineDraggingRef={timelineDraggingRef} />)}
     </div>;
@@ -18704,29 +18727,28 @@ const toggleExerciseMeasurementSetting = (field) => {
 
   return <>
     <Header title="Тренировки" info={SCREEN_INFO_CONTENT.workouts}/>
-    <div className="mt-6 w-full pb-32">
-      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-6">
-        <div className="flex min-h-11 items-center justify-between gap-4">
-	          <button data-tour="workouts-programs" onClick={() => setIsTemplatesOpen(true)} className="onlypump-programs-cta inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-base font-black transition active:scale-95">
-	            <Grid3X3 size={17}/>
-	            <span>Доступные программы</span>
-	          </button>
-          <button onClick={() => setIsAddMenuOpen(true)} className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-3xl font-light leading-none text-zinc-100 transition active:scale-95 hover:text-red-400">
-            +
-          </button>
-        </div>
+    <div className="mt-5 w-full pb-32">
+      <div className="flex min-h-11 items-center justify-between gap-4">
+        <button data-tour="workouts-programs" onClick={() => setIsTemplatesOpen(true)} className="onlypump-programs-cta inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-base font-black transition active:scale-95">
+          <Grid3X3 size={17}/>
+          <span>Доступные программы</span>
+        </button>
+        <button onClick={() => setIsAddMenuOpen(true)} className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-3xl font-light leading-none text-zinc-100 transition active:scale-95 hover:text-red-400">
+          +
+        </button>
+      </div>
 
-        <div className="mt-5" data-tour="workouts-calendar">
-          <IOSWeekCalendar
-            title="История дат"
-            selectedDateKey={selectedDateKey}
-            onSelect={selectDate}
-            markedDateKeys={markedDateKeys}
-          />
-        </div>
+      <div className="mt-5" data-tour="workouts-calendar">
+        <IOSWeekCalendar
+          title="История дат"
+          selectedDateKey={selectedDateKey}
+          onSelect={selectDate}
+          markedDateKeys={markedDateKeys}
+        />
+      </div>
 
-        {activeTab === "diary" && <DiaryContent />}
-        {activeTab === "results" && <SecondaryContent title="Результаты" description="Здесь будут графики тоннажа, частоты тренировок, среднего RIR и прогресса по упражнениям.">
+      {activeTab === "diary" && <DiaryContent />}
+      {activeTab === "results" && <SecondaryContent title="Результаты" description="Здесь будут графики тоннажа, частоты тренировок, среднего RIR и прогресса по упражнениям.">
           <div className="mt-6 grid grid-cols-2 gap-3">
             <div className="rounded-2xl bg-black/25 p-4"><div className="text-xs text-zinc-500">Тренировок</div><div className="mt-2 text-3xl font-black">{workouts.length}</div></div>
             <div className="rounded-2xl bg-black/25 p-4"><div className="text-xs text-zinc-500">Тоннаж</div><div className="mt-2 text-3xl font-black">{formatVolumeNumber(workouts.filter(w => w.status === "completed").reduce((sum, w) => sum + Number(getWorkoutVolume(w)), 0))}</div></div>
@@ -18777,7 +18799,6 @@ const toggleExerciseMeasurementSetting = (field) => {
         {activeTab === "settings" && <SecondaryContent title="Настройки" description="Настройки дневника: единицы измерения, автопрогрессия, программы и экспорт.">
           <div className="mt-6 space-y-3">{["Единицы измерения", "Автопрогрессия", "Экспорт истории", "Скрытые недели"].map(item => <button key={item} className="w-full rounded-2xl bg-black/25 p-4 text-left font-semibold">{item}</button>)}</div>
         </SecondaryContent>}
-      </div>
     </div>
 
     <nav className={`onlypump-workouts-nav-bar lg:hidden ${workoutsNavHiddenByScroll ? "is-scroll-hidden" : ""}`} aria-label="Навигация тренировок">
