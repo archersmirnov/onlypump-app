@@ -59,7 +59,7 @@
     :root.theme-light,
     .theme-light {
       color-scheme: light;
-      --onlypump-bg: #f5f5f7;
+      --onlypump-bg: radial-gradient(circle at 92% 4%, rgba(239, 68, 68, 0.16), rgba(239, 68, 68, 0.07) 18%, rgba(239, 68, 68, 0) 42%), linear-gradient(145deg, #f2f3f6 0%, #eceef2 46%, #f7f7f9 100%);
       --onlypump-surface: #ffffff;
       --onlypump-card: rgba(255, 255, 255, 0.86);
       --onlypump-card-solid: #ffffff;
@@ -174,6 +174,12 @@
       overflow: hidden;
       background: var(--onlypump-bg);
       color: var(--onlypump-text);
+    }
+    .theme-light.onlypump-app-shell,
+    .theme-light.onlypump-app-shell.bg-black,
+    .theme-light .onlypump-app-shell,
+    .theme-light .onlypump-app-shell.bg-black {
+      background: var(--onlypump-bg) !important;
     }
     .onlypump-app-frame {
       height: 100%;
@@ -529,14 +535,20 @@
       background: rgba(255, 255, 255, 0.96);
       color: #111827;
       box-shadow: 0 18px 38px rgba(0, 0, 0, 0.22);
+      transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease;
+      transform-origin: center;
     }
     .onlypump-mobile-menu-label {
       color: rgba(255, 255, 255, 0.96) !important;
       text-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
+      transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+      transform-origin: right center;
     }
-    .onlypump-mobile-menu-label.is-active {
-      color: #ffffff !important;
-      text-shadow: none;
+    .onlypump-mobile-menu-item.is-active .onlypump-mobile-menu-label {
+      transform: translateX(-0.34rem) scale(1.22);
+    }
+    .onlypump-mobile-menu-item.is-active .onlypump-mobile-menu-icon {
+      transform: translateX(-0.34rem) scale(1.22);
     }
     .onlypump-mobile-menu-icon-img {
       display: block;
@@ -566,9 +578,6 @@
     }
     .theme-light .onlypump-mobile-menu-icon {
       box-shadow: 0 18px 38px rgba(15, 23, 42, 0.18);
-    }
-    .theme-light .onlypump-mobile-menu-label.is-active {
-      color: #111827 !important;
     }
     .onlypump-secondary-nav-bar {
       position: fixed;
@@ -1555,8 +1564,9 @@
     .theme-light .text-zinc-700 {
       color: var(--onlypump-faint) !important;
     }
-    .theme-light .onlypump-app-frame {
-      background-color: rgba(255, 255, 255, 0.62) !important;
+    .theme-light .onlypump-app-frame,
+    .theme-light .onlypump-app-frame[class*="bg-black/"] {
+      background: transparent !important;
       border-color: var(--onlypump-border) !important;
       box-shadow: 0 24px 70px rgba(17, 24, 39, 0.10);
     }
@@ -4053,6 +4063,13 @@ const formatDateKey = (date) => {
   const day = String(safeDate.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
+const normalizeDateKey = (value, fallback = formatDateKey(new Date())) => {
+  const text = String(value || "").trim();
+  const match = text.match(/\d{4}-\d{2}-\d{2}/);
+  if (match) return match[0];
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return formatDateKey(value);
+  return fallback;
+};
 const addDays = (days) => {
   const date = new Date();
   date.setDate(date.getDate() + days);
@@ -4135,7 +4152,7 @@ const calculateRecoveryScoreLocal = (log = {}) => {
 };
 
 const normalizeHealthLog = (record = {}, dateKey = formatDateKey(new Date())) => {
-  const logDate = record?.log_date || record?.date || dateKey;
+  const logDate = normalizeDateKey(record?.log_date || record?.date, dateKey);
   const duration = calculateSleepDurationMinutesLocal(record.sleep_started_at, record.sleep_ended_at, record.sleep_duration_minutes);
   const optionalBoolean = (value) => {
     if (value === undefined || value === null || value === "") return null;
@@ -5864,11 +5881,12 @@ const defaultWorkoutExercisesForTitle = (title = "") => {
 };
 
 const createWorkoutModel = (dateKey, patch = {}) => {
-  const date = parseDateKeyLocal(dateKey);
+  const safeDateKey = normalizeDateKey(dateKey);
+  const date = parseDateKeyLocal(safeDateKey);
   const title = patch.title || "Новая тренировка";
   return {
-    id: `workout-global-${dateKey}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    date: dateKey,
+    id: `workout-global-${safeDateKey}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    date: safeDateKey,
     weekday: workoutWeekdayNames[date.getDay()],
     title,
     programDayNumber: patch.programDayNumber || 1,
@@ -6053,7 +6071,7 @@ const mapWorkoutExerciseFromApi = (row = {}, index = 0) => {
 const getWorkoutCaloriesFromRecord = (row = {}) => safeWorkoutModelNumber(row.estimated_calories_burned ?? row.calories ?? row.caloriesBurned, 0);
 
 const mapWorkoutFromApi = (row = {}, index = 0, fallbackDateKey = formatDateKey(new Date())) => {
-  const dateKey = row.workout_date || row.date || fallbackDateKey;
+  const dateKey = normalizeDateKey(row.workout_date || row.date, fallbackDateKey);
   const date = parseDateKeyLocal(dateKey);
   const exercises = row.workout_exercises || row.exercises || row.workoutExercises || [];
   const status = normalizeWorkoutStatus(row.status);
@@ -6266,7 +6284,7 @@ const getNutritionMarkersCacheKey = (profile) => {
 };
 
 const normalizeNutritionFilledDateKeys = (values = []) => [...new Set((values || [])
-  .map(item => String(item || "").slice(0, 10))
+  .map(item => normalizeDateKey(item, ""))
   .filter(item => /^\d{4}-\d{2}-\d{2}$/.test(item)))].sort();
 
 const readCachedNutritionForProfile = (profile, dateKey) => {
@@ -7869,11 +7887,11 @@ function FloatingNavMenu({ active, setActive, profile, onOpenAnalytics }) {
             type="button"
             data-tour={mode === "main" ? `nav-${item.id}` : undefined}
             onClick={onClick}
-            className={`onlypump-mobile-menu-item ${open ? "onlypump-mobile-menu-item-in" : ""} flex items-center justify-end gap-3 text-right`}
+            className={`onlypump-mobile-menu-item ${open ? "onlypump-mobile-menu-item-in" : ""} ${activeItem ? "is-active" : ""} flex items-center justify-end gap-3 text-right`}
             style={{ animationDelay: `${index * 34}ms` }}
           >
-            <span className={`onlypump-mobile-menu-label max-w-[180px] text-[18px] font-medium leading-none ${activeItem ? "is-active" : ""}`}>{item.label}</span>
-            <span className={`onlypump-mobile-menu-icon flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full ${activeItem ? "ring-2 ring-red-400/50" : ""}`}>
+            <span className="onlypump-mobile-menu-label max-w-[180px] text-[18px] font-medium leading-none">{item.label}</span>
+            <span className="onlypump-mobile-menu-icon flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full">
               <MobileMenuAssetIcon
                 src={item.asset}
                 alt={item.label}
@@ -8671,7 +8689,7 @@ const readWeightTrendValue = (record = {}) => {
   return Number.isFinite(number) && number > 0 ? number : 0;
 };
 
-const readWeightTrendDate = (record = {}) => String(record?.measurement_date || record?.date || record?.log_date || record?.created_at || "").slice(0, 10);
+const readWeightTrendDate = (record = {}) => normalizeDateKey(record?.measurement_date || record?.date || record?.log_date || record?.created_at, "");
 
 const collectWeightTrendRows = (measurements = {}) => {
   const sources = [];
@@ -8732,7 +8750,7 @@ const buildWeightTrendPoints = ({ measurements = {}, measurementRecords = [], se
     .slice(-10);
 };
 
-const readStepsTrendDate = (record = {}) => String(record?.log_date || record?.date || "").slice(0, 10);
+const readStepsTrendDate = (record = {}) => normalizeDateKey(record?.log_date || record?.date, "");
 
 const readStepsTrendValue = (record = {}) => profileNonNegativeNumber(record?.steps_count, 0);
 
@@ -11299,7 +11317,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const shortWeekdayNames = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
   const parseDateKey = (key) => {
-    const [year, month, day] = String(key || formatDateKey(new Date())).split('-').map(Number);
+    const [year, month, day] = normalizeDateKey(key, formatDateKey(new Date())).split('-').map(Number);
     return new Date(year, (month || 1) - 1, day || 1);
   };
 
@@ -11536,13 +11554,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const makeWorkout = (dateKey, patch = {}) => {
-    const date = parseDateKey(dateKey);
+    const safeDateKey = normalizeDateKey(dateKey, selectedDateKey);
+    const date = parseDateKey(safeDateKey);
     const title = patch.title || "Новая тренировка";
     const workoutType = normalizeWorkoutType(patch.workoutType ?? patch.workout_type);
     return {
-      id: `workout-${dateKey}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      id: `workout-${safeDateKey}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       supabaseId: null,
-      date: dateKey,
+      date: safeDateKey,
       weekday: weekdayNames[date.getDay()],
       title,
       programDayNumber: patch.programDayNumber || 1,
@@ -11952,7 +11971,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const getWorkoutDiaryStatus = (workout = {}) => {
     if (isCompletedWorkoutForDiary(workout)) return "completed";
-    const workoutDateKey = workout.date || workout.workout_date || todayDateKey;
+    const workoutDateKey = normalizeDateKey(workout.date || workout.workout_date, todayDateKey);
     return workoutDateKey < todayDateKey ? "missed" : "planned";
   };
   const getWorkoutTimelineDateLabel = (dateKey, diaryStatus = "planned") => {
@@ -14061,9 +14080,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 	  const buildWorkoutSupabasePayload = (workout) => {
 	    const totals = getWorkoutTotals(workout);
 	    const isProgramWorkout = Boolean(workout?.isProgramGenerated || workout?.userProgramId || workout?.userProgramClientId || workout?.programName);
+	    const workoutDateKey = normalizeDateKey(workout?.date || workout?.workout_date, selectedDateKey);
 	    return {
 	      profile_id: profile?.id,
-      workout_date: workout?.date || selectedDateKey,
+      workout_date: workoutDateKey,
       title: workout?.title || "Новая тренировка",
       status: normalizeWorkoutStatus(workout?.status),
       workout_type: normalizeWorkoutType(workout?.workoutType ?? workout?.workout_type),
@@ -14995,7 +15015,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const mapSupabaseWorkout = (row = {}, index = 0) => {
-    const dateKey = row.workout_date || row.date || selectedDateKey;
+    const dateKey = normalizeDateKey(row.workout_date || row.date, selectedDateKey);
     const date = parseDateKey(dateKey);
     const exercises = row.workout_exercises || row.exercises || row.workoutExercises || [];
     const mappedExercises = [...exercises]
@@ -22983,7 +23003,7 @@ const analyticsPeriodRange = (period = "day", selectedDateKey = formatDateKey(ne
 };
 
 const isDateKeyInRange = (dateKey, range) => {
-  const value = String(dateKey || "").slice(0, 10);
+  const value = normalizeDateKey(dateKey, "");
   return value && value >= range.startKey && value <= range.endKey;
 };
 
@@ -23142,7 +23162,7 @@ function AnalyticsPeriodCalendar({ period, selectedDateKey, onSelect }) {
   </div>;
 }
 
-const workoutDateKey = (workout = {}) => String(workout.date || workout.workout_date || "").slice(0, 10);
+const workoutDateKey = (workout = {}) => normalizeDateKey(workout.date || workout.workout_date, "");
 const workoutDurationMinutes = (workout = {}) => safeWorkoutModelNumber(workout.durationMinutes ?? workout.duration_minutes ?? (workout.duration_seconds ? Number(workout.duration_seconds) / 60 : 0), 0);
 const workoutCaloriesValue = (workout = {}) => safeWorkoutModelNumber(workout.calories ?? workout.estimatedCaloriesBurned ?? workout.estimated_calories_burned, 0);
 const exerciseDistanceValue = (exercise = {}) => (exercise.sets || []).reduce((sum, set) => sum + safeWorkoutModelNumber(set.distanceValue ?? set.distance_value, 0), 0);
@@ -23156,7 +23176,7 @@ const nutritionCaloriesValue = (day = {}) => safeWorkoutModelNumber(day?.totals?
 const nutritionDayHasAnalyticsData = (day = {}) => nutritionCaloriesValue(day) > 0 || nutritionDayHasFood(day);
 const measurementDateKey = (item = {}) => {
   const source = item || {};
-  return String(source.measurement_date || source.date || "").slice(0, 10);
+  return normalizeDateKey(source.measurement_date || source.date, "");
 };
 const mergeAnalyticsMeasurementRows = (rows = [], overlay = null) => {
   const overlayKey = measurementDateKey(overlay);
@@ -23189,7 +23209,7 @@ const buildAnalyticsStats = ({ workouts = [], healthLogs = [], healthLog = DEFAU
   const healthRows = Array.from(healthByDate.values()).sort((a, b) => String(a.log_date || a.date).localeCompare(String(b.log_date || b.date)));
   const nutritionByDate = new Map();
   [...nutritionDays, nutritionDay].filter(Boolean).forEach(day => {
-    const key = String(day.nutrition_date || day.date || "").slice(0, 10);
+    const key = normalizeDateKey(day.nutrition_date || day.date, "");
     if (key && isDateKeyInRange(key, range) && nutritionDayHasAnalyticsData(day)) nutritionByDate.set(key, day);
   });
   const nutritionRows = Array.from(nutritionByDate.values()).sort((a, b) => String(a.nutrition_date || a.date).localeCompare(String(b.nutrition_date || b.date)));
@@ -23334,11 +23354,11 @@ const filterAnalyticsPoints = (points = [], period = "month", selectedDateKey = 
 };
 
 const buildMeasurementSeries = (measurements = [], metricKey = "weight_kg") => measurements
-  .map(item => ({ date: String(item.measurement_date || item.date || "").slice(0, 10), value: Number(item[metricKey]) }))
+  .map(item => ({ date: normalizeDateKey(item.measurement_date || item.date, ""), value: Number(item[metricKey]) }))
   .filter(item => item.date && Number.isFinite(item.value) && item.value > 0);
 
 const buildHealthSeries = (logs = [], metricKey = "steps_count") => logs
-  .map(item => ({ date: String(item.log_date || item.date || "").slice(0, 10), value: Number(item[metricKey]) }))
+  .map(item => ({ date: normalizeDateKey(item.log_date || item.date, ""), value: Number(item[metricKey]) }))
   .filter(item => item.date && Number.isFinite(item.value) && item.value > 0);
 
 const nutritionPalmValueFromDay = (day = {}) => {
@@ -23360,7 +23380,7 @@ const nutritionMetricValue = (item = {}, metricKey = "calories_total") => {
 };
 
 const buildNutritionSeries = (days = [], metricKey = "calories_total") => days
-  .map(item => ({ date: String(item.nutrition_date || item.date || "").slice(0, 10), value: nutritionMetricValue(item, metricKey) }))
+  .map(item => ({ date: normalizeDateKey(item.nutrition_date || item.date, ""), value: nutritionMetricValue(item, metricKey) }))
   .filter(item => item.date && Number.isFinite(item.value) && item.value > 0);
 
 const buildTrainingSeries = (workouts = [], metricKey = "sets") => {
@@ -24591,7 +24611,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
   const analyticsUsesPalmNutrition = profileUsesPalmNutrition(profile);
   const analyticsCardTitle = (card) => card?.id === "calories" && analyticsUsesPalmNutrition ? "Ладони" : card?.title;
   const periodNutritionRows = (analyticsData.nutrition_days || []).filter(day => {
-    const key = String(day.nutrition_date || day.date || "").slice(0, 10);
+    const key = normalizeDateKey(day.nutrition_date || day.date, "");
     return key && isDateKeyInRange(key, periodStats.range) && nutritionDayHasAnalyticsData(day);
   });
   const periodPalmTotal = periodNutritionRows.reduce((sum, day) => sum + nutritionPalmValueFromDay(day), 0);
