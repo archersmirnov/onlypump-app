@@ -864,6 +864,20 @@
       box-shadow: none !important;
       isolation: isolate;
     }
+    .onlypump-home-widget-drag-layer {
+      position: fixed !important;
+      left: var(--onlypump-drag-left) !important;
+      top: var(--onlypump-drag-top) !important;
+      width: var(--onlypump-drag-width) !important;
+      height: var(--onlypump-drag-height) !important;
+      z-index: 260 !important;
+      transform: translateZ(0);
+      transform-origin: center;
+      transition: none !important;
+      pointer-events: none;
+      will-change: left, top, transform;
+      filter: drop-shadow(0 18px 28px rgba(15, 23, 42, 0.18));
+    }
     .onlypump-home-widget-frame > * {
       width: 100% !important;
       height: 100% !important;
@@ -4129,6 +4143,114 @@ const DEFAULT_HEALTH_LOG = {
 };
 
 const clampNumber = (value, min = 0, max = Infinity) => Math.max(min, Math.min(max, Number(value || 0)));
+
+const sameOrder = (left = [], right = []) => left.length === right.length && left.every((item, index) => item === right[index]);
+
+const getOrderItemId = (item) => typeof item === "string" ? item : item?.id;
+
+const orderItemsByIds = (items = [], ids = []) => {
+  const byId = new Map(items.map(item => [getOrderItemId(item), item]));
+  const used = new Set();
+  const ordered = ids.map(id => {
+    const item = byId.get(id);
+    if (item) used.add(id);
+    return item;
+  }).filter(Boolean);
+  items.forEach(item => {
+    const id = getOrderItemId(item);
+    if (!used.has(id)) ordered.push(item);
+  });
+  return ordered;
+};
+
+const reorderItemsAroundTarget = (items = [], movingIds = [], targetIds = [], insertAfter = false) => {
+  const movingSet = new Set((Array.isArray(movingIds) ? movingIds : [movingIds]).filter(Boolean));
+  const targetSet = new Set((Array.isArray(targetIds) ? targetIds : [targetIds]).filter(Boolean));
+  if (!items.length || !movingSet.size || !targetSet.size) return items;
+  const movingItems = items.filter(item => movingSet.has(getOrderItemId(item)));
+  if (!movingItems.length || movingItems.some(item => targetSet.has(getOrderItemId(item)))) return items;
+  const remaining = items.filter(item => !movingSet.has(getOrderItemId(item)));
+  const targetStart = remaining.findIndex(item => targetSet.has(getOrderItemId(item)));
+  if (targetStart === -1) return items;
+  const targetSize = remaining.filter(item => targetSet.has(getOrderItemId(item))).length;
+  const insertIndex = targetStart + (insertAfter ? targetSize : 0);
+  return [
+    ...remaining.slice(0, insertIndex),
+    ...movingItems,
+    ...remaining.slice(insertIndex),
+  ];
+};
+
+const findDataElementByValue = (selector, attribute, value) => (
+  Array.from(document.querySelectorAll(selector)).find(node => node.getAttribute(attribute) === value) || null
+);
+
+const getPointerReorderTarget = ({ selector, attribute, clientX = 0, clientY = 0, movingIds = [], axis = "grid", activationRatio = 1, beforeRatio = 0.5, afterRatio = 0.5 }) => {
+  const movingSet = new Set((Array.isArray(movingIds) ? movingIds : [movingIds]).filter(Boolean));
+  const items = Array.from(document.querySelectorAll(selector))
+    .map(row => ({ row, id: row.getAttribute(attribute), rect: row.getBoundingClientRect() }))
+    .filter(item => item.id && !movingSet.has(item.id));
+  if (!items.length) return null;
+
+  const edgeRatio = Math.max(0, Math.min(0.48, (1 - activationRatio) / 2));
+  const target = items.find(item => {
+    const insetX = item.rect.width * edgeRatio;
+    const insetY = item.rect.height * edgeRatio;
+    const insideY = clientY >= item.rect.top + insetY && clientY <= item.rect.bottom - insetY;
+    if (axis === "vertical") return insideY;
+    return insideY && clientX >= item.rect.left + insetX && clientX <= item.rect.right - insetX;
+  });
+  if (!target) return null;
+  const centerX = target.rect.left + target.rect.width / 2;
+  const centerY = target.rect.top + target.rect.height / 2;
+  const yRatio = target.rect.height ? (clientY - target.rect.top) / target.rect.height : 0.5;
+  if (axis === "vertical" && yRatio > beforeRatio && yRatio < afterRatio) return null;
+  const insertAfter = axis === "vertical"
+    ? yRatio >= afterRatio
+    : clientY > centerY || (Math.abs(clientY - centerY) < target.rect.height * 0.35 && clientX > centerX);
+  return { targetId: target.id, insertAfter };
+};
+
+const captureDataElementRects = (selector, attribute) => new Map(
+  Array.from(document.querySelectorAll(selector)).map(node => [node.getAttribute(attribute), node.getBoundingClientRect()])
+);
+
+const animateDataElementReflow = (selector, attribute, beforeRects, skipIds = []) => {
+  if (!beforeRects?.size) return;
+  const skipSet = new Set((Array.isArray(skipIds) ? skipIds : [skipIds]).filter(Boolean));
+  Array.from(document.querySelectorAll(selector)).forEach(node => {
+    const id = node.getAttribute(attribute);
+    if (!id || skipSet.has(id)) return;
+    const before = beforeRects.get(id);
+    if (!before) return;
+    const after = node.getBoundingClientRect();
+    const dx = before.left - after.left;
+    const dy = before.top - after.top;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+    node.style.transition = "none";
+    node.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
+    node.getBoundingClientRect();
+    requestAnimationFrame(() => {
+      node.style.transition = "transform 180ms cubic-bezier(0.22, 1, 0.36, 1)";
+      node.style.transform = "";
+      window.setTimeout(() => {
+        if (node.style.transform === "") node.style.transition = "";
+      }, 210);
+    });
+  });
+};
+
+const autoScrollNearPointer = (container, clientY, edgeSize = 76, maxStep = 18) => {
+  if (!container || typeof container.getBoundingClientRect !== "function") return;
+  const rect = container.getBoundingClientRect();
+  let delta = 0;
+  if (clientY < rect.top + edgeSize) {
+    delta = -Math.min(maxStep, Math.max(4, rect.top + edgeSize - clientY));
+  } else if (clientY > rect.bottom - edgeSize) {
+    delta = Math.min(maxStep, Math.max(4, clientY - (rect.bottom - edgeSize)));
+  }
+  if (delta) container.scrollBy({ top: delta, behavior: "auto" });
+};
 
 const calculateSleepDurationMinutesLocal = (startValue, endValue, fallback = 0) => {
   const start = new Date(startValue || "");
@@ -8355,7 +8477,74 @@ function InlineDateDataCard({ context = "home", dateKey, nutritionTotals, nutrit
   </Card>;
 }
 
-function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSelect, markedDateKeys = [], historyByDate = {}, className = "", markerClassName = "bg-red-500" }) {
+const clampProgress = (value = 0) => Math.max(0, Math.min(100, Number.isFinite(Number(value)) ? Number(value) : 0));
+const normalizeRingProgress = (value = 0) => Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0);
+
+const buildDayActivityRingProgress = (log = {}, stepsGoal = DEFAULT_PROFILE.steps_per_day) => {
+  const safeStepsGoal = Math.max(1, profileNonNegativeNumber(stepsGoal, DEFAULT_PROFILE.steps_per_day));
+  const normalized = normalizeHealthLog(log || {}, log?.log_date || log?.date || formatDateKey(new Date()));
+  const steps = profileNonNegativeNumber(normalized.steps_count, 0);
+  const sleepMinutes = profileNonNegativeNumber(normalized.sleep_duration_minutes, 0);
+  const recovery = normalized.recovery_score === null || normalized.recovery_score === undefined
+    ? null
+    : profileNonNegativeNumber(normalized.recovery_score, 0);
+  return {
+    steps: steps > 0 ? normalizeRingProgress((steps / safeStepsGoal) * 100) : null,
+    sleep: sleepMinutes > 0 ? normalizeRingProgress((sleepMinutes / 480) * 100) : null,
+    recovery: recovery !== null ? normalizeRingProgress(recovery) : null,
+  };
+};
+
+function ActivityRingDay({ date, progress = null, selected = false, visibleDays = 7, marked = false, markerClassName = "bg-red-500" }) {
+  const weekday = date.toLocaleDateString('ru-RU', { weekday: 'short' }).replace(".", "");
+  const sizeClass = visibleDays === 14 ? "h-9 w-9 sm:h-10 sm:w-10 xl:h-11 xl:w-11" : "h-10 w-10 sm:h-11 sm:w-11";
+  const rings = [
+    { key: "steps", radius: 20, color: "#ef4444", track: "rgba(239,68,68,0.16)" },
+    { key: "sleep", radius: 15, color: "#22d3ee", track: "rgba(34,211,238,0.16)" },
+    { key: "recovery", radius: 10, color: "#84f23f", track: "rgba(132,242,63,0.18)" },
+  ];
+  const emptyDay = !progress;
+  return <div className={`mx-auto flex flex-col items-center transition-transform duration-200 ${selected ? "scale-125" : "scale-100"}`} style={{ transformOrigin: "center center" }}>
+    <span className="h-4 text-sm font-black leading-none text-[var(--onlypump-text)] sm:text-base">{date.getDate()}</span>
+    <span className={`relative mt-0.5 flex ${sizeClass} items-center justify-center`}>
+      <svg viewBox="0 0 48 48" className="absolute inset-0 h-full w-full -rotate-90 overflow-visible" aria-hidden="true">
+        {rings.map(ring => {
+          const circumference = 2 * Math.PI * ring.radius;
+          const rawValue = progress?.[ring.key];
+          const hasMetricData = rawValue !== null && rawValue !== undefined;
+          if (!emptyDay && !hasMetricData) return null;
+          const value = normalizeRingProgress(rawValue);
+          const baseValue = Math.min(value, 100);
+          const overlapValue = value > 100 ? value % 100 || 100 : 0;
+          const renderArc = (arcValue, key, overlap = false) => <circle
+            key={key}
+            cx="24"
+            cy="24"
+            r={ring.radius}
+            fill="none"
+            stroke={ring.color}
+            strokeWidth={overlap ? "5.2" : "4"}
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={circumference - (circumference * clampProgress(arcValue)) / 100}
+            opacity={overlap ? "0.86" : "1"}
+          />;
+          return <g key={ring.key}>
+            <circle cx="24" cy="24" r={ring.radius} fill="none" stroke={ring.track} strokeWidth="4" />
+            {hasMetricData && baseValue > 0 && renderArc(baseValue, `${ring.key}-base`)}
+            {hasMetricData && overlapValue > 0 && renderArc(overlapValue, `${ring.key}-overlap`, true)}
+          </g>;
+        })}
+      </svg>
+      <span className="relative z-10 text-[8px] font-normal uppercase leading-none text-[var(--onlypump-text)] sm:text-[9px]">{weekday}</span>
+    </span>
+    <span className="mt-1 flex h-2 items-center justify-center">
+      {marked && <span className={`h-1.5 w-1.5 rounded-full ${markerClassName}`}/>}
+    </span>
+  </div>;
+}
+
+function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSelect, markedDateKeys = [], historyByDate = {}, className = "", markerClassName = "bg-red-500", activityRingsByDate = null }) {
   const layoutMode = useOnlyPumpHomeLayoutMode();
   const visibleDays = layoutMode === HOME_LAYOUT_DESKTOP ? 14 : 7;
   const [startOffset, setStartOffset] = useState(() => visibleDays === 14 ? -6 : -3);
@@ -8477,12 +8666,12 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
   return <>
     <div className={`${className} cursor-pointer`} onPointerDownCapture={startCalendarShellTap} onPointerUpCapture={endCalendarShellTap} onPointerCancelCapture={() => { shellTapRef.current = null; }} onClick={openHistoryFromCalendarShell}>
       <div className="-m-2 p-2">
-        <div
-          data-calendar-swipe="true"
-          className="overflow-hidden touch-pan-y select-none"
-          onPointerDown={startCalendarDrag}
-          onPointerMove={moveCalendarDrag}
-          onPointerUp={endCalendarDrag}
+          <div
+            data-calendar-swipe="true"
+            className="overflow-hidden touch-pan-y select-none pb-4 pt-3"
+            onPointerDown={startCalendarDrag}
+            onPointerMove={moveCalendarDrag}
+            onPointerUp={endCalendarDrag}
           onPointerCancel={endCalendarDrag}
         >
           <div
@@ -8497,15 +8686,18 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
               const selected = selectedDateKey === key;
               const isToday = todayKey === key;
               const marked = markedDateKeys.includes(key);
+              const useActivityRings = Boolean(activityRingsByDate);
               const circleSizeClass = visibleDays === 14 ? "h-10 w-10 sm:h-11 sm:w-11 xl:h-14 xl:w-14" : "h-11 w-11 sm:h-14 sm:w-14";
               return <button key={key} type="button" data-calendar-date-key={key} onClick={(event) => { event.stopPropagation(); suppressCalendarHistoryRef.current = true; clearTimeout(suppressHistoryResetRef.current); suppressHistoryResetRef.current = setTimeout(() => { suppressCalendarHistoryRef.current = false; }, 160); if (event.detail !== 0 || suppressCalendarClickRef.current) return; onSelect?.(key); }} className="min-w-0 text-center touch-manipulation">
-                <div className={`mx-auto flex ${circleSizeClass} flex-col items-center justify-center rounded-full border transition ${selected ? "border-red-500 bg-red-500 text-black" : isToday ? "border-red-500/50 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-red-500/40 hover:bg-white/[0.07]"}`}>
-                  <span className="text-[8px] uppercase leading-none sm:text-[10px]">{date.toLocaleDateString('ru-RU', { weekday: 'short' })}</span>
-                  <span className="mt-1 text-sm font-semibold leading-none sm:text-xl">{date.getDate()}</span>
-                </div>
-                <div className="mt-1 flex h-2 items-center justify-center">
+                {useActivityRings
+                  ? <ActivityRingDay date={date} selected={selected} visibleDays={visibleDays} progress={activityRingsByDate?.[key]} marked={marked} markerClassName={markerClassName}/>
+                  : <div className={`mx-auto flex ${circleSizeClass} flex-col items-center justify-center rounded-full border transition ${selected ? "border-red-500 bg-red-500 text-black" : isToday ? "border-red-500/50 bg-red-500/10 text-red-300" : "border-white/10 bg-white/[0.04] text-zinc-300 hover:border-red-500/40 hover:bg-white/[0.07]"}`}>
+                    <span className="text-[8px] uppercase leading-none sm:text-[10px]">{date.toLocaleDateString('ru-RU', { weekday: 'short' })}</span>
+                    <span className="mt-1 text-sm font-semibold leading-none sm:text-xl">{date.getDate()}</span>
+                  </div>}
+                {!useActivityRings && <div className="mt-1 flex h-2 items-center justify-center">
                   {marked && <span className={`h-1.5 w-1.5 rounded-full ${selected ? "bg-black" : markerClassName}`}/>} 
-                </div>
+                </div>}
               </button>;
             })}
           </div>
@@ -10550,6 +10742,15 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     ...healthLogs.filter(healthLogHasRealData).map(log => log.log_date || log.date).filter(Boolean),
     ...personalTrackerMarkedDateKeys,
   ])).sort(), [workouts, nutritionMarkedDateKeys, healthLogs, personalTrackerMarkedDateKeys]);
+  const homeActivityRingsByDate = useMemo(() => {
+    const map = {};
+    [...healthLogs, healthLog].filter(healthLogHasRealData).forEach(log => {
+      const date = normalizeDateKey(log.log_date || log.date, "");
+      if (!date) return;
+      map[date] = buildDayActivityRingProgress(log, profile?.steps_per_day);
+    });
+    return map;
+  }, [healthLogs, healthLog, profile?.steps_per_day]);
   const homeHistoryByDate = useMemo(() => {
     const map = {};
     const push = (date, event) => {
@@ -10674,6 +10875,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const [draggedWidget, setDraggedWidget] = useState(null);
   const widgetDragRef = useRef(null);
   const [widgetDragVisual, setWidgetDragVisual] = useState(null);
+  const [widgetPreviewOrder, setWidgetPreviewOrder] = useState(null);
   const [weightSheetOpen, setWeightSheetOpen] = useState(false);
   const [waterSheetOpen, setWaterSheetOpen] = useState(false);
   const [sleepSheetOpen, setSleepSheetOpen] = useState(false);
@@ -10732,38 +10934,73 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     if (WIDGET_INFO_BY_KEY[widgetKey]) setWidgetInfoKey(widgetKey);
   };
 
+  const reorderHomeWidgetOrder = (order, dragId, targetIds, insertAfter = false) => enforceHomeWidgetRules(
+    reorderItemsAroundTarget(order, [dragId], Array.isArray(targetIds) ? targetIds : [targetIds], insertAfter)
+  );
+
   const moveWidgetToIndex = (dragId, targetId, insertAfter = false) => {
     if (!dragId || dragId === targetId) return;
-    setHomeWidgets(prev => {
-      const from = prev.indexOf(dragId);
-      const targetIndex = prev.indexOf(targetId);
-      if (from === -1 || targetIndex === -1) return prev;
-      const next = [...prev];
-      const [item] = next.splice(from, 1);
-      let to = next.indexOf(targetId);
-      if (to === -1) return prev;
-      if (insertAfter) to += 1;
-      next.splice(to, 0, item);
-      return enforceHomeWidgetRules(next);
-    });
+    setHomeWidgets(prev => reorderHomeWidgetOrder(prev, dragId, targetId, insertAfter));
   };
 
-  const getDropTarget = (clientX, clientY, dragId) => {
-    const items = Array.from(document.querySelectorAll('[data-home-widget-id]'))
-      .filter(item => item.getAttribute('data-home-widget-id') !== dragId);
-    if (!items.length) return null;
+  const getDropTarget = (dragRect, dragId, order = homeWidgets) => {
+    if (typeof document === "undefined" || !dragRect) return null;
+    const dragArea = Math.max(1, dragRect.width * dragRect.height);
+    const dragCenterX = dragRect.left + dragRect.width / 2;
+    const dragCenterY = dragRect.top + dragRect.height / 2;
+    const orderIndex = new Map((order || []).map((item, index) => [item, index]));
+    const candidates = Array.from(document.querySelectorAll("[data-home-widget-id]"))
+      .map(row => {
+        const id = row.getAttribute("data-home-widget-id");
+        if (!id || id === dragId) return null;
+        const rect = row.getBoundingClientRect?.();
+        if (!rect) return null;
+        const overlapWidth = Math.max(0, Math.min(dragRect.right, rect.right) - Math.max(dragRect.left, rect.left));
+        const overlapHeight = Math.max(0, Math.min(dragRect.bottom, rect.bottom) - Math.max(dragRect.top, rect.top));
+        const overlapArea = overlapWidth * overlapHeight;
+        if (!overlapArea) return null;
+        const targetArea = Math.max(1, rect.width * rect.height);
+        const targetOverlap = overlapArea / targetArea;
+        const dragOverlap = overlapArea / dragArea;
+        const centerInside = dragCenterX >= rect.left && dragCenterX <= rect.right && dragCenterY >= rect.top && dragCenterY <= rect.bottom;
+        const dragIsLarger = dragArea > targetArea * 1.35;
+        const activated = dragIsLarger
+          ? targetOverlap >= 0.32
+          : (dragOverlap >= 0.42 || (centerInside && dragOverlap >= 0.24));
+        if (!activated) return null;
+        return {
+          id,
+          rect,
+          targetArea,
+          targetOverlap,
+          dragOverlap,
+          score: (dragIsLarger ? targetOverlap : dragOverlap) + (centerInside ? 0.2 : 0),
+        };
+      })
+      .filter(Boolean);
+    if (!candidates.length) return null;
 
-    return items.reduce((best, item) => {
-      const rect = item.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const distance = Math.hypot(clientX - centerX, clientY - centerY);
-      const insertAfter = clientY > centerY || (Math.abs(clientY - centerY) < rect.height * 0.35 && clientX > centerX);
-      if (!best || distance < best.distance) {
-        return { id: item.getAttribute('data-home-widget-id'), distance, insertAfter };
-      }
-      return best;
+    const best = candidates.reduce((closest, item) => (!closest || item.score > closest.score ? item : closest), null);
+    const dragIsLargerThanBest = dragArea > best.targetArea * 1.35;
+    const grouped = dragIsLargerThanBest
+      ? candidates
+        .filter(item => item.targetOverlap >= Math.max(0.24, best.targetOverlap * 0.7))
+        .sort((a, b) => (orderIndex.get(a.id) ?? 9999) - (orderIndex.get(b.id) ?? 9999))
+      : [best];
+    const groupRect = grouped.reduce((acc, item) => {
+      if (!acc) return { left: item.rect.left, top: item.rect.top, right: item.rect.right, bottom: item.rect.bottom };
+      return {
+        left: Math.min(acc.left, item.rect.left),
+        top: Math.min(acc.top, item.rect.top),
+        right: Math.max(acc.right, item.rect.right),
+        bottom: Math.max(acc.bottom, item.rect.bottom),
+      };
     }, null);
+    const groupCenterX = (groupRect.left + groupRect.right) / 2;
+    const groupCenterY = (groupRect.top + groupRect.bottom) / 2;
+    const groupHeight = Math.max(1, groupRect.bottom - groupRect.top);
+    const insertAfter = dragCenterY > groupCenterY || (Math.abs(dragCenterY - groupCenterY) < groupHeight * 0.35 && dragCenterX > groupCenterX);
+    return { targetId: best.id, targetIds: grouped.map(item => item.id), insertAfter };
   };
 
 	  const getHomeWidgetSizeForGrid = (id) => {
@@ -11011,6 +11248,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
 
   const startWidgetDrag = (event, id) => {
     if (!homeEditMode) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
     if (event.target.closest?.('[data-no-drag="true"]')) return;
 
     const rect = event.currentTarget.getBoundingClientRect();
@@ -11019,21 +11257,64 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
       startRect: rect,
+      previewOrder: homeWidgets,
     };
     setDraggedWidget(id);
-    setWidgetDragVisual({ id, dx: 0, dy: 0 });
+    setWidgetDragVisual({ id, left: rect.left, top: rect.top, width: rect.width, height: rect.height });
+    setWidgetPreviewOrder(homeWidgets);
     event.currentTarget.setPointerCapture?.(event.pointerId);
     event.preventDefault();
+  };
+
+  const syncWidgetDragVisual = (drag, clientX = drag?.lastX, clientY = drag?.lastY) => {
+    if (!drag) return;
+    setWidgetDragVisual({
+      id: drag.id,
+      left: clientX - drag.offsetX,
+      top: clientY - drag.offsetY,
+      width: drag.startRect.width,
+      height: drag.startRect.height,
+    });
   };
 
   const moveWidgetDrag = (event, id) => {
     const drag = widgetDragRef.current;
     if (!homeEditMode || !drag || drag.id !== id || drag.pointerId !== event.pointerId) return;
 
-    const dx = event.clientX - drag.startX;
-    const dy = event.clientY - drag.startY;
-    setWidgetDragVisual({ id, dx, dy });
+    drag.lastX = event.clientX;
+    drag.lastY = event.clientY;
+    const dragLeft = event.clientX - drag.offsetX;
+    const dragTop = event.clientY - drag.offsetY;
+    const dragRect = {
+      left: dragLeft,
+      top: dragTop,
+      right: dragLeft + drag.startRect.width,
+      bottom: dragTop + drag.startRect.height,
+      width: drag.startRect.width,
+      height: drag.startRect.height,
+    };
+    const target = getDropTarget(dragRect, drag.id, drag.previewOrder || widgetPreviewOrder || homeWidgets);
+    if (target?.targetId) {
+      const currentOrder = drag.previewOrder || widgetPreviewOrder || homeWidgets;
+      const nextOrder = reorderHomeWidgetOrder(currentOrder, drag.id, target.targetIds || target.targetId, target.insertAfter);
+      if (!sameOrder(nextOrder, currentOrder)) {
+        const beforeRects = captureDataElementRects("[data-home-widget-id]", "data-home-widget-id");
+        drag.previewOrder = nextOrder;
+        setWidgetPreviewOrder(nextOrder);
+        requestAnimationFrame(() => {
+          animateDataElementReflow("[data-home-widget-id]", "data-home-widget-id", beforeRects, [drag.id]);
+          const latest = widgetDragRef.current;
+          if (latest?.id === id) syncWidgetDragVisual(latest);
+        });
+      }
+    }
+    syncWidgetDragVisual(drag, event.clientX, event.clientY, event.currentTarget);
+    autoScrollNearPointer(event.currentTarget.closest?.(".onlypump-main-scroll"), event.clientY);
 
     event.preventDefault();
   };
@@ -11042,12 +11323,25 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     const drag = widgetDragRef.current;
     if (!drag || drag.id !== id || drag.pointerId !== event.pointerId) return;
 
-    const target = getDropTarget(event.clientX, event.clientY, drag.id);
-    if (target?.id) moveWidgetToIndex(drag.id, target.id, target.insertAfter);
+    const finalOrder = enforceHomeWidgetRules(drag.previewOrder || widgetPreviewOrder || homeWidgets);
+    if (!sameOrder(finalOrder, homeWidgets)) setHomeWidgets(finalOrder);
 
     widgetDragRef.current = null;
     setDraggedWidget(null);
     setWidgetDragVisual(null);
+    setWidgetPreviewOrder(null);
+    try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+  };
+
+  const cancelWidgetDrag = (event, id) => {
+    const drag = widgetDragRef.current;
+    if (drag && drag.id === id && drag.pointerId === event.pointerId) {
+      try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+    }
+    widgetDragRef.current = null;
+    setDraggedWidget(null);
+    setWidgetDragVisual(null);
+    setWidgetPreviewOrder(null);
   };
 
   const renderEditableWidget = (id) => {
@@ -11056,11 +11350,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     const hiddenOnMobile = !homeEditMode && mobileHiddenWidgetIds.includes(id);
     const isDragging = widgetDragVisual?.id === id;
     const dragStyle = isDragging
-      ? {
-          transform: `translate3d(${widgetDragVisual.dx}px, ${widgetDragVisual.dy}px, 0) scale(1.03)`,
-          transition: 'none',
-          zIndex: 60,
-        }
+      ? { transition: 'none' }
       : { transition: homeEditMode ? 'transform 180ms ease, opacity 180ms ease' : undefined };
 
     return <div
@@ -11069,11 +11359,11 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       onPointerDown={(e) => startWidgetDrag(e, id)}
       onPointerMove={(e) => moveWidgetDrag(e, id)}
       onPointerUp={(e) => endWidgetDrag(e, id)}
-      onPointerCancel={(e) => endWidgetDrag(e, id)}
+      onPointerCancel={(e) => cancelWidgetDrag(e, id)}
       className={`onlypump-home-widget-shell ${widgetSizeClass(id)} relative min-w-0 min-h-0 ${homeEditMode ? "touch-none select-none cursor-grab active:cursor-grabbing" : "touch-auto"} ${hiddenOnMobile ? "hidden sm:block" : ""} ${draggedWidget === id ? "opacity-95" : ""}`}
       style={dragStyle}
     >
-      {homeEditMode && <>
+      {homeEditMode && !isDragging && <>
         <button
           type="button"
           data-no-drag="true"
@@ -11082,7 +11372,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
           className="absolute -right-2 -top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full bg-zinc-200 text-lg leading-none text-black shadow-xl shadow-black/40 transition hover:scale-105"
         >×</button>
       </>}
-      <div className={`onlypump-home-widget-frame ${homeEditMode && !isDragging ? "onlypump-wiggle ring-1 ring-white/10" : ""} ${homeEditMode ? "pointer-events-none" : ""}`}>
+      <div className={`onlypump-home-widget-frame ${isDragging ? "opacity-0" : ""} ${homeEditMode && !isDragging ? "onlypump-wiggle ring-1 ring-white/10" : ""} ${homeEditMode ? "pointer-events-none" : ""}`}>
         {widget}
       </div>
     </div>;
@@ -11093,7 +11383,28 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     setSelectedDateKey(dateKey);
   };
 
+  const renderedHomeWidgets = widgetPreviewOrder || homeWidgets;
+  const draggedHomeWidgetPortal = widgetDragVisual?.id && typeof document !== "undefined" && document.body
+    ? createPortal(
+      <div
+        className="onlypump-home-widget-drag-layer"
+        style={{
+          "--onlypump-drag-left": `${widgetDragVisual.left}px`,
+          "--onlypump-drag-top": `${widgetDragVisual.top}px`,
+          "--onlypump-drag-width": `${widgetDragVisual.width}px`,
+          "--onlypump-drag-height": `${widgetDragVisual.height}px`,
+        }}
+      >
+        <div className="onlypump-home-widget-frame">
+          {renderWidget(widgetDragVisual.id)}
+        </div>
+      </div>,
+      document.body
+    )
+    : null;
+
   return <>
+    {draggedHomeWidgetPortal}
     <Header title={<>Добро пожаловать, <span className="text-red-500">{displayName}</span></>} subtitle="Продолжай работать. Результат — это система." pumpXp={pumpXp} onOpenPumpXp={onOpenPumpXpDetails} />
     <div className="mt-5" data-tour="home-calendar">
       <IOSWeekCalendar
@@ -11102,6 +11413,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         onSelect={openDayFromCalendar}
         markedDateKeys={homeMarkedDateKeys}
         historyByDate={homeHistoryByDate}
+        activityRingsByDate={homeActivityRingsByDate}
       />
     </div>
     <div className="mt-4 flex items-center justify-between gap-2">
@@ -11121,7 +11433,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     </div>
     <div className="onlypump-home-widget-area relative mt-4">
       <div className="onlypump-home-widget-grid">
-        {homeWidgets.map(id => renderEditableWidget(id))}
+        {renderedHomeWidgets.map(id => renderEditableWidget(id))}
         {homeWidgets.length === 0 && <Card className="onlypump-home-widget-size-4x2 p-8 text-center">
           <p className="text-zinc-400">Нет активных виджетов.</p>
           <Button data-tour="home-add-widget" onClick={() => setWidgetPickerOpen(true)} className="mt-4 bg-white/8">Добавить виджет</Button>
@@ -11669,6 +11981,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const [swipedExerciseId, setSwipedExerciseId] = useState(null);
   const [swipedSetId, setSwipedSetId] = useState(null);
   const [reorderVisual, setReorderVisual] = useState(null);
+  const [exercisePreviewOrderIds, setExercisePreviewOrderIds] = useState(null);
   const reorderExerciseRef = useRef(null);
   const reorderTargetRef = useRef(null);
   const workoutScrollRef = useRef(null);
@@ -15664,34 +15977,36 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setRestEditor(null);
   };
 
-  const reorderExerciseInSelectedWorkout = (sourceId, targetId, insertAfter = false) => {
-    if (!sourceId || !targetId || sourceId === targetId) return;
+  const getOrderedWorkoutExercisesForReorder = (workout = selectedWorkout) => [...(workout?.exercises || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+
+  const getExerciseIdsForReorder = (items = []) => items.map(exercise => exercise.id);
+
+  const getWorkoutExercisesByPreviewIds = (workout = selectedWorkout, ids = []) => orderItemsByIds(getOrderedWorkoutExercisesForReorder(workout), ids);
+
+  const reorderWorkoutExerciseList = (exercises = [], sourceId, targetId, insertAfter = false) => {
+    if (!sourceId || !targetId || sourceId === targetId) return exercises;
+    const source = exercises.find(exercise => exercise.id === sourceId);
+    const target = exercises.find(exercise => exercise.id === targetId);
+    if (!source || !target) return exercises;
+
+    const sourceSupersetId = getExerciseSupersetGroupId(source);
+    const targetSupersetId = getExerciseSupersetGroupId(target);
+    const movingIds = sourceSupersetId
+      ? exercises.filter(exercise => getExerciseSupersetGroupId(exercise) === sourceSupersetId).map(exercise => exercise.id)
+      : [source.id];
+    const targetIds = targetSupersetId
+      ? exercises.filter(exercise => getExerciseSupersetGroupId(exercise) === targetSupersetId).map(exercise => exercise.id)
+      : [target.id];
+    return reorderItemsAroundTarget(exercises, movingIds, targetIds, insertAfter)
+      .map((exercise, index) => ({ ...exercise, order: index + 1 }));
+  };
+
+  const commitExercisePreviewOrder = (previewIds = []) => {
+    if (!previewIds.length) return;
     updateSelectedWorkoutModel(workout => {
-      const ordered = [...(workout.exercises || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
-      const source = ordered.find(exercise => exercise.id === sourceId);
-      const target = ordered.find(exercise => exercise.id === targetId);
-      if (!source || !target) return workout;
-
-      const sourceSupersetId = getExerciseSupersetGroupId(source);
-      const targetSupersetId = getExerciseSupersetGroupId(target);
-      const movingIds = sourceSupersetId
-        ? ordered.filter(exercise => getExerciseSupersetGroupId(exercise) === sourceSupersetId).map(exercise => exercise.id)
-        : [source.id];
-      if (movingIds.includes(target.id)) return workout;
-
-      const targetIds = targetSupersetId
-        ? ordered.filter(exercise => getExerciseSupersetGroupId(exercise) === targetSupersetId).map(exercise => exercise.id)
-        : [target.id];
-      const movingBlock = ordered.filter(exercise => movingIds.includes(exercise.id));
-      const remaining = ordered.filter(exercise => !movingIds.includes(exercise.id));
-      const targetStart = Math.max(0, remaining.findIndex(exercise => targetIds.includes(exercise.id)));
-      const targetSize = remaining.filter(exercise => targetIds.includes(exercise.id)).length;
-      const insertIndex = insertAfter ? targetStart + targetSize : targetStart;
-      const next = [
-        ...remaining.slice(0, insertIndex),
-        ...movingBlock,
-        ...remaining.slice(insertIndex),
-      ];
+      const ordered = getOrderedWorkoutExercisesForReorder(workout);
+      if (sameOrder(getExerciseIdsForReorder(ordered), previewIds)) return workout;
+      const next = getWorkoutExercisesByPreviewIds(workout, previewIds);
       return {
         ...workout,
         exercises: next.map((exercise, index) => ({ ...exercise, order: index + 1 })),
@@ -15700,61 +16015,157 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
   };
 
-  const getExerciseDropTarget = (clientY, movingIds = []) => {
-    const movingSet = new Set(movingIds);
-    const rows = Array.from(document.querySelectorAll("[data-workout-exercise-id]"))
-      .map(row => ({ row, id: row.getAttribute("data-workout-exercise-id"), rect: row.getBoundingClientRect() }))
-      .filter(item => item.id && !movingSet.has(item.id));
-    if (!rows.length) return null;
-
-    const direct = rows.find(item => clientY >= item.rect.top && clientY <= item.rect.bottom);
-    const target = direct || rows.reduce((best, item) => {
-      const distance = Math.abs(clientY - (item.rect.top + item.rect.height / 2));
-      return !best || distance < best.distance ? { ...item, distance } : best;
-    }, null);
-    if (!target) return null;
-    return {
-      targetId: target.id,
-      insertAfter: clientY > target.rect.top + target.rect.height / 2,
-    };
+  const reorderExerciseInSelectedWorkout = (sourceId, targetId, insertAfter = false) => {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    updateSelectedWorkoutModel(workout => {
+      const ordered = getOrderedWorkoutExercisesForReorder(workout);
+      const next = reorderWorkoutExerciseList(ordered, sourceId, targetId, insertAfter);
+      if (sameOrder(getExerciseIdsForReorder(ordered), getExerciseIdsForReorder(next))) return workout;
+      return {
+        ...workout,
+        exercises: next,
+        updatedAt: new Date().toISOString(),
+      };
+    });
   };
 
-  const beginExerciseReorder = (exerciseId, clientY) => {
-    const ordered = [...(selectedWorkout?.exercises || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+  const getExerciseDropTarget = (handleCenterY, movingIds = []) => {
+    if (typeof document === "undefined") return null;
+    const movingSet = new Set(movingIds);
+    const candidates = Array.from(document.querySelectorAll("[data-workout-exercise-id]"))
+      .map(row => {
+        const id = row.getAttribute("data-workout-exercise-id");
+        if (!id || movingSet.has(id)) return null;
+        const rowRect = row.getBoundingClientRect?.();
+        if (!rowRect) return null;
+        const handle = findDataElementByValue("[data-workout-exercise-handle-id]", "data-workout-exercise-handle-id", id);
+        const handleRect = handle?.getBoundingClientRect?.();
+        const markerY = handleRect ? handleRect.top + handleRect.height / 2 : rowRect.top + rowRect.height / 2;
+        const tolerance = Math.max(10, Math.min(18, (handleRect?.height || 36) * 0.45));
+        return {
+          id,
+          markerY,
+          tolerance,
+          distance: Math.abs(handleCenterY - markerY),
+        };
+      })
+      .filter(Boolean);
+    const target = candidates.reduce((closest, candidate) => (
+      !closest || candidate.distance < closest.distance ? candidate : closest
+    ), null);
+    if (!target || target.distance > target.tolerance) return null;
+    return { targetId: target.id, insertAfter: handleCenterY > target.markerY };
+  };
+
+  const getExerciseDragDy = (drag, clientY = drag?.lastY) => {
+    if (!drag) return 0;
+    const row = findDataElementByValue("[data-workout-exercise-id]", "data-workout-exercise-id", drag.exerciseId)
+      || drag.movingIds.map(id => findDataElementByValue("[data-workout-exercise-id]", "data-workout-exercise-id", id)).find(Boolean);
+    const rect = row?.getBoundingClientRect?.() || drag.startRect;
+    if (!rect) return clientY - drag.startY;
+    const baseTop = rect.top - Number(drag.visualDy || 0);
+    return clientY - drag.offsetY - baseTop;
+  };
+
+  const beginExerciseReorder = (exerciseId, clientY, handleNode = null) => {
+    const ordered = getOrderedWorkoutExercisesForReorder();
     const source = ordered.find(exercise => exercise.id === exerciseId);
+    if (!source) return;
     const sourceSupersetId = getExerciseSupersetGroupId(source);
     const movingIds = sourceSupersetId
       ? ordered.filter(exercise => getExerciseSupersetGroupId(exercise) === sourceSupersetId).map(exercise => exercise.id)
       : [exerciseId];
-    reorderExerciseRef.current = { exerciseId, movingIds, startY: clientY };
+    const row = findDataElementByValue("[data-workout-exercise-id]", "data-workout-exercise-id", exerciseId);
+    const startRect = row?.getBoundingClientRect?.() || null;
+    const handle = handleNode || findDataElementByValue("[data-workout-exercise-handle-id]", "data-workout-exercise-handle-id", exerciseId);
+    const handleRect = handle?.getBoundingClientRect?.() || null;
+    const previewIds = getExerciseIdsForReorder(ordered);
+    reorderExerciseRef.current = {
+      exerciseId,
+      movingIds,
+      startY: clientY,
+      lastY: clientY,
+      offsetY: startRect ? clientY - startRect.top : 0,
+      handleCenterOffsetY: handleRect ? (handleRect.top + handleRect.height / 2) - clientY : 0,
+      startRect,
+      previewIds,
+      visualDy: 0,
+    };
     reorderTargetRef.current = null;
+    setExercisePreviewOrderIds(previewIds);
     setReorderVisual({ movingIds, dy: 0, targetId: null, insertAfter: false });
   };
 
   const updateExerciseReorder = (clientY) => {
     const drag = reorderExerciseRef.current;
     if (!drag) return;
-    const dy = clientY - drag.startY;
-    const target = getExerciseDropTarget(clientY, drag.movingIds);
+    drag.lastY = clientY;
+    const handleCenterY = clientY + Number(drag.handleCenterOffsetY || 0);
+    const target = getExerciseDropTarget(handleCenterY, drag.movingIds);
     reorderTargetRef.current = target;
-    setReorderVisual({ movingIds: drag.movingIds, dy, targetId: target?.targetId || null, insertAfter: Boolean(target?.insertAfter) });
+    if (target?.targetId) {
+      const currentIds = drag.previewIds || exercisePreviewOrderIds || getExerciseIdsForReorder(getOrderedWorkoutExercisesForReorder());
+      const currentExercises = getWorkoutExercisesByPreviewIds(selectedWorkout, currentIds);
+      const nextExercises = reorderWorkoutExerciseList(currentExercises, drag.exerciseId, target.targetId, target.insertAfter);
+      const nextIds = getExerciseIdsForReorder(nextExercises);
+      if (!sameOrder(nextIds, currentIds)) {
+        const beforeRects = captureDataElementRects("[data-workout-exercise-id]", "data-workout-exercise-id");
+        drag.previewIds = nextIds;
+        setExercisePreviewOrderIds(nextIds);
+        requestAnimationFrame(() => {
+          animateDataElementReflow("[data-workout-exercise-id]", "data-workout-exercise-id", beforeRects, drag.movingIds);
+          const latest = reorderExerciseRef.current;
+          if (latest?.exerciseId === drag.exerciseId) {
+            const nextDy = getExerciseDragDy(latest);
+            latest.visualDy = nextDy;
+            setReorderVisual(prev => ({
+              movingIds: latest.movingIds,
+              dy: nextDy,
+              targetId: prev?.targetId || null,
+              insertAfter: Boolean(prev?.insertAfter),
+            }));
+          }
+        });
+      }
+    }
+    autoScrollNearPointer(workoutScrollRef.current, clientY);
+    const nextDy = getExerciseDragDy(drag, clientY);
+    drag.visualDy = nextDy;
+    setReorderVisual({ movingIds: drag.movingIds, dy: nextDy, targetId: target?.targetId || null, insertAfter: Boolean(target?.insertAfter) });
   };
 
-  const finishExerciseReorder = (clientY) => {
+  const finishExerciseReorder = (clientY, options = {}) => {
     const drag = reorderExerciseRef.current;
     if (!drag) return;
-    const target = reorderTargetRef.current || getExerciseDropTarget(clientY, drag.movingIds);
-    reorderExerciseInSelectedWorkout(drag.exerciseId, target?.targetId, Boolean(target?.insertAfter));
+    if (options.commit !== false) {
+      const finalIds = drag.previewIds || exercisePreviewOrderIds || null;
+      if (finalIds?.length) {
+        commitExercisePreviewOrder(finalIds);
+      } else {
+        const target = reorderTargetRef.current || getExerciseDropTarget(clientY + Number(drag.handleCenterOffsetY || 0), drag.movingIds);
+        reorderExerciseInSelectedWorkout(drag.exerciseId, target?.targetId, Boolean(target?.insertAfter));
+      }
+    }
     reorderExerciseRef.current = null;
     reorderTargetRef.current = null;
     setReorderVisual(null);
+    setExercisePreviewOrderIds(null);
+  };
+
+  const cancelExerciseReorder = () => {
+    reorderExerciseRef.current = null;
+    reorderTargetRef.current = null;
+    setReorderVisual(null);
+    setExercisePreviewOrderIds(null);
   };
 
   const startExerciseReorder = (event, exerciseId) => {
     if (!isEditingWorkout) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
-    beginExerciseReorder(exerciseId, event.clientY);
+    beginExerciseReorder(exerciseId, event.clientY, event.currentTarget);
+    if (!reorderExerciseRef.current) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
     const pointerId = event.pointerId;
     const handleMove = (moveEvent) => {
@@ -15768,11 +16179,19 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       finishExerciseReorder(upEvent.clientY);
       document.removeEventListener("pointermove", handleMove);
       document.removeEventListener("pointerup", handleUp);
-      document.removeEventListener("pointercancel", handleUp);
+      document.removeEventListener("pointercancel", handleCancel);
+    };
+    const handleCancel = (cancelEvent) => {
+      if (pointerId != null && cancelEvent.pointerId !== pointerId) return;
+      cancelEvent.preventDefault();
+      cancelExerciseReorder();
+      document.removeEventListener("pointermove", handleMove);
+      document.removeEventListener("pointerup", handleUp);
+      document.removeEventListener("pointercancel", handleCancel);
     };
     document.addEventListener("pointermove", handleMove, { passive: false });
     document.addEventListener("pointerup", handleUp, { passive: false });
-    document.addEventListener("pointercancel", handleUp, { passive: false });
+    document.addEventListener("pointercancel", handleCancel, { passive: false });
   };
 
   const moveExerciseReorder = (event) => {
@@ -15795,7 +16214,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     if (!isEditingWorkout || reorderExerciseRef.current) return;
     event.preventDefault();
     event.stopPropagation();
-    beginExerciseReorder(exerciseId, event.clientY);
+    beginExerciseReorder(exerciseId, event.clientY, event.currentTarget);
+    if (!reorderExerciseRef.current) return;
     const handleMove = (moveEvent) => {
       moveEvent.preventDefault();
       updateExerciseReorder(moveEvent.clientY);
@@ -18513,7 +18933,10 @@ const toggleExerciseMeasurementSetting = (field) => {
     if (!selectedWorkout) return null;
 
     const workoutDate = parseDateKey(selectedWorkout.date);
-    const exercises = [...(selectedWorkout.exercises || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+    const baseExercises = [...(selectedWorkout.exercises || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+    const exercises = exercisePreviewOrderIds?.length
+      ? orderItemsByIds(baseExercises, exercisePreviewOrderIds).map((exercise, index) => ({ ...exercise, order: index + 1 }))
+      : baseExercises;
     const totalSets = exercises.flatMap(exercise => exercise.sets || []).length;
     const completedSets = exercises.flatMap(exercise => exercise.sets || []).filter(set => getSetStatus(set) === "completed").length;
     const totalVolume = getWorkoutVolume({ exercises });
@@ -18642,7 +19065,7 @@ const toggleExerciseMeasurementSetting = (field) => {
               const rowStyle = {
                 ...(supersetColor ? { boxShadow: `inset 4px 0 0 ${supersetColor}`, backgroundColor: `${supersetColor}10` } : {}),
                 ...(exerciseDone ? { backgroundColor: "rgba(34,197,94,0.10)", outline: "1px solid rgba(34,197,94,0.24)", outlineOffset: "-1px" } : exercisePartial ? { backgroundColor: "rgba(34,197,94,0.055)" } : {}),
-                ...(draggingBlock ? { transform: `translate3d(0, ${reorderVisual.dy}px, 0)`, opacity: 0.72, zIndex: 30 } : {}),
+                ...(draggingBlock ? { transform: `translate3d(0, ${reorderVisual.dy}px, 0)`, transition: "none", opacity: 0.72, zIndex: 30 } : {}),
                 ...(dropTarget ? { outline: `1px solid ${supersetColor || "#ef4444"}`, outlineOffset: "-1px" } : {}),
               };
               const circleStyle = supersetColor && !selectedForEdit ? { borderColor: supersetColor, backgroundColor: `${supersetColor}20`, color: supersetColor } : undefined;
@@ -18661,11 +19084,12 @@ const toggleExerciseMeasurementSetting = (field) => {
                 </div>
                 <button
                   type="button"
+                  data-workout-exercise-handle-id={exercise.id}
                   aria-label="Перетащить упражнение"
                   onPointerDown={(e) => startExerciseReorder(e, exercise.id)}
                   onPointerMove={moveExerciseReorder}
                   onPointerUp={endExerciseReorder}
-                  onPointerCancel={endExerciseReorder}
+                  onPointerCancel={(e) => { e.preventDefault(); e.stopPropagation(); cancelExerciseReorder(); }}
                   onMouseDown={(e) => startExerciseMouseReorder(e, exercise.id)}
                   style={{ touchAction: "none" }}
                   className="mt-1 flex h-9 w-9 flex-col items-center justify-center gap-1 rounded-full bg-white/[0.06] text-zinc-400 active:bg-red-500/20"
