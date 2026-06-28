@@ -1096,6 +1096,140 @@
       -webkit-mask-image: linear-gradient(135deg, rgba(0,0,0,0.02) 0%, rgba(0,0,0,0.12) 30%, rgba(0,0,0,0.62) 56%, #000 78%);
       mask-image: linear-gradient(135deg, rgba(0,0,0,0.02) 0%, rgba(0,0,0,0.12) 30%, rgba(0,0,0,0.62) 56%, #000 78%);
     }
+    .onlypump-progress-fill,
+    .onlypump-nutrition-macro-fill {
+      transform-origin: left center;
+    }
+    .onlypump-progress-fill.onlypump-animation-visible,
+    .onlypump-nutrition-macro-fill.onlypump-animation-visible {
+      animation: onlypump-scale-x-in 780ms cubic-bezier(.2,.8,.2,1) both;
+    }
+    .onlypump-animated-scale-track,
+    .onlypump-chart-area {
+      transform-box: fill-box;
+      transform-origin: left center;
+    }
+    .onlypump-animated-scale-track.onlypump-animation-visible,
+    .onlypump-chart-area.onlypump-animation-visible {
+      animation: onlypump-scale-x-in 820ms cubic-bezier(.2,.8,.2,1) both;
+    }
+    .onlypump-chart-line.onlypump-animation-visible {
+      animation: onlypump-line-draw 900ms cubic-bezier(.22,.9,.24,1) both;
+    }
+    .onlypump-chart-point.onlypump-animation-visible {
+      animation: onlypump-point-in 520ms cubic-bezier(.2,1.4,.35,1) both;
+    }
+    .onlypump-chart-svg-point {
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+    .onlypump-chart-svg-point.onlypump-animation-visible {
+      animation: onlypump-svg-point-in 520ms cubic-bezier(.2,1.4,.35,1) both;
+    }
+    .onlypump-chart-guide.onlypump-animation-visible {
+      animation: onlypump-fade-in 620ms ease both;
+    }
+    .onlypump-chart-bar,
+    .onlypump-analytics-bar {
+      transform-box: fill-box;
+      transform-origin: center bottom;
+    }
+    .onlypump-chart-bar.onlypump-animation-visible,
+    .onlypump-analytics-bar.onlypump-animation-visible {
+      animation: onlypump-scale-y-in 760ms cubic-bezier(.2,.8,.2,1) both;
+    }
+    .onlypump-animated-ring-arc.onlypump-animation-visible {
+      animation: onlypump-ring-fill 980ms cubic-bezier(.22,.9,.24,1) both;
+    }
+    .onlypump-animated-ring-overlap {
+      animation-duration: 1180ms;
+      animation-delay: 120ms;
+    }
+    @property --onlypump-conic-progress {
+      syntax: '<percentage>';
+      inherits: false;
+      initial-value: 0%;
+    }
+    @property --onlypump-half-conic-progress {
+      syntax: '<angle>';
+      inherits: false;
+      initial-value: 0deg;
+    }
+    .onlypump-animated-conic-ring {
+      --onlypump-conic-progress: var(--onlypump-conic-target, 0%);
+      background: conic-gradient(
+        var(--onlypump-conic-color, #ef4444) 0 var(--onlypump-conic-progress),
+        var(--onlypump-conic-track, var(--chart-track)) var(--onlypump-conic-progress) 100%
+      );
+    }
+    .onlypump-animated-conic-half-ring {
+      --onlypump-half-conic-progress: var(--onlypump-half-conic-target, 0deg);
+      background: conic-gradient(
+        from 270deg,
+        var(--onlypump-conic-color, #ef4444) 0deg var(--onlypump-half-conic-progress),
+        var(--onlypump-conic-track, var(--chart-track)) var(--onlypump-half-conic-progress) 180deg,
+        transparent 180deg 360deg
+      );
+    }
+    .onlypump-animated-conic-ring.onlypump-animation-visible {
+      animation: onlypump-conic-fill 760ms cubic-bezier(.2,.8,.2,1) both;
+    }
+    .onlypump-animated-conic-half-ring.onlypump-animation-visible {
+      animation: onlypump-half-conic-fill 760ms cubic-bezier(.2,.8,.2,1) both;
+    }
+    @keyframes onlypump-scale-x-in {
+      from { transform: scaleX(0); }
+      to { transform: scaleX(1); }
+    }
+    @keyframes onlypump-scale-y-in {
+      from { transform: scaleY(0); }
+      to { transform: scaleY(1); }
+    }
+    @keyframes onlypump-line-draw {
+      from { stroke-dashoffset: 1; opacity: .45; }
+      to { stroke-dashoffset: 0; opacity: 1; }
+    }
+    @keyframes onlypump-point-in {
+      from { transform: translate(-50%, -50%) scale(.2); opacity: 0; }
+      to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    }
+    @keyframes onlypump-svg-point-in {
+      from { transform: scale(.2); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+    @keyframes onlypump-fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes onlypump-ring-fill {
+      from { stroke-dashoffset: var(--onlypump-ring-circumference); }
+      to { stroke-dashoffset: var(--onlypump-ring-final-offset); }
+    }
+    @keyframes onlypump-conic-fill {
+      from { --onlypump-conic-progress: 0%; }
+      to { --onlypump-conic-progress: var(--onlypump-conic-target, 0%); }
+    }
+    @keyframes onlypump-half-conic-fill {
+      from { --onlypump-half-conic-progress: 0deg; }
+      to { --onlypump-half-conic-progress: var(--onlypump-half-conic-target, 0deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .onlypump-progress-fill,
+      .onlypump-nutrition-macro-fill,
+      .onlypump-animated-scale-track,
+      .onlypump-chart-area,
+      .onlypump-chart-line,
+      .onlypump-chart-point,
+      .onlypump-chart-svg-point,
+      .onlypump-chart-guide,
+      .onlypump-chart-bar,
+      .onlypump-analytics-bar,
+      .onlypump-animated-ring-arc,
+      .onlypump-animated-conic-ring,
+      .onlypump-animated-conic-half-ring {
+        animation: none !important;
+      }
+    }
     .onlypump-metric-widget > div {
       min-height: 0;
       overflow: hidden;
@@ -7461,7 +7595,8 @@ const initialNutritionGoal = {
 function Progress({ value = 0, tone = "red", thin = false }) {
   const fillClass = tone === "sky" ? "bg-gradient-to-r from-sky-500 to-cyan-300" : "bg-gradient-to-r from-red-700 to-red-500";
   const thinStyle = thin ? { height: "3px" } : undefined;
-  return <div style={thinStyle} className="h-1.5 w-full rounded-full bg-zinc-800"><div style={{ width: `${value}%` }} className={`h-full rounded-full ${fillClass}`} /></div>;
+  const animationKey = `${tone}-${thin ? "thin" : "regular"}-${Math.round((Number(value) || 0) * 10)}`;
+  return <div style={thinStyle} className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800"><div key={animationKey} style={{ width: `${value}%` }} className={`onlypump-progress-fill h-full rounded-full ${fillClass}`} /></div>;
 }
 
 function Card({ children, className = "", ...props }) {
@@ -7518,6 +7653,89 @@ function useOnlyPumpHapticFeedback() {
 
     document.addEventListener("pointerup", handleButtonPointerUp, true);
     return () => document.removeEventListener("pointerup", handleButtonPointerUp, true);
+  }, []);
+}
+
+const ONLYPUMP_REVEAL_ANIMATION_SELECTOR = [
+  ".onlypump-progress-fill",
+  ".onlypump-nutrition-macro-fill",
+  ".onlypump-animated-scale-track",
+  ".onlypump-chart-area",
+  ".onlypump-chart-line",
+  ".onlypump-chart-point",
+  ".onlypump-chart-svg-point",
+  ".onlypump-chart-guide",
+  ".onlypump-chart-bar",
+  ".onlypump-analytics-bar",
+  ".onlypump-animated-ring-arc",
+  ".onlypump-animated-conic-ring",
+  ".onlypump-animated-conic-half-ring",
+].join(",");
+
+function isOnlyPumpElementVisible(element) {
+  if (!element?.getBoundingClientRect) return false;
+  const rect = element.getBoundingClientRect();
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+  return rect.width > 0 && rect.height > 0 && rect.bottom >= 0 && rect.right >= 0 && rect.top <= viewportHeight && rect.left <= viewportWidth;
+}
+
+function restartOnlyPumpVisibleAnimations() {
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  const animatedElements = Array.from(document.querySelectorAll(ONLYPUMP_REVEAL_ANIMATION_SELECTOR));
+  const visibleElements = [];
+  animatedElements.forEach(element => {
+    if (element.closest?.(".onlypump-calendar-rings")) return;
+    element.classList.remove("onlypump-animation-visible");
+    if (isOnlyPumpElementVisible(element)) visibleElements.push(element);
+  });
+  const raf = window.requestAnimationFrame || ((callback) => window.setTimeout(callback, 16));
+  raf(() => raf(() => visibleElements.forEach(element => element.classList.add("onlypump-animation-visible"))));
+}
+
+function useOnlyPumpRevealAnimations() {
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return undefined;
+    const observedElements = new Set();
+    const revealElement = (element) => element.classList.add("onlypump-animation-visible");
+    const observer = "IntersectionObserver" in window
+      ? new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) revealElement(entry.target);
+        });
+      }, { threshold: 0.08, rootMargin: "0px 0px -4% 0px" })
+      : null;
+
+    const observeElement = (element) => {
+      if (!element || observedElements.has(element)) return;
+      observedElements.add(element);
+      element.classList.remove("onlypump-animation-visible");
+      if (!observer) {
+        revealElement(element);
+        return;
+      }
+      observer.observe(element);
+    };
+
+    const scanAnimationRoot = (root) => {
+      if (!root) return;
+      const canQuery = root.nodeType === 1 || root.nodeType === 9 || root.nodeType === 11;
+      if (!canQuery) return;
+      if (root.nodeType === 1 && root.matches?.(ONLYPUMP_REVEAL_ANIMATION_SELECTOR)) observeElement(root);
+      root.querySelectorAll?.(ONLYPUMP_REVEAL_ANIMATION_SELECTOR).forEach(observeElement);
+    };
+
+    scanAnimationRoot(document);
+    const mutationObserver = new MutationObserver(records => {
+      records.forEach(record => record.addedNodes.forEach(scanAnimationRoot));
+    });
+    mutationObserver.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      mutationObserver.disconnect();
+      observer?.disconnect();
+      observedElements.clear();
+    };
   }, []);
 }
 
@@ -8084,11 +8302,11 @@ function PumpXpMiniScale({ pumpXp }) {
 }
 
 function MiniLine() {
-  return <svg viewBox="0 0 120 28" className="mt-3 h-7 w-full overflow-visible"><path d="M0 14 L18 17 L35 15 L52 19 L70 12 L86 16 L103 20 L120 23" fill="none" stroke="rgb(239 68 68)" strokeWidth="2"/><circle cx="70" cy="12" r="2" fill="rgb(239 68 68)" /></svg>;
+  return <svg viewBox="0 0 120 28" className="mt-3 h-7 w-full overflow-visible"><path className="onlypump-chart-line" d="M0 14 L18 17 L35 15 L52 19 L70 12 L86 16 L103 20 L120 23" pathLength="1" strokeDasharray="1" fill="none" stroke="rgb(239 68 68)" strokeWidth="2"/><circle className="onlypump-chart-svg-point" cx="70" cy="12" r="2" fill="rgb(239 68 68)" /></svg>;
 }
 
 function MiniBars() {
-  return <div className="mt-3 flex h-8 items-end gap-1">{[16,10,18,12,24,15,26,20,32,18,30,36,27,34,18,38,22].map((h, i) => <span key={i} style={{height:h}} className="w-1 rounded bg-zinc-600" />)}</div>;
+  return <div className="mt-3 flex h-8 items-end gap-1">{[16,10,18,12,24,15,26,20,32,18,30,36,27,34,18,38,22].map((h, i) => <span key={i} style={{height:h}} className="onlypump-chart-bar w-1 rounded bg-zinc-600" />)}</div>;
 }
 
 function DesktopSidebar({ active, setActive, profile }) {
@@ -8774,6 +8992,16 @@ function InlineDateDataCard({ context = "home", dateKey, nutritionTotals, nutrit
 
 const clampProgress = (value = 0) => Math.max(0, Math.min(100, Number.isFinite(Number(value)) ? Number(value) : 0));
 const normalizeRingProgress = (value = 0) => Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0);
+const buildOnlyPumpConicRingStyle = (progress = 0, color = "#ef4444", track = "var(--chart-track)") => ({
+  "--onlypump-conic-color": color,
+  "--onlypump-conic-track": track,
+  "--onlypump-conic-target": `${clampProgress(progress)}%`,
+});
+const buildOnlyPumpHalfConicRingStyle = (progress = 0, color = "#ef4444", track = "var(--chart-track)") => ({
+  "--onlypump-conic-color": color,
+  "--onlypump-conic-track": track,
+  "--onlypump-half-conic-target": `${Math.round(clampProgress(progress) * 1.8)}deg`,
+});
 
 const ACTIVITY_RING_SETTINGS_STORAGE_KEY = "onlypump_activity_ring_settings_v1";
 const defaultActivityRingConfig = { outer: "steps", middle: "sleep", inner: "recovery" };
@@ -8957,7 +9185,7 @@ const buildActivityRingProgressForConfig = (details = {}, config = defaultActivi
   return hasAnyData ? progress : null;
 };
 
-function ActivityRingsSvg({ progress = null, className = "", strokeWidth = 4, trackOpacity = 1 }) {
+function ActivityRingsSvg({ progress = null, className = "", strokeWidth = 4, trackOpacity = 1, animate = true }) {
   const emptyDay = !progress;
   return <svg viewBox="0 0 48 48" className={`-rotate-90 overflow-visible ${className}`} aria-hidden="true">
     {activityRingSlots.map(ring => {
@@ -8965,22 +9193,35 @@ function ActivityRingsSvg({ progress = null, className = "", strokeWidth = 4, tr
       const rawValue = progress?.[ring.key];
       const hasMetricData = rawValue !== null && rawValue !== undefined;
       if (!emptyDay && !hasMetricData) return null;
-      const value = clampProgress(rawValue);
-      const renderArc = (arcValue, key) => <circle
-        key={key}
-        cx="24"
-        cy="24"
-        r={ring.radius}
-        fill="none"
-        stroke={ring.color}
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeDasharray={circumference}
-        strokeDashoffset={circumference - (circumference * clampProgress(arcValue)) / 100}
-      />;
+      const value = Math.max(0, Number.isFinite(Number(rawValue)) ? Number(rawValue) : 0);
+      const baseValue = Math.min(100, value);
+      const overlapValue = value > 100 ? value % 100 || 100 : 0;
+      const renderArc = (arcValue, key, className = "", width = strokeWidth, opacity = 1) => {
+        const finalOffset = circumference - (circumference * clampProgress(arcValue)) / 100;
+        const animationKey = Math.round(value * 10);
+        return <circle
+          key={`${key}-${animationKey}`}
+          cx="24"
+          cy="24"
+          r={ring.radius}
+          fill="none"
+          stroke={ring.color}
+          strokeWidth={width}
+          strokeLinecap="round"
+          className={`${animate ? "onlypump-animated-ring-arc" : ""} ${className}`.trim()}
+          style={{
+            "--onlypump-ring-circumference": `${circumference}`,
+            "--onlypump-ring-final-offset": `${finalOffset}`,
+            strokeDasharray: circumference,
+            strokeDashoffset: finalOffset,
+            opacity,
+          }}
+        />;
+      };
       return <g key={ring.key}>
         <circle cx="24" cy="24" r={ring.radius} fill="none" stroke={ring.track} strokeWidth={strokeWidth} opacity={trackOpacity}/>
-        {hasMetricData && value > 0 && renderArc(value, `${ring.key}-base`)}
+        {hasMetricData && value > 0 && renderArc(baseValue, `${ring.key}-base`)}
+        {hasMetricData && overlapValue > 0 && renderArc(overlapValue, `${ring.key}-overlap`, "onlypump-animated-ring-overlap", strokeWidth * 0.72, 0.82)}
       </g>;
     })}
   </svg>;
@@ -8991,7 +9232,7 @@ function ActivityRingDay({ date, progress = null, selected = false, visibleDays 
   const sizeClass = visibleDays === 14 ? "h-9 w-9 sm:h-10 sm:w-10 xl:h-11 xl:w-11" : "h-10 w-10 sm:h-11 sm:w-11";
   return <div className={`mx-auto flex flex-col items-center transition-transform duration-200 ${selected ? "scale-125" : "scale-100"}`} style={{ transformOrigin: "center center" }}>
     <span className="h-4 text-sm font-black leading-none text-[var(--onlypump-text)] sm:text-base">{date.getDate()}</span>
-    <span className={`relative mt-0.5 flex ${sizeClass} items-center justify-center`}>
+    <span className={`onlypump-calendar-rings relative mt-0.5 flex ${sizeClass} items-center justify-center`}>
       <ActivityRingsSvg progress={progress} className="absolute inset-0 h-full w-full"/>
       <span className="relative z-10 text-[8px] font-normal uppercase leading-none text-[var(--onlypump-text)] sm:text-[9px]">{weekday}</span>
     </span>
@@ -9211,7 +9452,7 @@ function ActivityRingsSettingsSheet({ dateKey, initialConfig = defaultActivityRi
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.22em] text-[var(--onlypump-muted)]">{dateLabel}</p>
-            <h2 className="mt-1 text-2xl font-black leading-tight text-[var(--onlypump-text)]">Кольца активности</h2>
+            <h2 className="mt-1 text-2xl font-black leading-tight text-[var(--onlypump-text)]">Кольца дисциплины</h2>
           </div>
           <button type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--onlypump-soft)] text-2xl leading-none text-[var(--onlypump-text)] transition hover:scale-105 active:scale-95">×</button>
         </div>
@@ -9599,9 +9840,10 @@ function WeightTrendMiniChart({ points = [] }) {
   }, "");
   const areaPath = `${linePath} L ${linePoints[linePoints.length - 1].x.toFixed(2)} ${bottom} L ${linePoints[0].x.toFixed(2)} ${bottom} Z`;
   const gradientId = `weightTrendGradient-${count}-${Math.round(values[values.length - 1] * 10)}`;
+  const chartSignature = values.map(value => Math.round(value * 10)).join("-");
 
   return <div className="onlypump-weight-chart-layer pointer-events-none absolute inset-x-1 bottom-0 z-0 h-[72%]" aria-hidden="true">
-    <svg className="onlypump-weight-chart-svg block" viewBox="0 0 100 52" preserveAspectRatio="none">
+    <svg key={chartSignature} className="onlypump-weight-chart-svg block" viewBox="0 0 100 52" preserveAspectRatio="none">
       <defs>
         <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stopColor="rgb(248 113 113)" stopOpacity="0.28"/>
@@ -9614,7 +9856,7 @@ function WeightTrendMiniChart({ points = [] }) {
       <path d={linePath} fill="none" stroke="rgb(239 68 68)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
     </svg>
     {chartPoints.map((point, index) => <span
-      key={`point-${index}`}
+      key={`point-${chartSignature}-${index}`}
       className="absolute block h-[0.22rem] w-[0.22rem] rounded-full border border-red-600 bg-[var(--onlypump-card-solid)]"
       style={{
         left: `${point.x}%`,
@@ -9645,17 +9887,19 @@ function StepsTrendBarChart({ points = [], goal = DEFAULT_PROFILE.steps_per_day 
   if (!points.length) return null;
   const safeGoal = Math.max(1, profileNonNegativeNumber(goal, DEFAULT_PROFILE.steps_per_day));
   const maxScale = safeGoal * 2;
+  const visiblePoints = points.slice(-14);
+  const chartSignature = visiblePoints.map(point => `${point.date}:${Math.round(profileNonNegativeNumber(point.steps, 0))}`).join("|");
 
   return <div className="onlypump-steps-chart-layer pointer-events-none absolute inset-x-2 bottom-2 z-0 h-[68%]" aria-hidden="true">
     <div className="absolute left-1 right-1 top-1/2 border-t border-dashed border-red-400/35"/>
-    <div className="absolute inset-x-1 bottom-0 top-0 flex items-end gap-[3px]">
-      {points.slice(-14).map(point => {
+    <div key={chartSignature} className="absolute inset-x-1 bottom-0 top-0 flex items-end gap-[3px]">
+      {visiblePoints.map(point => {
         const steps = profileNonNegativeNumber(point.steps, 0);
         const height = Math.min(100, (steps / maxScale) * 100);
         const isGhost = steps <= 0;
         return <span
           key={point.date}
-          className="block min-w-0 flex-1 rounded-t-[5px]"
+            className="onlypump-chart-bar block min-w-0 flex-1 rounded-t-[5px]"
           style={{
             height: isGhost ? "3px" : `max(5px, ${height.toFixed(2)}%)`,
             opacity: isGhost ? 0.26 : 0.92,
@@ -9731,14 +9975,15 @@ function BodyFatRangeScale({ value, profile = DEFAULT_PROFILE }) {
   };
 
   return <div className="relative h-4 w-full" aria-hidden="true">
-    <div className="absolute left-0 right-0 top-1/2 flex h-[3px] -translate-y-1/2 overflow-hidden rounded-full bg-[var(--chart-track)]">
+    <div key={`${sex}-${hasValue ? Math.round(numericValue * 10) : "empty"}`} className="onlypump-animated-scale-track absolute left-0 right-0 top-1/2 flex h-[3px] -translate-y-1/2 overflow-hidden rounded-full bg-[var(--chart-track)]">
       {config.zones.map((zone) => {
         const width = ((zone.to - zone.from) / (config.max - config.min)) * 100;
         return <span key={`${sex}-${zone.from}-${zone.to}`} className="h-full" style={{ flex: `0 0 ${width}%`, backgroundColor: zoneColor(zone.tone) }}/>;
       })}
     </div>
     {hasValue && <span
-      className="absolute top-1/2 h-3 w-3 rounded-full border-2 border-[var(--onlypump-card-solid)] bg-[var(--onlypump-text)] shadow-sm shadow-black/30"
+      key={`${sex}-marker-${Math.round(numericValue * 10)}`}
+      className="onlypump-chart-point absolute top-1/2 h-3 w-3 rounded-full border-2 border-[var(--onlypump-card-solid)] bg-[var(--onlypump-text)] shadow-sm shadow-black/30"
       style={{ left: `${markerPosition}%`, transform: "translate(-50%, -50%)" }}
     />}
   </div>;
@@ -10197,14 +10442,14 @@ function StatStrip({ measurements, nutritionTotals, nutritionGoal, workoutSummar
 
   return <Card className="grid grid-cols-2 divide-x divide-y divide-white/10 overflow-hidden md:grid-cols-3 xl:grid-cols-7 xl:divide-y-0">
     {liveStats.map(s => <div key={s.label} className="p-5"><div className="text-xs text-zinc-500">{s.label}</div><div className="mt-2 flex items-end justify-between gap-2"><span className="break-words text-2xl">{s.value} <span className="text-sm text-zinc-500">{s.sub}</span></span><span className="text-[10px] text-zinc-400">{s.delta}</span></div>{s.type === "line" && <MiniLine/>}{s.type === "bars" && <MiniBars/>}{s.type === "progress" && <div className="mt-5"><Progress value={s.label === "Калории" ? caloriesPercent : Math.min(100, Math.round((nutritionTotals.protein / Math.max(1, nutritionGoal.protein)) * 100))}/></div>}</div>)}
-    <div className="flex items-center justify-center p-5"><div className="relative flex h-20 w-20 items-center justify-center rounded-full" style={{background:`conic-gradient(#ef4444 0 ${recovery}%, var(--chart-track) ${recovery}% 100%)`}}><div className="h-16 w-16 rounded-full bg-zinc-950"/></div><span className="ml-3 text-xs text-zinc-400">Восстановление<br/><b className="text-2xl text-white">{recovery}%</b></span></div>
+    <div className="flex items-center justify-center p-5"><div key={`recovery-ring-${Math.round(recovery || 0)}`} className="onlypump-animated-conic-ring relative flex h-20 w-20 items-center justify-center rounded-full" style={buildOnlyPumpConicRingStyle(recovery)}><div className="h-16 w-16 rounded-full bg-zinc-950"/></div><span className="ml-3 text-xs text-zinc-400">Восстановление<br/><b className="text-2xl text-white">{recovery}%</b></span></div>
   </Card>;
 }
 
 function NutritionRing({ calories = 0, goal = initialNutritionGoal.calories, label = "Калории", unit = "ккал" }) {
   const percent = Math.min(100, goal ? Math.round((calories / goal) * 100) : 0);
 
-  return <div className="onlypump-nutrition-ring relative flex h-28 w-28 items-center justify-center rounded-full" style={{background:`conic-gradient(#ef4444 0 ${percent}%, var(--chart-track) ${percent}% 100%)`}}><div className="onlypump-nutrition-ring-inner flex h-24 w-24 flex-col items-center justify-center rounded-full bg-zinc-950"><span className="onlypump-nutrition-ring-label text-xs text-zinc-400">{label}</span><span className="onlypump-nutrition-ring-value text-2xl">{roundMacro(calories)}</span><span className="onlypump-nutrition-ring-target text-[10px] text-zinc-500">/ {roundMacro(goal)} {unit}</span></div></div>;
+  return <div key={`nutrition-ring-${Math.round(percent)}`} className="onlypump-nutrition-ring onlypump-animated-conic-ring relative flex h-28 w-28 items-center justify-center rounded-full" style={buildOnlyPumpConicRingStyle(percent)}><div className="onlypump-nutrition-ring-inner flex h-24 w-24 flex-col items-center justify-center rounded-full bg-zinc-950"><span className="onlypump-nutrition-ring-label text-xs text-zinc-400">{label}</span><span className="onlypump-nutrition-ring-value text-2xl">{roundMacro(calories)}</span><span className="onlypump-nutrition-ring-target text-[10px] text-zinc-500">/ {roundMacro(goal)} {unit}</span></div></div>;
 }
 
 function HomeMacroLine({ label, value, progress }) {
@@ -10251,7 +10496,7 @@ function WaterWidget({ waterIntake, waterGoal, onAdd, onRemove }) {
       <Droplets size={18} className="text-sky-400"/>
     </div>
     <div className="mt-5 flex items-center gap-5">
-      <div className="relative flex h-28 w-28 shrink-0 items-center justify-center rounded-full" style={{background:`conic-gradient(#38bdf8 0 ${percent}%, var(--chart-track) ${percent}% 100%)`}}>
+      <div key={`water-widget-ring-${Math.round(percent)}`} className="onlypump-animated-conic-ring relative flex h-28 w-28 shrink-0 items-center justify-center rounded-full" style={buildOnlyPumpConicRingStyle(percent, "#38bdf8")}>
         <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-zinc-950">
           <span className="text-2xl font-semibold">{waterIntake}</span>
           <span className="text-[10px] text-zinc-500">/ {waterGoal} мл</span>
@@ -10378,7 +10623,7 @@ function SleepReportSheet({ dateKey, healthLog, onSave, onClose, saving = false,
       </div>
 
       <div className="mt-6 grid grid-cols-[128px_1fr] items-center gap-5">
-        <div className="relative flex h-32 w-32 items-center justify-center rounded-full" style={{ background: `conic-gradient(#ef4444 0 ${Math.min(100, Math.round((duration / 480) * 100))}%, var(--chart-track) ${Math.min(100, Math.round((duration / 480) * 100))}% 100%)` }}>
+        <div key={`sleep-ring-${Math.round(duration || 0)}`} className="onlypump-animated-conic-ring relative flex h-32 w-32 items-center justify-center rounded-full" style={buildOnlyPumpConicRingStyle(Math.round((duration / 480) * 100))}>
           <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-zinc-950">
             <span className="text-[10px] uppercase tracking-wider text-zinc-500">Сон</span>
             <span className="mt-1 text-lg font-bold">{formatSleepDuration(duration)}</span>
@@ -10764,7 +11009,7 @@ function WaterEditorSheet({ dateKey, healthLog, onSave, onClose, saving = false,
       </div>
 
       <div className="mt-6 grid grid-cols-[116px_1fr] items-center gap-4">
-        <div className="relative flex h-28 w-28 shrink-0 items-center justify-center rounded-full" style={{background:`conic-gradient(#38bdf8 0 ${percent}%, var(--chart-track) ${percent}% 100%)`}}>
+        <div key={`water-editor-ring-${Math.round(percent)}`} className="onlypump-animated-conic-ring relative flex h-28 w-28 shrink-0 items-center justify-center rounded-full" style={buildOnlyPumpConicRingStyle(percent, "#38bdf8")}>
           <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-zinc-950">
             <span className="text-xl font-black">{currentWater}</span>
             <span className="text-[10px] text-zinc-500">/ {currentTarget} мл</span>
@@ -10811,7 +11056,7 @@ function PersonalTrackerIcon({ tracker, size = 18, done = false }) {
 function PersonalTrackerRing({ tracker, value = 0, progress = 0, label }) {
   const accent = getPersonalTrackerAccent(tracker);
   const safeProgress = Math.min(100, Math.max(0, Math.round(progress || 0)));
-  return <div className="onlypump-personal-tracker-ring relative flex h-24 w-24 shrink-0 items-center justify-center rounded-full" style={{ background: `conic-gradient(${accent.color} 0 ${safeProgress}%, var(--chart-track) ${safeProgress}% 100%)` }}>
+  return <div key={`personal-tracker-ring-${Math.round(safeProgress)}`} className="onlypump-personal-tracker-ring onlypump-animated-conic-ring relative flex h-24 w-24 shrink-0 items-center justify-center rounded-full" style={buildOnlyPumpConicRingStyle(safeProgress, accent.color)}>
     <div className="onlypump-personal-tracker-ring-inner flex h-20 w-20 flex-col items-center justify-center rounded-full bg-zinc-950 px-2 text-center">
       <span className="text-lg font-black leading-none">{value}</span>
       <span className="mt-1 text-[10px] leading-none text-zinc-500">{label}</span>
@@ -11834,7 +12079,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
                     <span className="onlypump-nutrition-stat-sub">из {formatNutritionAmount(nutritionTarget)}</span>
                   </div>
                   <div className="onlypump-nutrition-ring-wrap">
-                    <div className="onlypump-nutrition-ring relative flex items-center justify-center rounded-full" style={{background:`conic-gradient(#ef4444 0 ${nutritionPercent}%, var(--chart-track) ${nutritionPercent}% 100%)`}}>
+                    <div key={`home-nutrition-ring-${Math.round(nutritionPercent)}`} className="onlypump-nutrition-ring onlypump-animated-conic-ring relative flex items-center justify-center rounded-full" style={buildOnlyPumpConicRingStyle(nutritionPercent)}>
                       <div className="onlypump-nutrition-ring-inner flex flex-col items-center justify-center rounded-full">
                         <span className="onlypump-nutrition-ring-value">{nutritionPercent}%</span>
                         <span className="onlypump-nutrition-ring-target">съедено</span>
@@ -11852,7 +12097,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
                 {nutritionMacroRows.map(row => <div key={row.label} className="onlypump-nutrition-macro-row">
                   <span className="onlypump-nutrition-macro-label">{row.label}</span>
                   <div className="onlypump-nutrition-macro-track">
-                    <div className={`onlypump-nutrition-macro-fill onlypump-nutrition-macro-${row.tone}`} style={{width: `${row.progress}%`}}/>
+                  <div key={`${row.label}-${Math.round(row.progress)}`} className={`onlypump-nutrition-macro-fill onlypump-nutrition-macro-${row.tone}`} style={{width: `${row.progress}%`}}/>
                   </div>
                   <span className="onlypump-nutrition-macro-value">
                     <span className="onlypump-nutrition-macro-actual">{row.actualValue}</span>
@@ -11869,7 +12114,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
             <h3 className="onlypump-line-clamp-1 text-sm font-black">Прогресс недели</h3>
             <button className="shrink-0 rounded-md bg-white/5 px-2 py-1 text-[10px] text-zinc-400">План <ChevronDown size={12} className="inline"/></button>
           </div>
-          <svg viewBox="0 0 420 150" className="mt-3 min-h-0 flex-1 w-full"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="rgb(239 68 68)" stopOpacity="0.55"/><stop offset="1" stopColor="rgb(239 68 68)" stopOpacity="0"/></linearGradient></defs><path d="M10 125 L70 75 L130 50 L190 70 L250 38 L300 32 L350 10 L405 25 L405 140 L10 140 Z" fill="url(#g)"/><path d="M10 125 L70 75 L130 50 L190 70 L250 38 L300 32 L350 10 L405 25" fill="none" stroke="#ef4444" strokeWidth="3"/></svg>
+          <svg viewBox="0 0 420 150" className="mt-3 min-h-0 flex-1 w-full"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="rgb(239 68 68)" stopOpacity="0.55"/><stop offset="1" stopColor="rgb(239 68 68)" stopOpacity="0"/></linearGradient></defs><path className="onlypump-chart-area" d="M10 125 L70 75 L130 50 L190 70 L250 38 L300 32 L350 10 L405 25 L405 140 L10 140 Z" fill="url(#g)"/><path className="onlypump-chart-line" d="M10 125 L70 75 L130 50 L190 70 L250 38 L300 32 L350 10 L405 25" pathLength="1" strokeDasharray="1" fill="none" stroke="#ef4444" strokeWidth="3"/></svg>
         </Card>;
       case "goalProgress":
         return <Card key={id} onClick={() => setActive("progress")} className="onlypump-home-widget-card relative cursor-pointer overflow-hidden p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
@@ -13197,11 +13442,24 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return sum + (day.exercises || []).reduce((exerciseSum, exercise) => exerciseSum + getProgramExerciseSetsCount(exercise), 0);
   }, 0);
 
+  const getProgramTemplateIdentity = (program = {}) => String(
+    program.templateKey ||
+    program.template_key ||
+    program.id ||
+    program.remoteProgramTemplateId ||
+    program.program_template_id ||
+    ""
+  ).trim();
+
   const mapProgramTemplateRowToProgram = (row = {}) => {
     if (Array.isArray(row.days) && row.days.length) {
+      const templateKey = row.templateKey || row.template_key || row.id || `program-${Date.now()}`;
+      const rawRemoteId = row.remoteProgramTemplateId || row.program_template_id || row.id || null;
       return {
         ...row,
-        id: row.id || row.templateKey || row.template_key || `program-${Date.now()}`,
+        id: templateKey,
+        remoteProgramTemplateId: onlypumpUuidPattern.test(String(rawRemoteId || "")) ? rawRemoteId : (row.remoteProgramTemplateId || row.program_template_id || null),
+        templateKey,
         title: row.title || row.name || "Программа",
         audience: row.audience || "унисекс",
         focus: row.focus || row.goal || "ручной акцент",
@@ -13704,38 +13962,39 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     };
   };
 
-  const buildLocalProgramFromPayload = (payload) => mapProgramTemplateRowToProgram({
-    template_key: payload.program.template_key,
-    name: payload.program.name,
-    description: payload.program.description,
-    goal: payload.program.goal,
-    audience: payload.program.audience,
-    focus: payload.program.focus,
-    default_duration_weeks: payload.program.default_duration_weeks,
-    min_duration_weeks: payload.program.min_duration_weeks,
-    max_duration_weeks: payload.program.max_duration_weeks,
-    default_difficulty: payload.program.default_difficulty,
-    workouts_per_week: payload.program.workouts_per_week,
-    schedule_pattern: payload.program.schedule_pattern,
-    cycle_length_days: payload.program.cycle_length_days,
-    workout_count: payload.program.workout_count,
-    progression_type: payload.program.progression_type,
-    visibility_scope: payload.program.visibility_scope,
-    is_public: payload.program.visibility_scope !== "private",
-    target_profile_ids: payload.program.target_profile_ids,
-    creator_profile_id: profile?.id || null,
-    created_by_role: profileHasRole(profile, "owner") ? "owner" : "trainer",
-    is_user_created: true,
-    program_template_workouts: payload.workouts.map((day, index) => ({
-      ...day,
-      sort_order: index + 1,
-      program_template_exercises: (day.exercises || []).map((exercise, exerciseIndex) => ({
-        ...exercise,
-        sort_order: exerciseIndex + 1,
-        program_exercise_alternatives: exercise.alternatives,
-      })),
-    })),
-  });
+	  const buildLocalProgramFromPayload = (payload) => mapProgramTemplateRowToProgram({
+	    id: payload.program.program_template_id,
+	    template_key: payload.program.template_key,
+	    name: payload.program.name,
+	    description: payload.program.description,
+	    goal: payload.program.goal,
+	    audience: payload.program.audience,
+	    focus: payload.program.focus,
+	    default_duration_weeks: payload.program.default_duration_weeks,
+	    min_duration_weeks: payload.program.min_duration_weeks,
+	    max_duration_weeks: payload.program.max_duration_weeks,
+	    default_difficulty: payload.program.default_difficulty,
+	    workouts_per_week: payload.program.workouts_per_week,
+	    schedule_pattern: payload.program.schedule_pattern,
+	    cycle_length_days: payload.program.cycle_length_days,
+	    workout_count: payload.program.workout_count,
+	    progression_type: payload.program.progression_type,
+	    visibility_scope: payload.program.visibility_scope,
+	    is_public: payload.program.visibility_scope !== "private",
+	    target_profile_ids: payload.program.target_profile_ids,
+	    creator_profile_id: profile?.id || null,
+	    created_by_role: profileHasRole(profile, "owner") ? "owner" : "trainer",
+	    is_user_created: true,
+	    program_template_workouts: payload.workouts.map((day, index) => ({
+	      ...day,
+	      sort_order: index + 1,
+	      program_template_exercises: (day.exercises || []).map((exercise, exerciseIndex) => ({
+	        ...exercise,
+	        sort_order: exerciseIndex + 1,
+	        program_exercise_alternatives: exercise.alternatives,
+	      })),
+	    })),
+	  });
 
   const buildLocalProgramFromDraft = (draft) => buildLocalProgramFromPayload(buildProgramTemplatePayloadFromDraft(draft));
 
@@ -13849,7 +14108,20 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       if (canUseWorkoutApi) {
         const action = draft.remoteProgramTemplateId ? "update_program_template" : "save_program_template";
         const result = await persistProgramTemplatePayload(action, payload);
-        savedProgram = mapProgramTemplateRowToProgram(result.program_template || result.template);
+        const responseProgram = mapProgramTemplateRowToProgram(result.program_template || result.template || {});
+        savedProgram = responseProgram?.days?.length ? responseProgram : localProgram;
+	        if (responseProgram?.remoteProgramTemplateId) {
+	          savedProgram = {
+	            ...savedProgram,
+	            remoteProgramTemplateId: responseProgram.remoteProgramTemplateId,
+	            templateKey: responseProgram.templateKey || savedProgram.templateKey,
+	          };
+	        } else if (draft.remoteProgramTemplateId) {
+	          savedProgram = {
+	            ...savedProgram,
+	            remoteProgramTemplateId: draft.remoteProgramTemplateId,
+	          };
+	        }
       } else {
         const localOnlyMessage = "Программа сохранена только на этом устройстве: нет активной синхронизации аккаунта. Войди в аккаунт или открой через Telegram и сохрани ещё раз.";
         updateProgramBuilderDraft({ error: localOnlyMessage });
@@ -13859,7 +14131,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       }
       if (savedProgram?.days?.length) {
         setCustomTrainingPrograms(prev => {
-          const next = [savedProgram, ...prev.filter(program => program.id !== savedProgram.id)];
+          const savedIdentity = getProgramTemplateIdentity(savedProgram);
+          const next = [savedProgram, ...prev.filter(program => {
+            const identity = getProgramTemplateIdentity(program);
+            return program.id !== savedProgram.id && (!savedIdentity || identity !== savedIdentity);
+          })];
           writeLocalProgramTemplates(next);
           return next;
         });
@@ -13875,7 +14151,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
             error: "",
           },
         } : prev);
-        if (canUseWorkoutApi) loadProgramTemplatesFromApi({ fallbackLocal: false }).catch(error => console.error("Program templates refresh error", error));
+	        if (canUseWorkoutApi) {
+	          loadProgramTemplatesFromApi({ fallbackLocal: false })
+	            .then(() => {
+	              if (savedProgram?.days?.length) applyProgramTemplateUpdate(savedProgram);
+	            })
+	            .catch(error => console.error("Program templates refresh error", error));
+	        }
       }
       if (!autosave && !stayOpen) {
         setProgramBuilderSheet(null);
@@ -13944,15 +14226,28 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const applyProgramTemplateUpdate = (updatedProgram) => {
     if (!updatedProgram?.id) return;
+    const updatedIdentity = getProgramTemplateIdentity(updatedProgram);
     setCustomTrainingPrograms(prev => {
-      const next = prev.map(program => program.id === updatedProgram.id ? { ...program, ...updatedProgram } : program);
-      const exists = next.some(program => program.id === updatedProgram.id);
+      const next = prev.map(program => {
+        const sameId = program.id === updatedProgram.id;
+        const sameIdentity = updatedIdentity && getProgramTemplateIdentity(program) === updatedIdentity;
+        return sameId || sameIdentity ? { ...program, ...updatedProgram } : program;
+      });
+      const exists = next.some(program => program.id === updatedProgram.id || (updatedIdentity && getProgramTemplateIdentity(program) === updatedIdentity));
       const finalPrograms = exists ? next : [updatedProgram, ...next];
       writeLocalProgramTemplates(finalPrograms);
       return finalPrograms;
     });
-    setProgramSettingsSheet(prev => prev?.program?.id === updatedProgram.id ? { ...prev, program: { ...prev.program, ...updatedProgram } } : prev);
-    setProgramShareSheet(prev => prev?.program?.id === updatedProgram.id ? { ...prev, program: { ...prev.program, ...updatedProgram } } : prev);
+    setProgramSettingsSheet(prev => {
+      if (!prev?.program) return prev;
+      const sameProgram = prev.program.id === updatedProgram.id || (updatedIdentity && getProgramTemplateIdentity(prev.program) === updatedIdentity);
+      return sameProgram ? { ...prev, program: { ...prev.program, ...updatedProgram } } : prev;
+    });
+    setProgramShareSheet(prev => {
+      if (!prev?.program) return prev;
+      const sameProgram = prev.program.id === updatedProgram.id || (updatedIdentity && getProgramTemplateIdentity(prev.program) === updatedIdentity);
+      return sameProgram ? { ...prev, program: { ...prev.program, ...updatedProgram } } : prev;
+    });
   };
 
   useEffect(() => {
@@ -18932,8 +19227,10 @@ const toggleExerciseMeasurementSetting = (field) => {
     const byId = new Map();
     [...availableTrainingPrograms, ...customTrainingPrograms, programBuilderListPreview].filter(Boolean).forEach(program => {
       if (!isTrainingProgramVisibleForProfile(program)) return;
-      if (!program?.id || byId.has(program.id)) return;
-      byId.set(program.id, program);
+      const identity = getProgramTemplateIdentity(program);
+      if (!identity) return;
+      const existing = byId.get(identity);
+      byId.set(identity, existing ? { ...existing, ...program } : program);
     });
     const query = programSearch.trim().toLowerCase();
     return Array.from(byId.values())
@@ -22578,7 +22875,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
       <div className="grid grid-cols-[126px_1fr] gap-4">
         <div className="flex flex-col items-center justify-center">
           <div className="relative h-[86px] w-32 overflow-hidden">
-            <div className="absolute left-0 top-0 h-32 w-32 rounded-full" style={{ background: `conic-gradient(from 270deg, #ef4444 0deg ${Math.round((usePalmNutrition ? palmPercent : caloriesPercent) * 1.8)}deg, var(--chart-track) ${Math.round((usePalmNutrition ? palmPercent : caloriesPercent) * 1.8)}deg 180deg, transparent 180deg 360deg)` }} />
+            <div key={`nutrition-hero-ring-${Math.round(usePalmNutrition ? palmPercent : caloriesPercent)}`} className="onlypump-animated-conic-half-ring absolute left-0 top-0 h-32 w-32 rounded-full" style={buildOnlyPumpHalfConicRingStyle(usePalmNutrition ? palmPercent : caloriesPercent)} />
             <div className="absolute left-[10px] top-[10px] flex h-28 w-28 flex-col items-center justify-start rounded-full bg-zinc-950 pt-3 text-center">
               <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">{usePalmNutrition ? "Ладони" : "Ккал"}</span>
               <span className="mt-1 text-2xl font-black leading-none">{usePalmNutrition ? roundMacro(palmSummary.total) : roundCalories(totals.calories)}</span>
@@ -23473,7 +23770,7 @@ function LecturesPage({ lectureItems, setLectureItems }) {
       <Card className="p-5">
         <h2 className="text-xl font-semibold">Прогресс лекций</h2>
         <div className="mt-6 flex justify-center">
-          <div className="relative flex h-32 w-32 items-center justify-center rounded-full" style={{background:`conic-gradient(#ef4444 0 ${totalProgress}%, var(--chart-track) ${totalProgress}% 100%)`}}>
+          <div key={`lecture-progress-ring-${Math.round(totalProgress)}`} className="onlypump-animated-conic-ring relative flex h-32 w-32 items-center justify-center rounded-full" style={buildOnlyPumpConicRingStyle(totalProgress)}>
             <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-zinc-950">
               <span className="text-3xl font-semibold">{totalProgress}%</span>
               <span className="text-[10px] text-zinc-500">лекций</span>
@@ -24673,6 +24970,7 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
   });
   const xLabelIndexes = analyticsLabelIndexes(chartPoints.length);
   const barWidth = Math.max(6, Math.min(24, (plotWidth / Math.max(1, chartPoints.length)) * 0.58));
+  const chartAnimationKey = `${type}-${metricKey}-${period}-${selectedDateKey}-${coords.map(point => `${point.date}:${Math.round(Number(point.value || 0) * 10)}`).join("|")}`;
 
   useEffect(() => {
     setSelected(null);
@@ -24770,10 +25068,10 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
         {!hasDataPoints && <text x="182" y="98" textAnchor="middle" fill="var(--chart-label)" fontSize="13" fontWeight="800">Нет данных в этом периоде</text>}
         {hasDataPoints && (type === "bar" ? coords.map((point, index) => {
           const height = plot.bottom - point.y;
-          return <rect key={`${point.date}-${index}`} x={point.x - barWidth / 2} y={point.y} width={barWidth} height={height} rx="6" fill="#ef4444" opacity={selected?.date === point.date ? 1 : 0.78} onClick={(event) => { if (suppressChartClickRef.current) return; setSelected(point); }}/>;
+          return <rect key={`${chartAnimationKey}-${point.date}-${index}`} className="onlypump-analytics-bar" x={point.x - barWidth / 2} y={point.y} width={barWidth} height={height} rx="6" fill="#ef4444" opacity={selected?.date === point.date ? 1 : 0.78} onClick={(event) => { if (suppressChartClickRef.current) return; setSelected(point); }}/>;
         }) : <>
-          <path d={path} fill="none" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-          {coords.map((point, index) => <circle key={`${point.date}-${index}`} cx={point.x} cy={point.y} r={selected?.date === point.date ? 6 : 4} fill="#ef4444" stroke="var(--onlypump-card-solid)" strokeWidth="2" onClick={(event) => { if (suppressChartClickRef.current) return; setSelected(point); }}/>)}
+          <path key={`line-${chartAnimationKey}`} className="onlypump-chart-line" d={path} pathLength="1" strokeDasharray="1" fill="none" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+          {coords.map((point, index) => <circle key={`${chartAnimationKey}-${point.date}-${index}`} className="onlypump-chart-svg-point" cx={point.x} cy={point.y} r={selected?.date === point.date ? 6 : 4} fill="#ef4444" stroke="var(--onlypump-card-solid)" strokeWidth="2" onClick={(event) => { if (suppressChartClickRef.current) return; setSelected(point); }}/>)}
         </>)}
         {xLabelIndexes.map(index => {
           const point = coords[index];
@@ -29537,6 +29835,7 @@ function LoadingScreen({ theme = "dark" }) {
 
 function OnlyPumpPlatform() {
   useOnlyPumpHapticFeedback();
+  useOnlyPumpRevealAnimations();
   const telegramBootInitData = telegramWebApp?.initData || window.Telegram?.WebApp?.initData || "";
   const [active, setActiveState] = useState("home");
   const [navigationStack, setNavigationStack] = useState([]);
@@ -29559,6 +29858,9 @@ function OnlyPumpPlatform() {
   const [accessRefreshing, setAccessRefreshing] = useState(false);
   const backLayerCount = useBackLayerCount();
   const [globalSelectedDateKey, setGlobalSelectedDateKey] = useState(formatDateKey(new Date()));
+  useEffect(() => {
+    restartOnlyPumpVisibleAnimations();
+  }, [globalSelectedDateKey]);
   const homeLayoutMode = useOnlyPumpHomeLayoutMode();
   const [workouts, setWorkouts] = useState([]);
   const [workoutsRefreshing, setWorkoutsRefreshing] = useState(false);
