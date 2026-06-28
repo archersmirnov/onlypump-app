@@ -221,6 +221,60 @@
       max-height: calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - 0.75rem);
       padding-bottom: calc(var(--onlypump-safe-bottom) + 22px);
     }
+    .onlypump-workouts-screen {
+      display: contents;
+    }
+    .theme-dark .onlypump-workouts-screen .onlypump-modal-layer,
+    .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) {
+      background: rgba(0, 0, 0, 0.74) !important;
+      backdrop-filter: blur(22px) saturate(118%) !important;
+      -webkit-backdrop-filter: blur(22px) saturate(118%) !important;
+    }
+    .theme-dark .onlypump-workouts-screen .onlypump-modal-layer .onlypump-sheet-panel,
+    .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) .onlypump-sheet-panel,
+    .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) > .fixed {
+      background:
+        linear-gradient(180deg, rgba(15, 18, 24, 0.96), rgba(3, 5, 8, 0.94)),
+        rgba(5, 8, 12, 0.95) !important;
+      border-color: rgba(255, 255, 255, 0.16) !important;
+      box-shadow: 0 28px 90px rgba(0, 0, 0, 0.76), inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+      color: #fff;
+      backdrop-filter: blur(28px) saturate(128%) !important;
+      -webkit-backdrop-filter: blur(28px) saturate(128%) !important;
+    }
+    .theme-dark .onlypump-workouts-screen .onlypump-modal-layer .onlypump-sheet-panel [class*="bg-black/"],
+    .theme-dark .onlypump-workouts-screen .onlypump-modal-layer .onlypump-sheet-panel [class*="bg-white/"],
+    .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) .onlypump-sheet-panel [class*="bg-black/"],
+    .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) .onlypump-sheet-panel [class*="bg-white/"],
+    .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) > .fixed [class*="bg-black/"],
+    .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) > .fixed [class*="bg-white/"] {
+      background-color: rgba(10, 14, 19, 0.74) !important;
+      border-color: rgba(255, 255, 255, 0.13) !important;
+      backdrop-filter: blur(16px) saturate(120%);
+      -webkit-backdrop-filter: blur(16px) saturate(120%);
+    }
+    .theme-dark .onlypump-workouts-screen .onlypump-modal-layer .text-zinc-300,
+    .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) .text-zinc-300 {
+      color: rgba(244, 244, 245, 0.92) !important;
+    }
+    .theme-dark .onlypump-workouts-screen .onlypump-modal-layer .text-zinc-400,
+    .theme-dark .onlypump-workouts-screen .onlypump-modal-layer .text-zinc-500,
+    .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) .text-zinc-400,
+    .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) .text-zinc-500 {
+      color: rgba(212, 212, 216, 0.76) !important;
+    }
+    .theme-dark .onlypump-workouts-screen .onlypump-modal-layer .text-zinc-600,
+    .theme-dark .onlypump-workouts-screen .onlypump-modal-layer .text-zinc-700,
+    .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) .text-zinc-600,
+    .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) .text-zinc-700 {
+      color: rgba(161, 161, 170, 0.78) !important;
+    }
+    .theme-dark .onlypump-workouts-screen .onlypump-modal-layer input::placeholder,
+    .theme-dark .onlypump-workouts-screen .onlypump-modal-layer textarea::placeholder,
+    .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) input::placeholder,
+    .theme-dark .onlypump-workouts-screen .onlypump-fullscreen-layer:not(.onlypump-workout-session) textarea::placeholder {
+      color: rgba(161, 161, 170, 0.72) !important;
+    }
     .onlypump-modal-scroll {
       max-height: calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 2rem);
     }
@@ -11547,9 +11601,9 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     }
     switch (id) {
       case "metricWeight":
-        return <WeightMetricWidgetCard title="Вес" value={formatOptionalMetric(currentWeightForWidget, "кг")} trendPoints={weightTrendPoints} icon={Scale} iconSrc={homeWidgetIconPaths.weightIcon} widgetKey="weight" onInfoOpen={openWidgetInfo} onClick={() => setWeightSheetOpen(true)}/>;
+        return <WeightMetricWidgetCard title="Вес" value={formatOptionalMetric(currentWeightForWidget, "кг")} trendPoints={weightTrendPoints} icon={Scale} iconSrc={homeWidgetIconPaths.weightIcon} widgetKey="weight" onInfoOpen={openWidgetInfo} onClick={() => openAnalyticsFromHome("mobile_weight", { returnTo: "home" })}/>;
       case "metricBodyFat":
-        return <MetricWidgetCard title="Процент жира" value={formatOptionalMetric(selectedMeasurements?.bodyFat, "%")} progressContent={<BodyFatRangeScale value={selectedMeasurements?.bodyFat} profile={profile}/>} icon={Ruler} iconSrc={homeWidgetIconPaths.bodyFatIcon} widgetKey="bodyFat" onInfoOpen={openWidgetInfo} onClick={() => setActive("progress")}/>;
+        return <MetricWidgetCard title="Процент жира" value={formatOptionalMetric(selectedMeasurements?.bodyFat, "%")} progressContent={<BodyFatRangeScale value={selectedMeasurements?.bodyFat} profile={profile}/>} icon={Ruler} iconSrc={homeWidgetIconPaths.bodyFatIcon} widgetKey="bodyFat" onInfoOpen={openWidgetInfo} onClick={() => openAnalyticsFromHome("mobile_body_fat", { returnTo: "home" })}/>;
       case "metricTonnage":
         return <MetricWidgetCard title="Тоннаж" value={formatHomeVolumeKg(currentWeekWorkoutSummary.completedVolume)} sub={`из ${formatHomeVolumeKg(currentWeekWorkoutSummary.plannedVolume)} запланировано`} progress={currentWeekTonnageProgress} icon={Dumbbell} iconSrc={homeWidgetIconPaths.tonnageIcon} thinProgress widgetKey="tonnage" onInfoOpen={openWidgetInfo} onClick={() => setActive("workouts")}/>;
       case "metricSets":
@@ -20154,7 +20208,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     </button>;
   };
 
-  return <>
+  return <div className="onlypump-workouts-screen">
     <Header title="Тренировки" info={SCREEN_INFO_CONTENT.workouts}/>
     <div className="mt-5 w-full pb-32">
       <div className="flex min-h-11 items-center justify-between gap-4">
@@ -21464,7 +21518,7 @@ const toggleExerciseMeasurementSetting = (field) => {
         </>}
       </BottomSheetPanel>
     </div>}
-  </>;
+  </div>;
 }
 
 const nutritionMealTypes = [
@@ -25250,13 +25304,14 @@ function MobileAnalyticsScreen({ initialTab = "weight", onClose, profile = DEFAU
   </div>;
 }
 
-function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements, nutritionDay, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], personalTrackers = [], healthSaving = false, healthRefreshing = false, profileSaving = false, selectedDateKey = formatDateKey(new Date()), setSelectedDateKey = () => {}, telegramInitData = "", profileStatus = "local", analyticsIntent = null, measurementOverlay = null, onSaveHealthLog, onSaveWeightMeasurement, onSaveAnalyticsCardSettings, onOpenNutrition, onOpenProgress }) {
+function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements, nutritionDay, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [], personalTrackers = [], healthSaving = false, healthRefreshing = false, profileSaving = false, selectedDateKey = formatDateKey(new Date()), setSelectedDateKey = () => {}, telegramInitData = "", profileStatus = "local", analyticsIntent = null, measurementOverlay = null, onSaveHealthLog, onSaveWeightMeasurement, onSaveAnalyticsCardSettings, onOpenNutrition, onOpenProgress, onReturnHome, onAnalyticsIntentHandled }) {
   const [detail, setDetail] = useState(null);
   const [tableViewOpen, setTableViewOpen] = useState(false);
   const [trackerDetail, setTrackerDetail] = useState(null);
   const [editorType, setEditorType] = useState(null);
   const [editorMetric, setEditorMetric] = useState(null);
   const [mobileAnalyticsTab, setMobileAnalyticsTab] = useState(null);
+  const [mobileAnalyticsReturnTo, setMobileAnalyticsReturnTo] = useState("");
   const [analyticsPeriod, setAnalyticsPeriod] = useState("day");
   const [activitiesCollapsed, setActivitiesCollapsed] = useState(() => {
     try {
@@ -25432,7 +25487,9 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       setDetail(null);
       setTrackerDetail(null);
       setEditorType(null);
+      setMobileAnalyticsReturnTo(analyticsIntent.returnTo || "");
       setMobileAnalyticsTab(mobileAnalyticsIntentTabs[analyticsIntent.type]);
+      onAnalyticsIntentHandled?.();
       return;
     }
     if (analyticsIntent.type === "personal_tracker") {
@@ -25440,16 +25497,20 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       if (tracker) {
         setDetail(null);
         setMobileAnalyticsTab(null);
+        setMobileAnalyticsReturnTo("");
         setTrackerDetail(normalizePersonalTracker(tracker));
+        onAnalyticsIntentHandled?.();
       }
       return;
     }
     const config = analyticsTypeConfigs[analyticsIntent.type];
     if (!config) return;
     setMobileAnalyticsTab(null);
+    setMobileAnalyticsReturnTo("");
     setTrackerDetail(null);
     setDetail({ type: analyticsIntent.type, title: config.title });
-  }, [analyticsIntent?.nonce, analyticsIntent?.type, analyticsIntent?.trackerId, personalTrackers]);
+    onAnalyticsIntentHandled?.();
+  }, [analyticsIntent?.nonce, analyticsIntent?.type, analyticsIntent?.trackerId, analyticsIntent?.returnTo, personalTrackers, onAnalyticsIntentHandled]);
 
   const latestMeasurement = analyticsData.measurements?.length ? analyticsData.measurements[analyticsData.measurements.length - 1] : {};
   const openEditorForDetail = (metricKey) => {
@@ -25580,6 +25641,13 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     const total = items.length;
     const opened = items.filter(item => item.achieved).length;
     return { opened, total, label: `${opened}/${total}` };
+  };
+
+  const closeMobileAnalytics = () => {
+    const returnTo = mobileAnalyticsReturnTo;
+    setMobileAnalyticsTab(null);
+    setMobileAnalyticsReturnTo("");
+    if (returnTo === "home") onReturnHome?.();
   };
   const strengthAchievementCount = countAchievements(strengthAchievements);
   const activityAchievementCount = activityAchievements.reduce((summary, group) => {
@@ -25772,7 +25840,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
   if (mobileAnalyticsTab) {
     return <MobileAnalyticsScreen
       initialTab={mobileAnalyticsTab}
-      onClose={() => setMobileAnalyticsTab(null)}
+      onClose={closeMobileAnalytics}
       profile={profile}
       measurements={measurements}
       latestMeasurement={latestMeasurement}
@@ -29406,6 +29474,10 @@ function OnlyPumpPlatform() {
     setActive("analytics");
   }, [setActive]);
 
+  const clearAnalyticsIntent = useCallback(() => {
+    setAnalyticsIntent(null);
+  }, []);
+
   const goBack = useCallback(() => {
     if (runOnlyPumpBackLayer()) return true;
 
@@ -30908,10 +30980,10 @@ function OnlyPumpPlatform() {
     education: <EducationPage/>,
     lectures: <LecturesPage lectureItems={lectureItems} setLectureItems={setLectureItems}/>,
     progress: <ProgressPage workouts={workouts} measurements={measurements} setMeasurements={setMeasurements} progressGoal={progressGoal} setProgressGoal={setProgressGoal} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} onProgressProfileSaved={handleProgressProfileSaved}/>,
-    analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} nutritionDay={nutritionDay} healthLog={healthLog} healthLogs={healthLogs} personalTrackers={personalTrackers} healthSaving={healthSaving} healthRefreshing={healthRefreshing} profileSaving={profileSaving} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} analyticsIntent={analyticsIntent} measurementOverlay={measurementOverlay} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onSaveAnalyticsCardSettings={handleSaveAnalyticsCardSettings} onOpenNutrition={() => setActive("nutrition")} onOpenProgress={() => setActive("progress")}/>,
+    analytics: <AnalyticsPage workouts={workouts} profile={profile} measurements={measurements} nutritionDay={nutritionDay} healthLog={healthLog} healthLogs={healthLogs} personalTrackers={personalTrackers} healthSaving={healthSaving} healthRefreshing={healthRefreshing} profileSaving={profileSaving} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} telegramInitData={telegramInitData} profileStatus={profileStatus} analyticsIntent={analyticsIntent} measurementOverlay={measurementOverlay} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onSaveAnalyticsCardSettings={handleSaveAnalyticsCardSettings} onOpenNutrition={() => setActive("nutrition")} onOpenProgress={() => setActive("progress")} onReturnHome={() => setActive("home")} onAnalyticsIntentHandled={clearAnalyticsIntent}/>,
     community: <CommunityPage/>,
 	    profile: <ProfilePage profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} onSaveProfile={(payload) => handleSaveProfile(payload, "update_profile")} onSaveProfileQuiz={completeOnboardingProfile} profileSaving={profileSaving} onSaveThemeSettings={handleSaveThemeSettings} themeSaving={themeSaving} onResetProfile={handleResetProfileSettings} onStartTutorial={(screen = "home", options = {}) => startInteractiveTour(screen, { force: true, ...options })}/>,
-	  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, measurementRecords, measurementOverlay, progressGoal, lectureItems, homeWidgets, personalTrackers, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, pumpXpSummary, handleNutritionAction, handleSaveProfile, completeOnboardingProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog, startInteractiveTour]);
+	  }[active]), [active, workouts, nutritionMeals, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, nutritionRefreshing, measurements, measurementRecords, measurementOverlay, progressGoal, lectureItems, homeWidgets, personalTrackers, globalSelectedDateKey, profile, profileStatus, supabaseClient, telegramInitData, analyticsIntent, pumpXpSummary, handleNutritionAction, handleSaveProfile, completeOnboardingProfile, handleSaveThemeSettings, handleSaveAnalyticsCardSettings, handleResetProfileSettings, handleProgressProfileSaved, handleSaveWeightMeasurement, openAnalyticsType, clearAnalyticsIntent, profileSaving, themeSaving, healthLog, healthLogs, healthSaving, healthRefreshing, handleSaveHealthLog, startInteractiveTour]);
 
   if (appLoading || profileLoading) {
     return <LoadingScreen theme={activeTheme}/>;
