@@ -1292,8 +1292,12 @@
 	      min-height: 0;
 	    }
     .onlypump-mood-title {
-      font-size: clamp(0.76rem, 3.4cqw, 0.95rem);
-      line-height: 1.1;
+      overflow: hidden;
+      font-size: clamp(0.52rem, 2.25cqw, 0.68rem);
+      font-weight: 500;
+      line-height: 1;
+      text-overflow: clip;
+      white-space: nowrap;
     }
     .onlypump-mood-primary {
       margin-top: 0.16rem;
@@ -1313,17 +1317,16 @@
       padding: 0;
     }
     .onlypump-mood-character > * {
-      width: min(82%, 7.2rem) !important;
-      height: min(82%, 7.2rem) !important;
+      width: min(112%, 10rem) !important;
+      height: min(112%, 10rem) !important;
       max-width: 100%;
       max-height: 100%;
-      transform: scale(1.8);
-      transform-origin: center;
+      image-rendering: auto;
     }
     .onlypump-mood-stats {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 0.28rem;
+      gap: 0;
       flex: 0 0 auto;
       border-radius: 0.95rem;
       background: rgba(255, 255, 255, 0.035);
@@ -1337,14 +1340,17 @@
       justify-content: center;
       gap: 0.08rem;
       border-radius: 0.76rem;
-      background: rgba(255, 255, 255, 0.035);
+      background: transparent;
       padding: 0.2rem 0.1rem;
+    }
+    .onlypump-mood-stat + .onlypump-mood-stat {
+      border-left: 1px solid rgba(113, 113, 122, 0.28);
     }
     .onlypump-mood-stat-label {
       max-width: 100%;
       overflow: hidden;
       color: var(--onlypump-faint);
-      font-size: clamp(0.43rem, 1.65cqw, 0.52rem);
+      font-size: clamp(0.4rem, 1.52cqw, 0.48rem);
       font-weight: 500;
       letter-spacing: 0;
       line-height: 1;
@@ -1357,8 +1363,8 @@
       gap: 0.1rem;
     }
     .onlypump-mood-stat-label-icon svg {
-      width: 0.52rem;
-      height: 0.52rem;
+      width: 0.46rem;
+      height: 0.46rem;
       flex: 0 0 auto;
     }
     .onlypump-mood-stat-value {
@@ -9072,7 +9078,7 @@ function MoodWellbeingWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen, iconS
   return <Card onClick={onOpen} className="onlypump-home-widget-card onlypump-mood-widget cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
-        <p className="onlypump-mood-title onlypump-line-clamp-2 text-[11px] text-zinc-500">Настроение и самочувствие</p>
+        <p className="onlypump-mood-title text-zinc-500">Настроение и самочувствие</p>
         <div className="onlypump-mood-primary">{summary.label}</div>
       </div>
       <WidgetInfoIcon widgetKey={widgetKey} label="Настроение и самочувствие" onOpen={onInfoOpen} className="shrink-0 text-red-500">{iconSrc ? <HomeWidgetAssetIcon src={iconSrc} alt={iconAlt}/> : <Smile size={18}/>}</WidgetInfoIcon>
@@ -9082,11 +9088,11 @@ function MoodWellbeingWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen, iconS
     </div>
     <div className="onlypump-mood-stats">
       <div className="onlypump-mood-stat">
-        <span className="onlypump-mood-stat-label">Настр.</span>
+        <span className="onlypump-mood-stat-label">Настроение</span>
         <span className="onlypump-mood-stat-value">{summary.moodLabel}</span>
       </div>
       <div className="onlypump-mood-stat">
-        <span className="onlypump-mood-stat-label onlypump-mood-stat-label-icon"><Zap aria-hidden="true"/><span>Энерг.</span></span>
+        <span className="onlypump-mood-stat-label onlypump-mood-stat-label-icon"><Zap aria-hidden="true"/><span>Энергия</span></span>
         <span className="onlypump-mood-stat-value">{summary.energy} / 10</span>
       </div>
       <div className="onlypump-mood-stat">
