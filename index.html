@@ -9352,11 +9352,13 @@ function ActivityRingsSvg({ progress = null, className = "", strokeWidth = 4, tr
 function ActivityRingDay({ date, progress = null, selected = false, visibleDays = 7, marked = false, markerClassName = "bg-red-500" }) {
   const weekday = date.toLocaleDateString('ru-RU', { weekday: 'short' }).replace(".", "");
   const sizeClass = visibleDays === 14 ? "h-9 w-9 sm:h-10 sm:w-10 xl:h-11 xl:w-11" : "h-10 w-10 sm:h-11 sm:w-11";
+  const isToday = formatDateKey(date) === formatDateKey(new Date());
+  const calendarTextClass = isToday ? "text-red-500" : "text-[var(--onlypump-text)]";
   return <div className={`mx-auto flex flex-col items-center transition-transform duration-200 ${selected ? "scale-125" : "scale-100"}`} style={{ transformOrigin: "center center" }}>
-    <span className="h-4 text-sm font-black leading-none text-[var(--onlypump-text)] sm:text-base">{date.getDate()}</span>
+    <span className={`h-4 text-sm font-black leading-none ${calendarTextClass} sm:text-base`}>{date.getDate()}</span>
     <span className={`onlypump-calendar-rings relative mt-0.5 flex ${sizeClass} items-center justify-center`}>
       <ActivityRingsSvg progress={progress} className="absolute inset-0 h-full w-full"/>
-      <span className="relative z-10 text-[8px] font-normal uppercase leading-none text-[var(--onlypump-text)] sm:text-[9px]">{weekday}</span>
+      <span className={`relative z-10 text-[8px] font-normal uppercase leading-none ${calendarTextClass} sm:text-[9px]`}>{weekday}</span>
     </span>
     <span className="mt-1 flex h-2 items-center justify-center">
       {marked && <span className={`h-1.5 w-1.5 rounded-full ${markerClassName}`}/>}
