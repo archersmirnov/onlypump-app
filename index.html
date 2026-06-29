@@ -9212,6 +9212,35 @@ const buildActivityRingProgressForConfig = (details = {}, config = defaultActivi
   return hasAnyData ? progress : null;
 };
 
+const getActivityRingGoalStep = (metricId, unit = "") => {
+  if (metricId === "steps") return 500;
+  if (metricId === "tonnage") return 100;
+  if (metricId === "sleep") return 15;
+  if (metricId === "water") return 100;
+  if (metricId === "calories" || metricId === "fatCarbs") return 50;
+  if (unit === "г") return 5;
+  if (unit === "%") return 5;
+  return 1;
+};
+
+const buildActivityRingMetricTrend = (context = {}, metricId = "steps", selectedDateKey = formatDateKey(new Date()), radius = 3) => {
+  const selectedDate = parseDateKeyLocal(selectedDateKey);
+  return Array.from({ length: radius * 2 + 1 }, (_, index) => {
+    const date = addLocalDaysToDate(selectedDate, index - radius);
+    const dateKey = formatDateKey(date);
+    const detail = buildActivityRingMetricDetails({ ...context, dateKey })?.[metricId] || getActivityRingMetricOption(metricId);
+    return {
+      date,
+      dateKey,
+      label: date.toLocaleDateString("ru-RU", { weekday: "short" }).replace(".", ""),
+      value: Number(detail?.value || 0),
+      goal: Number(detail?.goal || 0),
+      progress: detail?.hasData ? Number(detail.progress || 0) : 0,
+      hasData: Boolean(detail?.hasData),
+    };
+  });
+};
+
 const buildActivityRingArcLayers = (value = 0) => {
   const visualValue = Math.min(normalizeRingProgress(value), ACTIVITY_RING_MAX_VISUAL_PROGRESS);
   if (visualValue <= 0) return [];
@@ -9548,17 +9577,68 @@ function IOSWeekCalendar({ title = "Календарь", selectedDateKey, onSele
   </>;
 }
 
+function ActivityRingMetricTrendChart({ rows = [], selectedDateKey = "", color = "#ef4444" }) {
+  const maxValue = Math.max(
+    1,
+    ...rows.map(row => Number(row.value || 0)),
+    ...rows.map(row => Number(row.goal || 0))
+  );
+  const selectedRow = rows.find(row => row.dateKey === selectedDateKey) || rows[Math.floor(rows.length / 2)] || {};
+  const goalPercent = selectedRow.goal > 0 ? Math.min(100, Math.max(4, (Number(selectedRow.goal) / maxValue) * 100)) : null;
+
+  return <div className="mt-4 rounded-[22px] bg-[var(--onlypump-soft)] px-3 pb-3 pt-4">
+    <div className="relative flex h-24 items-end gap-1">
+      {goalPercent !== null && <span className="pointer-events-none absolute left-0 right-0 border-t border-dashed border-[var(--onlypump-muted)]/25" style={{ bottom: `${goalPercent}%` }}/>}
+      {rows.map(row => {
+        const selected = row.dateKey === selectedDateKey;
+        const hasData = row.hasData && row.value > 0;
+        const height = hasData ? Math.min(100, Math.max(7, (row.value / maxValue) * 100)) : 4;
+        return <div key={row.dateKey} className="relative z-10 flex min-w-0 flex-1 flex-col items-center justify-end gap-1">
+          <div className="flex h-20 w-full items-end justify-center">
+            <span
+              className="w-full max-w-[18px] rounded-t-full transition-all duration-300"
+              style={{
+                height: `${height}%`,
+                backgroundColor: color,
+                opacity: selected ? 1 : hasData ? 0.34 : 0.12,
+                boxShadow: selected ? `0 0 0 2px ${color}33, 0 8px 18px ${color}26` : "none",
+              }}
+            />
+          </div>
+          <span className={`text-[9px] uppercase leading-none ${selected ? "font-black text-[var(--onlypump-text)]" : "font-semibold text-[var(--onlypump-muted)]"}`}>{row.label}</span>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
 function ActivityRingsSettingsSheet({ dateKey, initialConfig = defaultActivityRingConfig, initialGoals = {}, context = {}, onSave, onClose }) {
   const [draftConfig, setDraftConfig] = useState(() => normalizeActivityRingConfig(initialConfig));
   const [draftGoals, setDraftGoals] = useState(() => normalizeActivityRingGoals(initialGoals));
+  const [pickerOpenSlot, setPickerOpenSlot] = useState("");
+  const [goalEditorSlot, setGoalEditorSlot] = useState("");
+  const [unsavedGoalWarningOpen, setUnsavedGoalWarningOpen] = useState(false);
+  const longPressTimerRef = useRef(null);
+  const longPressFiredRef = useRef(false);
 
   useEffect(() => {
     setDraftConfig(normalizeActivityRingConfig(initialConfig));
     setDraftGoals(normalizeActivityRingGoals(initialGoals));
+    setPickerOpenSlot("");
+    setGoalEditorSlot("");
+    setUnsavedGoalWarningOpen(false);
   }, [dateKey, JSON.stringify(initialConfig), JSON.stringify(initialGoals)]);
 
-  const details = useMemo(() => buildActivityRingMetricDetails({ ...context, dateKey, goals: draftGoals }), [context, dateKey, JSON.stringify(draftGoals)]);
+  const initialGoalsSignature = useMemo(() => JSON.stringify(normalizeActivityRingGoals(initialGoals)), [JSON.stringify(initialGoals)]);
+  const draftGoalsSignature = useMemo(() => JSON.stringify(normalizeActivityRingGoals(draftGoals)), [JSON.stringify(draftGoals)]);
+  const hasUnsavedGoalChanges = draftGoalsSignature !== initialGoalsSignature;
+  const ringContext = useMemo(() => ({ ...context, goals: draftGoals }), [context, JSON.stringify(draftGoals)]);
+  const details = useMemo(() => buildActivityRingMetricDetails({ ...ringContext, dateKey }), [ringContext, dateKey]);
   const progress = useMemo(() => buildActivityRingProgressForConfig(details, draftConfig), [details, draftConfig]);
+  const trends = useMemo(() => activityRingSlots.reduce((acc, slot) => {
+    acc[slot.key] = buildActivityRingMetricTrend(ringContext, draftConfig[slot.key], dateKey, 3);
+    return acc;
+  }, {}), [ringContext, dateKey, JSON.stringify(draftConfig)]);
   const dateLabel = getCalendarDateLabel(dateKey);
 
   const setSlotMetric = (slotKey, metricId) => {
@@ -9568,9 +9648,60 @@ function ActivityRingsSettingsSheet({ dateKey, initialConfig = defaultActivityRi
     setDraftGoals(prev => ({ ...prev, [metricId]: value }));
   };
   const getGoalInputValue = (metricId) => draftGoals?.[metricId] ?? details?.[metricId]?.goal ?? "";
+  const clearGoalLongPress = () => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  };
+  const startGoalLongPress = (slotKey) => {
+    clearGoalLongPress();
+    longPressFiredRef.current = false;
+    longPressTimerRef.current = setTimeout(() => {
+      longPressFiredRef.current = true;
+      setPickerOpenSlot("");
+      setGoalEditorSlot(slotKey);
+      if (typeof triggerHaptic === "function") triggerHaptic("medium");
+    }, 520);
+  };
+  const openPicker = (slotKey) => {
+    if (longPressFiredRef.current) {
+      longPressFiredRef.current = false;
+      return;
+    }
+    setPickerOpenSlot(prev => prev === slotKey ? "" : slotKey);
+  };
+  const editorSlot = activityRingSlots.find(slot => slot.key === goalEditorSlot);
+  const editorMetricId = editorSlot ? draftConfig[editorSlot.key] : "";
+  const editorMetric = getActivityRingMetricOption(editorMetricId);
+  const editorGoalValue = Number(getGoalInputValue(editorMetricId) || 0);
+  const editorGoalStep = getActivityRingGoalStep(editorMetricId, editorMetric?.unit);
+  const updateEditorGoal = (value) => {
+    if (!editorMetricId) return;
+    const safeValue = Math.max(1, Math.round(Number(value || 0)));
+    setMetricGoal(editorMetricId, safeValue);
+    if (typeof triggerHaptic === "function") triggerHaptic("selectionChanged");
+  };
+  const closeNow = () => {
+    clearGoalLongPress();
+    setUnsavedGoalWarningOpen(false);
+    onClose?.();
+  };
+  const requestClose = () => {
+    if (hasUnsavedGoalChanges) {
+      setPickerOpenSlot("");
+      setGoalEditorSlot("");
+      setUnsavedGoalWarningOpen(true);
+      if (typeof triggerHaptic === "function") triggerHaptic("warning");
+      return;
+    }
+    closeNow();
+  };
+  const saveGoalsAndClose = async () => {
+    setUnsavedGoalWarningOpen(false);
+    await onSave?.(draftConfig, draftGoals);
+  };
 
-  return <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/70 px-3 pt-10 backdrop-blur-sm" onClick={onClose}>
-    <BottomSheetPanel onClose={onClose} priority={245} onClick={(event) => event.stopPropagation()} className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-t-[34px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] text-[var(--onlypump-text)] shadow-2xl shadow-black/50">
+  return <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/70 px-3 pt-10 backdrop-blur-sm" onClick={requestClose}>
+    <BottomSheetPanel onClose={requestClose} priority={245} onClick={(event) => event.stopPropagation()} className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-t-[34px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] text-[var(--onlypump-text)] shadow-2xl shadow-black/50">
       <div className="sticky top-0 z-10 border-b border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-5 pb-3 pt-3">
         <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-[var(--onlypump-border)]"/>
         <div className="flex items-start justify-between gap-4">
@@ -9578,7 +9709,7 @@ function ActivityRingsSettingsSheet({ dateKey, initialConfig = defaultActivityRi
             <p className="text-xs font-black uppercase tracking-[0.22em] text-[var(--onlypump-muted)]">{dateLabel}</p>
             <h2 className="mt-1 text-2xl font-black leading-tight text-[var(--onlypump-text)]">Кольца дисциплины</h2>
           </div>
-          <button type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--onlypump-soft)] text-2xl leading-none text-[var(--onlypump-text)] transition hover:scale-105 active:scale-95">×</button>
+          <button type="button" onClick={requestClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--onlypump-soft)] text-2xl leading-none text-[var(--onlypump-text)] transition hover:scale-105 active:scale-95">×</button>
         </div>
       </div>
 
@@ -9590,12 +9721,41 @@ function ActivityRingsSettingsSheet({ dateKey, initialConfig = defaultActivityRi
           <div className="mt-5 grid w-full gap-2">
             {activityRingSlots.map(slot => {
               const metric = getActivityRingMetricOption(draftConfig[slot.key]);
-              return <div key={slot.key} className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--onlypump-soft)] px-3 py-2">
-                <span className="flex items-center gap-2 text-sm font-black text-[var(--onlypump-text)]">
-                  <span className="h-3 w-3 rounded-full" style={{ backgroundColor: slot.color }}/>
-                  {slot.label}
-                </span>
-                <span className="text-sm font-semibold text-[var(--onlypump-muted)]">{metric.label}</span>
+              const open = pickerOpenSlot === slot.key;
+              return <div key={slot.key} className="relative">
+                <button
+                  type="button"
+                  onPointerDown={() => startGoalLongPress(slot.key)}
+                  onPointerUp={clearGoalLongPress}
+                  onPointerCancel={clearGoalLongPress}
+                  onPointerLeave={clearGoalLongPress}
+                  onClick={() => openPicker(slot.key)}
+                  className="flex w-full touch-manipulation select-none items-center justify-between gap-3 rounded-2xl bg-[var(--onlypump-soft)] px-3 py-2.5 text-left transition active:scale-[0.99]"
+                >
+                  <span className="flex min-w-0 items-center gap-2 text-sm font-black text-[var(--onlypump-text)]">
+                    <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: slot.color }}/>
+                    <span className="truncate">{metric.label}</span>
+                  </span>
+                  <ChevronDown size={16} className={`shrink-0 text-[var(--onlypump-muted)] transition ${open ? "rotate-180" : ""}`}/>
+                </button>
+                {open && <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 max-h-64 overflow-y-auto rounded-2xl border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-1 shadow-xl shadow-black/25">
+                  {activityRingMetricOptions.map(option => <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => {
+                      setSlotMetric(slot.key, option.id);
+                      setPickerOpenSlot("");
+                      if (typeof triggerHaptic === "function") triggerHaptic("selectionChanged");
+                    }}
+                    className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-bold transition ${option.id === metric.id ? "bg-red-500/10 text-[var(--onlypump-text)]" : "text-[var(--onlypump-muted)] hover:bg-[var(--onlypump-soft)]"}`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: slot.color }}/>
+                      <span className="truncate">{option.label}</span>
+                    </span>
+                    {option.id === metric.id && <span className="h-2 w-2 rounded-full bg-red-500"/>}
+                  </button>)}
+                </div>}
               </div>;
             })}
           </div>
@@ -9609,58 +9769,58 @@ function ActivityRingsSettingsSheet({ dateKey, initialConfig = defaultActivityRi
             return <div key={`${slot.key}-analytics`} className="rounded-[24px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-black uppercase tracking-[0.2em] text-[var(--onlypump-muted)]">{slot.shortLabel}</p>
-                  <h3 className="mt-1 text-lg font-black text-[var(--onlypump-text)]">{detail.label}</h3>
+                  <h3 className="text-lg font-black text-[var(--onlypump-text)]">{detail.label}</h3>
+                  <p className="mt-1 text-xs font-bold text-[var(--onlypump-muted)]">{formatActivityRingValue(detail.value, detail.unit)}</p>
                 </div>
                 <span className="rounded-full px-3 py-1 text-sm font-black" style={{ color: slot.color, backgroundColor: `${slot.color}1A` }}>{detail?.hasData ? `${percent}%` : "нет данных"}</span>
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-                <div className="rounded-2xl bg-[var(--onlypump-soft)] p-3">
-                  <span className="block text-xs font-bold text-[var(--onlypump-muted)]">Факт</span>
-                  <b className="mt-1 block text-[var(--onlypump-text)]">{formatActivityRingValue(detail.value, detail.unit)}</b>
-                </div>
-                <div className="rounded-2xl bg-[var(--onlypump-soft)] p-3">
-                  <span className="block text-xs font-bold text-[var(--onlypump-muted)]">Цель</span>
-                  <b className="mt-1 block text-[var(--onlypump-text)]">{formatActivityRingValue(detail.goal, detail.unit)}</b>
-                </div>
-              </div>
+              <ActivityRingMetricTrendChart rows={trends[slot.key] || []} selectedDateKey={dateKey} color={slot.color}/>
             </div>;
           })}
         </div>
 
-        <div className="rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-4">
-          <h3 className="text-lg font-black text-[var(--onlypump-text)]">Настройка колец</h3>
-          <div className="mt-4 space-y-3">
-            {activityRingSlots.map(slot => {
-              const metricId = draftConfig[slot.key];
-              const metric = getActivityRingMetricOption(metricId);
-              return <div key={`${slot.key}-settings`} className="grid gap-2 rounded-[22px] bg-[var(--onlypump-soft)] p-3">
-                <label className="text-xs font-black uppercase tracking-[0.18em] text-[var(--onlypump-muted)]">{slot.label}</label>
-                <select
-                  value={metricId}
-                  onChange={(event) => setSlotMetric(slot.key, event.target.value)}
-                  className="h-11 rounded-2xl border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-3 text-sm font-bold text-[var(--onlypump-text)] outline-none focus:border-red-500"
-                >
-                  {activityRingMetricOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
-                </select>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="1"
-                    inputMode="decimal"
-                    value={getGoalInputValue(metricId)}
-                    onChange={(event) => setMetricGoal(metricId, event.target.value)}
-                    className="h-11 min-w-0 flex-1 rounded-2xl border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-3 text-sm font-black text-[var(--onlypump-text)] outline-none focus:border-red-500"
-                  />
-                  <span className="w-16 text-sm font-bold text-[var(--onlypump-muted)]">{metric.unit}</span>
-                </div>
-              </div>;
-            })}
+        <button type="button" onClick={() => onSave?.(draftConfig, draftGoals)} className="mt-2 h-14 w-full rounded-[24px] bg-red-500 text-base font-black text-black shadow-xl shadow-red-500/25 transition hover:scale-[1.01] active:scale-[0.98]">Сохранить</button>
+      </div>
+      {goalEditorSlot && <div className="fixed inset-0 z-[10020] flex items-end justify-center bg-black/50 px-4 pb-5 backdrop-blur-sm" onClick={() => setGoalEditorSlot("")}>
+        <div className="w-full max-w-md rounded-[34px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-5 text-center shadow-2xl shadow-black/50" onClick={(event) => event.stopPropagation()}>
+          <div className="flex items-center justify-between gap-3">
+            <button type="button" onClick={() => setGoalEditorSlot("")} className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--onlypump-soft)] text-2xl text-[var(--onlypump-text)]">×</button>
+            <button type="button" onClick={() => setGoalEditorSlot("")} className="rounded-full bg-[var(--onlypump-soft)] px-4 py-2 text-sm font-black text-[var(--onlypump-text)]">Готово</button>
+          </div>
+          <div className="mt-8 text-left">
+            <h3 className="text-2xl font-black text-[var(--onlypump-text)]">{editorMetric.label}</h3>
+            <p className="mt-2 text-base font-semibold text-[var(--onlypump-muted)]">Удерживай параметр, чтобы менять цель.</p>
+          </div>
+          <div className="mt-14 flex items-center justify-center gap-6">
+            <button type="button" onClick={() => updateEditorGoal(editorGoalValue - editorGoalStep)} className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500 text-5xl font-black leading-none text-black shadow-xl shadow-red-500/25">−</button>
+            <input
+              inputMode="numeric"
+              value={getGoalInputValue(editorMetricId)}
+              onChange={(event) => setMetricGoal(editorMetricId, event.target.value.replace(/[^\d.]/g, ""))}
+              className="min-w-0 flex-1 bg-transparent text-center text-5xl font-black text-[var(--onlypump-text)] outline-none"
+            />
+            <button type="button" onClick={() => updateEditorGoal(editorGoalValue + editorGoalStep)} className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500 text-5xl font-black leading-none text-black shadow-xl shadow-red-500/25">+</button>
+          </div>
+          <p className="mt-5 text-lg font-black uppercase tracking-[0.08em] text-[var(--onlypump-muted)]">{editorMetric.unit}</p>
+        </div>
+      </div>}
+      {unsavedGoalWarningOpen && <div className="fixed inset-0 z-[10030] flex items-end justify-center bg-black/70 px-3 pt-10 backdrop-blur-sm" onClick={() => setUnsavedGoalWarningOpen(false)}>
+        <div className="w-full max-w-xl rounded-t-[34px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-5 pb-[calc(var(--onlypump-safe-bottom)+1rem)] pt-5 text-[var(--onlypump-text)] shadow-2xl shadow-black/50" onClick={(event) => event.stopPropagation()}>
+          <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-[var(--onlypump-border)]"/>
+          <div className="flex items-center justify-between gap-3">
+            <span aria-hidden="true" className="h-10 w-10 shrink-0"/>
+            <h2 className="min-w-0 flex-1 text-center text-lg font-black tracking-[-0.03em]">Есть несохраненная цель</h2>
+            <button type="button" onClick={() => setUnsavedGoalWarningOpen(false)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--onlypump-soft)] text-[var(--onlypump-text)]" aria-label="Закрыть предупреждение">×</button>
+          </div>
+          <div className="mt-5 rounded-[26px] border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)] p-5">
+            <p className="text-base font-semibold leading-7 text-[var(--onlypump-muted)]">Ты изменил цель колец. Можно выйти без сохранения или сохранить новую цель.</p>
+          </div>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <button type="button" onClick={closeNow} className="h-14 rounded-[22px] border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)] text-sm font-black text-[var(--onlypump-text)]">Выйти</button>
+            <button type="button" onClick={saveGoalsAndClose} className="h-14 rounded-[22px] bg-red-500 text-sm font-black text-black shadow-xl shadow-red-500/25">Сохранить</button>
           </div>
         </div>
-
-        <button type="button" onClick={() => onSave?.(draftConfig, draftGoals)} className="sticky bottom-3 h-14 w-full rounded-[24px] bg-red-500 text-base font-black text-black shadow-xl shadow-red-500/25 transition hover:scale-[1.01] active:scale-[0.98]">Сохранить</button>
-      </div>
+      </div>}
     </BottomSheetPanel>
   </div>;
 }
@@ -9770,11 +9930,13 @@ function WidgetInfoIcon({ widgetKey, label, onOpen, children, className = "" }) 
 }
 
 const homeWidgetIconPaths = {
+  measurementsIcon: "assets/menu-icons/home-widget-measurements.svg",
   nutritionIcon: "assets/menu-icons/home-widget-nutrition.svg",
   stepsIcon: "assets/menu-icons/home-widget-steps.svg",
   sleepIcon: "assets/menu-icons/home-widget-sleep.svg",
   bodyFatIcon: "assets/menu-icons/home-widget-body-fat.svg",
   weightIcon: "assets/menu-icons/home-widget-weight.svg",
+  waterIcon: "assets/menu-icons/home-widget-water.svg",
   wellbeingIcon: "assets/menu-icons/home-widget-wellbeing.svg",
   recoveryIcon: "assets/menu-icons/home-widget-recovery.svg",
   tonnageIcon: "assets/menu-icons/home-widget-tonnage.svg",
@@ -12109,7 +12271,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
 	                    <span className="truncate text-[10px] text-zinc-500">/ {waterGoal.toLocaleString("ru-RU")} мл</span>
 	                  </div>
 	                </div>
-	                <WidgetInfoIcon widgetKey="water" label="Вода" onOpen={openWidgetInfo} className="shrink-0 text-sky-400"><Droplets size={18}/></WidgetInfoIcon>
+	                <WidgetInfoIcon widgetKey="water" label="Вода" onOpen={openWidgetInfo} className="shrink-0 text-sky-400"><HomeWidgetAssetIcon src={homeWidgetIconPaths.waterIcon}/></WidgetInfoIcon>
 	              </div>
 	              <div className="mt-2"><Progress value={waterProgress} tone="sky"/></div>
 	            </div>
@@ -24556,15 +24718,15 @@ const analyticsMainPeriods = [
 ];
 
 const analyticsCardCatalog = [
-  { id: "measurements", icon: Ruler, title: "Замеры", detail: "measurements", defaultVisible: true },
-  { id: "weight", icon: Scale, title: "Вес", detail: "weight", defaultVisible: true },
-  { id: "steps", icon: Activity, title: "Шаги", detail: "steps", defaultVisible: true },
-  { id: "sleep", icon: Moon, title: "Сон", detail: "sleep", defaultVisible: true },
-  { id: "water", icon: Droplets, title: "Вода", detail: "water", defaultVisible: true },
-  { id: "calories", icon: Apple, title: "Калории", detail: "calories", defaultVisible: true },
-  { id: "training", icon: Zap, title: "Нагрузка", detail: "training_load", defaultVisible: true },
-  { id: "recovery", icon: HeartPulse, title: "Восстановление", detail: "recovery", defaultVisible: true },
-  { id: "tonnage", icon: Dumbbell, title: "Тоннаж", detail: "training_load", defaultVisible: true },
+  { id: "measurements", icon: Ruler, iconSrc: homeWidgetIconPaths.measurementsIcon, title: "Замеры", detail: "measurements", defaultVisible: true },
+  { id: "weight", icon: Scale, iconSrc: homeWidgetIconPaths.weightIcon, title: "Вес", detail: "weight", defaultVisible: true },
+  { id: "steps", icon: Activity, iconSrc: homeWidgetIconPaths.stepsIcon, title: "Шаги", detail: "steps", defaultVisible: true },
+  { id: "sleep", icon: Moon, iconSrc: homeWidgetIconPaths.sleepIcon, title: "Сон", detail: "sleep", defaultVisible: true },
+  { id: "water", icon: Droplets, iconSrc: homeWidgetIconPaths.waterIcon, title: "Вода", detail: "water", defaultVisible: true },
+  { id: "calories", icon: Apple, iconSrc: homeWidgetIconPaths.nutritionIcon, title: "Калории", detail: "calories", defaultVisible: true },
+  { id: "training", icon: Zap, iconSrc: homeWidgetIconPaths.setsIcon, title: "Нагрузка", detail: "training_load", defaultVisible: true },
+  { id: "recovery", icon: HeartPulse, iconSrc: homeWidgetIconPaths.recoveryIcon, title: "Восстановление", detail: "recovery", defaultVisible: true },
+  { id: "tonnage", icon: Dumbbell, iconSrc: homeWidgetIconPaths.tonnageIcon, title: "Тоннаж", detail: "training_load", defaultVisible: true },
   { id: "activities", icon: Activity, title: "Активности", detail: null, defaultVisible: true },
   { id: "weekSummary", icon: Trophy, title: "Вывод периода", detail: null, defaultVisible: true },
 ];
@@ -26358,6 +26520,9 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     const data = cardData[cardId];
     if (!catalog || !data) return null;
     const Icon = catalog.icon;
+    const renderCardIcon = (className = "h-6 w-6") => catalog.iconSrc
+      ? <HomeWidgetAssetIcon src={catalog.iconSrc} className={className}/>
+      : <Icon className="text-red-500"/>;
     if (cardId === "activities") {
       return <Card key={cardId} className="p-5 xl:col-span-2">
         <button type="button" onClick={() => toggleAnalyticsSection(setActivitiesCollapsed)} className="flex w-full items-start justify-between gap-4 text-left">
@@ -26412,7 +26577,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       return <Card key={cardId} className="p-5 xl:col-span-2">
         <button type="button" onClick={() => toggleAnalyticsSection(setTonnageCollapsed)} className="flex w-full items-start justify-between gap-4 text-left">
           <div>
-            <Dumbbell className="text-red-500"/>
+            {renderCardIcon()}
             <p className="mt-5 text-sm text-zinc-500">Тоннаж</p>
             <div className="mt-2 break-words text-4xl">{data.value}</div>
             <p className="mt-3 text-sm text-zinc-400">{data.sub}</p>
@@ -26454,7 +26619,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     }
     const title = analyticsCardTitle(catalog);
     return <Card key={cardId} onClick={() => data.detail && setDetail({ type: data.detail, title })} className="cursor-pointer p-5 transition hover:border-red-500/50 hover:bg-red-500/5">
-      <Icon className="text-red-500"/>
+      {renderCardIcon()}
       <p className="mt-5 text-sm text-zinc-500">{title}</p>
       <div className="mt-2 break-words text-4xl">{data.value}</div>
       <p className="mt-3 text-sm text-zinc-400">{data.sub}</p>
