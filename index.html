@@ -1187,6 +1187,10 @@
       animation-duration: 1180ms;
       animation-delay: 120ms;
     }
+    .onlypump-animated-ring-final {
+      opacity: 0;
+      animation: onlypump-fade-in 1ms linear var(--onlypump-ring-final-delay, 980ms) forwards;
+    }
     .onlypump-animated-ring-grow-arc.onlypump-animation-visible {
       animation: onlypump-ring-grow-dash var(--onlypump-ring-segment-duration, 780ms) linear both;
       animation-delay: var(--onlypump-ring-segment-delay, 980ms);
@@ -9358,6 +9362,28 @@ const mixActivityRingHexColor = (color = "#ef4444", target = 255, amount = 0) =>
   return `rgb(${mixed.join(", ")})`;
 };
 
+const getActivityRingColorChannels = (color = "#ef4444") => {
+  const value = String(color || "").trim();
+  const hex = value.replace("#", "");
+  if (/^[0-9a-f]{6}$/i.test(hex)) {
+    return [0, 2, 4].map(offset => parseInt(hex.slice(offset, offset + 2), 16));
+  }
+  const rgbMatch = value.match(/rgba?\(([^)]+)\)/i);
+  if (rgbMatch) {
+    const channels = rgbMatch[1].split(",").slice(0, 3).map(channel => Number.parseFloat(channel.trim()));
+    if (channels.every(channel => Number.isFinite(channel))) return channels;
+  }
+  return [239, 68, 68];
+};
+
+const mixActivityRingColors = (fromColor, toColor, amount = 0) => {
+  const from = getActivityRingColorChannels(fromColor);
+  const to = getActivityRingColorChannels(toColor);
+  const safeAmount = Math.max(0, Math.min(1, Number(amount) || 0));
+  const mixed = from.map((channel, index) => Math.round(channel + (to[index] - channel) * safeAmount));
+  return `rgb(${mixed.join(", ")})`;
+};
+
 const getActivityRingLayerStackPosition = (layers = [], layer = {}) => {
   const normalizedLayers = Array.isArray(layers) && layers.length ? layers : [layer];
   const sortedLayers = [...normalizedLayers].sort((a, b) => Number(a?.index || 0) - Number(b?.index || 0));
@@ -9394,6 +9420,23 @@ const describeActivityRingArc = (radius, percent = 0) => {
   return `M ${start.x.toFixed(3)} ${start.y.toFixed(3)} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${end.x.toFixed(3)} ${end.y.toFixed(3)}`;
 };
 
+const describeActivityRingArcSegment = (radius, startPercent = 0, endPercent = 0) => {
+  const safeStart = clampProgress(startPercent);
+  const safeEnd = clampProgress(endPercent);
+  const startAngle = (safeStart / 100) * Math.PI * 2;
+  const endAngle = (safeEnd / 100) * Math.PI * 2;
+  const start = {
+    x: 24 + Math.cos(startAngle) * radius,
+    y: 24 + Math.sin(startAngle) * radius,
+  };
+  const end = {
+    x: 24 + Math.cos(endAngle) * radius,
+    y: 24 + Math.sin(endAngle) * radius,
+  };
+  const largeArcFlag = (endAngle - startAngle) > Math.PI ? 1 : 0;
+  return `M ${start.x.toFixed(3)} ${start.y.toFixed(3)} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${end.x.toFixed(3)} ${end.y.toFixed(3)}`;
+};
+
 const getActivityRingArcPoint = (radius, percent = 0) => {
   const angle = (clampProgress(percent) / 100) * Math.PI * 2;
   return {
@@ -9422,28 +9465,110 @@ function ActivityRingsSvg({ progress = null, className = "", strokeWidth = 4, tr
         const layerColor = getLayerColor(layer);
         const overflowDelay = ACTIVITY_RING_BASE_ANIMATION_MS + Math.max(0, layer.index - 1) * ACTIVITY_RING_OVERFLOW_CYCLE_MS;
         const overflowDuration = Math.max(220, ACTIVITY_RING_OVERFLOW_CYCLE_MS * (clampProgress(arcValue) / 100));
-        return <circle
-          key={`${ring.key}-${isOverflow ? "overflow" : "base"}-${animationKey}`}
-          cx="24"
-          cy="24"
-          r={ring.radius}
-          fill="none"
-          stroke={layerColor}
-          strokeWidth={strokeWidth}
-          strokeLinecap={arcValue >= 99.999 ? "butt" : "round"}
-          className={`${animate ? "onlypump-animated-ring-arc" : ""} ${isOverflow ? "onlypump-animated-ring-overflow" : ""}`.trim()}
-          style={{
-            "--onlypump-ring-circumference": `${circumference}`,
-            "--onlypump-ring-final-offset": `${finalOffset}`,
-            strokeDasharray: circumference,
-            strokeDashoffset: finalOffset,
-            opacity: 1,
-            ...(isOverflow ? {
-              animationDelay: `${overflowDelay}ms`,
-              animationDuration: `${overflowDuration.toFixed(0)}ms`,
-            } : {}),
-          }}
-        />;
+        const isFullArc = arcValue >= 99.999;
+        if (isFullArc) {
+          const finalDelay = isOverflow ? overflowDelay + overflowDuration : ACTIVITY_RING_BASE_ANIMATION_MS;
+          return <React.Fragment key={`${ring.key}-${isOverflow ? "overflow" : "base"}-${animationKey}`}>
+            <circle
+              cx="24"
+              cy="24"
+              r={ring.radius}
+              fill="none"
+              stroke={layerColor}
+              strokeWidth={strokeWidth}
+              strokeLinecap="round"
+              className={`${animate ? "onlypump-animated-ring-arc" : ""} ${isOverflow ? "onlypump-animated-ring-overflow" : ""}`.trim()}
+              style={{
+                "--onlypump-ring-circumference": `${circumference}`,
+                "--onlypump-ring-final-offset": "0",
+                strokeDasharray: circumference,
+                strokeDashoffset: 0,
+                opacity: animate ? 1 : 0,
+                ...(isOverflow ? {
+                  animationDelay: `${overflowDelay}ms`,
+                  animationDuration: `${overflowDuration.toFixed(0)}ms`,
+                } : {}),
+              }}
+              pointerEvents="none"
+            />
+            <circle
+              cx="24"
+              cy="24"
+              r={ring.radius}
+              fill="none"
+              stroke={layerColor}
+              strokeWidth={strokeWidth}
+              className={animate ? "onlypump-animated-ring-final" : ""}
+              style={animate ? { "--onlypump-ring-final-delay": `${finalDelay.toFixed(0)}ms` } : undefined}
+              pointerEvents="none"
+            />
+          </React.Fragment>;
+        }
+        if (isOverflow) {
+          const previousLayer = layers.find(item => Number(item.index) === Number(layer.index) - 1);
+          const previousColor = previousLayer ? getLayerColor(previousLayer) : ring.color;
+          const startPoint = getActivityRingArcPoint(ring.radius, 0);
+          const endPoint = getActivityRingArcPoint(ring.radius, arcValue);
+          const gradientId = `activity-ring-overflow-${ring.key}-${animationKey}`;
+          const capDelay = overflowDelay + overflowDuration;
+          return <React.Fragment key={`${ring.key}-overflow-${animationKey}`}>
+            <defs>
+              <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1={startPoint.x} y1={startPoint.y} x2={endPoint.x} y2={endPoint.y}>
+                <stop offset="0%" stopColor={previousColor}/>
+                <stop offset="70%" stopColor={mixActivityRingColors(previousColor, layerColor, 0.16)}/>
+                <stop offset="92%" stopColor={mixActivityRingColors(previousColor, layerColor, 0.58)}/>
+                <stop offset="100%" stopColor={layerColor}/>
+              </linearGradient>
+            </defs>
+            <path
+              d={describeActivityRingArcSegment(ring.radius, 0, arcValue)}
+              fill="none"
+              stroke={`url(#${gradientId})`}
+              strokeWidth={strokeWidth}
+              strokeLinecap="butt"
+              className={`${animate ? "onlypump-animated-ring-arc" : ""} onlypump-animated-ring-overflow`.trim()}
+              style={{
+                "--onlypump-ring-circumference": "1",
+                "--onlypump-ring-final-offset": "0",
+                strokeDasharray: 1,
+                strokeDashoffset: 0,
+                opacity: 1,
+                animationDelay: `${overflowDelay}ms`,
+                animationDuration: `${overflowDuration.toFixed(0)}ms`,
+              }}
+            />
+            <circle
+              cx={endPoint.x}
+              cy={endPoint.y}
+              r={strokeWidth / 2}
+              fill={layerColor}
+              pointerEvents="none"
+              style={animate ? {
+                opacity: 0,
+                animation: `onlypump-fade-in 1ms linear ${capDelay.toFixed(0)}ms forwards`,
+              } : undefined}
+            />
+          </React.Fragment>;
+        }
+        return <React.Fragment key={`${ring.key}-base-${animationKey}`}>
+          <circle
+            cx="24"
+            cy="24"
+            r={ring.radius}
+            fill="none"
+            stroke={layerColor}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            className={animate ? "onlypump-animated-ring-arc" : ""}
+            style={{
+              "--onlypump-ring-circumference": `${circumference}`,
+              "--onlypump-ring-final-offset": `${finalOffset}`,
+              strokeDasharray: circumference,
+              strokeDashoffset: finalOffset,
+              opacity: 1,
+            }}
+          />
+        </React.Fragment>;
       };
       return <g key={ring.key}>
         <circle cx="24" cy="24" r={ring.radius} fill="none" stroke={ring.track} strokeWidth={strokeWidth} opacity={trackOpacity}/>
