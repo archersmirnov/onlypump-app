@@ -9932,6 +9932,7 @@ function WidgetInfoIcon({ widgetKey, label, onOpen, children, className = "" }) 
 const homeWidgetIconPaths = {
   measurementsIcon: "assets/menu-icons/home-widget-measurements.svg",
   nutritionIcon: "assets/menu-icons/home-widget-nutrition.svg",
+  proteinIcon: "assets/menu-icons/home-widget-protein.svg",
   stepsIcon: "assets/menu-icons/home-widget-steps.svg",
   sleepIcon: "assets/menu-icons/home-widget-sleep.svg",
   bodyFatIcon: "assets/menu-icons/home-widget-body-fat.svg",
@@ -9942,10 +9943,77 @@ const homeWidgetIconPaths = {
   tonnageIcon: "assets/menu-icons/home-widget-tonnage.svg",
   setsIcon: "assets/menu-icons/home-widget-sets.svg",
   habitTrackerIcon: "assets/menu-icons/home-widget-habit-tracker.svg",
+  workoutIcon: "assets/menu-icons/home-widget-workout.svg",
+  weekProgressIcon: "assets/menu-icons/home-widget-week-progress.svg",
+  goalProgressIcon: "assets/menu-icons/home-widget-goal-progress.svg",
+  quickActionsIcon: "assets/menu-icons/home-widget-quick-actions.svg",
+  educationIcon: "assets/menu-icons/home-widget-education.svg",
+  toolsIcon: "assets/menu-icons/home-widget-tools.svg",
 };
 
 function HomeWidgetAssetIcon({ src, alt = "", className = "" }) {
   return <img src={src} alt={alt} aria-hidden={alt ? undefined : true} draggable="false" className={`block h-[1.15rem] w-[1.15rem] object-contain ${className}`}/>;
+}
+
+const homeWidgetThumbnailIconConfig = {
+  metricWeight: { iconSrc: homeWidgetIconPaths.weightIcon, tone: "red", detail: "line" },
+  metricBodyFat: { iconSrc: homeWidgetIconPaths.bodyFatIcon, tone: "red", detail: "scale" },
+  metricTonnage: { iconSrc: homeWidgetIconPaths.tonnageIcon, tone: "red", detail: "line" },
+  metricSets: { iconSrc: homeWidgetIconPaths.setsIcon, tone: "red", detail: "line" },
+  metricCalories: { iconSrc: homeWidgetIconPaths.nutritionIcon, tone: "red", detail: "ring" },
+  metricProtein: { iconSrc: homeWidgetIconPaths.proteinIcon, tone: "red", detail: "line" },
+  metricRecovery: { iconSrc: homeWidgetIconPaths.recoveryIcon, tone: "green", detail: "line" },
+  metricSleep: { iconSrc: homeWidgetIconPaths.sleepIcon, tone: "red", detail: "line" },
+  metricSteps: { iconSrc: homeWidgetIconPaths.stepsIcon, tone: "red", detail: "bars" },
+  macros: { iconSrc: homeWidgetIconPaths.nutritionIcon, tone: "red", detail: "lines" },
+  water: { iconSrc: homeWidgetIconPaths.waterIcon, tone: "sky", detail: "line" },
+  personalTracker: { iconSrc: homeWidgetIconPaths.habitTrackerIcon, tone: "green", detail: "dots" },
+  moodWellbeing: { iconSrc: homeWidgetIconPaths.wellbeingIcon, tone: "red", detail: "dots" },
+  dailyNote: { icon: StickyNote, tone: "yellow", detail: "note" },
+  workout: { iconSrc: homeWidgetIconPaths.workoutIcon, tone: "red", detail: "bars" },
+  nutrition: { iconSrc: homeWidgetIconPaths.nutritionIcon, tone: "red", detail: "ring" },
+  weekProgress: { iconSrc: homeWidgetIconPaths.weekProgressIcon, tone: "red", detail: "bars" },
+  goalProgress: { iconSrc: homeWidgetIconPaths.goalProgressIcon, tone: "red", detail: "line" },
+  miniActions: { iconSrc: homeWidgetIconPaths.quickActionsIcon, tone: "red", detail: "dots" },
+  education: { iconSrc: homeWidgetIconPaths.educationIcon, tone: "red", detail: "lines" },
+  tools: { iconSrc: homeWidgetIconPaths.toolsIcon, tone: "red", detail: "dots" },
+};
+
+function HomeWidgetOptionThumbnail({ widget }) {
+  const config = homeWidgetThumbnailIconConfig[widget.id] || { icon: Grid3X3, tone: "red", detail: "line" };
+  const Icon = config.icon;
+  const toneClasses = {
+    red: "text-red-500 bg-red-500/10",
+    sky: "text-sky-400 bg-sky-500/12",
+    green: "text-emerald-400 bg-emerald-500/12",
+    yellow: "text-yellow-400 bg-yellow-500/14",
+  };
+  const accentClass = toneClasses[config.tone] || toneClasses.red;
+  const size = normalizeHomeWidgetSize(widget.size);
+  const wide = size === "4x1" || size === "4x2";
+  const tall = size === "2x4";
+
+  return <span className={`relative flex shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] p-2 shadow-inner shadow-white/5 ${wide ? "h-14 w-[4.75rem]" : tall ? "h-[4.75rem] w-14" : "h-14 w-14"}`} aria-hidden="true">
+    <span className={`absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full ${accentClass}`}>
+      {config.iconSrc ? <HomeWidgetAssetIcon src={config.iconSrc} className="h-4 w-4"/> : Icon ? <Icon size={14}/> : null}
+    </span>
+    <span className="mt-auto flex w-full flex-col gap-1">
+      <span className="h-1.5 w-6 rounded-full bg-white/22"/>
+      {config.detail === "bars" && <span className="flex h-5 items-end gap-1">
+        {[10, 16, 8, 19].map((height, index) => <span key={index} className={`w-1 rounded-full ${config.tone === "sky" ? "bg-sky-400/50" : config.tone === "green" ? "bg-emerald-400/50" : "bg-red-500/50"}`} style={{ height }}/>)}
+      </span>}
+      {config.detail === "ring" && <span className={`h-5 w-5 rounded-full border-[3px] ${config.tone === "sky" ? "border-sky-400/55" : "border-red-500/55"}`}/>}
+      {config.detail === "lines" && <span className="space-y-1">
+        <span className="block h-1 w-9 rounded-full bg-white/16"/>
+        <span className="block h-1 w-7 rounded-full bg-white/16"/>
+      </span>}
+      {config.detail === "dots" && <span className="flex gap-1">
+        {[0, 1, 2].map(index => <span key={index} className={`h-2 w-2 rounded-full ${config.tone === "green" ? "bg-emerald-400/38" : "bg-red-500/38"}`}/>)}
+      </span>}
+      {config.detail === "note" && <span className="h-6 rounded-lg bg-yellow-300/20 ring-1 ring-yellow-300/20"/>}
+      {(!["bars", "ring", "lines", "dots", "note"].includes(config.detail)) && <span className={`h-1.5 rounded-full ${config.tone === "sky" ? "bg-sky-400/45" : config.tone === "green" ? "bg-emerald-400/45" : "bg-red-500/45"}`}/>}
+    </span>
+  </span>;
 }
 
 function WidgetInfoSheet({ widgetKey, onClose }) {
@@ -11774,8 +11842,9 @@ function HomeWidgetSettingsModal({ enabledWidgets, personalTrackerCount = 0, onA
       </div>
 
       <div className="onlypump-list-55 mt-6 space-y-2 overflow-y-auto pr-1">
-        {availableWidgets.length ? availableWidgets.map((widget, index) => <button key={widget.id} type="button" data-tour={index === 0 ? "home-widget-option" : undefined} onClick={() => onAdd(widget.id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-4 text-left transition hover:bg-white/[0.08]">
-          <div className="min-w-0">
+        {availableWidgets.length ? availableWidgets.map((widget, index) => <button key={widget.id} type="button" data-tour={index === 0 ? "home-widget-option" : undefined} onClick={() => onAdd(widget.id)} className="flex w-full items-center gap-3 rounded-2xl bg-white/[0.04] p-3 text-left transition hover:bg-white/[0.08]">
+          <HomeWidgetOptionThumbnail widget={widget}/>
+          <div className="min-w-0 flex-1">
             <h3 className="break-words text-sm font-semibold leading-tight">{widget.label}</h3>
             <p className="mt-1 text-xs text-zinc-500">{widget.description}</p>
           </div>
@@ -12243,7 +12312,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       case "metricCalories":
         return <MetricWidgetCard title={homeUsesPalmNutrition ? "Ладони" : "Калории"} value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.total) : selectedNutritionTotals.calories} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.target)}` : `/ ${nutritionGoal.calories} ккал`} delta={`${homeUsesPalmNutrition ? palmNutritionPercent : caloriesPercent}% цели`} progress={homeUsesPalmNutrition ? palmNutritionPercent : caloriesPercent} icon={Apple} widgetKey="calories" onInfoOpen={openWidgetInfo} onClick={openNutritionFromHome}/>;
       case "metricProtein":
-        return <MetricWidgetCard title="Белок" value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.actual.protein) : `${selectedNutritionTotals.protein} г`} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.targets.protein)}` : `/ ${nutritionGoal.protein} г`} delta={`${homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}% цели`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent} icon={Utensils} widgetKey="protein" onInfoOpen={openWidgetInfo} onClick={openNutritionFromHome}/>;
+        return <MetricWidgetCard title="Белок" value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.actual.protein) : `${selectedNutritionTotals.protein} г`} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.targets.protein)}` : `/ ${nutritionGoal.protein} г`} delta={`${homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}% цели`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent} icon={Utensils} iconSrc={homeWidgetIconPaths.proteinIcon} widgetKey="protein" onInfoOpen={openWidgetInfo} onClick={openNutritionFromHome}/>;
       case "metricRecovery":
         return <MetricWidgetCard title="Восстановление" value={recovery == null ? "—" : `${recovery}%`} sub={selectedHealthLog.sleep_duration_minutes ? sleepQualityLabel(selectedHealthLog) : "сон не добавлен"} progress={recovery || 0} icon={HeartPulse} iconSrc={homeWidgetIconPaths.recoveryIcon} thinProgress widgetKey="recovery" onInfoOpen={openWidgetInfo} onClick={() => openAnalyticsFromHome("recovery")}/>;
       case "metricSleep":
@@ -12299,7 +12368,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
               <p className="onlypump-line-clamp-1 text-[11px] text-zinc-500">Тренировка</p>
               <h3 className="onlypump-line-clamp-2 mt-1 text-sm font-semibold leading-tight">Тренировка за выбранный день</h3>
             </div>
-            <WidgetInfoIcon widgetKey="workouts" label="Тренировка" onOpen={openWidgetInfo} className="shrink-0 text-red-500"><Dumbbell size={18}/></WidgetInfoIcon>
+            <WidgetInfoIcon widgetKey="workouts" label="Тренировка" onOpen={openWidgetInfo} className="shrink-0 text-red-500"><HomeWidgetAssetIcon src={homeWidgetIconPaths.workoutIcon}/></WidgetInfoIcon>
           </div>
           <div className="relative mt-3 min-h-0 flex-1 rounded-2xl bg-[url('https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?q=80&w=900&auto=format&fit=crop')] bg-cover bg-center grayscale">
             <div className="absolute inset-0 rounded-2xl bg-gradient-to-t from-black/85 via-black/25"/>
@@ -12396,15 +12465,21 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         }
       case "weekProgress":
         return <Card key={id} onClick={() => setActive("progress")} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <h3 className="onlypump-line-clamp-1 text-sm font-black">Прогресс недели</h3>
-            <button className="shrink-0 rounded-md bg-white/5 px-2 py-1 text-[10px] text-zinc-400">План <ChevronDown size={12} className="inline"/></button>
+            <div className="flex shrink-0 items-center gap-2">
+              <HomeWidgetAssetIcon src={homeWidgetIconPaths.weekProgressIcon}/>
+              <button className="rounded-md bg-white/5 px-2 py-1 text-[10px] text-zinc-400">План <ChevronDown size={12} className="inline"/></button>
+            </div>
           </div>
           <svg viewBox="0 0 420 150" className="mt-3 min-h-0 flex-1 w-full"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="rgb(239 68 68)" stopOpacity="0.55"/><stop offset="1" stopColor="rgb(239 68 68)" stopOpacity="0"/></linearGradient></defs><path className="onlypump-chart-area" d="M10 125 L70 75 L130 50 L190 70 L250 38 L300 32 L350 10 L405 25 L405 140 L10 140 Z" fill="url(#g)"/><path className="onlypump-chart-line" d="M10 125 L70 75 L130 50 L190 70 L250 38 L300 32 L350 10 L405 25" pathLength="1" strokeDasharray="1" fill="none" stroke="#ef4444" strokeWidth="3"/></svg>
         </Card>;
       case "goalProgress":
         return <Card key={id} onClick={() => setActive("progress")} className="onlypump-home-widget-card relative cursor-pointer overflow-hidden p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
-          <h3 className="onlypump-line-clamp-1 text-sm font-black">Твой прогресс к цели</h3>
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="onlypump-line-clamp-1 text-sm font-black">Твой прогресс к цели</h3>
+            <HomeWidgetAssetIcon src={homeWidgetIconPaths.goalProgressIcon} className="shrink-0"/>
+          </div>
           <p className="onlypump-line-clamp-2 mt-2 text-xs text-zinc-400">{progressGoal.title}</p>
           <div className="mt-auto text-4xl font-black leading-none">{bodyProgress}%</div>
           <div className="mt-4 w-2/3"><Progress value={bodyProgress}/></div>
@@ -12412,15 +12487,15 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         </Card>;
       case "miniActions":
         return <div key={id} className="onlypump-home-widget-stack grid h-full min-h-0 grid-rows-3 gap-2 overflow-hidden">
-          <MiniAction onClick={() => setActive("workouts")} title="Ближайшая тренировка" sub="Следующая" text="Legs — Ноги / Ягодицы" button="Смотреть план"/>
-          <MiniAction onClick={() => setActive("lectures")} title="Лекция дня" sub="Рекомпозиция" text="Принципы эффективной сушки" button="Смотреть лекцию"/>
-          <MiniAction onClick={() => setActive("education")} title="Твой план" sub="Программа" text="ONLYPUMP Recomp" button="Открыть программу"/>
+          <MiniAction iconSrc={homeWidgetIconPaths.quickActionsIcon} onClick={() => setActive("workouts")} title="Ближайшая тренировка" sub="Следующая" text="Legs — Ноги / Ягодицы" button="Смотреть план"/>
+          <MiniAction iconSrc={homeWidgetIconPaths.quickActionsIcon} onClick={() => setActive("lectures")} title="Лекция дня" sub="Рекомпозиция" text="Принципы эффективной сушки" button="Смотреть лекцию"/>
+          <MiniAction iconSrc={homeWidgetIconPaths.quickActionsIcon} onClick={() => setActive("education")} title="Твой план" sub="Программа" text="ONLYPUMP Recomp" button="Открыть программу"/>
         </div>;
       case "education":
         return <Card key={id} onClick={() => setActive("lectures")} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
           <div className="flex items-center justify-between gap-3">
             <h3 className="onlypump-line-clamp-1 text-sm font-black">Продолжить обучение</h3>
-            <WidgetInfoIcon widgetKey="lectures" label="Обучение" onOpen={openWidgetInfo} className="shrink-0 text-red-500"><BookOpen size={18}/></WidgetInfoIcon>
+            <WidgetInfoIcon widgetKey="lectures" label="Обучение" onOpen={openWidgetInfo} className="shrink-0 text-red-500"><HomeWidgetAssetIcon src={homeWidgetIconPaths.educationIcon}/></WidgetInfoIcon>
           </div>
           <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-hidden">
             {lectureItems.slice(0, 3).map(lecture => <div key={lecture.id} className="rounded-2xl border border-white/10 bg-white/[0.04] p-2">
@@ -12435,7 +12510,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
         return <Card key={id} onClick={() => setActive("calculators")} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
           <div className="flex items-center justify-between gap-3">
             <h3 className="onlypump-line-clamp-1 text-sm font-black">Твои инструменты</h3>
-            <WidgetInfoIcon widgetKey="calculators" label="Инструменты" onOpen={openWidgetInfo} className="shrink-0 text-red-500"><Calculator size={18}/></WidgetInfoIcon>
+            <WidgetInfoIcon widgetKey="calculators" label="Инструменты" onOpen={openWidgetInfo} className="shrink-0 text-red-500"><HomeWidgetAssetIcon src={homeWidgetIconPaths.toolsIcon}/></WidgetInfoIcon>
           </div>
           <div className="mt-3 grid min-h-0 flex-1 grid-cols-2 gap-2 overflow-hidden">
             {calculators.slice(0, 4).map(({icon: Icon, title}) => <div key={title} className="min-h-0 rounded-2xl border border-white/10 bg-white/[0.04] p-2">
@@ -12688,25 +12763,18 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       onClose={() => setTrackerSettingsDraft(null)}
     />}
     <WidgetInfoSheet widgetKey={widgetInfoKey} onClose={() => setWidgetInfoKey("")}/>
-    <InlineDateDataCard
-      context="home"
-      dateKey={selectedDateKey}
-      nutritionMeals={selectedNutritionMeals}
-      nutritionDay={selectedNutritionDayMatches ? nutritionDay : null}
-      nutritionTotals={selectedNutritionTotals}
-      nutritionGoal={nutritionGoal}
-      workout={workoutDisplayInfo(selectedPrimaryWorkout)}
-      workoutSummary={selectedWorkoutSummary}
-      measurements={selectedMeasurements}
-      profile={profile}
-    />
   </>;
 }
 
-function MiniAction({ title, sub, text, button, onClick }) {
+function MiniAction({ title, sub, text, button, onClick, iconSrc }) {
   return <Card onClick={onClick} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5">
-    <h3 className="onlypump-line-clamp-1 text-sm font-black">{title}</h3>
-    <p className="mt-1 text-[10px] text-zinc-500">{sub}</p>
+    <div className="flex items-start justify-between gap-2">
+      <div className="min-w-0">
+        <h3 className="onlypump-line-clamp-1 text-sm font-black">{title}</h3>
+        <p className="mt-1 text-[10px] text-zinc-500">{sub}</p>
+      </div>
+      {iconSrc && <HomeWidgetAssetIcon src={iconSrc} className="shrink-0"/>}
+    </div>
     <h4 className="onlypump-line-clamp-2 mt-1 text-sm leading-tight">{text}</h4>
     <p className="onlypump-line-clamp-1 mt-1 text-[10px] text-zinc-500">75 мин · 7 упражнений</p>
     <Button className="mt-auto h-8 w-full bg-white/8 text-xs">{button}</Button>
