@@ -1136,29 +1136,35 @@
       animation: onlypump-fade-in 620ms ease both;
     }
     .onlypump-weight-analytics-plot,
-    .onlypump-steps-analytics-plot {
+    .onlypump-steps-analytics-plot,
+    .onlypump-nutrition-analytics-plot {
       transform-box: fill-box;
       transform-origin: center;
       will-change: transform, opacity;
     }
     .onlypump-weight-analytics-plot.onlypump-animation-visible.onlypump-weight-analytics-enter,
-    .onlypump-steps-analytics-plot.onlypump-animation-visible.onlypump-steps-analytics-enter {
+    .onlypump-steps-analytics-plot.onlypump-animation-visible.onlypump-steps-analytics-enter,
+    .onlypump-nutrition-analytics-plot.onlypump-animation-visible.onlypump-nutrition-analytics-enter {
       animation: onlypump-weight-analytics-enter 780ms cubic-bezier(.2,.9,.2,1) both;
     }
     .onlypump-weight-analytics-plot.onlypump-animation-visible.onlypump-weight-analytics-expand,
-    .onlypump-steps-analytics-plot.onlypump-animation-visible.onlypump-steps-analytics-expand {
+    .onlypump-steps-analytics-plot.onlypump-animation-visible.onlypump-steps-analytics-expand,
+    .onlypump-nutrition-analytics-plot.onlypump-animation-visible.onlypump-nutrition-analytics-expand {
       animation: onlypump-weight-analytics-expand 720ms cubic-bezier(.2,.9,.2,1) both;
     }
     .onlypump-weight-analytics-plot.onlypump-animation-visible.onlypump-weight-analytics-shrink,
-    .onlypump-steps-analytics-plot.onlypump-animation-visible.onlypump-steps-analytics-shrink {
+    .onlypump-steps-analytics-plot.onlypump-animation-visible.onlypump-steps-analytics-shrink,
+    .onlypump-nutrition-analytics-plot.onlypump-animation-visible.onlypump-nutrition-analytics-shrink {
       animation: onlypump-weight-analytics-shrink 720ms cubic-bezier(.2,.9,.2,1) both;
     }
     .onlypump-weight-analytics-plot.onlypump-animation-visible.onlypump-weight-analytics-forward,
-    .onlypump-steps-analytics-plot.onlypump-animation-visible.onlypump-steps-analytics-forward {
+    .onlypump-steps-analytics-plot.onlypump-animation-visible.onlypump-steps-analytics-forward,
+    .onlypump-nutrition-analytics-plot.onlypump-animation-visible.onlypump-nutrition-analytics-forward {
       animation: onlypump-weight-analytics-forward 520ms cubic-bezier(.2,.85,.2,1) both;
     }
     .onlypump-weight-analytics-plot.onlypump-animation-visible.onlypump-weight-analytics-back,
-    .onlypump-steps-analytics-plot.onlypump-animation-visible.onlypump-steps-analytics-back {
+    .onlypump-steps-analytics-plot.onlypump-animation-visible.onlypump-steps-analytics-back,
+    .onlypump-nutrition-analytics-plot.onlypump-animation-visible.onlypump-nutrition-analytics-back {
       animation: onlypump-weight-analytics-back 520ms cubic-bezier(.2,.85,.2,1) both;
     }
     .onlypump-chart-bar,
@@ -1289,6 +1295,7 @@
       .onlypump-chart-guide,
       .onlypump-weight-analytics-plot,
       .onlypump-steps-analytics-plot,
+      .onlypump-nutrition-analytics-plot,
       .onlypump-chart-bar,
       .onlypump-analytics-bar,
       .onlypump-animated-ring-arc,
@@ -7734,6 +7741,7 @@ const ONLYPUMP_REVEAL_ANIMATION_SELECTOR = [
   ".onlypump-chart-guide",
   ".onlypump-weight-analytics-plot",
   ".onlypump-steps-analytics-plot",
+  ".onlypump-nutrition-analytics-plot",
   ".onlypump-chart-bar",
   ".onlypump-analytics-bar",
   ".onlypump-animated-ring-arc",
@@ -24726,6 +24734,19 @@ const nutritionAnalyticsMetrics = [
   { key: "palms_total", label: "Ладони", unit: "лад.", type: "bar" },
 ];
 
+const nutritionAnalyticsMetricKeys = new Set(nutritionAnalyticsMetrics.map(metric => metric.key));
+const nutritionAnalyticsRingMetrics = [
+  { metricKey: "calories_total", goalKey: "calories", label: "Калории", unit: "ккал", color: "#ef4444", track: "rgba(239,68,68,0.16)", radius: 21 },
+  { metricKey: "carbs_total", goalKey: "carbs", label: "Углеводы", unit: "г", color: "#22d3ee", track: "rgba(34,211,238,0.16)", radius: 16 },
+  { metricKey: "protein_total", goalKey: "protein", label: "Белок", unit: "г", color: "#84f23f", track: "rgba(132,242,63,0.18)", radius: 11 },
+  { metricKey: "fat_total", goalKey: "fat", label: "Жиры", unit: "г", color: "#facc15", track: "rgba(250,204,21,0.18)", radius: 6 },
+];
+const nutritionAnalyticsRingMetricKeys = new Set(nutritionAnalyticsRingMetrics.map(item => item.metricKey));
+const nutritionAnalyticsColorForMetric = (metricKey = "calories_total") => {
+  if (metricKey === "palms_total") return "#ef4444";
+  return nutritionAnalyticsRingMetrics.find(item => item.metricKey === metricKey)?.color || "#ef4444";
+};
+
 const analyticsTypeConfigs = {
   measurements: { title: "Замеры", source: "measurements", metrics: measurementAnalyticsMetrics, defaultMetric: "waist_cm" },
   weight: { title: "Вес", source: "measurements", metrics: measurementAnalyticsMetrics.filter(metric => metric.key === "weight_kg"), defaultMetric: "weight_kg" },
@@ -25576,6 +25597,94 @@ const buildStepsAnalyticsChartPoints = (points = [], period = "month", selectedD
   });
 };
 
+const getNutritionAnalyticsDailyGoal = (metricKey = "calories_total", nutritionGoal = initialNutritionGoal) => {
+  const goal = nutritionGoal || initialNutritionGoal;
+  if (metricKey === "calories_total") return Math.max(1, profileNonNegativeNumber(goal.calories, initialNutritionGoal.calories));
+  if (metricKey === "protein_total") return Math.max(1, profileNonNegativeNumber(goal.protein, initialNutritionGoal.protein));
+  if (metricKey === "fat_total") return Math.max(1, profileNonNegativeNumber(goal.fat, initialNutritionGoal.fat));
+  if (metricKey === "carbs_total") return Math.max(1, profileNonNegativeNumber(goal.carbs, initialNutritionGoal.carbs));
+  if (metricKey === "palms_total") {
+    const targets = getNutritionPalmTargets(goal);
+    return Math.max(1, profileNonNegativeNumber(targets.protein, 0) + profileNonNegativeNumber(targets.fat, 0) + profileNonNegativeNumber(targets.carbs, 0) + profileNonNegativeNumber(targets.vegetables, 0));
+  }
+  return 1;
+};
+
+const getNutritionAnalyticsBucketGoal = (metricKey = "calories_total", period = "month", nutritionGoal = initialNutritionGoal) => {
+  const dailyGoal = getNutritionAnalyticsDailyGoal(metricKey, nutritionGoal);
+  if (period === "sixMonths") return dailyGoal * 7;
+  if (period === "year") return dailyGoal * 30;
+  return dailyGoal;
+};
+
+const getNutritionAnalyticsRangeGoal = (metricKey = "calories_total", period = "month", selectedDateKey = formatDateKey(new Date()), nutritionGoal = initialNutritionGoal) => {
+  const range = analyticsChartRollingRange(period, selectedDateKey);
+  const days = analyticsChartDaysBetween(range.startKey, range.endKey) + 1;
+  return getNutritionAnalyticsDailyGoal(metricKey, nutritionGoal) * Math.max(1, days);
+};
+
+const buildNutritionAnalyticsChartPoints = (points = [], period = "month", selectedDateKey = formatDateKey(new Date())) => {
+  const range = analyticsChartRollingRange(period, selectedDateKey);
+  const byDate = new Map(points.map(point => [normalizeDateKey(point.date, ""), Math.max(0, Number(point.value || 0))]));
+  if (period === "sixMonths") {
+    const start = parseDateKeyLocal(range.startKey);
+    const totalDays = analyticsChartDaysBetween(range.startKey, range.endKey);
+    const bucketCount = Math.max(1, Math.ceil((totalDays + 1) / 7));
+    return Array.from({ length: bucketCount }, (_, bucketIndex) => {
+      const bucketStart = addLocalDaysToDate(start, bucketIndex * 7);
+      const bucketEnd = addLocalDaysToDate(bucketStart, 6);
+      const clampedEnd = parseDateKeyLocal(range.endKey);
+      let value = 0;
+      for (let offset = 0; offset < 7; offset += 1) {
+        const date = addLocalDaysToDate(bucketStart, offset);
+        if (date > clampedEnd) break;
+        value += byDate.get(formatDateKey(date)) || 0;
+      }
+      const key = formatDateKey(bucketStart);
+      return {
+        date: key,
+        endDate: formatDateKey(bucketEnd > clampedEnd ? clampedEnd : bucketEnd),
+        value,
+        label: bucketStart.getDate() <= 7 ? analyticsChartMonthLabel(key) : "",
+        isSelected: selectedDateKey >= key && selectedDateKey <= formatDateKey(bucketEnd),
+      };
+    });
+  }
+  if (period === "year") {
+    const selected = parseDateKeyLocal(selectedDateKey);
+    return Array.from({ length: 12 }, (_, index) => {
+      const monthDate = new Date(selected.getFullYear(), selected.getMonth() - (11 - index), 1);
+      const monthStartKey = formatDateKey(monthDate);
+      const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+      const monthEndKey = formatDateKey(monthEnd);
+      let value = 0;
+      points.forEach(point => {
+        const key = normalizeDateKey(point.date, "");
+        if (key >= monthStartKey && key <= monthEndKey) value += Math.max(0, Number(point.value || 0));
+      });
+      return {
+        date: monthStartKey,
+        endDate: monthEndKey,
+        value,
+        label: analyticsChartMonthLabel(monthStartKey),
+        isSelected: selectedDateKey >= monthStartKey && selectedDateKey <= monthEndKey,
+      };
+    });
+  }
+  const dayCount = period === "week" ? 7 : period === "month" ? 30 : 1;
+  const start = parseDateKeyLocal(range.startKey);
+  return Array.from({ length: dayCount }, (_, index) => {
+    const key = formatDateKey(addLocalDaysToDate(start, index));
+    const day = parseDateKeyLocal(key).getDate();
+    return {
+      date: key,
+      value: byDate.get(key) || 0,
+      label: period === "week" ? analyticsChartWeekdayLabel(key) : ([1, 8, 15, 22, 29].includes(day) ? String(day) : ""),
+      isSelected: key === selectedDateKey,
+    };
+  });
+};
+
 const buildSmoothAnalyticsPath = (coords = []) => {
   if (!coords.length) return "";
   if (coords.length === 1) return `M ${coords[0].x - 18} ${coords[0].y} L ${coords[0].x + 18} ${coords[0].y}`;
@@ -25587,12 +25696,15 @@ const buildSmoothAnalyticsPath = (coords = []) => {
   }, "");
 };
 
-function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "", period = "month", selectedDateKey = formatDateKey(new Date()), profile = DEFAULT_PROFILE, onSwipePeriod }) {
+function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "", period = "month", selectedDateKey = formatDateKey(new Date()), profile = DEFAULT_PROFILE, nutritionGoal = initialNutritionGoal, nutritionSeriesByMetric = {}, onSelectMetric, onSwipePeriod }) {
   if (metricKey === "weight_kg") {
     return <WeightAnalyticsChart points={points} unit={unit} metricKey={metricKey} period={period} selectedDateKey={selectedDateKey} onSwipePeriod={onSwipePeriod}/>;
   }
   if (metricKey === "steps_count") {
     return <StepsAnalyticsChart points={points} unit={unit} metricKey={metricKey} period={period} selectedDateKey={selectedDateKey} profile={profile} onSwipePeriod={onSwipePeriod}/>;
+  }
+  if (nutritionAnalyticsMetricKeys.has(metricKey)) {
+    return <NutritionAnalyticsChart points={points} unit={unit} metricKey={metricKey} period={period} selectedDateKey={selectedDateKey} nutritionGoal={nutritionGoal} nutritionSeriesByMetric={nutritionSeriesByMetric} onSelectMetric={onSelectMetric} onSwipePeriod={onSwipePeriod}/>;
   }
   return <DefaultAnalyticsChart points={points} type={type} unit={unit} metricKey={metricKey} period={period} selectedDateKey={selectedDateKey} onSwipePeriod={onSwipePeriod}/>;
 }
@@ -25949,6 +26061,302 @@ function StepsAnalyticsChart({ points = [], unit = "", metricKey = "steps_count"
   </div>;
 }
 
+function NutritionAnalyticsRingsSvg({ rings = [], onSelectMetric }) {
+  const strokeWidth = 5;
+  return <svg viewBox="0 0 48 48" className="-rotate-90 h-full w-full overflow-visible" aria-hidden="true">
+    {rings.map(ring => {
+      const circumference = 2 * Math.PI * ring.radius;
+      const value = ring.hasData ? normalizeRingProgress((Number(ring.value || 0) / Math.max(1, Number(ring.goal || 1))) * 100) : 0;
+      const layers = buildActivityRingArcLayers(value);
+      const hasOverflow = layers.some(layer => layer.overflow);
+      const renderArc = (layer, layerPosition) => {
+        const arcValue = layer.value;
+        const finalOffset = circumference - (circumference * clampProgress(arcValue)) / 100;
+        const isOverflow = layer.overflow;
+        const layerColor = buildActivityRingLayerColor(ring.color, layer, hasOverflow);
+        const animationKey = `${ring.metricKey}-${Math.round(value * 10)}-${layer.index}-${Math.round(arcValue * 10)}`;
+        const overflowDelay = ACTIVITY_RING_BASE_ANIMATION_MS + Math.max(0, layer.index - 1) * ACTIVITY_RING_OVERFLOW_CYCLE_MS;
+        const overflowDuration = Math.max(220, ACTIVITY_RING_OVERFLOW_CYCLE_MS * (clampProgress(arcValue) / 100));
+        return <circle
+          key={animationKey}
+          cx="24"
+          cy="24"
+          r={ring.radius}
+          fill="none"
+          stroke={layerColor}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          className={`${isOverflow ? "onlypump-animated-ring-overflow" : ""} onlypump-animated-ring-arc`.trim()}
+          style={{
+            "--onlypump-ring-circumference": `${circumference}`,
+            "--onlypump-ring-final-offset": `${finalOffset}`,
+            strokeDasharray: circumference,
+            strokeDashoffset: finalOffset,
+            opacity: ring.hasData ? 1 : 0,
+            ...(isOverflow ? {
+              animationDelay: `${overflowDelay}ms`,
+              animationDuration: `${overflowDuration.toFixed(0)}ms`,
+            } : {}),
+          }}
+        />;
+      };
+      return <g key={ring.metricKey}>
+        <circle cx="24" cy="24" r={ring.radius} fill="none" stroke={ring.track} strokeWidth={strokeWidth} opacity={ring.hasData ? 1 : 0.58}/>
+        {layers.map(renderArc)}
+        <circle
+          cx="24"
+          cy="24"
+          r={ring.radius}
+          fill="none"
+          stroke="rgba(0,0,0,0.001)"
+          strokeWidth={strokeWidth + 5}
+          className="cursor-pointer"
+          style={{ pointerEvents: "stroke" }}
+          onClick={() => onSelectMetric?.(ring.metricKey)}
+        />
+      </g>;
+    })}
+  </svg>;
+}
+
+function NutritionAnalyticsIconPlaceholder({ metricKey = "calories_total" }) {
+  const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round" };
+  if (metricKey === "carbs_total") {
+    return <svg viewBox="0 0 24 24" className="h-4 w-4"><path {...common} d="M7 16c1.2-4 2.8-6.9 5-9 2.2 2.1 3.8 5 5 9"/><path {...common} d="M8.2 15.8h7.6"/><path {...common} d="M10 18h4"/></svg>;
+  }
+  if (metricKey === "protein_total") {
+    return <svg viewBox="0 0 24 24" className="h-4 w-4"><path {...common} d="M6 14c2.5-5.5 9.5-5.5 12 0"/><path {...common} d="M7 15.5c3.3 2.7 6.7 2.7 10 0"/><path {...common} d="M9 11.2 7.4 9.6"/><path {...common} d="m15 11.2 1.6-1.6"/></svg>;
+  }
+  if (metricKey === "fat_total") {
+    return <svg viewBox="0 0 24 24" className="h-4 w-4"><path {...common} d="M12 4c3.2 3.1 5 6 5 8.7a5 5 0 0 1-10 0C7 10 8.8 7.1 12 4Z"/><path {...common} d="M10.2 15.5c1.3.8 2.7.8 4 0"/></svg>;
+  }
+  return <svg viewBox="0 0 24 24" className="h-4 w-4"><circle {...common} cx="12" cy="12" r="6.5"/><path {...common} d="M12 8v4l2.6 1.8"/><path {...common} d="M8 4.6 6.8 3"/><path {...common} d="m16 4.6 1.2-1.6"/></svg>;
+}
+
+function NutritionPalmsAnalyticsHero() {
+  const hand = (side = "left") => <svg viewBox="0 0 44 58" className={`h-24 w-16 ${side === "right" ? "-scale-x-100" : ""}`} aria-hidden="true">
+    <path d="M22 5c5 0 7 3 7 7v12l2-5c1-2 4-3 6-1s2 4 1 7l-8 22c-2 5-6 7-11 6-7-1-12-7-12-15V15c0-3 2-5 5-5 2 0 4 1 5 3V10c0-3 2-5 5-5Z" fill="rgba(148,163,184,.12)" stroke="rgba(148,163,184,.52)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M17 13v18M23 12v18M29 23v11" fill="none" stroke="rgba(148,163,184,.42)" strokeWidth="2" strokeLinecap="round"/>
+  </svg>;
+  return <div className="mt-5 rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-5 shadow-xl shadow-[var(--onlypump-shadow)]">
+    <div className="flex min-h-[150px] items-center justify-center gap-3 text-slate-400">
+      {hand("left")}
+      {hand("right")}
+    </div>
+  </div>;
+}
+
+function NutritionAnalyticsChart({ points = [], unit = "", metricKey = "calories_total", period = "month", selectedDateKey = formatDateKey(new Date()), nutritionGoal = initialNutritionGoal, nutritionSeriesByMetric = {}, onSelectMetric, onSwipePeriod }) {
+  const [selected, setSelected] = useState(null);
+  const [dragX, setDragX] = useState(0);
+  const [motion, setMotion] = useState("enter");
+  const dragRef = useRef(null);
+  const previousMotionRef = useRef({ period, selectedDateKey, span: getAnalyticsChartPeriodSpanDays(period) });
+  const suppressChartClickRef = useRef(false);
+  const suppressResetRef = useRef(null);
+  const isPalmsMetric = metricKey === "palms_total";
+  const chartPoints = buildNutritionAnalyticsChartPoints(points, period, selectedDateKey);
+  const hasDataPoints = chartPoints.some(point => Number(point.value || 0) > 0);
+  const metricColor = nutritionAnalyticsColorForMetric(metricKey);
+  const safeGoal = getNutritionAnalyticsBucketGoal(metricKey, period, nutritionGoal);
+  const maxValue = Math.max(...chartPoints.map(point => Number(point.value || 0)), safeGoal, 1);
+  const scaleMax = niceChartMax(maxValue, metricKey);
+  const plot = { left: 20, right: 386, top: 24, bottom: 164 };
+  const plotWidth = plot.right - plot.left;
+  const plotHeight = plot.bottom - plot.top;
+  const stepWidth = plotWidth / Math.max(1, chartPoints.length);
+  const barWidth = Math.max(5, Math.min(period === "month" ? 12 : 26, stepWidth * 0.56));
+  const coords = chartPoints.map((point, index) => {
+    const value = Math.max(0, Number(point.value || 0));
+    const height = value > 0 ? Math.max(4, (value / scaleMax) * plotHeight) : 4;
+    return {
+      ...point,
+      value,
+      x: plot.left + stepWidth * index + stepWidth / 2,
+      y: plot.bottom - height,
+      height,
+      isGhost: value <= 0,
+    };
+  });
+  const yTicks = [scaleMax, scaleMax / 2, 0].map((value, index) => ({
+    value,
+    y: plot.top + (plotHeight * index) / 2,
+  }));
+  const goalY = plot.bottom - (Math.min(safeGoal, scaleMax) / scaleMax) * plotHeight;
+  const chartAnimationKey = `${metricKey}-${period}-${selectedDateKey}-${coords.map(point => `${point.date}:${Math.round(Number(point.value || 0) * 10)}`).join("|")}`;
+  const gradientId = `nutrition-analytics-fill-${chartAnimationKey.replace(/[^a-zA-Z0-9_-]/g, "").slice(-36)}`;
+  const selectedLabel = selected?.endDate && selected.endDate !== selected.date
+    ? `${formatShortDateRu(selected.date)} - ${formatShortDateRu(selected.endDate)}`
+    : formatShortDateRu(selected?.date);
+  const ringData = nutritionAnalyticsRingMetrics.map(item => {
+    const series = nutritionSeriesByMetric[item.metricKey] || [];
+    const value = series.reduce((sum, point) => sum + Math.max(0, Number(point.value || 0)), 0);
+    const goal = getNutritionAnalyticsRangeGoal(item.metricKey, period, selectedDateKey, nutritionGoal);
+    return {
+      ...item,
+      value,
+      goal,
+      hasData: value > 0,
+    };
+  });
+
+  useEffect(() => {
+    setSelected(null);
+    setDragX(0);
+    dragRef.current = null;
+    const previous = previousMotionRef.current;
+    const nextSpan = getAnalyticsChartPeriodSpanDays(period);
+    let nextMotion = "enter";
+    if (previous.period !== period) {
+      nextMotion = nextSpan > previous.span ? "expand" : "shrink";
+    } else if (previous.selectedDateKey !== selectedDateKey) {
+      const previousTime = parseDateKeyLocal(previous.selectedDateKey).getTime();
+      const nextTime = parseDateKeyLocal(selectedDateKey).getTime();
+      nextMotion = nextTime >= previousTime ? "forward" : "back";
+    }
+    previousMotionRef.current = { period, selectedDateKey, span: nextSpan };
+    setMotion(nextMotion);
+  }, [period, selectedDateKey, metricKey]);
+
+  const startChartDrag = (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    clearTimeout(suppressResetRef.current);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      swiping: false,
+      captured: true,
+    };
+    suppressChartClickRef.current = false;
+    setDragX(0);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const moveChartDrag = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+
+    if (!drag.swiping) {
+      if (absX < 12 && absY < 12) return;
+      if (absY > 12 && absY > absX * 0.9) {
+        if (drag.captured) {
+          try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+        }
+        dragRef.current = null;
+        setDragX(0);
+        return;
+      }
+      if (absX < 18 || absX < absY * 1.45) return;
+      drag.swiping = true;
+      suppressChartClickRef.current = true;
+    }
+
+    event.preventDefault();
+    setDragX(Math.max(-132, Math.min(132, dx * 0.76)));
+  };
+
+  const endChartDrag = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    if (drag.captured) {
+      try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+    }
+    const dx = event.clientX - drag.startX;
+    const dy = Math.abs(event.clientY - drag.startY);
+    const shouldShift = drag.swiping && Math.abs(dx) > 58 && dy < 48;
+    if (shouldShift && typeof onSwipePeriod === "function") {
+      onSwipePeriod(dx < 0 ? 1 : -1, "division");
+    }
+    setDragX(0);
+    if (drag.swiping) {
+      clearTimeout(suppressResetRef.current);
+      suppressResetRef.current = setTimeout(() => {
+        suppressChartClickRef.current = false;
+      }, 160);
+    }
+  };
+
+  return <div className="mt-5 space-y-4">
+    {isPalmsMetric
+      ? <NutritionPalmsAnalyticsHero/>
+      : <div className="relative overflow-hidden rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-5 shadow-xl shadow-[var(--onlypump-shadow)]">
+        <div className="relative mx-auto mt-7 h-48 w-48">
+          <NutritionAnalyticsRingsSvg rings={ringData} onSelectMetric={onSelectMetric}/>
+          <div className="pointer-events-none absolute inset-0 z-10 text-slate-300/70">
+            {nutritionAnalyticsRingMetrics.map(item => <button
+              key={`nutrition-ring-icon-${item.metricKey}`}
+              type="button"
+              tabIndex={-1}
+              className={`pointer-events-auto absolute left-1/2 flex h-4 w-4 items-center justify-center transition ${metricKey === item.metricKey ? "scale-110 text-slate-400" : ""}`}
+              style={{ top: `${((24 - item.radius) / 48) * 100}%`, transform: "translate(-50%, -50%)" }}
+              aria-label={item.label}
+              onClick={() => onSelectMetric?.(item.metricKey)}
+            >
+              <NutritionAnalyticsIconPlaceholder metricKey={item.metricKey}/>
+            </button>)}
+          </div>
+        </div>
+      </div>}
+
+    <div
+      data-calendar-swipe="true"
+      className="touch-pan-y select-none overflow-hidden rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-4 shadow-xl shadow-[var(--onlypump-shadow)]"
+      onPointerDown={startChartDrag}
+      onPointerMove={moveChartDrag}
+      onPointerUp={endChartDrag}
+      onPointerCancel={endChartDrag}
+    >
+      <svg viewBox="0 0 430 224" className="h-56 w-full overflow-visible">
+        <defs>
+          <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor={metricColor} stopOpacity="0.88"/>
+            <stop offset="100%" stopColor={metricColor} stopOpacity="0.28"/>
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="430" height="188" rx="24" fill="rgba(255,255,255,0.025)"/>
+        {yTicks.map((tick, index) => <g key={`nutrition-y-${index}`}>
+          <line x1={plot.left} y1={tick.y} x2={plot.right} y2={tick.y} stroke="var(--chart-grid)" strokeWidth="1" strokeDasharray={index === 1 ? "5 8" : ""}/>
+          <text x="424" y={tick.y + 4} textAnchor="end" fill="var(--chart-label)" fontSize="11" fontWeight="800">{formatAnalyticsValue(tick.value, "", metricKey)}</text>
+        </g>)}
+        <line x1={plot.left} y1={goalY} x2={plot.right} y2={goalY} stroke={metricColor} strokeWidth="1.5" strokeDasharray="5 7" opacity="0.34"/>
+        <g
+          key={`nutrition-plot-${chartAnimationKey}-${motion}`}
+          className={`onlypump-nutrition-analytics-plot onlypump-nutrition-analytics-${motion}`}
+          transform={`translate(${dragX} 0)`}
+          style={{ transition: dragRef.current ? "none" : "transform 180ms ease" }}
+        >
+          <line x1={plot.left} y1={plot.bottom} x2={plot.right} y2={plot.bottom} stroke="var(--chart-axis)" strokeWidth="1"/>
+          {!hasDataPoints && <text x="214" y="100" textAnchor="middle" fill="var(--chart-label)" fontSize="13" fontWeight="800">Нет данных в этом периоде</text>}
+          {coords.map((point, index) => {
+            const active = selected?.date === point.date || point.isSelected;
+            return <rect
+              key={`nutrition-bar-${chartAnimationKey}-${point.date}-${index}`}
+              className="onlypump-analytics-bar"
+              x={point.x - barWidth / 2}
+              y={point.y}
+              width={barWidth}
+              height={point.height}
+              rx={Math.min(8, barWidth / 2)}
+              fill={point.isGhost ? metricColor : `url(#${gradientId})`}
+              opacity={point.isGhost ? 0.12 : active ? 1 : 0.62}
+              filter={active && !point.isGhost ? `drop-shadow(0 8px 12px ${metricColor}44)` : ""}
+              onClick={() => { if (suppressChartClickRef.current || point.isGhost) return; setSelected(point); }}
+            />;
+          })}
+          {coords.map((point, index) => point.label ? <text key={`nutrition-label-${index}`} x={point.x} y="205" textAnchor="middle" fill="var(--chart-label)" fontSize="11" fontWeight="800">{point.label}</text> : null)}
+        </g>
+      </svg>
+      {selected && hasDataPoints && <div className="mt-3 rounded-2xl bg-black/20 p-3 text-sm"><span className="text-[var(--chart-label)]">{selectedLabel}</span><span className="float-right font-black">{formatAnalyticsValue(selected.value, unit, metricKey)}</span></div>}
+    </div>
+  </div>;
+}
+
 function DefaultAnalyticsChart({ points = [], type = "line", unit = "", metricKey = "", period = "month", selectedDateKey = formatDateKey(new Date()), onSwipePeriod }) {
   const [selected, setSelected] = useState(null);
   const [dragX, setDragX] = useState(0);
@@ -26113,7 +26521,9 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
   const sourceHealthLogs = remoteData.health_logs.length ? remoteData.health_logs : healthLogs;
   const sourceNutritionDays = remoteData.nutrition_days.length ? remoteData.nutrition_days : nutritionDays;
   const isWeightAnalytics = type === "weight" && metric === "weight_kg";
-  const usesRollingChartRange = isWeightAnalytics || metric === "steps_count";
+  const isNutritionAnalytics = typeConfig.source === "nutrition";
+  const usesRollingChartRange = isWeightAnalytics || metric === "steps_count" || isNutritionAnalytics;
+  const nutritionGoalForAnalytics = isNutritionAnalytics ? profileNutritionGoalFromProfile(profile || DEFAULT_PROFILE, initialNutritionGoal) : initialNutritionGoal;
   const allPoints = typeConfig.source === "training"
     ? buildTrainingSeries(workouts, metric)
     : typeConfig.source === "health"
@@ -26124,6 +26534,12 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
   const points = usesRollingChartRange
     ? filterRollingAnalyticsPoints(allPoints, period, chartDateKey)
     : filterAnalyticsPoints(allPoints, period, chartDateKey);
+  const nutritionSeriesByMetric = isNutritionAnalytics
+    ? nutritionAnalyticsMetrics.reduce((acc, item) => {
+      acc[item.key] = filterRollingAnalyticsPoints(buildNutritionSeries(sourceNutritionDays, item.key), period, chartDateKey);
+      return acc;
+    }, {})
+    : {};
   const summary = analyticsSummary(points);
   const chartType = metricConfig.type || (typeConfig.source === "health" || typeConfig.source === "nutrition" ? "bar" : "line");
   const sheetTitle = usePalmNutritionDetail ? "Ладони" : (title || typeConfig.title);
@@ -26218,7 +26634,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
       </div>
 
       {(loading || loadError) && <p className={`mt-4 rounded-2xl p-3 text-sm ${loadError ? "bg-red-500/10 text-red-300" : "bg-white/[0.04] text-zinc-400"}`}>{loadError || "Обновляю график..."}</p>}
-      <AnalyticsChart points={points} type={chartType} unit={metricConfig.unit} metricKey={metric} period={period} selectedDateKey={chartDateKey} profile={profile} onSwipePeriod={shiftChartPeriod}/>
+      <AnalyticsChart points={points} type={chartType} unit={metricConfig.unit} metricKey={metric} period={period} selectedDateKey={chartDateKey} profile={profile} nutritionGoal={nutritionGoalForAnalytics} nutritionSeriesByMetric={nutritionSeriesByMetric} onSelectMetric={isNutritionAnalytics && !usePalmNutritionDetail ? setMetric : undefined} onSwipePeriod={shiftChartPeriod}/>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <div className="rounded-2xl bg-white/[0.04] p-3"><p className="text-[10px] uppercase text-zinc-500">Среднее</p><b>{Math.round(summary.avg * 10) / 10}</b></div>
