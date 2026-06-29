@@ -1029,6 +1029,28 @@
       background: linear-gradient(180deg, rgba(254,240,138,0.96), rgba(253,224,71,0.9)) !important;
       border-color: rgba(253, 224, 71, 0.4) !important;
     }
+    .onlypump-tdee-character-surface {
+      background: #eef0f2;
+    }
+        .theme-light .onlypump-tdee-character-surface-male {
+            background: #ececee;
+        }
+
+        .theme-light .onlypump-tdee-character-surface-female {
+            background: #f0f0f0;
+        }
+
+        .theme-dark .onlypump-tdee-character-surface {
+            background: #202126;
+        }
+
+        .theme-dark .onlypump-tdee-character-surface-male {
+            background: #1e1e21;
+        }
+
+        .theme-dark .onlypump-tdee-character-surface-female {
+            background: #1c1c1e;
+        }
     .onlypump-home-widget-card *,
     .onlypump-home-widget-card *::before,
     .onlypump-home-widget-card *::after {
@@ -10117,8 +10139,10 @@ const homeWidgetIconPaths = {
   weightIcon: "assets/menu-icons/home-widget-weight.svg",
   waterIcon: "assets/menu-icons/home-widget-water.svg",
   wellbeingIcon: "assets/menu-icons/home-widget-wellbeing.svg",
-  tdeeManIcon: "assets/TDEE/tdee_man.svg",
-  tdeeWomanIcon: "assets/TDEE/tdee_woman.svg",
+  tdeeManDarkIcon: "assets/TDEE/tdee_man_dark.svg",
+  tdeeWomanDarkIcon: "assets/TDEE/tdee_woman_dark.svg",
+  tdeeManIcon: "assets/TDEE/tdee_man_white.svg",
+  tdeeWomanIcon: "assets/TDEE/tdee_woman_white.svg",
   tdeeWidgetIcon: "assets/menu-icons/tdee_widget.svg",
   tdeeBmrIcon: "assets/menu-icons/tdee_bmr.svg",
   tdeeNeatIcon: "assets/menu-icons/tdee_neat.svg",
@@ -10135,6 +10159,14 @@ const homeWidgetIconPaths = {
   educationIcon: "assets/menu-icons/home-widget-education.svg",
   toolsIcon: "assets/menu-icons/home-widget-tools.svg",
 };
+
+function getTdeeCharacterAsset(sex) {
+  const isDarkTheme = typeof document !== "undefined" && document.documentElement.classList.contains("theme-dark");
+  if (sex === "female") {
+    return isDarkTheme ? homeWidgetIconPaths.tdeeWomanDarkIcon : homeWidgetIconPaths.tdeeWomanIcon;
+  }
+  return isDarkTheme ? homeWidgetIconPaths.tdeeManDarkIcon : homeWidgetIconPaths.tdeeManIcon;
+}
 
 function HomeWidgetAssetIcon({ src, alt = "", className = "" }) {
   return <img src={src} alt={alt} aria-hidden={alt ? undefined : true} draggable="false" className={`block h-[1.15rem] w-[1.15rem] object-contain ${className}`}/>;
@@ -10372,6 +10404,9 @@ const tdeeToneClasses = {
   eat: { color: tdeeComponentColors.eat },
 };
 
+const getTdeeComponentTextColor = (key, alpha = 1) =>
+  hexToRgba(tdeeComponentColors[key] || tdeeComponentColors.bmr, alpha);
+
 const tdeeDonutSegments = tdeeComponentOrder.map(key => ({ key, color: tdeeComponentColors[key] }));
 
 const tdeeComponentIconPaths = {
@@ -10395,6 +10430,112 @@ function TdeeComponentIcon({ itemKey, className = "" }) {
     className={`rounded-md ${className}`}
     fallback={<FallbackIcon className="h-full w-full" strokeWidth={2.2}/>}
   />;
+}
+
+        const tdeeCharacterViewBox = { width: 810, height: 1440 };
+        const tdeeCharacterFillBoxes = {
+            male: { x: 70, y: 24, width: 700, height: 1398 },
+            female: { x: 52, y: 42, width: 694, height: 1376 },
+        };
+        const tdeeCharacterFallbackBBox = tdeeCharacterFillBoxes.male;
+        const tdeeCharacterSexClass = (sex) => sex === "female" ? "onlypump-tdee-character-surface-female" : "onlypump-tdee-character-surface-male";
+
+function getTdeeCharacterValues(summary) {
+  return {
+    bmr: summary?.components?.bmr?.kcal || 0,
+    neat: summary?.components?.neat?.kcal || 0,
+    tef: summary?.components?.tef?.kcal || 0,
+    eat: summary?.components?.eat?.kcal || 0,
+  };
+}
+
+function TdeeCharacter({ bmr = 0, neat = 0, tef = 0, eat = 0, sex = "male", personSrc = "", className = "" }) {
+  const sexKey = sex === "female" ? "female" : "male";
+  const fillBox = tdeeCharacterFillBoxes[sexKey] || tdeeCharacterFallbackBBox;
+  const fillBoxRef = useRef(null);
+  const [bbox, setBbox] = useState(fillBox);
+
+  useEffect(() => {
+    const node = fillBoxRef.current;
+    if (!node || typeof node.getBBox !== "function") return;
+    try {
+      const nextBBox = node.getBBox();
+      if (nextBBox?.width > 0 && nextBBox?.height > 0) {
+        setBbox({
+          x: nextBBox.x,
+          y: nextBBox.y,
+          width: nextBBox.width,
+          height: nextBBox.height,
+        });
+      }
+    } catch (error) {
+      setBbox(fillBox);
+    }
+  }, [fillBox]);
+
+  const fillRects = useMemo(() => {
+    const values = { bmr, neat, tef, eat };
+    const rawSegments = tdeeComponentOrder.map((key) => ({
+      key,
+      value: profileNonNegativeNumber(values[key], 0),
+      color: tdeeComponentColors[key],
+    }));
+    const total = rawSegments.reduce((sum, segment) => sum + segment.value, 0);
+    if (!total) return [];
+    let accumulatedHeight = 0;
+    return rawSegments
+      .filter((segment) => segment.value > 0)
+      .map((segment) => {
+        const height = bbox.height * (segment.value / total);
+        const y = bbox.y + bbox.height - accumulatedHeight - height;
+        accumulatedHeight += height;
+        return {
+          ...segment,
+          x: bbox.x,
+          y,
+          width: bbox.width,
+          height,
+        };
+      });
+  }, [bmr, neat, tef, eat, bbox]);
+
+  return (
+    <svg
+      viewBox={`0 0 ${tdeeCharacterViewBox.width} ${tdeeCharacterViewBox.height}`}
+      preserveAspectRatio="xMidYMid meet"
+      className={`block ${className}`}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect ref={fillBoxRef} x={fillBox.x} y={fillBox.y} width={fillBox.width} height={fillBox.height} fill="transparent" stroke="none" opacity="0" />
+      <g>
+        {fillRects.map((rect) => (
+          <rect
+            key={rect.key}
+            x={rect.x}
+            y={rect.y}
+            width={rect.width}
+            height={rect.height}
+            fill={rect.color}
+            opacity="0.76"
+          />
+        ))}
+      </g>
+      {personSrc ? (
+        <image
+          href={personSrc}
+          xlinkHref={personSrc}
+          x="0"
+          y="0"
+          width={tdeeCharacterViewBox.width}
+          height={tdeeCharacterViewBox.height}
+          preserveAspectRatio="xMidYMid meet"
+        />
+      ) : (
+        <rect x={bbox.x} y={bbox.y} width={bbox.width} height={bbox.height} fill="none" stroke="currentColor" strokeWidth="4" opacity="0.45" />
+      )}
+    </svg>
+  );
 }
 
 const addDaysToDateKey = (dateKey, offset = 0) => {
@@ -10651,12 +10792,17 @@ function TdeeSegmentCalendar({ healthLogs = [], selectedDateKey = formatDateKey(
 }
 
 function TdeeEnergyWidgetCard({ summary, onOpen, onInfoOpen }) {
-  const personSrc = summary?.sex === "female" ? homeWidgetIconPaths.tdeeWomanIcon : homeWidgetIconPaths.tdeeManIcon;
+  const personSrc = getTdeeCharacterAsset(summary?.sex);
   const totalParts = formatTdeeKcalParts(summary?.totalKcal);
   return <Card onClick={onOpen} className="onlypump-home-widget-card cursor-pointer overflow-hidden p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
     <div className="grid h-full min-h-0 grid-cols-[42%_1fr] gap-3">
-      <div className="flex min-w-0 items-end justify-center overflow-hidden rounded-[24px] bg-[var(--onlypump-soft)]">
-        <img src={personSrc} alt="" aria-hidden="true" draggable="false" className="h-full max-h-[9.6rem] w-full object-contain object-bottom"/>
+	                                <div className={`onlypump-tdee-character-surface ${tdeeCharacterSexClass(summary?.sex)} flex min-w-0 items-end justify-center overflow-hidden rounded-[24px]`}>
+        <TdeeCharacter
+          personSrc={personSrc}
+          sex={summary?.sex}
+          {...getTdeeCharacterValues(summary)}
+          className="h-full max-h-[9.6rem] w-full -translate-y-2"
+        />
       </div>
       <div className="relative flex min-w-0 flex-col overflow-hidden pr-7">
         <WidgetInfoIcon widgetKey="energyExpenditure" label="Расход энергии" onOpen={onInfoOpen} className="absolute right-0 top-0 shrink-0 text-red-500">
@@ -10673,21 +10819,23 @@ function TdeeEnergyWidgetCard({ summary, onOpen, onInfoOpen }) {
 	          </p>
 	          <p className="mt-0.5 text-[9px] font-semibold leading-none text-zinc-500">За день</p>
 	        </div>
-	        <div className="mt-1 grid min-h-0 flex-1 content-start gap-[2px] overflow-hidden">
-	          {(summary?.items || []).map(item => {
-	            const parts = formatTdeeKcalParts(item.kcal);
-	            const hasData = tdeeComponentHasDisplayData(item);
-	            return <div key={item.key} className="block min-w-0 text-left">
-	              <div className="flex min-w-0 items-center gap-1.5">
-	                <TdeeComponentIcon itemKey={item.key} className="h-3.5 w-3.5"/>
-	                <p className="onlypump-line-clamp-1 min-w-0 text-[7px] font-normal leading-none text-[var(--onlypump-text)]">{item.title} ({item.abbr}) - {formatTdeeComponentPercent(item)}</p>
-	              </div>
-	              {hasData ? <p className="mt-px pl-5 text-[9px] font-black leading-none tracking-[-0.035em] text-[var(--onlypump-text)]">
-	                {parts.value} <span className="text-[7px] font-semibold tracking-normal text-zinc-500">{parts.unit}</span>
-	              </p> : <p className="mt-px pl-5 text-[9px] font-black leading-none tracking-[-0.035em] text-[var(--onlypump-text)]">—</p>}
-	              {item.needsReview && hasData && <p className="mt-px pl-5 text-[7px] font-black uppercase tracking-[0.08em] text-zinc-400">уточнить</p>}
-            </div>;
-          })}
+		        <div className="mt-1 grid min-h-0 flex-1 content-start gap-[2px] overflow-hidden">
+		          {(summary?.items || []).map(item => {
+		            const parts = formatTdeeKcalParts(item.kcal);
+		            const hasData = tdeeComponentHasDisplayData(item);
+		            const itemTextColor = getTdeeComponentTextColor(item.key);
+		            const itemUnitColor = getTdeeComponentTextColor(item.key, 0.72);
+		            return <div key={item.key} className="block min-w-0 text-left">
+		              <div className="flex min-w-0 items-center gap-1.5">
+		                <TdeeComponentIcon itemKey={item.key} className="h-3.5 w-3.5"/>
+		                <p className="onlypump-line-clamp-1 min-w-0 text-[7px] font-normal leading-none" style={{ color: itemTextColor }}>{item.title} ({item.abbr}) - {formatTdeeComponentPercent(item)}</p>
+		              </div>
+		              {hasData ? <p className="mt-px pl-5 text-[9px] font-black leading-none tracking-[-0.035em]" style={{ color: itemTextColor }}>
+		                {parts.value} <span className="text-[7px] font-semibold tracking-normal" style={{ color: itemUnitColor }}>{parts.unit}</span>
+		              </p> : <p className="mt-px pl-5 text-[9px] font-black leading-none tracking-[-0.035em]" style={{ color: itemTextColor }}>—</p>}
+		              {item.needsReview && hasData && <p className="mt-px pl-5 text-[7px] font-black uppercase tracking-[0.08em] text-zinc-400">уточнить</p>}
+	            </div>;
+	          })}
         </div>
       </div>
     </div>
@@ -10697,8 +10845,13 @@ function TdeeEnergyWidgetCard({ summary, onOpen, onInfoOpen }) {
 function TdeeEnergySummaryPanel({ summary, personSrc, onSelect, activeKey, compact = false, framed = true }) {
   const totalParts = formatTdeeKcalParts(summary?.totalKcal);
   return <section className={`grid grid-cols-[42%_1fr] gap-4 ${framed ? `rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] ${compact ? "p-4" : "p-5"}` : ""}`}>
-    <div className="flex min-h-[240px] min-w-0 items-center justify-center overflow-hidden rounded-[24px] bg-[var(--onlypump-soft)]">
-      <img src={personSrc} alt="" aria-hidden="true" draggable="false" className="h-[112%] max-h-[290px] w-full -translate-y-2 object-contain object-center"/>
+                                <div className={`onlypump-tdee-character-surface ${tdeeCharacterSexClass(summary?.sex)} flex min-h-[240px] min-w-0 items-center justify-center overflow-hidden rounded-[24px]`}>
+      <TdeeCharacter
+        personSrc={personSrc}
+        sex={summary?.sex}
+        {...getTdeeCharacterValues(summary)}
+        className="h-[112%] max-h-[290px] w-full translate-y-1"
+      />
     </div>
     <div className="min-w-0">
       <p className="text-[15px] font-normal leading-tight text-zinc-500">Всего</p>
@@ -10706,21 +10859,23 @@ function TdeeEnergySummaryPanel({ summary, personSrc, onSelect, activeKey, compa
         {totalParts.value} <span className="text-[25px] font-semibold tracking-normal text-zinc-500">{totalParts.unit}</span>
       </p>
       <p className="mt-2 text-[20px] font-semibold leading-none text-zinc-500">За день</p>
-	      <div className="mt-5 grid gap-3">
-	        {(summary?.items || []).map(item => {
-	          const parts = formatTdeeKcalParts(item.kcal);
-	          const hasData = tdeeComponentHasDisplayData(item);
-	          return <button key={item.key} type="button" onClick={() => onSelect?.(item.key)} className={`block min-w-0 text-left transition ${activeKey === item.key ? "scale-[1.01]" : ""}`}>
-	            <div className="flex min-w-0 items-center gap-2">
-	              <TdeeComponentIcon itemKey={item.key} className="h-4 w-4"/>
-	              <p className="onlypump-line-clamp-1 min-w-0 text-[11px] font-normal leading-none text-[var(--onlypump-text)]">{item.title} ({item.abbr}) - {formatTdeeComponentPercent(item)}</p>
-	            </div>
-	            {hasData ? <p className="mt-1 pl-6 text-[18px] font-black leading-none tracking-[-0.04em] text-[var(--onlypump-text)]">
-	              {parts.value} <span className="text-[11px] font-semibold tracking-normal text-zinc-500">{parts.unit}</span>
-	            </p> : <p className="mt-1 pl-6 text-[18px] font-black leading-none tracking-[-0.04em] text-[var(--onlypump-text)]">—</p>}
-	            {item.needsReview && hasData && <p className="mt-1 pl-6 text-[9px] font-black uppercase tracking-[0.1em] text-zinc-400">уточнить</p>}
-	          </button>;
-	        })}
+		      <div className="mt-5 grid gap-3">
+		        {(summary?.items || []).map(item => {
+		          const parts = formatTdeeKcalParts(item.kcal);
+		          const hasData = tdeeComponentHasDisplayData(item);
+		          const itemTextColor = getTdeeComponentTextColor(item.key);
+		          const itemUnitColor = getTdeeComponentTextColor(item.key, 0.72);
+		          return <button key={item.key} type="button" onClick={() => onSelect?.(item.key)} className={`block min-w-0 text-left transition ${activeKey === item.key ? "scale-[1.01]" : ""}`}>
+		            <div className="flex min-w-0 items-center gap-2">
+		              <TdeeComponentIcon itemKey={item.key} className="h-4 w-4"/>
+		              <p className="onlypump-line-clamp-1 min-w-0 text-[11px] font-normal leading-none" style={{ color: itemTextColor }}>{item.title} ({item.abbr}) - {formatTdeeComponentPercent(item)}</p>
+		            </div>
+		            {hasData ? <p className="mt-1 pl-6 text-[18px] font-black leading-none tracking-[-0.04em]" style={{ color: itemTextColor }}>
+		              {parts.value} <span className="text-[11px] font-semibold tracking-normal" style={{ color: itemUnitColor }}>{parts.unit}</span>
+		            </p> : <p className="mt-1 pl-6 text-[18px] font-black leading-none tracking-[-0.04em]" style={{ color: itemTextColor }}>—</p>}
+		            {item.needsReview && hasData && <p className="mt-1 pl-6 text-[9px] font-black uppercase tracking-[0.1em] text-zinc-400">уточнить</p>}
+		          </button>;
+		        })}
       </div>
     </div>
   </section>;
@@ -10790,7 +10945,7 @@ function TdeeEnergyDetailSheet({ summary, healthLogs = [], selectedDateKey = for
   const [activeKey, setActiveKey] = useState("bmr");
   const [tdeeInfoOpen, setTdeeInfoOpen] = useState(false);
   const active = summary?.components?.[activeKey] || summary?.components?.bmr;
-  const personSrc = summary?.sex === "female" ? homeWidgetIconPaths.tdeeWomanIcon : homeWidgetIconPaths.tdeeManIcon;
+  const personSrc = getTdeeCharacterAsset(summary?.sex);
   const toneByKey = { bmr: "bmr", neat: "neat", tef: "tef", eat: "eat" };
   const activeColor = tdeeComponentColors[activeKey] || tdeeComponentColors.bmr;
   const descriptions = {
