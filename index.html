@@ -2311,7 +2311,7 @@ import {
   BarChart3, Users, User, Bell, Flame, ChevronDown, Play, Activity, Grid3X3,
   Menu, CalendarDays, Trophy, Moon, Target, BookOpen, MessageCircle, Settings,
   ShieldCheck, CreditCard, Scale, Ruler, Utensils, Clock3, CheckCircle2, Lock,
-  Search, Plus, ExternalLink, Star, Zap, HeartPulse, Droplets, MoreHorizontal, Share2, Pencil, Repeat2, Route, ChevronRight, Smile, StickyNote, Maximize2, Minimize2, Info, ArrowLeft, Camera, Percent
+  Search, Plus, ExternalLink, Star, Zap, HeartPulse, Droplets, MoreHorizontal, Share2, Pencil, Repeat2, Route, ChevronRight, Smile, StickyNote, Maximize2, Minimize2, Info, ArrowLeft, X, Camera, Percent
 } from "lucide-react";
 
 function syncOnlyPumpViewportHeight(tg) {
@@ -3675,6 +3675,7 @@ const homeWidgetCatalog = [
   { id: "dailyNote", label: "Заметки", description: "Заметка по выбранному дню", default: false, size: "2x2" },
   { id: "workout", label: "Сегодняшняя тренировка", description: "План и прогресс тренировки дня", default: false, size: "4x2" },
   { id: "nutrition", label: "Питание на сегодня", description: "Калории и кольцо прогресса", default: false, size: "4x2" },
+  { id: "energyExpenditure", label: "Расход энергии", description: "TDEE, BMR, TEF, NEAT и EAT за день", default: false, size: "4x2" },
   { id: "weekProgress", label: "Прогресс недели", description: "График выполнения плана", default: false, size: "4x2" },
   { id: "goalProgress", label: "Прогресс к цели", description: "Процент достижения цели", default: false, size: "2x2" },
   { id: "miniActions", label: "Быстрые действия", description: "Тренировка, лекция и план", default: false, size: "2x4" },
@@ -3712,6 +3713,11 @@ const WIDGET_INFO_BY_KEY = {
     title: "Что показывает питание",
     how: "Виджет собирает дневные калории и основные макронутриенты из уже добавленных приемов пищи. Он помогает быстро понять, насколько день близок к цели.",
     accuracy: "Заполняй питание в выбранный день и не пропускай небольшие продукты: напитки, соусы, масло и перекусы часто сильно меняют итог.",
+  },
+  energyExpenditure: {
+    title: "Как считается расход энергии",
+    how: "Расход энергии складывается из основного обмена, пищеварения, бытовой активности и тренировок. Приложение берет уже известные параметры профиля, питание, шаги и тренировки за выбранный день.",
+    accuracy: "Заполняй вес, рост, процент жира, питание, шаги и тренировки. Если данных по еде, шагам или тренировкам нет, приложение ставит осторожную оценку и помечает ее как требующую уточнения.",
   },
   weight: {
     title: "Как считается вес",
@@ -3841,6 +3847,7 @@ const HOME_WIDGET_INFO_KEYS = {
   dailyNote: "dailyNote",
   workout: "workouts",
   nutrition: "nutrition",
+  energyExpenditure: "energyExpenditure",
   weekProgress: "analytics",
   goalProgress: "analytics",
   miniActions: "workouts",
@@ -4520,6 +4527,19 @@ const DEFAULT_HEALTH_LOG = {
   extra_activity_completed: null,
   measurements_done: null,
   photo_done: null,
+  tdee_kcal: 0,
+  bmr_kcal: 0,
+  tef_kcal: 0,
+  neat_kcal: 0,
+  eat_kcal: 0,
+  bmr_percent: 0,
+  tef_percent: 0,
+  neat_percent: 0,
+  eat_percent: 0,
+  tef_needs_review: false,
+  neat_needs_review: false,
+  eat_needs_review: false,
+  tdee_formula_version: "",
   notes: "",
 };
 
@@ -4677,6 +4697,19 @@ const normalizeHealthLog = (record = {}, dateKey = formatDateKey(new Date())) =>
     extra_activity_completed: optionalBoolean(record.extra_activity_completed ?? record.extra_activity),
     measurements_done: optionalBoolean(record.measurements_done),
     photo_done: optionalBoolean(record.photo_done),
+    tdee_kcal: profileNonNegativeNumber(record.tdee_kcal, 0),
+    bmr_kcal: profileNonNegativeNumber(record.bmr_kcal, 0),
+    tef_kcal: profileNonNegativeNumber(record.tef_kcal, 0),
+    neat_kcal: profileNonNegativeNumber(record.neat_kcal, 0),
+    eat_kcal: profileNonNegativeNumber(record.eat_kcal, 0),
+    bmr_percent: profileNonNegativeNumber(record.bmr_percent, 0),
+    tef_percent: profileNonNegativeNumber(record.tef_percent, 0),
+    neat_percent: profileNonNegativeNumber(record.neat_percent, 0),
+    eat_percent: profileNonNegativeNumber(record.eat_percent, 0),
+    tef_needs_review: Boolean(optionalBoolean(record.tef_needs_review)),
+    neat_needs_review: Boolean(optionalBoolean(record.neat_needs_review)),
+    eat_needs_review: Boolean(optionalBoolean(record.eat_needs_review)),
+    tdee_formula_version: String(record.tdee_formula_version || ""),
     notes: String(record.notes || ""),
     sleep_duration_minutes: duration,
     sleep_latency_minutes: profileNonNegativeNumber(record.sleep_latency_minutes, 0),
@@ -9082,13 +9115,10 @@ const buildOnlyPumpHalfConicRingStyle = (progress = 0, color = "#ef4444", track 
 });
 
 const ACTIVITY_RING_SETTINGS_STORAGE_KEY = "onlypump_activity_ring_settings_v1";
-const ACTIVITY_RING_MAX_VISUAL_PROGRESS = 300;
+const ACTIVITY_RING_MAX_VISUAL_PROGRESS = 1000;
 const ACTIVITY_RING_BASE_ANIMATION_MS = 980;
 const ACTIVITY_RING_OVERFLOW_CYCLE_MS = 780;
-const ACTIVITY_RING_BASE_DARKEN_WHEN_OVERFLOW = 0.075;
-const ACTIVITY_RING_OVERFLOW_LIGHTEN_START = 0.12;
-const ACTIVITY_RING_OVERFLOW_LIGHTEN_STEP = 0.045;
-const ACTIVITY_RING_OVERFLOW_LIGHTEN_MAX = 0.24;
+const ACTIVITY_RING_LAP_LIGHTEN_MAX = 0.42;
 const defaultActivityRingConfig = { outer: "steps", middle: "sleep", inner: "recovery" };
 const activityRingSlots = [
   { key: "outer", label: "Внешнее кольцо", shortLabel: "Внешнее", radius: 20, color: "#ef4444", track: "rgba(239,68,68,0.16)" },
@@ -9300,17 +9330,23 @@ const buildActivityRingMetricTrend = (context = {}, metricId = "steps", selected
 };
 
 const buildActivityRingArcLayers = (value = 0) => {
-  const visualValue = Math.min(normalizeRingProgress(value), ACTIVITY_RING_MAX_VISUAL_PROGRESS);
-  if (visualValue <= 0) return [];
-  const layers = [{ value: Math.min(visualValue, 100), overflow: false, index: 0 }];
-  let overflowValue = Math.max(0, visualValue - 100);
-  let index = 1;
-  while (overflowValue >= 100) {
-    layers.push({ value: 100, overflow: true, index });
-    overflowValue -= 100;
-    index += 1;
+  const totalProgress = Math.min(normalizeRingProgress(value), ACTIVITY_RING_MAX_VISUAL_PROGRESS) / 100;
+  if (totalProgress <= 0) return [];
+  const fullLaps = Math.floor(totalProgress);
+  const partialLapProgress = totalProgress - fullLaps;
+  const layers = [];
+  for (let lapIndex = 0; lapIndex < fullLaps; lapIndex += 1) {
+    layers.push({ lapIndex, index: lapIndex, progress: 1, value: 100, overflow: lapIndex > 0 });
   }
-  if (overflowValue > 0) layers.push({ value: overflowValue, overflow: true, index });
+  if (partialLapProgress > 0.0001) {
+    layers.push({
+      lapIndex: fullLaps,
+      index: fullLaps,
+      progress: partialLapProgress,
+      value: partialLapProgress * 100,
+      overflow: fullLaps > 0,
+    });
+  }
   return layers;
 };
 
@@ -9322,13 +9358,24 @@ const mixActivityRingHexColor = (color = "#ef4444", target = 255, amount = 0) =>
   return `rgb(${mixed.join(", ")})`;
 };
 
-const buildActivityRingLayerColor = (color = "#ef4444", layer = {}, hasOverflow = false) => {
-  if (!layer.overflow) return hasOverflow ? mixActivityRingHexColor(color, 0, ACTIVITY_RING_BASE_DARKEN_WHEN_OVERFLOW) : color;
-  const amount = Math.min(
-    ACTIVITY_RING_OVERFLOW_LIGHTEN_MAX,
-    ACTIVITY_RING_OVERFLOW_LIGHTEN_START + Math.max(0, layer.index - 1) * ACTIVITY_RING_OVERFLOW_LIGHTEN_STEP
-  );
+const getActivityRingLayerStackPosition = (layers = [], layer = {}) => {
+  const normalizedLayers = Array.isArray(layers) && layers.length ? layers : [layer];
+  const sortedLayers = [...normalizedLayers].sort((a, b) => Number(a?.index || 0) - Number(b?.index || 0));
+  const stackIndex = sortedLayers.findIndex(item => Number(item?.index || 0) === Number(layer?.index || 0));
+  return {
+    stackIndex: Math.max(0, stackIndex),
+    topIndex: Math.max(0, sortedLayers.length - 1),
+  };
+};
+
+const getActivityRingLapColor = (color = "#ef4444", lapIndex = 0) => {
+  const safeLapIndex = Math.max(0, Math.floor(Number(lapIndex || 0)));
+  const amount = Math.min(ACTIVITY_RING_LAP_LIGHTEN_MAX, 1 - Math.pow(0.88, safeLapIndex));
   return mixActivityRingHexColor(color, 255, amount);
+};
+
+const buildActivityRingLayerColor = (color = "#ef4444", layer = {}, hasOverflow = false, layers = []) => {
+  return getActivityRingLapColor(color, layer?.lapIndex ?? layer?.index ?? 0);
 };
 
 const describeActivityRingArc = (radius, percent = 0) => {
@@ -9366,8 +9413,8 @@ function ActivityRingsSvg({ progress = null, className = "", strokeWidth = 4, tr
       const value = Math.max(0, Number.isFinite(Number(rawValue)) ? Number(rawValue) : 0);
       const layers = buildActivityRingArcLayers(value);
       const hasOverflow = layers.some(layer => layer.overflow);
-      const getLayerColor = layer => buildActivityRingLayerColor(ring.color, layer, hasOverflow);
-      const renderArc = (layer, layerPosition) => {
+      const getLayerColor = layer => buildActivityRingLayerColor(ring.color, layer, hasOverflow, layers);
+      const renderArc = (layer) => {
         const arcValue = layer.value;
         const finalOffset = circumference - (circumference * clampProgress(arcValue)) / 100;
         const animationKey = `${Math.round(value * 10)}-${layer.index}-${Math.round(arcValue * 10)}`;
@@ -9375,36 +9422,6 @@ function ActivityRingsSvg({ progress = null, className = "", strokeWidth = 4, tr
         const layerColor = getLayerColor(layer);
         const overflowDelay = ACTIVITY_RING_BASE_ANIMATION_MS + Math.max(0, layer.index - 1) * ACTIVITY_RING_OVERFLOW_CYCLE_MS;
         const overflowDuration = Math.max(220, ACTIVITY_RING_OVERFLOW_CYCLE_MS * (clampProgress(arcValue) / 100));
-	        if (isOverflow && arcValue < 100) {
-	          const previousColor = getLayerColor(layers[layerPosition - 1] || layers[0]);
-	          const gradientId = `onlypump-ring-${ring.key}-${animationKey}`.replace(/[^a-z0-9_-]/gi, "-");
-	          const endPoint = getActivityRingArcPoint(ring.radius, arcValue);
-	          return <g key={`${ring.key}-overflow-partial-${animationKey}`}>
-	            <defs>
-	              <linearGradient id={gradientId} x1={24 + ring.radius} y1="24" x2={endPoint.x} y2={endPoint.y} gradientUnits="userSpaceOnUse">
-	                <stop offset="0%" stopColor={previousColor}/>
-	                <stop offset="18%" stopColor={layerColor}/>
-	                <stop offset="100%" stopColor={layerColor}/>
-	              </linearGradient>
-	            </defs>
-	            <path
-	              d={describeActivityRingArc(ring.radius, arcValue)}
-	              fill="none"
-	              stroke={`url(#${gradientId})`}
-	              strokeWidth={strokeWidth}
-	              strokeLinecap="round"
-	              pathLength="1"
-	              className={animate ? "onlypump-animated-ring-grow-arc onlypump-animated-ring-overflow" : "onlypump-animated-ring-overflow"}
-	              style={{
-	                "--onlypump-ring-segment-duration": `${overflowDuration.toFixed(0)}ms`,
-	                "--onlypump-ring-segment-delay": `${overflowDelay}ms`,
-	                strokeDasharray: animate ? "0 1" : "1 1",
-	                strokeDashoffset: 0,
-	                opacity: animate ? 0 : 1,
-	              }}
-	            />
-	          </g>;
-	        }
         return <circle
           key={`${ring.key}-${isOverflow ? "overflow" : "base"}-${animationKey}`}
           cx="24"
@@ -9413,7 +9430,7 @@ function ActivityRingsSvg({ progress = null, className = "", strokeWidth = 4, tr
           fill="none"
           stroke={layerColor}
           strokeWidth={strokeWidth}
-          strokeLinecap="round"
+          strokeLinecap={arcValue >= 99.999 ? "butt" : "round"}
           className={`${animate ? "onlypump-animated-ring-arc" : ""} ${isOverflow ? "onlypump-animated-ring-overflow" : ""}`.trim()}
           style={{
             "--onlypump-ring-circumference": `${circumference}`,
@@ -9997,6 +10014,13 @@ const homeWidgetIconPaths = {
   weightIcon: "assets/menu-icons/home-widget-weight.svg",
   waterIcon: "assets/menu-icons/home-widget-water.svg",
   wellbeingIcon: "assets/menu-icons/home-widget-wellbeing.svg",
+  tdeeManIcon: "assets/TDEE/tdee_man.svg",
+  tdeeWomanIcon: "assets/TDEE/tdee_woman.svg",
+  tdeeWidgetIcon: "assets/menu-icons/tdee_widget.svg",
+  tdeeBmrIcon: "assets/menu-icons/tdee_bmr.svg",
+  tdeeNeatIcon: "assets/menu-icons/tdee_neat.svg",
+  tdeeTefIcon: "assets/menu-icons/tdee_tef.svg",
+  tdeeEatIcon: "assets/menu-icons/tdee_eat.svg",
   recoveryIcon: "assets/menu-icons/home-widget-recovery.svg",
   tonnageIcon: "assets/menu-icons/home-widget-tonnage.svg",
   setsIcon: "assets/menu-icons/home-widget-sets.svg",
@@ -10011,6 +10035,15 @@ const homeWidgetIconPaths = {
 
 function HomeWidgetAssetIcon({ src, alt = "", className = "" }) {
   return <img src={src} alt={alt} aria-hidden={alt ? undefined : true} draggable="false" className={`block h-[1.15rem] w-[1.15rem] object-contain ${className}`}/>;
+}
+
+function SafeAssetIcon({ src, alt = "", className = "", fallbackClassName = "", fallback = null }) {
+  const [failed, setFailed] = useState(false);
+  return <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden ${className}`} aria-hidden={alt ? undefined : true}>
+    {src && !failed
+      ? <img src={src} alt={alt} draggable="false" onError={() => setFailed(true)} className="block h-full w-full object-contain"/>
+      : fallback || <span className={`block h-full w-full ${fallbackClassName}`}/>}
+  </span>;
 }
 
 const homeWidgetThumbnailIconConfig = {
@@ -10030,12 +10063,716 @@ const homeWidgetThumbnailIconConfig = {
   dailyNote: { icon: StickyNote, tone: "yellow", detail: "note" },
   workout: { iconSrc: homeWidgetIconPaths.workoutIcon, tone: "red", detail: "bars" },
   nutrition: { iconSrc: homeWidgetIconPaths.nutritionIcon, tone: "red", detail: "ring" },
+  energyExpenditure: { icon: Flame, iconSrc: homeWidgetIconPaths.tdeeWidgetIcon, tone: "red", detail: "lines" },
   weekProgress: { iconSrc: homeWidgetIconPaths.weekProgressIcon, tone: "red", detail: "bars" },
   goalProgress: { iconSrc: homeWidgetIconPaths.goalProgressIcon, tone: "red", detail: "line" },
   miniActions: { iconSrc: homeWidgetIconPaths.quickActionsIcon, tone: "red", detail: "dots" },
   education: { iconSrc: homeWidgetIconPaths.educationIcon, tone: "red", detail: "lines" },
   tools: { iconSrc: homeWidgetIconPaths.toolsIcon, tone: "red", detail: "dots" },
 };
+
+const TDEE_FORMULA_VERSION = "tdee-v1";
+
+const normalizeTdeeSex = (profile = DEFAULT_PROFILE) => {
+  const text = String(profile?.sex || profile?.gender || "").trim().toLowerCase();
+  if (["female", "woman", "women", "f", "ж", "жен", "женщина", "девушка"].some(token => text.includes(token))) return "female";
+  return "male";
+};
+
+const readLoosePositiveNumber = (value, fallback = 0) => {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, value);
+  const match = String(value ?? "").replace(",", ".").match(/-?\d+(\.\d+)?/);
+  const number = match ? Number(match[0]) : Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+};
+
+const readTdeeValueFromSources = ({ selectedMeasurements = {}, measurementRecords = [], profile = DEFAULT_PROFILE, selectedDateKey = "", keys = [], fallback = 0 }) => {
+  for (const key of keys) {
+    const value = readLoosePositiveNumber(selectedMeasurements?.[key], 0);
+    if (value > 0) return value;
+  }
+  const rows = (Array.isArray(measurementRecords) ? [...measurementRecords] : [])
+    .filter(row => {
+      const rowDate = normalizeDateKey(row?.measurement_date || row?.date || row?.log_date || row?.created_at, "");
+      return rowDate && rowDate <= selectedDateKey;
+    })
+    .sort((a, b) => String(normalizeDateKey(b?.measurement_date || b?.date || b?.log_date || b?.created_at, "")).localeCompare(String(normalizeDateKey(a?.measurement_date || a?.date || a?.log_date || a?.created_at, ""))));
+  for (const row of rows) {
+    for (const key of keys) {
+      const value = readLoosePositiveNumber(row?.[key], 0);
+      if (value > 0) return value;
+    }
+  }
+  for (const key of keys) {
+    const value = readLoosePositiveNumber(profile?.[key], 0);
+    if (value > 0) return value;
+  }
+  return fallback;
+};
+
+const estimateWorkoutMinutesForTdee = (workout = {}) => readLoosePositiveNumber(
+  workout.duration_minutes ?? workout.duration_min ?? workout.duration ?? workout.minutes ?? workout.time_minutes ?? workout.time,
+  0
+);
+
+const workoutCountsForTdee = (workout = {}) => {
+  const status = String(workout.status || "").toLowerCase();
+  return status === "completed" || status === "done" || workout.done === true || Boolean(workout.completed_at || workout.finished_at);
+};
+
+const buildTdeeSummary = ({
+  profile = DEFAULT_PROFILE,
+  selectedMeasurements = {},
+  measurementRecords = [],
+  selectedDateKey = formatDateKey(new Date()),
+  nutritionTotals = { calories: 0, protein: 0, fat: 0, carbs: 0 },
+  nutritionMeals = [],
+  workouts = [],
+  healthLog = DEFAULT_HEALTH_LOG,
+} = {}) => {
+  const sex = normalizeTdeeSex(profile);
+  const defaultWeight = sex === "female" ? 65 : 80;
+  const defaultHeight = sex === "female" ? 165 : 180;
+  const weightKg = readTdeeValueFromSources({
+    selectedMeasurements,
+    measurementRecords,
+    profile,
+    selectedDateKey,
+    keys: ["weight", "weight_kg", "weightKg"],
+    fallback: defaultWeight,
+  });
+  const heightCm = readTdeeValueFromSources({
+    selectedMeasurements,
+    measurementRecords,
+    profile,
+    selectedDateKey,
+    keys: ["height", "height_cm", "heightCm"],
+    fallback: defaultHeight,
+  });
+  const bodyFatPercent = readTdeeValueFromSources({
+    selectedMeasurements,
+    measurementRecords,
+    profile,
+    selectedDateKey,
+    keys: ["bodyFat", "body_fat_percent", "body_fat"],
+    fallback: 0,
+  });
+  const age = calculateProfileAge(profile?.birth_date) || readLoosePositiveNumber(profile?.age, 30) || 30;
+  const leanMassKg = bodyFatPercent > 0 && bodyFatPercent < 70 ? weightKg * (1 - bodyFatPercent / 100) : 0;
+  const mifflinBmr = (10 * weightKg) + (6.25 * heightCm) - (5 * age) + (sex === "female" ? -161 : 5);
+  const bmrKcal = Math.max(900, Math.round(leanMassKg > 0 ? 370 + 21.6 * leanMassKg : mifflinBmr));
+  const foodRecorded = profileNonNegativeNumber(nutritionTotals.calories, 0) > 0
+    || profileNonNegativeNumber(nutritionTotals.protein, 0) > 0
+    || profileNonNegativeNumber(nutritionTotals.fat, 0) > 0
+    || profileNonNegativeNumber(nutritionTotals.carbs, 0) > 0
+    || (Array.isArray(nutritionMeals) && nutritionMeals.length > 0);
+  const macroTef = (profileNonNegativeNumber(nutritionTotals.protein, 0) * 4 * 0.25)
+    + (profileNonNegativeNumber(nutritionTotals.carbs, 0) * 4 * 0.075)
+    + (profileNonNegativeNumber(nutritionTotals.fat, 0) * 9 * 0.025);
+  const tefKcal = Math.round(foodRecorded
+    ? Math.max(macroTef, profileNonNegativeNumber(nutritionTotals.calories, 0) * 0.08)
+    : 0);
+  const steps = profileNonNegativeNumber(healthLog?.steps_count, 0);
+  const neatKcal = Math.round(steps > 0 ? steps * weightKg * 0.0005 : 0);
+  const completedWorkouts = (Array.isArray(workouts) ? workouts : []).filter(workoutCountsForTdee);
+  const workoutCalories = completedWorkouts.reduce((sum, workout) => sum + profileNonNegativeNumber(workoutCaloriesValue(workout), 0), 0);
+  const workoutMinutes = completedWorkouts.reduce((sum, workout) => sum + estimateWorkoutMinutesForTdee(workout), 0);
+  const fallbackEat = workoutMinutes > 0
+    ? Math.round(weightKg * workoutMinutes * 0.08)
+    : (completedWorkouts.length ? Math.round(weightKg * 4.5 * completedWorkouts.length) : Math.round(bmrKcal * 0.04));
+  const eatKcal = Math.round(completedWorkouts.length ? (workoutCalories > 0 ? workoutCalories : fallbackEat) : 0);
+  const totalKcal = Math.max(1, Math.round(bmrKcal + tefKcal + neatKcal + eatKcal));
+  const percentOfTotal = (value) => Math.round((profileNonNegativeNumber(value, 0) / totalKcal) * 100);
+  const components = {
+    bmr: { key: "bmr", title: "Основной обмен", abbr: "BMR", kcal: bmrKcal, percent: percentOfTotal(bmrKcal), hasData: true, needsReview: false },
+    tef: { key: "tef", title: "Пищеварение", abbr: "TEF", kcal: tefKcal, percent: percentOfTotal(tefKcal), hasData: foodRecorded && tefKcal > 0, needsReview: false },
+    neat: { key: "neat", title: "Бытовая активность", abbr: "NEAT", kcal: neatKcal, percent: percentOfTotal(neatKcal), hasData: steps > 0 && neatKcal > 0, needsReview: false },
+    eat: { key: "eat", title: "Тренировки", abbr: "EAT", kcal: eatKcal, percent: percentOfTotal(eatKcal), hasData: completedWorkouts.length > 0 && eatKcal > 0, needsReview: completedWorkouts.length > 0 && workoutCalories <= 0 },
+  };
+  return {
+    sex,
+    totalKcal,
+    weightKg,
+    heightCm,
+    bodyFatPercent,
+    components,
+    items: tdeeComponentOrder.map(key => components[key]).filter(Boolean),
+  };
+};
+
+const buildTdeeHealthLogPatch = (summary = {}) => ({
+  tdee_kcal: Math.round(profileNonNegativeNumber(summary.totalKcal, 0)),
+  bmr_kcal: Math.round(profileNonNegativeNumber(summary.components?.bmr?.kcal, 0)),
+  tef_kcal: Math.round(profileNonNegativeNumber(summary.components?.tef?.kcal, 0)),
+  neat_kcal: Math.round(profileNonNegativeNumber(summary.components?.neat?.kcal, 0)),
+  eat_kcal: Math.round(profileNonNegativeNumber(summary.components?.eat?.kcal, 0)),
+  bmr_percent: Math.round(profileNonNegativeNumber(summary.components?.bmr?.percent, 0)),
+  tef_percent: Math.round(profileNonNegativeNumber(summary.components?.tef?.percent, 0)),
+  neat_percent: Math.round(profileNonNegativeNumber(summary.components?.neat?.percent, 0)),
+  eat_percent: Math.round(profileNonNegativeNumber(summary.components?.eat?.percent, 0)),
+  tef_needs_review: Boolean(summary.components?.tef?.needsReview),
+  neat_needs_review: Boolean(summary.components?.neat?.needsReview),
+  eat_needs_review: Boolean(summary.components?.eat?.needsReview),
+  tdee_formula_version: TDEE_FORMULA_VERSION,
+});
+
+const tdeePatchSignature = (patch = {}) => JSON.stringify([
+  "tdee_kcal", "bmr_kcal", "tef_kcal", "neat_kcal", "eat_kcal",
+  "bmr_percent", "tef_percent", "neat_percent", "eat_percent",
+  "tef_needs_review", "neat_needs_review", "eat_needs_review", "tdee_formula_version",
+].map(key => [key, patch[key]]));
+
+const healthLogHasTdeePatch = (log = {}, patch = {}) => {
+  const numericKeys = ["tdee_kcal", "bmr_kcal", "tef_kcal", "neat_kcal", "eat_kcal", "bmr_percent", "tef_percent", "neat_percent", "eat_percent"];
+  const booleanKeys = ["tef_needs_review", "neat_needs_review", "eat_needs_review"];
+  return numericKeys.every(key => Math.round(profileNonNegativeNumber(log?.[key], 0)) === Math.round(profileNonNegativeNumber(patch?.[key], 0)))
+    && booleanKeys.every(key => Boolean(log?.[key]) === Boolean(patch?.[key]))
+    && String(log?.tdee_formula_version || "") === String(patch?.tdee_formula_version || "");
+};
+
+const formatTdeeKcal = (value) => `${Math.round(profileNonNegativeNumber(value, 0)).toLocaleString("ru-RU")} ккал`;
+
+const tdeeComponentHasDisplayData = (item = {}) => item?.key === "bmr" || Boolean(item?.hasData);
+
+const formatTdeeComponentKcal = (item = {}) => tdeeComponentHasDisplayData(item) ? formatTdeeKcal(item.kcal) : "—";
+
+const formatTdeeComponentPercent = (item = {}) => tdeeComponentHasDisplayData(item) ? `${Math.round(profileNonNegativeNumber(item.percent, 0))}%` : "—";
+
+const formatTdeeKcalParts = (value) => ({
+  value: Math.round(profileNonNegativeNumber(value, 0)).toLocaleString("ru-RU"),
+  unit: "ккал",
+});
+
+const tdeeComponentOrder = ["bmr", "neat", "tef", "eat"];
+
+const tdeeComponentColors = {
+  bmr: "#d2ecfa",
+  neat: "#4aa0d1",
+  tef: "#7d909b",
+  eat: "#696969",
+};
+
+const hexToRgba = (hex = "#000000", alpha = 1) => {
+  const safeHex = String(hex || "").trim().replace("#", "");
+  if (!/^[0-9a-f]{6}$/i.test(safeHex)) return `rgba(0,0,0,${alpha})`;
+  const value = parseInt(safeHex, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+};
+
+const tdeeToneClasses = {
+  bmr: { color: tdeeComponentColors.bmr },
+  neat: { color: tdeeComponentColors.neat },
+  tef: { color: tdeeComponentColors.tef },
+  eat: { color: tdeeComponentColors.eat },
+};
+
+const tdeeDonutSegments = tdeeComponentOrder.map(key => ({ key, color: tdeeComponentColors[key] }));
+
+const tdeeComponentIconPaths = {
+  bmr: homeWidgetIconPaths.tdeeBmrIcon,
+  neat: homeWidgetIconPaths.tdeeNeatIcon,
+  tef: homeWidgetIconPaths.tdeeTefIcon,
+  eat: homeWidgetIconPaths.tdeeEatIcon,
+};
+
+const tdeeComponentFallbackIcons = {
+  bmr: Flame,
+  neat: Activity,
+  tef: Utensils,
+  eat: Dumbbell,
+};
+
+function TdeeComponentIcon({ itemKey, className = "" }) {
+  const FallbackIcon = tdeeComponentFallbackIcons[itemKey] || Flame;
+  return <SafeAssetIcon
+    src={tdeeComponentIconPaths[itemKey]}
+    className={`rounded-md ${className}`}
+    fallback={<FallbackIcon className="h-full w-full" strokeWidth={2.2}/>}
+  />;
+}
+
+const addDaysToDateKey = (dateKey, offset = 0) => {
+  const date = parseDateKeyLocal(dateKey);
+  date.setDate(date.getDate() + offset);
+  return formatDateKey(date);
+};
+
+const tdeeLogFieldByComponent = {
+  bmr: "bmr_kcal",
+  tef: "tef_kcal",
+  neat: "neat_kcal",
+  eat: "eat_kcal",
+};
+
+const tdeePercentFieldByComponent = {
+  bmr: "bmr_percent",
+  tef: "tef_percent",
+  neat: "neat_percent",
+  eat: "eat_percent",
+};
+
+const tdeeReviewFieldByComponent = {
+  tef: "tef_needs_review",
+  neat: "neat_needs_review",
+  eat: "eat_needs_review",
+};
+
+const tdeeComponentLabels = {
+  bmr: { title: "Основной обмен", abbr: "BMR" },
+  neat: { title: "Бытовая активность", abbr: "NEAT" },
+  tef: { title: "Пищеварение", abbr: "TEF" },
+  eat: { title: "Тренировки", abbr: "EAT" },
+};
+
+const healthLogHasStoredTdeeData = (log = {}) => {
+  if (!log) return false;
+  return ["tdee_kcal", ...Object.values(tdeeLogFieldByComponent)].some(key => profileNonNegativeNumber(log?.[key], 0) > 0);
+};
+
+const buildStoredTdeeSummaryFromHealthLog = (log = {}) => {
+  const components = tdeeComponentOrder.reduce((acc, key) => {
+    const kcal = profileNonNegativeNumber(log?.[tdeeLogFieldByComponent[key]], 0);
+    acc[key] = {
+      key,
+      ...(tdeeComponentLabels[key] || {}),
+      kcal,
+      percent: profileNonNegativeNumber(log?.[tdeePercentFieldByComponent[key]], 0),
+      hasData: kcal > 0,
+      needsReview: Boolean(log?.[tdeeReviewFieldByComponent[key]]),
+    };
+    return acc;
+  }, {});
+  const componentTotal = tdeeComponentOrder.reduce((sum, key) => sum + profileNonNegativeNumber(components[key]?.kcal, 0), 0);
+  const totalKcal = profileNonNegativeNumber(log?.tdee_kcal, 0) || componentTotal;
+  if (totalKcal > 0) {
+    tdeeComponentOrder.forEach(key => {
+      if (!components[key].percent && components[key].kcal > 0) {
+        components[key].percent = Math.round((components[key].kcal / totalKcal) * 100);
+      }
+    });
+  }
+  return { totalKcal, components, items: tdeeComponentOrder.map(key => components[key]).filter(Boolean) };
+};
+
+const buildTdeeComponentTrend = ({ healthLogs = [], selectedDateKey = formatDateKey(new Date()), selectedSummary = {}, componentKey = "bmr", resolveSummaryForDate } = {}) => {
+  const field = tdeeLogFieldByComponent[componentKey] || "bmr_kcal";
+  const byDate = new Map((Array.isArray(healthLogs) ? healthLogs : []).map(log => [normalizeDateKey(log.log_date || log.date, ""), profileNonNegativeNumber(log[field], 0)]));
+  const selectedValue = profileNonNegativeNumber(selectedSummary.components?.[componentKey]?.kcal, 0);
+  byDate.set(selectedDateKey, selectedValue);
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = addDaysToDateKey(selectedDateKey, index - 6);
+    const resolvedSummary = typeof resolveSummaryForDate === "function" ? resolveSummaryForDate(date) : null;
+    const resolvedValue = profileNonNegativeNumber(resolvedSummary?.components?.[componentKey]?.kcal, 0);
+    return {
+      date,
+      label: parseDateKeyLocal(date).toLocaleDateString("ru-RU", { weekday: "short" }).slice(0, 2),
+      value: resolvedSummary ? resolvedValue : byDate.get(date) || 0,
+      selected: date === selectedDateKey,
+    };
+  });
+};
+
+const buildTdeeCalendarSummaryForDate = ({ healthLogs = [], selectedDateKey = "", selectedSummary = {}, dateKey = "", resolveSummaryForDate } = {}) => {
+  const hasResolver = typeof resolveSummaryForDate === "function";
+  const resolvedSummary = hasResolver ? resolveSummaryForDate(dateKey) : null;
+  if (hasResolver) return resolvedSummary?.components ? resolvedSummary : { totalKcal: 0, components: {}, items: [] };
+  if (dateKey === selectedDateKey && selectedSummary?.components) return selectedSummary;
+  const row = (Array.isArray(healthLogs) ? healthLogs : []).find(log => normalizeDateKey(log.log_date || log.date, "") === dateKey);
+  if (healthLogHasStoredTdeeData(row)) return buildStoredTdeeSummaryFromHealthLog(row);
+  const components = {
+    bmr: { key: "bmr", kcal: profileNonNegativeNumber(row?.bmr_kcal, 0), hasData: profileNonNegativeNumber(row?.bmr_kcal, 0) > 0 },
+    neat: { key: "neat", kcal: profileNonNegativeNumber(row?.neat_kcal, 0), hasData: profileNonNegativeNumber(row?.neat_kcal, 0) > 0 },
+    tef: { key: "tef", kcal: profileNonNegativeNumber(row?.tef_kcal, 0), hasData: profileNonNegativeNumber(row?.tef_kcal, 0) > 0 },
+    eat: { key: "eat", kcal: profileNonNegativeNumber(row?.eat_kcal, 0), hasData: profileNonNegativeNumber(row?.eat_kcal, 0) > 0 },
+  };
+  const componentTotal = Object.values(components).reduce((sum, item) => sum + profileNonNegativeNumber(item.kcal, 0), 0);
+  const totalKcal = profileNonNegativeNumber(row?.tdee_kcal, 0) || componentTotal;
+  return { totalKcal, components, items: tdeeComponentOrder.map(key => components[key]).filter(Boolean) };
+};
+
+function TdeeCalendarDonut({ summary = {}, className = "" }) {
+  const radius = 17;
+  const strokeWidth = 6;
+  const circumference = 2 * Math.PI * radius;
+  const values = tdeeDonutSegments.map(segment => profileNonNegativeNumber(summary?.components?.[segment.key]?.kcal, 0));
+  const total = values.reduce((sum, value) => sum + value, 0);
+  const hasStoredValues = total > 0;
+  if (!hasStoredValues) {
+    return <svg viewBox="0 0 48 48" className={`-rotate-90 overflow-visible ${className}`} aria-hidden="true">
+      <circle cx="24" cy="24" r={radius} fill="none" stroke="rgba(113,113,122,0.24)" strokeWidth={strokeWidth}/>
+    </svg>;
+  }
+  let offset = 0;
+  return <svg viewBox="0 0 48 48" className={`-rotate-90 overflow-visible ${className}`} aria-hidden="true">
+    <circle cx="24" cy="24" r={radius} fill="none" stroke="rgba(113,113,122,0.14)" strokeWidth={strokeWidth}/>
+    {tdeeDonutSegments.map((segment, index) => {
+      const length = (values[index] / total) * circumference;
+      const dashOffset = -offset;
+      offset += length;
+      return <circle
+        key={segment.key}
+        cx="24"
+        cy="24"
+        r={radius}
+        fill="none"
+        stroke={segment.color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="butt"
+        strokeDasharray={`${length} ${circumference}`}
+        strokeDashoffset={dashOffset}
+      />;
+    })}
+  </svg>;
+}
+
+function TdeeCalendarDay({ dateKey = "", summary = {}, selected = false }) {
+  const date = parseDateKeyLocal(dateKey);
+  const weekday = date.toLocaleDateString("ru-RU", { weekday: "short" }).replace(".", "");
+  return <div className="flex h-16 min-w-[2.75rem] items-center justify-center overflow-visible">
+    <span className={`flex flex-col items-center transition-transform duration-200 ${selected ? "scale-110" : "scale-100"}`} style={{ transformOrigin: "center center" }}>
+      <span className={`h-4 min-w-[2.5rem] text-center text-sm font-black leading-none ${selected ? "text-[#4aa0d1]" : "text-[var(--onlypump-text)]"}`}>{date.getDate()}</span>
+      <span className="relative mt-0.5 flex h-10 w-10 items-center justify-center">
+        <TdeeCalendarDonut summary={summary} className="absolute inset-0 h-full w-full"/>
+        <span className="relative z-10 text-[8px] font-normal uppercase leading-none text-[var(--onlypump-text)]">{weekday}</span>
+      </span>
+    </span>
+  </div>;
+}
+
+function TdeeSegmentCalendar({ healthLogs = [], selectedDateKey = formatDateKey(new Date()), selectedSummary = {}, onSelectDate, resolveSummaryForDate }) {
+  const visibleDays = 7;
+  const anchorDateKeyRef = useRef(selectedDateKey);
+  const [startOffset, setStartOffset] = useState(-3);
+  const [dragX, setDragX] = useState(0);
+  const dragRef = useRef(null);
+  const suppressCalendarClickRef = useRef(false);
+  const suppressResetRef = useRef(null);
+  const days = Array.from({ length: visibleDays }, (_, index) => addDaysToDateKey(anchorDateKeyRef.current, startOffset + index));
+  const activateTdeeCalendarDate = (targetKey) => {
+    if (!targetKey) return;
+    onSelectDate?.(targetKey);
+  };
+  const startCalendarDrag = (event) => {
+    clearTimeout(suppressResetRef.current);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      hasDragged: false,
+      targetKey: event.target?.closest?.("[data-tdee-calendar-date-key]")?.dataset?.tdeeCalendarDateKey || "",
+    };
+    setDragX(0);
+    suppressCalendarClickRef.current = false;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const moveCalendarDrag = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const rawDx = event.clientX - drag.startX;
+    const rawDy = event.clientY - drag.startY;
+    const absX = Math.abs(rawDx);
+    const absY = Math.abs(rawDy);
+    if (!drag.hasDragged && (absX < 22 || absX < absY * 1.45)) return;
+    if (absY > 48 && absY > absX * 1.2) return;
+    if (absX > 18) {
+      drag.hasDragged = true;
+      suppressCalendarClickRef.current = true;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const dayWidth = Math.max(36, rect.width / Math.max(1, visibleDays));
+    const steps = Math.trunc(rawDx / dayWidth);
+    if (steps !== 0) {
+      setStartOffset(prev => prev - steps);
+      drag.startX += steps * dayWidth;
+      setDragX(rawDx - steps * dayWidth);
+    } else {
+      setDragX(rawDx);
+    }
+    event.preventDefault();
+  };
+  const endCalendarDrag = (event) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    const wasDragged = dragRef.current.hasDragged;
+    const targetKey = dragRef.current.targetKey;
+    dragRef.current = null;
+    setDragX(0);
+    if (!wasDragged && targetKey) {
+      suppressCalendarClickRef.current = false;
+      activateTdeeCalendarDate(targetKey);
+      return;
+    }
+    clearTimeout(suppressResetRef.current);
+    suppressResetRef.current = setTimeout(() => {
+      suppressCalendarClickRef.current = false;
+    }, 120);
+  };
+  return <section className="mb-5 rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] px-4 py-[13px]">
+    <div
+      className="overflow-hidden touch-pan-y select-none"
+      onPointerDown={startCalendarDrag}
+      onPointerMove={moveCalendarDrag}
+      onPointerUp={endCalendarDrag}
+      onPointerCancel={endCalendarDrag}
+    >
+      <div
+        className="grid gap-1 will-change-transform"
+        style={{
+          gridTemplateColumns: `repeat(${visibleDays}, minmax(0, 1fr))`,
+          transform: `translate3d(${dragX}px,0,0)`,
+          transition: dragRef.current ? "none" : "transform 180ms ease",
+        }}
+      >
+        {days.map(dateKey => <button
+          key={dateKey}
+          type="button"
+          data-tdee-calendar-date-key={dateKey}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (event.detail !== 0 || suppressCalendarClickRef.current) return;
+            activateTdeeCalendarDate(dateKey);
+          }}
+          className="min-w-0 touch-manipulation"
+        >
+          <TdeeCalendarDay
+            dateKey={dateKey}
+            selected={dateKey === selectedDateKey}
+            summary={buildTdeeCalendarSummaryForDate({ healthLogs, selectedDateKey, selectedSummary, dateKey, resolveSummaryForDate })}
+          />
+        </button>)}
+      </div>
+    </div>
+  </section>;
+}
+
+function TdeeEnergyWidgetCard({ summary, onOpen, onInfoOpen }) {
+  const personSrc = summary?.sex === "female" ? homeWidgetIconPaths.tdeeWomanIcon : homeWidgetIconPaths.tdeeManIcon;
+  const totalParts = formatTdeeKcalParts(summary?.totalKcal);
+  return <Card onClick={onOpen} className="onlypump-home-widget-card cursor-pointer overflow-hidden p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
+    <div className="grid h-full min-h-0 grid-cols-[42%_1fr] gap-3">
+      <div className="flex min-w-0 items-end justify-center overflow-hidden rounded-[24px] bg-[var(--onlypump-soft)]">
+        <img src={personSrc} alt="" aria-hidden="true" draggable="false" className="h-full max-h-[9.6rem] w-full object-contain object-bottom"/>
+      </div>
+      <div className="relative flex min-w-0 flex-col overflow-hidden pr-7">
+        <WidgetInfoIcon widgetKey="energyExpenditure" label="Расход энергии" onOpen={onInfoOpen} className="absolute right-0 top-0 shrink-0 text-red-500">
+          <SafeAssetIcon
+            src={homeWidgetIconPaths.tdeeWidgetIcon}
+            className="h-[1.15rem] w-[1.15rem] rounded-md"
+            fallback={<Flame className="h-full w-full" strokeWidth={2.1}/>}
+          />
+        </WidgetInfoIcon>
+        <div>
+          <p className="text-[12px] font-normal leading-tight text-zinc-500">Расход энергии</p>
+          <p className="mt-0.5 whitespace-nowrap text-[26px] font-black leading-none tracking-[-0.06em] text-[var(--onlypump-text)]">
+            {totalParts.value} <span className="text-[16px] font-semibold tracking-normal text-zinc-500">{totalParts.unit}</span>
+          </p>
+          <p className="mt-1 text-[13px] font-semibold leading-none text-zinc-500">За день</p>
+        </div>
+        <div className="mt-2 grid min-h-0 flex-1 content-start gap-1 overflow-hidden">
+          {(summary?.items || []).map(item => {
+            const parts = formatTdeeKcalParts(item.kcal);
+            const hasData = tdeeComponentHasDisplayData(item);
+            const isPrimary = item.key === "bmr";
+            return <div key={item.key} className="block min-w-0 text-left">
+              <div className="flex min-w-0 items-center gap-2">
+                <TdeeComponentIcon itemKey={item.key} className="h-4 w-4"/>
+                <p className={`onlypump-line-clamp-1 min-w-0 font-normal leading-tight text-[var(--onlypump-text)] ${isPrimary ? "text-[9px]" : "text-[8px]"}`}>{item.title} ({item.abbr}) - {formatTdeeComponentPercent(item)}</p>
+              </div>
+              {hasData ? <p className={`mt-0.5 pl-6 font-black leading-none tracking-[-0.04em] text-[var(--onlypump-text)] ${isPrimary ? "text-[16px]" : "text-[11px]"}`}>
+                {parts.value} <span className={`${isPrimary ? "text-[10px]" : "text-[8px]"} font-semibold tracking-normal text-zinc-500`}>{parts.unit}</span>
+              </p> : <p className={`mt-0.5 pl-6 font-black leading-none tracking-[-0.04em] text-[var(--onlypump-text)] ${isPrimary ? "text-[16px]" : "text-[11px]"}`}>—</p>}
+              {item.needsReview && hasData && <p className="mt-0.5 pl-6 text-[8px] font-black uppercase tracking-[0.08em] text-zinc-400">уточнить</p>}
+            </div>;
+          })}
+        </div>
+      </div>
+    </div>
+  </Card>;
+}
+
+function TdeeEnergySummaryPanel({ summary, personSrc, onSelect, activeKey, compact = false, framed = true }) {
+  const totalParts = formatTdeeKcalParts(summary?.totalKcal);
+  return <section className={`grid grid-cols-[42%_1fr] gap-4 ${framed ? `rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] ${compact ? "p-4" : "p-5"}` : ""}`}>
+    <div className="flex min-h-[240px] min-w-0 items-center justify-center overflow-hidden rounded-[24px] bg-[var(--onlypump-soft)]">
+      <img src={personSrc} alt="" aria-hidden="true" draggable="false" className="h-[112%] max-h-[290px] w-full -translate-y-2 object-contain object-center"/>
+    </div>
+    <div className="min-w-0">
+      <p className="text-[15px] font-normal leading-tight text-zinc-500">Всего</p>
+      <p className="mt-1 whitespace-nowrap text-[40px] font-black leading-none tracking-[-0.06em] text-[var(--onlypump-text)]">
+        {totalParts.value} <span className="text-[25px] font-semibold tracking-normal text-zinc-500">{totalParts.unit}</span>
+      </p>
+      <p className="mt-2 text-[20px] font-semibold leading-none text-zinc-500">За день</p>
+      <div className="mt-6 grid gap-4">
+        {(summary?.items || []).map(item => {
+          const parts = formatTdeeKcalParts(item.kcal);
+          const hasData = tdeeComponentHasDisplayData(item);
+          const isPrimary = item.key === "bmr";
+          return <button key={item.key} type="button" onClick={() => onSelect?.(item.key)} className={`block min-w-0 text-left transition ${activeKey === item.key ? "scale-[1.01]" : ""}`}>
+            <div className="flex min-w-0 items-center gap-3">
+              <TdeeComponentIcon itemKey={item.key} className="h-5 w-5"/>
+              <p className={`onlypump-line-clamp-1 min-w-0 font-normal leading-tight text-[var(--onlypump-text)] ${isPrimary ? "text-[17px]" : "text-[15px]"}`}>{item.title} ({item.abbr}) - {formatTdeeComponentPercent(item)}</p>
+            </div>
+            {hasData ? <p className={`mt-1 pl-8 font-black leading-none tracking-[-0.05em] text-[var(--onlypump-text)] ${isPrimary ? "text-[28px]" : "text-[21px]"}`}>
+              {parts.value} <span className={`${isPrimary ? "text-[17px]" : "text-[13px]"} font-semibold tracking-normal text-zinc-500`}>{parts.unit}</span>
+            </p> : <p className={`mt-1 pl-8 font-black leading-none tracking-[-0.05em] text-[var(--onlypump-text)] ${isPrimary ? "text-[28px]" : "text-[21px]"}`}>—</p>}
+            {item.needsReview && hasData && <p className="mt-1 pl-8 text-[10px] font-black uppercase tracking-[0.1em] text-zinc-400">уточнить</p>}
+          </button>;
+        })}
+      </div>
+    </div>
+  </section>;
+}
+
+function TdeeDetailSparkline({ points = [], tone = "bmr" }) {
+  const maxValue = Math.max(1, ...points.map(point => profileNonNegativeNumber(point.value, 0)));
+  const chartColor = tdeeComponentColors[tone] || tdeeComponentColors.bmr;
+  return <div className="mt-3 flex h-24 items-end justify-between gap-2 rounded-[22px] bg-[var(--onlypump-soft)] px-3 pb-3 pt-4">
+    {points.map(point => {
+      const value = profileNonNegativeNumber(point.value, 0);
+      const height = value > 0 ? Math.max(5, Math.round((value / maxValue) * 58)) : 0;
+      return <div key={point.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+        <span className="w-full max-w-7 rounded-t-full" style={{ height, backgroundColor: point.selected ? chartColor : hexToRgba(chartColor, 0.24) }}/>
+        <span className={`text-[9px] font-black uppercase ${point.selected ? "text-[var(--onlypump-text)]" : "text-zinc-500"}`}>{point.label}</span>
+      </div>;
+    })}
+  </div>;
+}
+
+function TdeeDetailMetricCard({ item = {}, active = false, tone = "bmr", onSelect, onClarify }) {
+  const color = (tdeeToneClasses[tone] || tdeeToneClasses.bmr).color;
+  const hasData = tdeeComponentHasDisplayData(item);
+  const needsClarify = item.key !== "bmr" && (!hasData || item.needsReview);
+  const handleSelect = () => onSelect?.(item.key);
+  const handleKeyDown = (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    handleSelect();
+  };
+  const handleClarify = (event) => {
+    event.stopPropagation();
+    onClarify?.(item.key);
+  };
+  return <div
+    role="button"
+    tabIndex={0}
+    onClick={handleSelect}
+    onKeyDown={handleKeyDown}
+    className={`min-w-0 cursor-pointer rounded-[22px] border bg-[var(--onlypump-card)] p-2.5 text-left transition active:scale-[0.98] ${active ? "" : "border-[var(--onlypump-border)]"}`}
+    style={active ? { borderColor: hexToRgba(color, 0.72), boxShadow: `0 0 0 2px ${hexToRgba(color, 0.24)}` } : undefined}
+  >
+    <div className="flex h-12 items-center justify-center rounded-[16px]" style={{ backgroundColor: hexToRgba(color, 0.16), color }}>
+      <TdeeComponentIcon itemKey={item.key} className="h-6 w-6"/>
+    </div>
+    <div className="mt-2 flex min-w-0 items-start justify-between gap-2">
+      <div className="min-w-0">
+        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-zinc-500">{item.abbr}</p>
+        <p className="onlypump-line-clamp-1 mt-0.5 text-[13px] font-normal leading-tight text-[var(--onlypump-text)]">{item.title}</p>
+      </div>
+      {needsClarify ? <button
+        type="button"
+        onClick={handleClarify}
+        className="shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[9px] font-normal leading-none"
+        style={{ backgroundColor: hexToRgba(color, 0.16), borderColor: hexToRgba(color, 0.22), color }}
+      >
+        нужно уточнить
+      </button> : <span className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-normal" style={{ backgroundColor: hexToRgba(color, 0.16), color }}>{formatTdeeComponentPercent(item)}</span>}
+    </div>
+    <p className="mt-1.5 text-[13px] font-normal leading-none tracking-[-0.01em] text-[var(--onlypump-text)]">{hasData ? formatTdeeComponentKcal(item) : "—"}</p>
+  </div>;
+}
+
+function TdeeEnergyDetailSheet({ summary, healthLogs = [], selectedDateKey = formatDateKey(new Date()), onSelectDate, onClose, onClarifyComponent, resolveSummaryForDate }) {
+  const [activeKey, setActiveKey] = useState("bmr");
+  const [tdeeInfoOpen, setTdeeInfoOpen] = useState(false);
+  const active = summary?.components?.[activeKey] || summary?.components?.bmr;
+  const personSrc = summary?.sex === "female" ? homeWidgetIconPaths.tdeeWomanIcon : homeWidgetIconPaths.tdeeManIcon;
+  const toneByKey = { bmr: "bmr", neat: "neat", tef: "tef", eat: "eat" };
+  const activeColor = tdeeComponentColors[activeKey] || tdeeComponentColors.bmr;
+  const descriptions = {
+    bmr: "Энергия, которую тело тратит в покое. Считается из веса, роста, возраста, пола и процента жира, если он известен.",
+    tef: "Расход на пищеварение. Когда питание записано, берется примерная термическая стоимость белков, жиров и углеводов.",
+    neat: "Бытовая активность вне тренировок. Сейчас оценивается по шагам, а при отсутствии шагов ставится осторожная оценка.",
+    eat: "Расход на тренировки. Берется из сохраненных тренировок и их калорий, при нехватке данных ставится осторожная оценка.",
+  };
+  useEffect(() => {
+    document.documentElement.classList.add("onlypump-mobile-modal-open");
+    return () => document.documentElement.classList.remove("onlypump-mobile-modal-open");
+  }, []);
+  const screen = <div className="fixed inset-0 z-[9999] overflow-y-auto bg-[var(--onlypump-card-solid)] text-[var(--onlypump-text)]" role="dialog" aria-modal="true" aria-label="Расход энергии">
+    <div className="min-h-full px-5 pb-[calc(var(--onlypump-safe-bottom,0px)+1.5rem)] pt-[calc(var(--onlypump-safe-top,0px)+1rem)]">
+      <header className="sticky top-0 z-10 -mx-5 border-b border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] px-5 pb-4 pt-[calc(var(--onlypump-safe-top,0px)+0.75rem)]">
+        <div className="flex items-center justify-between gap-3">
+          <button type="button" onClick={onClose} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--onlypump-soft)] text-[var(--onlypump-text)]" aria-label="Назад"><ArrowLeft size={25} strokeWidth={2.2}/></button>
+          <div className="min-w-0 flex-1 text-center">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-red-500">Расход энергии</p>
+            <div className="mt-1 flex items-center justify-center gap-2">
+              <h2 className="text-2xl font-black tracking-[-0.04em]">TDEE</h2>
+              <button
+                type="button"
+                onClick={() => setTdeeInfoOpen(true)}
+                className="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--onlypump-border)] bg-[var(--onlypump-soft)] text-[11px] font-black leading-none text-zinc-500"
+                aria-label="Что такое TDEE"
+              >
+                i
+              </button>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--onlypump-soft)] text-[var(--onlypump-text)]" aria-label="Закрыть расход энергии"><X size={25} strokeWidth={2.2}/></button>
+        </div>
+      </header>
+      <main className="mx-auto w-full max-w-xl pt-5">
+        <TdeeSegmentCalendar healthLogs={healthLogs} selectedDateKey={selectedDateKey} selectedSummary={summary} onSelectDate={onSelectDate} resolveSummaryForDate={resolveSummaryForDate}/>
+        <TdeeEnergySummaryPanel summary={summary} personSrc={personSrc} activeKey={activeKey} onSelect={setActiveKey} framed={false}/>
+        <h3 className="mt-5 text-xl font-black tracking-[-0.03em]">Подробнее:</h3>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          {(summary?.items || []).map(item => <TdeeDetailMetricCard
+            key={item.key}
+            item={item}
+            active={activeKey === item.key}
+            tone={toneByKey[item.key]}
+            onSelect={setActiveKey}
+            onClarify={onClarifyComponent}
+          />)}
+        </div>
+        <section className="mt-4 rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-4">
+          <div className="flex min-h-[110px] items-center justify-center rounded-[24px] bg-[var(--onlypump-soft)]" style={{ color: activeColor }}>
+            <TdeeComponentIcon itemKey={activeKey} className="h-20 w-20"/>
+          </div>
+          <div className="mt-4 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-500">{active?.abbr}</p>
+              <h4 className="mt-1 text-2xl font-black tracking-[-0.04em]">{active?.title}</h4>
+            </div>
+            <span className="rounded-full px-3 py-1 text-sm font-black" style={{ backgroundColor: hexToRgba(activeColor, 0.16), color: activeColor }}>{Math.round(active?.percent || 0)}%</span>
+          </div>
+          <p className="mt-3 text-sm font-semibold leading-6 text-zinc-500">{descriptions[activeKey]}</p>
+          <TdeeDetailSparkline points={buildTdeeComponentTrend({ healthLogs, selectedDateKey, selectedSummary: summary, componentKey: activeKey, resolveSummaryForDate })} tone={toneByKey[activeKey]}/>
+        </section>
+      </main>
+      {tdeeInfoOpen && <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/55 px-3 pt-10 backdrop-blur-sm" onClick={() => setTdeeInfoOpen(false)}>
+        <BottomSheetPanel onClose={() => setTdeeInfoOpen(false)} priority={260} onClick={(event) => event.stopPropagation()} className="w-full max-w-xl rounded-t-[34px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card-solid)] p-5 text-[var(--onlypump-text)] shadow-2xl shadow-black/50">
+          <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-[var(--onlypump-border)]"/>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-red-500">Информация</p>
+              <h3 className="mt-1 text-2xl font-black tracking-[-0.04em]">TDEE</h3>
+            </div>
+            <button type="button" onClick={() => setTdeeInfoOpen(false)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--onlypump-soft)]" aria-label="Закрыть информацию"><X size={21} strokeWidth={2.2}/></button>
+          </div>
+          <div className="mt-4 space-y-3 text-sm font-semibold leading-6 text-zinc-500">
+            <p>TDEE показывает общий расход энергии за день: сколько калорий тело тратит суммарно.</p>
+            <p>Расчет складывается из основного обмена (BMR), бытовой активности (NEAT), пищеварения (TEF) и тренировок (EAT).</p>
+            <p>BMR считается из актуальных параметров профиля и замеров. NEAT берется из шагов, TEF из записанного питания, EAT из выполненных тренировок.</p>
+            <p>Это нужно, чтобы видеть реальный дневной расход и точнее понимать баланс питания, активности и восстановления.</p>
+          </div>
+        </BottomSheetPanel>
+      </div>}
+    </div>
+  </div>;
+  return typeof document !== "undefined" && document.body ? createPortal(screen, document.body) : screen;
+}
 
 function HomeWidgetOptionThumbnail({ widget }) {
   const config = homeWidgetThumbnailIconConfig[widget.id] || { icon: Grid3X3, tone: "red", detail: "line" };
@@ -10053,7 +10790,11 @@ function HomeWidgetOptionThumbnail({ widget }) {
 
   return <span className={`relative flex shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] p-2 shadow-inner shadow-white/5 ${wide ? "h-14 w-[4.75rem]" : tall ? "h-[4.75rem] w-14" : "h-14 w-14"}`} aria-hidden="true">
     <span className={`absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full ${accentClass}`}>
-      {config.iconSrc ? <HomeWidgetAssetIcon src={config.iconSrc} className="h-4 w-4"/> : Icon ? <Icon size={14}/> : null}
+      {config.iconSrc ? <SafeAssetIcon
+        src={config.iconSrc}
+        className="h-4 w-4"
+        fallback={Icon ? <Icon className="h-full w-full" strokeWidth={2.2}/> : null}
+      /> : Icon ? <Icon size={14}/> : null}
     </span>
     <span className="mt-auto flex w-full flex-col gap-1">
       <span className="h-1.5 w-6 rounded-full bg-white/22"/>
@@ -12097,6 +12838,16 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     ? healthLog
     : healthLogs.find(log => (log.log_date || log.date) === selectedDateKey);
   const selectedHealthLog = normalizeHealthLog(selectedHealthRecord || {}, selectedDateKey);
+  const tdeeHealthLogByDate = useMemo(() => {
+    const map = new Map();
+    (Array.isArray(healthLogs) ? healthLogs : []).forEach(log => {
+      const key = normalizeDateKey(log?.log_date || log?.date, "");
+      if (key) map.set(key, normalizeHealthLog(log, key));
+    });
+    const currentKey = normalizeDateKey(healthLog?.log_date || healthLog?.date, "");
+    if (currentKey) map.set(currentKey, normalizeHealthLog(healthLog, currentKey));
+    return map;
+  }, [healthLog, healthLogs]);
   const recovery = selectedHealthLog.recovery_score;
   const selectedSteps = profileNonNegativeNumber(selectedHealthLog.steps_count, 0);
   const stepsGoal = profileNonNegativeNumber(profile?.steps_per_day, DEFAULT_PROFILE.steps_per_day);
@@ -12175,6 +12926,61 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     selectedDateKey,
     currentWeight: currentWeightForWidget,
   }), [measurements, measurementRecords, selectedDateKey, currentWeightForWidget]);
+  const tdeeSummary = useMemo(() => buildTdeeSummary({
+    profile,
+    selectedMeasurements,
+    measurementRecords,
+    selectedDateKey,
+    nutritionTotals: selectedNutritionTotals,
+    nutritionMeals: selectedNutritionMeals,
+    workouts: selectedDateWorkouts,
+    healthLog: selectedHealthLog,
+  }), [profile, selectedMeasurements, measurementRecords, selectedDateKey, selectedNutritionTotals, selectedNutritionMeals, selectedDateWorkouts, selectedHealthLog]);
+  const selectedTdeeHasSourceData = useMemo(() => {
+    const isFutureDate = getDayOffsetFromToday(selectedDateKey) > 0;
+    return selectedDateWorkouts.some(workoutCountsForTdee)
+      || selectedNutritionDayMatches && nutritionDayHasFood(nutritionDay)
+      || healthLogHasRealData(selectedHealthLog)
+      || (!isFutureDate && healthLogHasStoredTdeeData(selectedHealthLog));
+  }, [nutritionDay, selectedDateKey, selectedDateWorkouts, selectedHealthLog, selectedNutritionDayMatches]);
+  const getTdeeSummaryForDate = useCallback((targetDateKey) => {
+    const targetKey = normalizeDateKey(targetDateKey, "");
+    if (!targetKey) return null;
+    if (targetKey === selectedDateKey) return selectedTdeeHasSourceData ? tdeeSummary : null;
+
+    const storedHealthLog = tdeeHealthLogByDate.get(targetKey);
+    const dayWorkouts = (Array.isArray(workouts) ? workouts : []).filter(workout => normalizeDateKey(workout.date || workout.workout_date || workout.scheduled_date, "") === targetKey);
+    const hasCompletedWorkout = dayWorkouts.some(workoutCountsForTdee);
+    const nutritionDayKey = normalizeDateKey(nutritionDay?.date || nutritionDay?.log_date || nutritionDay?.nutrition_date, "");
+    const hasNutritionForDate = nutritionDayKey === targetKey && nutritionDayHasFood(nutritionDay);
+    const hasHealthForDate = storedHealthLog && healthLogHasRealData(storedHealthLog);
+    const hasRealSourceData = hasCompletedWorkout || hasNutritionForDate || hasHealthForDate;
+    if (!hasRealSourceData && getDayOffsetFromToday(targetKey) > 0) return null;
+    if (healthLogHasStoredTdeeData(storedHealthLog)) return buildStoredTdeeSummaryFromHealthLog(storedHealthLog);
+    if (!hasRealSourceData) return null;
+
+    return buildTdeeSummary({
+      profile,
+      selectedMeasurements: buildMeasurementsForDate(targetKey, measurements),
+      measurementRecords,
+      selectedDateKey: targetKey,
+      nutritionTotals: hasNutritionForDate ? buildNutritionTotalsForDate(targetKey, nutritionDay?.totals || {}) : { calories: 0, protein: 0, fat: 0, carbs: 0 },
+      nutritionMeals: hasNutritionForDate ? deriveHomeMealsFromNutritionDay(nutritionDay) : [],
+      workouts: dayWorkouts,
+      healthLog: normalizeHealthLog(storedHealthLog || {}, targetKey),
+    });
+  }, [measurementRecords, measurements, nutritionDay, profile, selectedDateKey, selectedTdeeHasSourceData, tdeeHealthLogByDate, tdeeSummary, workouts]);
+  const tdeeLogPatch = useMemo(() => buildTdeeHealthLogPatch(tdeeSummary), [tdeeSummary]);
+  const tdeeSaveSignatureRef = useRef("");
+  useEffect(() => {
+    const shouldPersistTdee = Array.isArray(homeWidgets) && homeWidgets.includes("energyExpenditure");
+    if (!shouldPersistTdee || !selectedTdeeHasSourceData || !onSaveHealthLog || !profileNonNegativeNumber(tdeeLogPatch.tdee_kcal, 0)) return;
+    if (healthLogHasTdeePatch(selectedHealthLog, tdeeLogPatch)) return;
+    const signature = `${selectedDateKey}:${tdeePatchSignature(tdeeLogPatch)}`;
+    if (tdeeSaveSignatureRef.current === signature) return;
+    tdeeSaveSignatureRef.current = signature;
+    onSaveHealthLog({ ...selectedHealthLog, date: selectedDateKey, log_date: selectedDateKey, ...tdeeLogPatch, __silent: true });
+  }, [homeWidgets, onSaveHealthLog, selectedDateKey, selectedHealthLog, selectedTdeeHasSourceData, tdeeLogPatch]);
   const displayName = getProfileDisplayName(profile);
   const pumpXp = pumpXpSummary || emptyPumpXpSummary();
   const homeVolumeUnit = normalizeWeightUnit(profile?.default_weight_unit || DEFAULT_PROFILE.default_weight_unit);
@@ -12213,13 +13019,30 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const [stepsSheetOpen, setStepsSheetOpen] = useState(false);
   const [moodSheetOpen, setMoodSheetOpen] = useState(false);
   const [dailyNoteSheetOpen, setDailyNoteSheetOpen] = useState(false);
+  const [tdeeScreenOpen, setTdeeScreenOpen] = useState(false);
   const [widgetInfoKey, setWidgetInfoKey] = useState("");
   const [activeTrackerId, setActiveTrackerId] = useState(null);
   const [trackerSettingsDraft, setTrackerSettingsDraft] = useState(null);
   const mobileHiddenWidgetIds = [];
 
   useAppBackLayer("home-widget-picker", widgetPickerOpen, () => setWidgetPickerOpen(false), 130);
+  useAppBackLayer("home-tdee-screen", tdeeScreenOpen, () => setTdeeScreenOpen(false), 140);
   useAppBackLayer("home-edit-mode", homeEditMode, () => setHomeEditMode(false), 30);
+
+  const clarifyTdeeComponent = (componentKey) => {
+    setTdeeScreenOpen(false);
+    if (componentKey === "tef") {
+      openNutritionFromHome();
+      return;
+    }
+    if (componentKey === "eat") {
+      setActive("workouts");
+      return;
+    }
+    if (componentKey === "neat") {
+      setStepsSheetOpen(true);
+    }
+  };
 
   const removeWidget = (id) => {
     if (isPersonalTrackerWidgetId(id)) {
@@ -12521,6 +13344,8 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
             </div>
           </Card>;
         }
+      case "energyExpenditure":
+        return <TdeeEnergyWidgetCard summary={tdeeSummary} onOpen={() => setTdeeScreenOpen(true)} onInfoOpen={openWidgetInfo}/>;
       case "weekProgress":
         return <Card key={id} onClick={() => setActive("progress")} className="onlypump-home-widget-card cursor-pointer p-3 transition hover:border-red-500/50 hover:bg-red-500/5 sm:p-4">
           <div className="flex items-center justify-between gap-3">
@@ -12797,6 +13622,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     {stepsSheetOpen && <StepsEditorSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setStepsSheetOpen(false)} onSave={onSaveHealthLog} onOpenAnalytics={() => { setStepsSheetOpen(false); openAnalyticsFromHome("steps"); }}/>}
     {moodSheetOpen && <MoodWellbeingEditorSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setMoodSheetOpen(false)} onSave={onSaveHealthLog}/>}
     {dailyNoteSheetOpen && <DailyNoteEditorSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setDailyNoteSheetOpen(false)} onSave={onSaveHealthLog}/>}
+    {tdeeScreenOpen && <TdeeEnergyDetailSheet summary={tdeeSummary} healthLogs={healthLogs} selectedDateKey={selectedDateKey} onSelectDate={setSelectedDateKey} onClose={() => setTdeeScreenOpen(false)} onClarifyComponent={clarifyTdeeComponent} resolveSummaryForDate={getTdeeSummaryForDate}/>}
     {activeTrackerId && personalTrackers.find(tracker => tracker.id === activeTrackerId) && <PersonalTrackerEntrySheet
       tracker={personalTrackers.find(tracker => tracker.id === activeTrackerId)}
       dateKey={selectedDateKey}
@@ -23097,7 +23923,7 @@ const deriveHomeMealsFromNutritionDay = (day) => (day?.meals || []).map(meal => 
   carbs: meal.carbs,
 }));
 
-function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutritionGoal, selectedDateKey, setSelectedDateKey, markedDateKeys = [], profile, telegramInitData, onNutritionAction, nutritionLoading }) {
+function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutritionGoal, selectedDateKey, setSelectedDateKey, markedDateKeys = [], profile, telegramInitData, onNutritionAction, nutritionLoading, onOpenAnalytics = () => {} }) {
   const day = nutritionDay?.date === selectedDateKey ? nutritionDay : buildLocalNutritionDay(selectedDateKey, nutritionGoal);
   const [mealChoiceOpen, setMealChoiceOpen] = useState(false);
   const [foodPickerOpen, setFoodPickerOpen] = useState(false);
@@ -23416,6 +24242,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
         </div>}
       </div>;
       })}
+      <button type="button" onClick={() => onOpenAnalytics("calories")} className="flex h-11 w-full items-center justify-center rounded-full bg-red-500 text-sm font-black text-black transition active:scale-[0.99]">аналитика</button>
     </div>
 
     {notice && <div className="fixed left-1/2 top-[calc(var(--onlypump-safe-top)+22px)] z-[220] -translate-x-1/2 rounded-full bg-white px-4 py-2 text-sm font-black text-black shadow-2xl">{notice}</div>}
@@ -24710,6 +25537,7 @@ const measurementAnalyticsMetrics = [
   { key: "thigh_cm", label: "Бедро", unit: "см" },
   { key: "calf_cm", label: "Голень", unit: "см" },
 ];
+const measurementAnalyticsMetricKeys = new Set(measurementAnalyticsMetrics.map(metric => metric.key));
 
 const healthAnalyticsMetrics = [
   { key: "steps_count", label: "Шаги", unit: "", type: "bar" },
@@ -24736,12 +25564,13 @@ const nutritionAnalyticsMetrics = [
 
 const nutritionAnalyticsMetricKeys = new Set(nutritionAnalyticsMetrics.map(metric => metric.key));
 const nutritionAnalyticsRingMetrics = [
-  { metricKey: "calories_total", goalKey: "calories", label: "Калории", unit: "ккал", color: "#ef4444", track: "rgba(239,68,68,0.16)", radius: 21 },
-  { metricKey: "carbs_total", goalKey: "carbs", label: "Углеводы", unit: "г", color: "#22d3ee", track: "rgba(34,211,238,0.16)", radius: 16 },
-  { metricKey: "protein_total", goalKey: "protein", label: "Белок", unit: "г", color: "#84f23f", track: "rgba(132,242,63,0.18)", radius: 11 },
-  { metricKey: "fat_total", goalKey: "fat", label: "Жиры", unit: "г", color: "#facc15", track: "rgba(250,204,21,0.18)", radius: 6 },
+  { metricKey: "calories_total", goalKey: "calories", label: "Калории", unit: "ккал", color: "#ef4444", track: "rgba(239,68,68,0.16)", radius: 21, iconSrc: "assets/menu-icons/nutrition-ring-calories.svg" },
+  { metricKey: "carbs_total", goalKey: "carbs", label: "Углеводы", unit: "г", color: "#22d3ee", track: "rgba(34,211,238,0.16)", radius: 16, iconSrc: "assets/menu-icons/nutrition-ring-carbs.svg" },
+  { metricKey: "protein_total", goalKey: "protein", label: "Белок", unit: "г", color: "#84f23f", track: "rgba(132,242,63,0.18)", radius: 11, iconSrc: "assets/menu-icons/nutrition-ring-protein.svg" },
+  { metricKey: "fat_total", goalKey: "fat", label: "Жиры", unit: "г", color: "#facc15", track: "rgba(250,204,21,0.18)", radius: 6, iconSrc: "assets/menu-icons/nutrition-ring-fat.svg" },
 ];
 const nutritionAnalyticsRingMetricKeys = new Set(nutritionAnalyticsRingMetrics.map(item => item.metricKey));
+const nutritionPalmsIconSrc = "assets/menu-icons/nutrition-palms.svg";
 const nutritionAnalyticsColorForMetric = (metricKey = "calories_total") => {
   if (metricKey === "palms_total") return "#ef4444";
   return nutritionAnalyticsRingMetrics.find(item => item.metricKey === metricKey)?.color || "#ef4444";
@@ -25433,10 +26262,25 @@ const formatAnalyticsValue = (value, unit = "", metricKey = "") => {
 const formatAnalyticsDateTick = (dateKey, period = "month") => {
   const date = parseDateKeyLocal(dateKey);
   if (Number.isNaN(date.getTime())) return dateKey;
-  if (period === "day" || period === "week") {
+  if (period === "day") {
+    return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+  }
+  if (period === "week") {
     return date.toLocaleDateString("ru-RU", { weekday: "short" }).replace(".", "");
   }
   return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+};
+
+const formatAnalyticsDayDateLabel = (dateKey) => {
+  const date = parseDateKeyLocal(dateKey);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+};
+
+const formatAnalyticsFullDateLabel = (dateKey) => {
+  const date = parseDateKeyLocal(dateKey);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
 };
 
 const analyticsLabelIndexes = (count) => {
@@ -25526,7 +26370,7 @@ const buildAnalyticsChartTicks = (period = "month", selectedDateKey = formatDate
       return { date: formatDateKey(date), label: analyticsChartMonthLabel(formatDateKey(date)) };
     });
   }
-  return [{ date: range.endKey, label: formatShortDateRu(range.endKey) }];
+  return [{ date: range.endKey, label: period === "day" ? formatAnalyticsDayDateLabel(range.endKey) : formatShortDateRu(range.endKey) }];
 };
 
 const analyticsChartDateToX = (dateKey, range, plot) => {
@@ -25591,7 +26435,7 @@ const buildStepsAnalyticsChartPoints = (points = [], period = "month", selectedD
     return {
       date: key,
       value: byDate.get(key) || 0,
-      label: period === "week" ? analyticsChartWeekdayLabel(key) : ([1, 8, 15, 22, 29].includes(day) ? String(day) : ""),
+      label: period === "day" ? formatAnalyticsDayDateLabel(key) : period === "week" ? analyticsChartWeekdayLabel(key) : ([1, 8, 15, 22, 29].includes(day) ? String(day) : ""),
       isSelected: key === selectedDateKey,
     };
   });
@@ -25621,6 +26465,18 @@ const getNutritionAnalyticsRangeGoal = (metricKey = "calories_total", period = "
   const range = analyticsChartRollingRange(period, selectedDateKey);
   const days = analyticsChartDaysBetween(range.startKey, range.endKey) + 1;
   return getNutritionAnalyticsDailyGoal(metricKey, nutritionGoal) * Math.max(1, days);
+};
+
+const getStepsLikeAnalyticsBucketGoal = (metricKey = "steps_count", period = "month", profile = DEFAULT_PROFILE) => {
+  let dailyGoal = null;
+  if (metricKey === "steps_count") dailyGoal = Math.max(1, profileNonNegativeNumber(profile?.steps_per_day, DEFAULT_PROFILE.steps_per_day));
+  if (metricKey === "sleep_duration_minutes") dailyGoal = 480;
+  if (metricKey === "recovery_score") dailyGoal = 100;
+  if (metricKey === "water_ml") dailyGoal = DEFAULT_HEALTH_LOG.water_target_ml;
+  if (!Number.isFinite(dailyGoal) || dailyGoal <= 0) return null;
+  if (period === "sixMonths") return dailyGoal * 7;
+  if (period === "year") return dailyGoal * 30;
+  return dailyGoal;
 };
 
 const buildNutritionAnalyticsChartPoints = (points = [], period = "month", selectedDateKey = formatDateKey(new Date())) => {
@@ -25679,7 +26535,7 @@ const buildNutritionAnalyticsChartPoints = (points = [], period = "month", selec
     return {
       date: key,
       value: byDate.get(key) || 0,
-      label: period === "week" ? analyticsChartWeekdayLabel(key) : ([1, 8, 15, 22, 29].includes(day) ? String(day) : ""),
+      label: period === "day" ? formatAnalyticsDayDateLabel(key) : period === "week" ? analyticsChartWeekdayLabel(key) : ([1, 8, 15, 22, 29].includes(day) ? String(day) : ""),
       isSelected: key === selectedDateKey,
     };
   });
@@ -25697,16 +26553,13 @@ const buildSmoothAnalyticsPath = (coords = []) => {
 };
 
 function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "", period = "month", selectedDateKey = formatDateKey(new Date()), profile = DEFAULT_PROFILE, nutritionGoal = initialNutritionGoal, nutritionSeriesByMetric = {}, onSelectMetric, onSwipePeriod }) {
-  if (metricKey === "weight_kg") {
+  if (measurementAnalyticsMetricKeys.has(metricKey)) {
     return <WeightAnalyticsChart points={points} unit={unit} metricKey={metricKey} period={period} selectedDateKey={selectedDateKey} onSwipePeriod={onSwipePeriod}/>;
-  }
-  if (metricKey === "steps_count") {
-    return <StepsAnalyticsChart points={points} unit={unit} metricKey={metricKey} period={period} selectedDateKey={selectedDateKey} profile={profile} onSwipePeriod={onSwipePeriod}/>;
   }
   if (nutritionAnalyticsMetricKeys.has(metricKey)) {
     return <NutritionAnalyticsChart points={points} unit={unit} metricKey={metricKey} period={period} selectedDateKey={selectedDateKey} nutritionGoal={nutritionGoal} nutritionSeriesByMetric={nutritionSeriesByMetric} onSelectMetric={onSelectMetric} onSwipePeriod={onSwipePeriod}/>;
   }
-  return <DefaultAnalyticsChart points={points} type={type} unit={unit} metricKey={metricKey} period={period} selectedDateKey={selectedDateKey} onSwipePeriod={onSwipePeriod}/>;
+  return <StepsAnalyticsChart points={points} unit={unit} metricKey={metricKey} period={period} selectedDateKey={selectedDateKey} profile={profile} onSwipePeriod={onSwipePeriod}/>;
 }
 
 function WeightAnalyticsChart({ points = [], unit = "кг", metricKey = "weight_kg", period = "month", selectedDateKey = formatDateKey(new Date()), onSwipePeriod }) {
@@ -25894,9 +26747,9 @@ function StepsAnalyticsChart({ points = [], unit = "", metricKey = "steps_count"
   const suppressResetRef = useRef(null);
   const chartPoints = buildStepsAnalyticsChartPoints(points, period, selectedDateKey);
   const hasDataPoints = chartPoints.some(point => Number(point.value || 0) > 0);
-  const safeGoal = Math.max(1, profileNonNegativeNumber(profile?.steps_per_day, DEFAULT_PROFILE.steps_per_day));
-  const periodGoal = period === "sixMonths" ? safeGoal * 7 : period === "year" ? safeGoal * 30 : safeGoal;
-  const maxValue = Math.max(...chartPoints.map(point => Number(point.value || 0)), periodGoal, 1);
+  const periodGoal = getStepsLikeAnalyticsBucketGoal(metricKey, period, profile);
+  const hasGoalLine = Number.isFinite(periodGoal) && periodGoal > 0;
+  const maxValue = Math.max(...chartPoints.map(point => Number(point.value || 0)), hasGoalLine ? periodGoal : 0, 1);
   const scaleMax = niceChartMax(maxValue, metricKey);
   const plot = { left: 20, right: 386, top: 24, bottom: 164 };
   const plotWidth = plot.right - plot.left;
@@ -25919,7 +26772,7 @@ function StepsAnalyticsChart({ points = [], unit = "", metricKey = "steps_count"
     value,
     y: plot.top + (plotHeight * index) / 2,
   }));
-  const goalY = plot.bottom - (Math.min(periodGoal, scaleMax) / scaleMax) * plotHeight;
+  const goalY = hasGoalLine ? plot.bottom - (Math.min(periodGoal, scaleMax) / scaleMax) * plotHeight : null;
   const chartAnimationKey = `${metricKey}-${period}-${selectedDateKey}-${coords.map(point => `${point.date}:${Math.round(Number(point.value || 0))}`).join("|")}`;
   const gradientId = `steps-analytics-fill-${chartAnimationKey.replace(/[^a-zA-Z0-9_-]/g, "").slice(-36)}`;
 
@@ -26029,7 +26882,7 @@ function StepsAnalyticsChart({ points = [], unit = "", metricKey = "steps_count"
         <line x1={plot.left} y1={tick.y} x2={plot.right} y2={tick.y} stroke="var(--chart-grid)" strokeWidth="1" strokeDasharray={index === 1 ? "5 8" : ""}/>
         <text x="424" y={tick.y + 4} textAnchor="end" fill="var(--chart-label)" fontSize="11" fontWeight="800">{formatAnalyticsValue(tick.value, "", metricKey)}</text>
       </g>)}
-      <line x1={plot.left} y1={goalY} x2={plot.right} y2={goalY} stroke="#ef4444" strokeWidth="1.5" strokeDasharray="5 7" opacity="0.34"/>
+      {hasGoalLine && <line x1={plot.left} y1={goalY} x2={plot.right} y2={goalY} stroke="#ef4444" strokeWidth="1.5" strokeDasharray="5 7" opacity="0.34"/>}
       <g
         key={`steps-plot-${chartAnimationKey}-${motion}`}
         className={`onlypump-steps-analytics-plot onlypump-steps-analytics-${motion}`}
@@ -26069,11 +26922,11 @@ function NutritionAnalyticsRingsSvg({ rings = [], onSelectMetric }) {
       const value = ring.hasData ? normalizeRingProgress((Number(ring.value || 0) / Math.max(1, Number(ring.goal || 1))) * 100) : 0;
       const layers = buildActivityRingArcLayers(value);
       const hasOverflow = layers.some(layer => layer.overflow);
-      const renderArc = (layer, layerPosition) => {
+      const renderArc = (layer) => {
         const arcValue = layer.value;
         const finalOffset = circumference - (circumference * clampProgress(arcValue)) / 100;
         const isOverflow = layer.overflow;
-        const layerColor = buildActivityRingLayerColor(ring.color, layer, hasOverflow);
+        const layerColor = buildActivityRingLayerColor(ring.color, layer, hasOverflow, layers);
         const animationKey = `${ring.metricKey}-${Math.round(value * 10)}-${layer.index}-${Math.round(arcValue * 10)}`;
         const overflowDelay = ACTIVITY_RING_BASE_ANIMATION_MS + Math.max(0, layer.index - 1) * ACTIVITY_RING_OVERFLOW_CYCLE_MS;
         const overflowDuration = Math.max(220, ACTIVITY_RING_OVERFLOW_CYCLE_MS * (clampProgress(arcValue) / 100));
@@ -26085,7 +26938,7 @@ function NutritionAnalyticsRingsSvg({ rings = [], onSelectMetric }) {
           fill="none"
           stroke={layerColor}
           strokeWidth={strokeWidth}
-          strokeLinecap="round"
+          strokeLinecap={arcValue >= 99.999 ? "butt" : "round"}
           className={`${isOverflow ? "onlypump-animated-ring-overflow" : ""} onlypump-animated-ring-arc`.trim()}
           style={{
             "--onlypump-ring-circumference": `${circumference}`,
@@ -26119,29 +26972,14 @@ function NutritionAnalyticsRingsSvg({ rings = [], onSelectMetric }) {
   </svg>;
 }
 
-function NutritionAnalyticsIconPlaceholder({ metricKey = "calories_total" }) {
-  const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round" };
-  if (metricKey === "carbs_total") {
-    return <svg viewBox="0 0 24 24" className="h-4 w-4"><path {...common} d="M7 16c1.2-4 2.8-6.9 5-9 2.2 2.1 3.8 5 5 9"/><path {...common} d="M8.2 15.8h7.6"/><path {...common} d="M10 18h4"/></svg>;
-  }
-  if (metricKey === "protein_total") {
-    return <svg viewBox="0 0 24 24" className="h-4 w-4"><path {...common} d="M6 14c2.5-5.5 9.5-5.5 12 0"/><path {...common} d="M7 15.5c3.3 2.7 6.7 2.7 10 0"/><path {...common} d="M9 11.2 7.4 9.6"/><path {...common} d="m15 11.2 1.6-1.6"/></svg>;
-  }
-  if (metricKey === "fat_total") {
-    return <svg viewBox="0 0 24 24" className="h-4 w-4"><path {...common} d="M12 4c3.2 3.1 5 6 5 8.7a5 5 0 0 1-10 0C7 10 8.8 7.1 12 4Z"/><path {...common} d="M10.2 15.5c1.3.8 2.7.8 4 0"/></svg>;
-  }
-  return <svg viewBox="0 0 24 24" className="h-4 w-4"><circle {...common} cx="12" cy="12" r="6.5"/><path {...common} d="M12 8v4l2.6 1.8"/><path {...common} d="M8 4.6 6.8 3"/><path {...common} d="m16 4.6 1.2-1.6"/></svg>;
+function NutritionAnalyticsIcon({ src, label }) {
+  return <img src={src} alt="" className="h-4 w-4 object-contain opacity-80" draggable="false" aria-hidden="true" title={label}/>;
 }
 
 function NutritionPalmsAnalyticsHero() {
-  const hand = (side = "left") => <svg viewBox="0 0 44 58" className={`h-24 w-16 ${side === "right" ? "-scale-x-100" : ""}`} aria-hidden="true">
-    <path d="M22 5c5 0 7 3 7 7v12l2-5c1-2 4-3 6-1s2 4 1 7l-8 22c-2 5-6 7-11 6-7-1-12-7-12-15V15c0-3 2-5 5-5 2 0 4 1 5 3V10c0-3 2-5 5-5Z" fill="rgba(148,163,184,.12)" stroke="rgba(148,163,184,.52)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M17 13v18M23 12v18M29 23v11" fill="none" stroke="rgba(148,163,184,.42)" strokeWidth="2" strokeLinecap="round"/>
-  </svg>;
   return <div className="mt-5 rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-5 shadow-xl shadow-[var(--onlypump-shadow)]">
-    <div className="flex min-h-[150px] items-center justify-center gap-3 text-slate-400">
-      {hand("left")}
-      {hand("right")}
+    <div className="flex min-h-[150px] items-center justify-center">
+      <img src={nutritionPalmsIconSrc} alt="" className="h-28 w-28 object-contain opacity-70" draggable="false" aria-hidden="true"/>
     </div>
   </div>;
 }
@@ -26199,6 +27037,10 @@ function NutritionAnalyticsChart({ points = [], unit = "", metricKey = "calories
       hasData: value > 0,
     };
   });
+  const handleRingMetricSelect = (nextMetric) => {
+    if (suppressChartClickRef.current) return;
+    onSelectMetric?.(nextMetric);
+  };
 
   useEffect(() => {
     setSelected(null);
@@ -26285,9 +27127,19 @@ function NutritionAnalyticsChart({ points = [], unit = "", metricKey = "calories
   return <div className="mt-5 space-y-4">
     {isPalmsMetric
       ? <NutritionPalmsAnalyticsHero/>
-      : <div className="relative overflow-hidden rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-5 shadow-xl shadow-[var(--onlypump-shadow)]">
-        <div className="relative mx-auto mt-7 h-48 w-48">
-          <NutritionAnalyticsRingsSvg rings={ringData} onSelectMetric={onSelectMetric}/>
+      : <div
+        data-calendar-swipe="true"
+        className="relative touch-pan-y select-none overflow-hidden rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-5 shadow-xl shadow-[var(--onlypump-shadow)]"
+        onPointerDown={startChartDrag}
+        onPointerMove={moveChartDrag}
+        onPointerUp={endChartDrag}
+        onPointerCancel={endChartDrag}
+      >
+        <div
+          className="relative mx-auto mt-7 h-48 w-48"
+          style={{ transform: `translateX(${dragX * 0.4}px)`, transition: dragRef.current ? "none" : "transform 180ms ease" }}
+        >
+          <NutritionAnalyticsRingsSvg rings={ringData} onSelectMetric={handleRingMetricSelect}/>
           <div className="pointer-events-none absolute inset-0 z-10 text-slate-300/70">
             {nutritionAnalyticsRingMetrics.map(item => <button
               key={`nutrition-ring-icon-${item.metricKey}`}
@@ -26296,9 +27148,9 @@ function NutritionAnalyticsChart({ points = [], unit = "", metricKey = "calories
               className={`pointer-events-auto absolute left-1/2 flex h-4 w-4 items-center justify-center transition ${metricKey === item.metricKey ? "scale-110 text-slate-400" : ""}`}
               style={{ top: `${((24 - item.radius) / 48) * 100}%`, transform: "translate(-50%, -50%)" }}
               aria-label={item.label}
-              onClick={() => onSelectMetric?.(item.metricKey)}
+              onClick={() => handleRingMetricSelect(item.metricKey)}
             >
-              <NutritionAnalyticsIconPlaceholder metricKey={item.metricKey}/>
+              <NutritionAnalyticsIcon src={item.iconSrc} label={item.label}/>
             </button>)}
           </div>
         </div>
@@ -26520,9 +27372,8 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
   const sourceMeasurements = mergeAnalyticsMeasurementRows(remoteData.measurements.length ? remoteData.measurements : measurements, measurementOverlay);
   const sourceHealthLogs = remoteData.health_logs.length ? remoteData.health_logs : healthLogs;
   const sourceNutritionDays = remoteData.nutrition_days.length ? remoteData.nutrition_days : nutritionDays;
-  const isWeightAnalytics = type === "weight" && metric === "weight_kg";
   const isNutritionAnalytics = typeConfig.source === "nutrition";
-  const usesRollingChartRange = isWeightAnalytics || metric === "steps_count" || isNutritionAnalytics;
+  const usesRollingChartRange = ["measurements", "health", "training"].includes(typeConfig.source) || isNutritionAnalytics;
   const nutritionGoalForAnalytics = isNutritionAnalytics ? profileNutritionGoalFromProfile(profile || DEFAULT_PROFILE, initialNutritionGoal) : initialNutritionGoal;
   const allPoints = typeConfig.source === "training"
     ? buildTrainingSeries(workouts, metric)
@@ -26543,6 +27394,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
   const summary = analyticsSummary(points);
   const chartType = metricConfig.type || (typeConfig.source === "health" || typeConfig.source === "nutrition" ? "bar" : "line");
   const sheetTitle = usePalmNutritionDetail ? "Ладони" : (title || typeConfig.title);
+  const sheetDateLabel = type === "calories" ? formatAnalyticsFullDateLabel(chartDateKey) : "";
   const shiftChartPeriod = (amount, mode = "period") => {
     setChartDateKey(current => {
       if (mode === "division" && usesRollingChartRange) {
@@ -26619,6 +27471,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
             ? <button type="button" onClick={onOpenOverview} className="text-xs uppercase tracking-wider text-red-500">Аналитика</button>
             : <p className="text-xs uppercase tracking-wider text-red-500">Аналитика</p>}
           <h2 className="mt-2 text-2xl font-black">{sheetTitle}</h2>
+          {sheetDateLabel && <p className="mt-1 text-sm font-semibold text-zinc-500">{sheetDateLabel}</p>}
         </div>
         <div className="flex items-center gap-2">
           {onOpenEditor && <button type="button" onClick={() => onOpenEditor(metric)} className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-black"><Plus size={18}/></button>}
@@ -32049,27 +32902,30 @@ function OnlyPumpPlatform() {
   }, [globalSelectedDateKey]);
 
   const handleSaveHealthLog = useCallback(async (payload = {}) => {
-    const dateKey = payload.date || payload.log_date || globalSelectedDateKey;
+    const silentSave = Boolean(payload.__silent);
+    const cleanPayload = { ...payload };
+    delete cleanPayload.__silent;
+    const dateKey = cleanPayload.date || cleanPayload.log_date || globalSelectedDateKey;
     const currentDateLog = (healthLog?.log_date || healthLog?.date) === dateKey
       ? healthLog
       : healthLogs.find(log => (log.log_date || log.date) === dateKey);
-	    const optimisticLog = normalizeHealthLog({ ...(currentDateLog || buildLocalHealthLog(dateKey)), ...payload, date: dateKey, log_date: dateKey }, dateKey);
+	    const optimisticLog = normalizeHealthLog({ ...(currentDateLog || buildLocalHealthLog(dateKey)), ...cleanPayload, date: dateKey, log_date: dateKey }, dateKey);
 	    const optimisticLogs = mergeHealthLogLists(healthLogs, optimisticLog);
 	    setHealthLog(optimisticLog);
 	    setHealthLogs(prev => mergeHealthLogLists(prev, optimisticLog));
 	    if (profile) {
 	      writeCachedHealthForProfile(profile, dateKey, optimisticLog);
 	      writeCachedHealthLogsForProfile(profile, optimisticLogs);
-	    }
+    }
 
     if (!(profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id)) {
-      triggerOnlyPumpHaptic("success");
+      if (!silentSave) triggerOnlyPumpHaptic("success");
       return true;
     }
 
     setHealthSaving(true);
     try {
-	      const result = await callOnlyPumpProfileApi(telegramInitData, "save_health_log", { ...payload, date: dateKey, log_date: dateKey });
+	      const result = await callOnlyPumpProfileApi(telegramInitData, "save_health_log", { ...cleanPayload, date: dateKey, log_date: dateKey });
 	      const savedLog = normalizeHealthLog(result.health_log || result.log || optimisticLog, dateKey);
 	      const logs = Array.isArray(result.health_logs) ? result.health_logs.map(log => normalizeHealthLog(log, log.log_date || log.date)) : null;
 	      const mergedLogs = mergeHealthLogLists(healthLogs, logs || [], savedLog);
@@ -32077,11 +32933,11 @@ function OnlyPumpPlatform() {
 	      setHealthLogs(prev => mergeHealthLogLists(prev, logs || [], savedLog));
 	      writeCachedHealthForProfile(profile, dateKey, savedLog);
 	      writeCachedHealthLogsForProfile(profile, mergedLogs);
-	      triggerOnlyPumpHaptic("success");
+	      if (!silentSave) triggerOnlyPumpHaptic("success");
 	      return true;
     } catch (error) {
       console.error("onlypump-profile-api health save error:", error);
-      triggerOnlyPumpHaptic("error");
+      if (!silentSave) triggerOnlyPumpHaptic("error");
       return false;
     } finally {
       setHealthSaving(false);
@@ -32869,7 +33725,7 @@ function OnlyPumpPlatform() {
   const page = useMemo(() => ({
     home: <HomePage setActive={setActive} workouts={workouts} nutritionMeals={nutritionMeals} nutritionDay={nutritionDay} nutritionMarkedDateKeys={nutritionMarkedDateKeys} nutritionGoal={nutritionGoal} measurements={measurements} measurementRecords={measurementRecords} progressGoal={progressGoal} lectureItems={lectureItems} homeWidgets={homeWidgets} setHomeWidgets={setHomeWidgets} personalTrackers={personalTrackers} setPersonalTrackers={setPersonalTrackers} profile={profile} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} healthLog={healthLog} healthLogs={healthLogs} healthSaving={healthSaving} profileSaving={profileSaving} pumpXpSummary={pumpXpSummary} onOpenPumpXpDetails={() => setPumpXpDetailsOpen(true)} onSaveHealthLog={handleSaveHealthLog} onSaveWeightMeasurement={handleSaveWeightMeasurement} onOpenAnalytics={openAnalyticsType} onSaveProfile={handleSaveProfile}/>,
     workouts: <WorkoutsPage workouts={workouts} setWorkouts={setWorkouts} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} profile={profile} telegramInitData={telegramInitData}/>,
-    nutrition: <NutritionPage nutritionDay={nutritionDay} setNutritionDay={setNutritionDay} nutritionGoal={nutritionGoal} setNutritionGoal={setNutritionGoal} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} markedDateKeys={nutritionMarkedDateKeys} profile={profile} telegramInitData={telegramInitData} onNutritionAction={handleNutritionAction} nutritionLoading={nutritionRefreshing}/>,
+    nutrition: <NutritionPage nutritionDay={nutritionDay} setNutritionDay={setNutritionDay} nutritionGoal={nutritionGoal} setNutritionGoal={setNutritionGoal} selectedDateKey={globalSelectedDateKey} setSelectedDateKey={setGlobalSelectedDateKey} markedDateKeys={nutritionMarkedDateKeys} profile={profile} telegramInitData={telegramInitData} onNutritionAction={handleNutritionAction} nutritionLoading={nutritionRefreshing} onOpenAnalytics={openAnalyticsType}/>,
     recipes: <UnderConstructionPage title="Рецепты" subtitle="Думаю, как тут все расположить"/>,
     students: <StudentsPage profile={profile} telegramInitData={telegramInitData}/>,
     calculators: <CalculatorsPage/>,
