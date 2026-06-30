@@ -27292,6 +27292,9 @@ function AnalyticsChart({ points = [], type = "line", unit = "", metricKey = "",
   return <StepsAnalyticsChart points={points} unit={unit} metricKey={metricKey} period={period} selectedDateKey={selectedDateKey} profile={profile} onSwipePeriod={onSwipePeriod}/>;
 }
 
+const isLongAnalyticsChartPeriod = (period = "month") => period === "sixMonths" || period === "year";
+const analyticsChartSvgWidth = (period = "month") => period === "year" ? 720 : period === "sixMonths" ? 560 : 430;
+
 function WeightAnalyticsChart({ points = [], unit = "кг", metricKey = "weight_kg", period = "month", selectedDateKey = formatDateKey(new Date()), onSwipePeriod }) {
   const [selected, setSelected] = useState(null);
   const [dragX, setDragX] = useState(0);
@@ -27313,7 +27316,9 @@ function WeightAnalyticsChart({ points = [], unit = "кг", metricKey = "weight_
   const scaleMin = Math.max(0, rawMin - padding);
   const scaleMax = rawMax + padding;
   const scaleRange = Math.max(0.8, scaleMax - scaleMin);
-  const plot = { left: 18, right: 386, top: 24, bottom: 164 };
+  const svgWidth = analyticsChartSvgWidth(period);
+  const longPeriod = isLongAnalyticsChartPeriod(period);
+  const plot = { left: longPeriod ? 14 : 18, right: svgWidth - 44, top: 24, bottom: 164 };
   const plotHeight = plot.bottom - plot.top;
   const coords = chartPoints.map((point, index) => {
     const value = Number(point.value || 0);
@@ -27420,13 +27425,13 @@ function WeightAnalyticsChart({ points = [], unit = "кг", metricKey = "weight_
 
   return <div
     data-calendar-swipe="true"
-    className="mt-5 touch-pan-y select-none overflow-hidden rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-4 shadow-xl shadow-[var(--onlypump-shadow)]"
+    className="mt-5 touch-pan-y select-none overflow-x-auto overflow-y-hidden rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-4 shadow-xl shadow-[var(--onlypump-shadow)] onlypump-scrollbar-none"
     onPointerDown={startChartDrag}
     onPointerMove={moveChartDrag}
     onPointerUp={endChartDrag}
     onPointerCancel={endChartDrag}
   >
-    <svg viewBox="0 0 430 224" className="h-56 w-full overflow-visible">
+    <svg viewBox={`0 0 ${svgWidth} 224`} style={longPeriod ? { minWidth: `${svgWidth}px` } : undefined} className="h-56 w-full overflow-visible">
       <defs>
         <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stopColor="rgb(239 68 68)" stopOpacity="0.26"/>
@@ -27434,10 +27439,10 @@ function WeightAnalyticsChart({ points = [], unit = "кг", metricKey = "weight_
           <stop offset="100%" stopColor="rgb(239 68 68)" stopOpacity="0"/>
         </linearGradient>
       </defs>
-      <rect x="0" y="0" width="430" height="188" rx="24" fill="rgba(255,255,255,0.025)"/>
+      <rect x="0" y="0" width={svgWidth} height="188" rx="24" fill="rgba(255,255,255,0.025)"/>
       {yTicks.map((tick, index) => <g key={`weight-y-${index}`}>
         <line x1={plot.left} y1={tick.y} x2={plot.right} y2={tick.y} stroke="var(--chart-grid)" strokeWidth="1" strokeDasharray={index === 1 ? "5 8" : ""}/>
-        <text x="424" y={tick.y + 4} textAnchor="end" fill="var(--chart-label)" fontSize="11" fontWeight="800">{formatAnalyticsValue(tick.value, "", metricKey)}</text>
+        <text x={svgWidth - 6} y={tick.y + 4} textAnchor="end" fill="var(--chart-label)" fontSize="11" fontWeight="800">{formatAnalyticsValue(tick.value, "", metricKey)}</text>
       </g>)}
       <g
         key={`weight-plot-${chartAnimationKey}-${motion}`}
@@ -27450,7 +27455,7 @@ function WeightAnalyticsChart({ points = [], unit = "кг", metricKey = "weight_
           return <line key={`weight-x-${index}`} x1={x} y1={plot.top} x2={x} y2={plot.bottom} stroke="var(--chart-grid)" strokeWidth="1" strokeDasharray="4 7"/>;
         })}
         <line x1={plot.left} y1={plot.bottom} x2={plot.right} y2={plot.bottom} stroke="var(--chart-axis)" strokeWidth="1"/>
-        {!hasDataPoints && <text x="214" y="100" textAnchor="middle" fill="var(--chart-label)" fontSize="13" fontWeight="800">Нет данных в этом периоде</text>}
+        {!hasDataPoints && <text x={svgWidth / 2} y="100" textAnchor="middle" fill="var(--chart-label)" fontSize="13" fontWeight="800">Нет данных в этом периоде</text>}
         {hasDataPoints && <>
           {coords.map((point, index) => <line key={`weight-guide-${point.date}-${index}`} className="onlypump-chart-guide" x1={point.x} y1={point.y + 7} x2={point.x} y2={plot.bottom} stroke="rgb(239 68 68)" strokeWidth="2" strokeDasharray="4 8" opacity="0.26"/>)}
           <path key={`weight-area-${chartAnimationKey}`} className="onlypump-chart-area" d={areaPath} fill={`url(#${gradientId})`}/>
@@ -27459,7 +27464,7 @@ function WeightAnalyticsChart({ points = [], unit = "кг", metricKey = "weight_
         </>}
         {xTicks.map((tick, index) => {
           const x = analyticsChartDateToX(tick.date, chartRange, plot);
-          return <text key={`weight-label-${index}`} x={x} y="205" textAnchor="middle" fill="var(--chart-label)" fontSize="11" fontWeight="800">{tick.label}</text>;
+          return <text key={`weight-label-${index}`} x={x} y="205" textAnchor="middle" fill="var(--chart-label)" fontSize={longPeriod ? "10" : "11"} fontWeight="800">{tick.label}</text>;
         })}
       </g>
     </svg>
@@ -27481,7 +27486,9 @@ function StepsAnalyticsChart({ points = [], unit = "", metricKey = "steps_count"
   const hasGoalLine = Number.isFinite(periodGoal) && periodGoal > 0;
   const maxValue = Math.max(...chartPoints.map(point => Number(point.value || 0)), hasGoalLine ? periodGoal : 0, 1);
   const scaleMax = niceChartMax(maxValue, metricKey);
-  const plot = { left: 20, right: 386, top: 24, bottom: 164 };
+  const svgWidth = analyticsChartSvgWidth(period);
+  const longPeriod = isLongAnalyticsChartPeriod(period);
+  const plot = { left: longPeriod ? 14 : 20, right: svgWidth - 44, top: 24, bottom: 164 };
   const plotWidth = plot.right - plot.left;
   const plotHeight = plot.bottom - plot.top;
   const stepWidth = plotWidth / Math.max(1, chartPoints.length);
@@ -27594,23 +27601,23 @@ function StepsAnalyticsChart({ points = [], unit = "", metricKey = "steps_count"
 
   return <div
     data-calendar-swipe="true"
-    className="mt-5 touch-pan-y select-none overflow-hidden rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-4 shadow-xl shadow-[var(--onlypump-shadow)]"
+    className="mt-5 touch-pan-y select-none overflow-x-auto overflow-y-hidden rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-4 shadow-xl shadow-[var(--onlypump-shadow)] onlypump-scrollbar-none"
     onPointerDown={startChartDrag}
     onPointerMove={moveChartDrag}
     onPointerUp={endChartDrag}
     onPointerCancel={endChartDrag}
   >
-    <svg viewBox="0 0 430 224" className="h-56 w-full overflow-visible">
+    <svg viewBox={`0 0 ${svgWidth} 224`} style={longPeriod ? { minWidth: `${svgWidth}px` } : undefined} className="h-56 w-full overflow-visible">
       <defs>
         <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stopColor="rgb(248 113 113)" stopOpacity="0.88"/>
           <stop offset="100%" stopColor="rgb(239 68 68)" stopOpacity="0.28"/>
         </linearGradient>
       </defs>
-      <rect x="0" y="0" width="430" height="188" rx="24" fill="rgba(255,255,255,0.025)"/>
+      <rect x="0" y="0" width={svgWidth} height="188" rx="24" fill="rgba(255,255,255,0.025)"/>
       {yTicks.map((tick, index) => <g key={`steps-y-${index}`}>
         <line x1={plot.left} y1={tick.y} x2={plot.right} y2={tick.y} stroke="var(--chart-grid)" strokeWidth="1" strokeDasharray={index === 1 ? "5 8" : ""}/>
-        <text x="424" y={tick.y + 4} textAnchor="end" fill="var(--chart-label)" fontSize="11" fontWeight="800">{formatAnalyticsValue(tick.value, "", metricKey)}</text>
+        <text x={svgWidth - 6} y={tick.y + 4} textAnchor="end" fill="var(--chart-label)" fontSize="11" fontWeight="800">{formatAnalyticsValue(tick.value, "", metricKey)}</text>
       </g>)}
       {hasGoalLine && <line x1={plot.left} y1={goalY} x2={plot.right} y2={goalY} stroke="#ef4444" strokeWidth="1.5" strokeDasharray="5 7" opacity="0.34"/>}
       <g
@@ -27620,7 +27627,7 @@ function StepsAnalyticsChart({ points = [], unit = "", metricKey = "steps_count"
         style={{ transition: dragRef.current ? "none" : "transform 180ms ease" }}
       >
         <line x1={plot.left} y1={plot.bottom} x2={plot.right} y2={plot.bottom} stroke="var(--chart-axis)" strokeWidth="1"/>
-        {!hasDataPoints && <text x="214" y="100" textAnchor="middle" fill="var(--chart-label)" fontSize="13" fontWeight="800">Нет данных в этом периоде</text>}
+        {!hasDataPoints && <text x={svgWidth / 2} y="100" textAnchor="middle" fill="var(--chart-label)" fontSize="13" fontWeight="800">Нет данных в этом периоде</text>}
         {coords.map((point, index) => {
           const active = selected?.date === point.date || point.isSelected;
           return <rect
@@ -27637,7 +27644,7 @@ function StepsAnalyticsChart({ points = [], unit = "", metricKey = "steps_count"
             onClick={() => { if (suppressChartClickRef.current || point.isGhost) return; setSelected(point); }}
           />;
         })}
-        {coords.map((point, index) => point.label ? <text key={`steps-label-${index}`} x={point.x} y="205" textAnchor="middle" fill="var(--chart-label)" fontSize="11" fontWeight="800">{point.label}</text> : null)}
+        {coords.map((point, index) => point.label ? <text key={`steps-label-${index}`} x={point.x} y="205" textAnchor="middle" fill="var(--chart-label)" fontSize={longPeriod ? "10" : "11"} fontWeight="800">{point.label}</text> : null)}
       </g>
     </svg>
     {selected && hasDataPoints && <div className="mt-3 rounded-2xl bg-black/20 p-3 text-sm"><span className="text-[var(--chart-label)]">{selectedLabel}</span><span className="float-right font-black">{formatAnalyticsValue(selected.value, unit, metricKey)}</span></div>}
@@ -27729,7 +27736,9 @@ function NutritionAnalyticsChart({ points = [], unit = "", metricKey = "calories
   const safeGoal = getNutritionAnalyticsBucketGoal(metricKey, period, nutritionGoal);
   const maxValue = Math.max(...chartPoints.map(point => Number(point.value || 0)), safeGoal, 1);
   const scaleMax = niceChartMax(maxValue, metricKey);
-  const plot = { left: 20, right: 386, top: 24, bottom: 164 };
+  const svgWidth = analyticsChartSvgWidth(period);
+  const longPeriod = isLongAnalyticsChartPeriod(period);
+  const plot = { left: longPeriod ? 14 : 20, right: svgWidth - 44, top: 24, bottom: 164 };
   const plotWidth = plot.right - plot.left;
   const plotHeight = plot.bottom - plot.top;
   const stepWidth = plotWidth / Math.max(1, chartPoints.length);
@@ -27888,23 +27897,23 @@ function NutritionAnalyticsChart({ points = [], unit = "", metricKey = "calories
 
     <div
       data-calendar-swipe="true"
-      className="touch-pan-y select-none overflow-hidden rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-4 shadow-xl shadow-[var(--onlypump-shadow)]"
+      className="touch-pan-y select-none overflow-x-auto overflow-y-hidden rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-4 shadow-xl shadow-[var(--onlypump-shadow)] onlypump-scrollbar-none"
       onPointerDown={startChartDrag}
       onPointerMove={moveChartDrag}
       onPointerUp={endChartDrag}
       onPointerCancel={endChartDrag}
     >
-      <svg viewBox="0 0 430 224" className="h-56 w-full overflow-visible">
+      <svg viewBox={`0 0 ${svgWidth} 224`} style={longPeriod ? { minWidth: `${svgWidth}px` } : undefined} className="h-56 w-full overflow-visible">
         <defs>
           <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor={metricColor} stopOpacity="0.88"/>
             <stop offset="100%" stopColor={metricColor} stopOpacity="0.28"/>
           </linearGradient>
         </defs>
-        <rect x="0" y="0" width="430" height="188" rx="24" fill="rgba(255,255,255,0.025)"/>
+        <rect x="0" y="0" width={svgWidth} height="188" rx="24" fill="rgba(255,255,255,0.025)"/>
         {yTicks.map((tick, index) => <g key={`nutrition-y-${index}`}>
           <line x1={plot.left} y1={tick.y} x2={plot.right} y2={tick.y} stroke="var(--chart-grid)" strokeWidth="1" strokeDasharray={index === 1 ? "5 8" : ""}/>
-          <text x="424" y={tick.y + 4} textAnchor="end" fill="var(--chart-label)" fontSize="11" fontWeight="800">{formatAnalyticsValue(tick.value, "", metricKey)}</text>
+          <text x={svgWidth - 6} y={tick.y + 4} textAnchor="end" fill="var(--chart-label)" fontSize="11" fontWeight="800">{formatAnalyticsValue(tick.value, "", metricKey)}</text>
         </g>)}
         <line x1={plot.left} y1={goalY} x2={plot.right} y2={goalY} stroke={metricColor} strokeWidth="1.5" strokeDasharray="5 7" opacity="0.34"/>
         <g
@@ -27914,7 +27923,7 @@ function NutritionAnalyticsChart({ points = [], unit = "", metricKey = "calories
           style={{ transition: dragRef.current ? "none" : "transform 180ms ease" }}
         >
           <line x1={plot.left} y1={plot.bottom} x2={plot.right} y2={plot.bottom} stroke="var(--chart-axis)" strokeWidth="1"/>
-          {!hasDataPoints && <text x="214" y="100" textAnchor="middle" fill="var(--chart-label)" fontSize="13" fontWeight="800">Нет данных в этом периоде</text>}
+          {!hasDataPoints && <text x={svgWidth / 2} y="100" textAnchor="middle" fill="var(--chart-label)" fontSize="13" fontWeight="800">Нет данных в этом периоде</text>}
           {coords.map((point, index) => {
             const active = selected?.date === point.date || point.isSelected;
             return <rect
@@ -27931,7 +27940,7 @@ function NutritionAnalyticsChart({ points = [], unit = "", metricKey = "calories
               onClick={() => { if (suppressChartClickRef.current || point.isGhost) return; setSelected(point); }}
             />;
           })}
-          {coords.map((point, index) => point.label ? <text key={`nutrition-label-${index}`} x={point.x} y="205" textAnchor="middle" fill="var(--chart-label)" fontSize="11" fontWeight="800">{point.label}</text> : null)}
+          {coords.map((point, index) => point.label ? <text key={`nutrition-label-${index}`} x={point.x} y="205" textAnchor="middle" fill="var(--chart-label)" fontSize={longPeriod ? "10" : "11"} fontWeight="800">{point.label}</text> : null)}
         </g>
       </svg>
       {selected && hasDataPoints && <div className="mt-3 rounded-2xl bg-black/20 p-3 text-sm"><span className="text-[var(--chart-label)]">{selectedLabel}</span><span className="float-right font-black">{formatAnalyticsValue(selected.value, unit, metricKey)}</span></div>}
@@ -31846,6 +31855,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
   const isDashboardFullscreen = isDashboardGraphs || (tab === "table" && isTableFullscreen);
   const DashboardFullscreenIcon = isDashboardFullscreen ? Minimize2 : Maximize2;
   const graphPeriodOptions = analyticsPeriods.filter(item => ["week", "month", "sixMonths", "year"].includes(item.id));
+  const isWideGraphLayout = isLongAnalyticsChartPeriod(graphPeriod);
   const studentGraphConfigs = [
     { id: "weight", title: "Вес", type: "weight", metric: "weight_kg" },
     { id: "measurements", title: "Замеры", type: "measurements", metric: "waist_cm" },
@@ -31945,7 +31955,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
               </div>
             </div>
             {(graphLoading || graphError) && <p className={`rounded-2xl p-3 text-sm ${graphError ? "bg-red-500/10 text-red-300" : "bg-white/[0.04] text-zinc-500"}`}>{graphError || "Загружаю период графиков..."}</p>}
-            <div className="grid gap-4 xl:grid-cols-2">
+            <div className={`grid gap-4 ${isWideGraphLayout ? "xl:grid-cols-1" : "xl:grid-cols-2"}`}>
               {studentGraphConfigs.map(config => {
                 const graph = getStudentGraphData(config);
                 const nutritionGoalForGraph = graph.typeConfig.source === "nutrition" ? profileNutritionGoalFromProfile(student || DEFAULT_PROFILE, initialNutritionGoal) : initialNutritionGoal;
@@ -32137,7 +32147,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
         const graph = getStudentGraphData(config);
         const nutritionGoalForGraph = graph.typeConfig.source === "nutrition" ? profileNutritionGoalFromProfile(student || DEFAULT_PROFILE, initialNutritionGoal) : initialNutritionGoal;
         return <div onClick={() => setDetail(null)} className="onlypump-modal-layer fixed inset-0 z-[255] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <BottomSheetPanel onClose={() => setDetail(null)} priority={255} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-5xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem] sm:p-6" style={{ maxHeight: "calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 1rem)" }}>
+          <BottomSheetPanel onClose={() => setDetail(null)} priority={255} onClick={(event) => event.stopPropagation()} className={`onlypump-bottom-sheet w-full ${isWideGraphLayout ? "max-w-7xl" : "max-w-5xl"} overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem] sm:p-6`} style={{ maxHeight: "calc(var(--onlypump-app-height) - var(--onlypump-safe-top) - var(--onlypump-safe-bottom) - 1rem)" }}>
             <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
