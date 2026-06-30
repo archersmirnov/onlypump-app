@@ -317,6 +317,14 @@
       overflow: hidden;
       padding-bottom: 0;
     }
+    .student-dashboard-panel.is-graphs-fullscreen .student-dashboard-scroll {
+      display: block;
+      overflow-x: hidden;
+      overflow-y: auto;
+      padding-bottom: calc(var(--onlypump-safe-bottom) + 1rem);
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
     .student-dashboard-table-pane {
       min-height: 0;
     }
@@ -31708,7 +31716,8 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 500);
   };
-  const isDashboardFullscreen = tab === "graphs" || (tab === "table" && isTableFullscreen);
+  const isDashboardGraphs = tab === "graphs";
+  const isDashboardFullscreen = isDashboardGraphs || (tab === "table" && isTableFullscreen);
   const DashboardFullscreenIcon = isDashboardFullscreen ? Minimize2 : Maximize2;
   const graphPeriodOptions = analyticsPeriods.filter(item => ["week", "month", "sixMonths", "year"].includes(item.id));
   const studentGraphConfigs = [
@@ -31760,7 +31769,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
   };
 
   return <div onClick={onClose} style={{ alignItems: isDashboardFullscreen ? "flex-start" : "center", justifyContent: "center" }} className={`student-dashboard-layer profile-screen onlypump-modal-layer fixed inset-0 z-[235] flex bg-black/70 backdrop-blur-sm ${isDashboardFullscreen ? "is-dashboard-fullscreen p-2 md:p-4" : "p-4"}`}>
-    <BottomSheetPanel onClose={onClose} priority={235} onClick={(event) => event.stopPropagation()} className={`student-dashboard-panel flex w-full flex-col overflow-hidden border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl ${isDashboardFullscreen ? "is-fullscreen max-w-none rounded-[1.5rem] md:w-[calc(100vw-32px)]" : "max-h-[min(calc(var(--onlypump-app-height)-72px),860px)] max-w-6xl rounded-[2rem]"}`}>
+    <BottomSheetPanel onClose={onClose} priority={235} onClick={(event) => event.stopPropagation()} className={`student-dashboard-panel flex w-full flex-col overflow-hidden border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl ${isDashboardFullscreen ? `is-fullscreen ${isDashboardGraphs ? "is-graphs-fullscreen" : ""} max-w-none rounded-[1.5rem] md:w-[calc(100vw-32px)]` : "max-h-[min(calc(var(--onlypump-app-height)-72px),860px)] max-w-6xl rounded-[2rem]"}`}>
       <div className="student-dashboard-head flex items-start justify-between gap-3">
         <button type="button" onClick={onClose} className="mt-1 shrink-0 text-sm font-black text-zinc-400">Назад</button>
         <div className="student-dashboard-title-block min-w-0 text-center">
