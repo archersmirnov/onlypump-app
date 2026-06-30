@@ -10148,6 +10148,11 @@ const homeWidgetIconPaths = {
   tdeeNeatIcon: "assets/menu-icons/tdee_neat.svg",
   tdeeTefIcon: "assets/menu-icons/tdee_tef.svg",
   tdeeEatIcon: "assets/menu-icons/tdee_eat.svg",
+  tdeeBmrLightIcon: "assets/menu-icons/tdee_bm_white.svg",
+  tdeeNeatLightIcon: "assets/menu-icons/tdee_neat_white.svg",
+  tdeeTefLightIcon: "assets/menu-icons/tdee_tef_white.svg",
+  tdeeEatLightIcon: "assets/menu-icons/tdee_eat_white.svg",
+  notesIcon: "assets/menu-icons/notes.svg",
   recoveryIcon: "assets/menu-icons/home-widget-recovery.svg",
   tonnageIcon: "assets/menu-icons/home-widget-tonnage.svg",
   setsIcon: "assets/menu-icons/home-widget-sets.svg",
@@ -10381,10 +10386,10 @@ const formatTdeeKcalParts = (value) => ({
 const tdeeComponentOrder = ["bmr", "neat", "tef", "eat"];
 
 const tdeeComponentColors = {
-  bmr: "#d2ecfa",
-  neat: "#4aa0d1",
-  tef: "#7d909b",
-  eat: "#696969",
+  bmr: "#9cbacb",
+  neat: "#3f84ab",
+  tef: "#73828b",
+  eat: "#424242",
 };
 
 const hexToRgba = (hex = "#000000", alpha = 1) => {
@@ -10416,6 +10421,13 @@ const tdeeComponentIconPaths = {
   eat: homeWidgetIconPaths.tdeeEatIcon,
 };
 
+const tdeeComponentLightIconPaths = {
+  bmr: homeWidgetIconPaths.tdeeBmrLightIcon,
+  neat: homeWidgetIconPaths.tdeeNeatLightIcon,
+  tef: homeWidgetIconPaths.tdeeTefLightIcon,
+  eat: homeWidgetIconPaths.tdeeEatLightIcon,
+};
+
 const tdeeComponentFallbackIcons = {
   bmr: Flame,
   neat: Activity,
@@ -10423,10 +10435,15 @@ const tdeeComponentFallbackIcons = {
   eat: Dumbbell,
 };
 
+function getTdeeComponentIconPath(itemKey) {
+  const isDarkTheme = typeof document !== "undefined" && document.documentElement.classList.contains("theme-dark");
+  return isDarkTheme ? tdeeComponentIconPaths[itemKey] : (tdeeComponentLightIconPaths[itemKey] || tdeeComponentIconPaths[itemKey]);
+}
+
 function TdeeComponentIcon({ itemKey, className = "" }) {
   const FallbackIcon = tdeeComponentFallbackIcons[itemKey] || Flame;
   return <SafeAssetIcon
-    src={tdeeComponentIconPaths[itemKey]}
+    src={getTdeeComponentIconPath(itemKey)}
     className={`rounded-md ${className}`}
     fallback={<FallbackIcon className="h-full w-full" strokeWidth={2.2}/>}
   />;
@@ -10590,34 +10607,55 @@ const buildStoredTdeeSummaryFromHealthLog = (log = {}) => {
     return acc;
   }, {});
   const componentTotal = tdeeComponentOrder.reduce((sum, key) => sum + profileNonNegativeNumber(components[key]?.kcal, 0), 0);
-  const totalKcal = profileNonNegativeNumber(log?.tdee_kcal, 0) || componentTotal;
-  if (totalKcal > 0) {
-    tdeeComponentOrder.forEach(key => {
-      if (!components[key].percent && components[key].kcal > 0) {
-        components[key].percent = Math.round((components[key].kcal / totalKcal) * 100);
+      const totalKcal = profileNonNegativeNumber(log?.tdee_kcal, 0) || componentTotal;
+      if (totalKcal > 0) {
+        tdeeComponentOrder.forEach(key => {
+          if (!components[key].percent && components[key].kcal > 0) {
+            components[key].percent = Math.round((components[key].kcal / totalKcal) * 100);
       }
     });
-  }
-  return { totalKcal, components, items: tdeeComponentOrder.map(key => components[key]).filter(Boolean) };
-};
-
-const buildTdeeComponentTrend = ({ healthLogs = [], selectedDateKey = formatDateKey(new Date()), selectedSummary = {}, componentKey = "bmr", resolveSummaryForDate } = {}) => {
-  const field = tdeeLogFieldByComponent[componentKey] || "bmr_kcal";
-  const byDate = new Map((Array.isArray(healthLogs) ? healthLogs : []).map(log => [normalizeDateKey(log.log_date || log.date, ""), profileNonNegativeNumber(log[field], 0)]));
-  const selectedValue = profileNonNegativeNumber(selectedSummary.components?.[componentKey]?.kcal, 0);
-  byDate.set(selectedDateKey, selectedValue);
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = addDaysToDateKey(selectedDateKey, index - 6);
-    const resolvedSummary = typeof resolveSummaryForDate === "function" ? resolveSummaryForDate(date) : null;
-    const resolvedValue = profileNonNegativeNumber(resolvedSummary?.components?.[componentKey]?.kcal, 0);
-    return {
-      date,
-      label: parseDateKeyLocal(date).toLocaleDateString("ru-RU", { weekday: "short" }).slice(0, 2),
-      value: resolvedSummary ? resolvedValue : byDate.get(date) || 0,
-      selected: date === selectedDateKey,
+      }
+      return { totalKcal, components, items: tdeeComponentOrder.map(key => components[key]).filter(Boolean) };
     };
-  });
-};
+
+    const getTdeeTrendValueFromSummary = (summary = {}, componentKey = "bmr") => {
+      const item = summary?.components?.[componentKey];
+      return tdeeComponentHasDisplayData(item) ? profileNonNegativeNumber(item?.kcal, 0) : 0;
+    };
+
+    const TDEE_DATE_WINDOW_DAYS = 7;
+    const TDEE_DATE_BUFFER_DAYS = TDEE_DATE_WINDOW_DAYS + 2;
+    const TDEE_DATE_SWIPE_MS = 220;
+    const buildTdeeDateWindow = (startDateKey, count = TDEE_DATE_WINDOW_DAYS) =>
+      Array.from({ length: count }, (_, index) => addDaysToDateKey(startDateKey, index));
+
+    const buildTdeeComponentTrend = ({ healthLogs = [], selectedDateKey = formatDateKey(new Date()), chartWindowStartDate = addDaysToDateKey(selectedDateKey, -3), dateKeys = [], selectedSummary = {}, componentKey = "bmr", resolveSummaryForDate } = {}) => {
+      const field = tdeeLogFieldByComponent[componentKey] || "bmr_kcal";
+      const startDateKey = normalizeDateKey(chartWindowStartDate, addDaysToDateKey(selectedDateKey, -3)) || addDaysToDateKey(selectedDateKey, -3);
+      const trendDateKeys = (Array.isArray(dateKeys) && dateKeys.length ? dateKeys : buildTdeeDateWindow(startDateKey, TDEE_DATE_WINDOW_DAYS))
+        .map(dateKey => normalizeDateKey(dateKey, ""))
+        .filter(Boolean);
+      const rowsByDate = new Map((Array.isArray(healthLogs) ? healthLogs : [])
+        .map(log => [normalizeDateKey(log.log_date || log.date, ""), log])
+        .filter(([date]) => Boolean(date)));
+      return trendDateKeys.map(date => {
+        const row = rowsByDate.get(date);
+        const resolvedSummary = typeof resolveSummaryForDate === "function" ? resolveSummaryForDate(date) : null;
+        const storedSummary = !resolvedSummary?.components && healthLogHasStoredTdeeData(row) ? buildStoredTdeeSummaryFromHealthLog(row) : null;
+        const summaryForDate = date === selectedDateKey && selectedSummary?.components
+          ? selectedSummary
+          : (resolvedSummary?.components ? resolvedSummary : storedSummary);
+        const value = summaryForDate?.components
+          ? getTdeeTrendValueFromSummary(summaryForDate, componentKey)
+          : profileNonNegativeNumber(row?.[field], 0);
+        return {
+          date,
+          label: parseDateKeyLocal(date).toLocaleDateString("ru-RU", { weekday: "short" }).slice(0, 2),
+          value,
+          selected: date === selectedDateKey,
+        };
+      });
+    };
 
 const buildTdeeCalendarSummaryForDate = ({ healthLogs = [], selectedDateKey = "", selectedSummary = {}, dateKey = "", resolveSummaryForDate } = {}) => {
   const hasResolver = typeof resolveSummaryForDate === "function";
@@ -10686,96 +10724,41 @@ function TdeeCalendarDay({ dateKey = "", summary = {}, selected = false }) {
   </div>;
 }
 
-function TdeeSegmentCalendar({ healthLogs = [], selectedDateKey = formatDateKey(new Date()), selectedSummary = {}, onSelectDate, resolveSummaryForDate }) {
-  const visibleDays = 7;
-  const anchorDateKeyRef = useRef(selectedDateKey);
-  const [startOffset, setStartOffset] = useState(-3);
-  const [dragX, setDragX] = useState(0);
-  const dragRef = useRef(null);
-  const suppressCalendarClickRef = useRef(false);
-  const suppressResetRef = useRef(null);
-  const days = Array.from({ length: visibleDays }, (_, index) => addDaysToDateKey(anchorDateKeyRef.current, startOffset + index));
+function TdeeSegmentCalendar({ healthLogs = [], selectedDateKey = formatDateKey(new Date()), selectedSummary = {}, dateKeys = [], dragState = {}, dragHandlers = {}, isClickSuppressed = () => false, onSelectDate, resolveSummaryForDate }) {
+  const visibleDays = TDEE_DATE_WINDOW_DAYS;
+  const days = Array.isArray(dateKeys) && dateKeys.length ? dateKeys : buildTdeeDateWindow(addDaysToDateKey(selectedDateKey, -4), TDEE_DATE_BUFFER_DAYS);
+  const bufferOffset = days.length > visibleDays ? 1 : 0;
+  const dayShiftPercent = 100 / Math.max(1, days.length);
+  const snapOffsetDays = Number(dragState.snapOffsetDays || 0);
+  const dragOffsetX = Number(dragState.dragOffsetX || 0);
+  const snapOffset = dragState.isAnimating ? -snapOffsetDays * dayShiftPercent : 0;
+  const dragOffset = dragState.isDragging && Number.isFinite(dragOffsetX) ? dragOffsetX : 0;
   const activateTdeeCalendarDate = (targetKey) => {
     if (!targetKey) return;
     onSelectDate?.(targetKey);
   };
-  const startCalendarDrag = (event) => {
-    clearTimeout(suppressResetRef.current);
-    dragRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      hasDragged: false,
-      targetKey: event.target?.closest?.("[data-tdee-calendar-date-key]")?.dataset?.tdeeCalendarDateKey || "",
-    };
-    setDragX(0);
-    suppressCalendarClickRef.current = false;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-  const moveCalendarDrag = (event) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const rawDx = event.clientX - drag.startX;
-    const rawDy = event.clientY - drag.startY;
-    const absX = Math.abs(rawDx);
-    const absY = Math.abs(rawDy);
-    if (!drag.hasDragged && (absX < 22 || absX < absY * 1.45)) return;
-    if (absY > 48 && absY > absX * 1.2) return;
-    if (absX > 18) {
-      drag.hasDragged = true;
-      suppressCalendarClickRef.current = true;
-    }
-    const rect = event.currentTarget.getBoundingClientRect();
-    const dayWidth = Math.max(36, rect.width / Math.max(1, visibleDays));
-    const steps = Math.trunc(rawDx / dayWidth);
-    if (steps !== 0) {
-      setStartOffset(prev => prev - steps);
-      drag.startX += steps * dayWidth;
-      setDragX(rawDx - steps * dayWidth);
-    } else {
-      setDragX(rawDx);
-    }
-    event.preventDefault();
-  };
-  const endCalendarDrag = (event) => {
-    if (dragRef.current?.pointerId !== event.pointerId) return;
-    const wasDragged = dragRef.current.hasDragged;
-    const targetKey = dragRef.current.targetKey;
-    dragRef.current = null;
-    setDragX(0);
-    if (!wasDragged && targetKey) {
-      suppressCalendarClickRef.current = false;
-      activateTdeeCalendarDate(targetKey);
-      return;
-    }
-    clearTimeout(suppressResetRef.current);
-    suppressResetRef.current = setTimeout(() => {
-      suppressCalendarClickRef.current = false;
-    }, 120);
-  };
   return <section className="mb-5 rounded-[28px] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] px-4 py-[13px]">
     <div
       className="overflow-hidden touch-pan-y select-none"
-      onPointerDown={startCalendarDrag}
-      onPointerMove={moveCalendarDrag}
-      onPointerUp={endCalendarDrag}
-      onPointerCancel={endCalendarDrag}
+      style={{ touchAction: "pan-y" }}
+      {...dragHandlers}
     >
       <div
         className="grid gap-1 will-change-transform"
         style={{
-          gridTemplateColumns: `repeat(${visibleDays}, minmax(0, 1fr))`,
-          transform: `translate3d(${dragX}px,0,0)`,
-          transition: dragRef.current ? "none" : "transform 180ms ease",
+          width: `${(days.length / visibleDays) * 100}%`,
+          gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`,
+          transform: `translate3d(calc(${-bufferOffset * dayShiftPercent + snapOffset}% + ${dragOffset}px),0,0)`,
+          transition: dragState.isDragging ? "none" : `transform ${TDEE_DATE_SWIPE_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
         }}
       >
         {days.map(dateKey => <button
           key={dateKey}
           type="button"
-          data-tdee-calendar-date-key={dateKey}
+          data-tdee-date-key={dateKey}
           onClick={(event) => {
             event.stopPropagation();
-            if (event.detail !== 0 || suppressCalendarClickRef.current) return;
+            if (isClickSuppressed()) return;
             activateTdeeCalendarDate(dateKey);
           }}
           className="min-w-0 touch-manipulation"
@@ -10881,18 +10864,48 @@ function TdeeEnergySummaryPanel({ summary, personSrc, onSelect, activeKey, compa
   </section>;
 }
 
-function TdeeDetailSparkline({ points = [], tone = "bmr" }) {
+function TdeeDetailSparkline({ points = [], tone = "bmr", dragState = {}, dragHandlers = {}, isClickSuppressed = () => false, onSelectDate }) {
   const maxValue = Math.max(1, ...points.map(point => profileNonNegativeNumber(point.value, 0)));
   const chartColor = tdeeComponentColors[tone] || tdeeComponentColors.bmr;
-  return <div className="mt-3 flex h-24 items-end justify-between gap-2 rounded-[22px] bg-[var(--onlypump-soft)] px-3 pb-3 pt-4">
-    {points.map(point => {
-      const value = profileNonNegativeNumber(point.value, 0);
-      const height = value > 0 ? Math.max(5, Math.round((value / maxValue) * 58)) : 0;
-      return <div key={point.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-        <span className="w-full max-w-7 rounded-t-full" style={{ height, backgroundColor: point.selected ? chartColor : hexToRgba(chartColor, 0.24) }}/>
-        <span className={`text-[9px] font-black uppercase ${point.selected ? "text-[var(--onlypump-text)]" : "text-zinc-500"}`}>{point.label}</span>
-      </div>;
-    })}
+  const visibleDays = TDEE_DATE_WINDOW_DAYS;
+  const bufferOffset = points.length > visibleDays ? 1 : 0;
+  const dayShiftPercent = 100 / Math.max(1, points.length);
+  const snapOffsetDays = Number(dragState.snapOffsetDays || 0);
+  const dragOffsetX = Number(dragState.dragOffsetX || 0);
+  const snapOffset = dragState.isAnimating ? -snapOffsetDays * dayShiftPercent : 0;
+  const dragOffset = dragState.isDragging && Number.isFinite(dragOffsetX) ? dragOffsetX : 0;
+  return <div
+    className="mt-3 h-24 overflow-hidden rounded-[22px] bg-[var(--onlypump-soft)] px-3 pb-3 pt-4"
+    style={{ touchAction: "pan-y" }}
+    {...dragHandlers}
+  >
+    <div
+      className="flex h-full items-end justify-between gap-2 will-change-transform"
+      style={{
+        width: `${(points.length / visibleDays) * 100}%`,
+        transform: `translate3d(calc(${-bufferOffset * dayShiftPercent + snapOffset}% + ${dragOffset}px),0,0)`,
+        transition: dragState.isDragging ? "none" : `transform ${TDEE_DATE_SWIPE_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+      }}
+    >
+      {points.map(point => {
+        const value = profileNonNegativeNumber(point.value, 0);
+        const height = value > 0 ? Math.max(5, Math.round((value / maxValue) * 58)) : 0;
+        return <button
+          key={point.date}
+          type="button"
+          data-tdee-date-key={point.date}
+          onClick={() => {
+            if (isClickSuppressed()) return;
+            onSelectDate?.(point.date);
+          }}
+          className="flex min-w-0 flex-1 appearance-none flex-col items-center gap-1 border-0 bg-transparent p-0 text-center transition active:scale-95"
+          aria-label={`Показать ${point.label}`}
+        >
+          <span className="w-full max-w-7 rounded-t-full" style={{ height, backgroundColor: point.selected ? chartColor : hexToRgba(chartColor, 0.24) }}/>
+          <span className={`text-[9px] font-black uppercase ${point.selected ? "text-[var(--onlypump-text)]" : "text-zinc-500"}`}>{point.label}</span>
+        </button>;
+      })}
+    </div>
   </div>;
 }
 
@@ -10944,6 +10957,130 @@ function TdeeDetailMetricCard({ item = {}, active = false, tone = "bmr", onSelec
 function TdeeEnergyDetailSheet({ summary, healthLogs = [], selectedDateKey = formatDateKey(new Date()), onSelectDate, onClose, onClarifyComponent, resolveSummaryForDate }) {
   const [activeKey, setActiveKey] = useState("bmr");
   const [tdeeInfoOpen, setTdeeInfoOpen] = useState(false);
+  const [tdeeChartStartDate, setTdeeChartStartDate] = useState(() => addDaysToDateKey(selectedDateKey, -3));
+  const [tdeeDateDrag, setTdeeDateDrag] = useState({
+    isDragging: false,
+    dragStartX: 0,
+    dragStartY: 0,
+    dragOffsetX: 0,
+    isAnimating: false,
+    snapOffsetDays: 0,
+  });
+  const tdeeDateDragRef = useRef(null);
+  const tdeeDateSnapTimerRef = useRef(null);
+  const tdeeDateSuppressClickUntilRef = useRef(0);
+  const tdeeVisibleDateKeys = useMemo(() => buildTdeeDateWindow(tdeeChartStartDate, TDEE_DATE_WINDOW_DAYS), [tdeeChartStartDate]);
+  const tdeeBufferedDateKeys = useMemo(() => [
+    addDaysToDateKey(tdeeChartStartDate, -1),
+    ...tdeeVisibleDateKeys,
+    addDaysToDateKey(tdeeChartStartDate, TDEE_DATE_WINDOW_DAYS),
+  ], [tdeeChartStartDate, tdeeVisibleDateKeys]);
+  const isTdeeDateClickSuppressed = () => Date.now() < tdeeDateSuppressClickUntilRef.current;
+  const finishTdeeDateSnap = (snapOffsetDays = 0) => {
+    clearTimeout(tdeeDateSnapTimerRef.current);
+    tdeeDateSnapTimerRef.current = setTimeout(() => {
+      if (snapOffsetDays) setTdeeChartStartDate(current => addDaysToDateKey(current, snapOffsetDays));
+      setTdeeDateDrag({
+        isDragging: false,
+        dragStartX: 0,
+        dragStartY: 0,
+        dragOffsetX: 0,
+        isAnimating: false,
+        snapOffsetDays: 0,
+      });
+    }, TDEE_DATE_SWIPE_MS);
+  };
+  const startTdeeDateDrag = (event) => {
+    if (tdeeDateDragRef.current || tdeeDateDrag.isAnimating) return;
+    clearTimeout(tdeeDateSnapTimerRef.current);
+    const nextDrag = {
+      pointerId: event.pointerId,
+      dragStartX: event.clientX,
+      dragStartY: event.clientY,
+      targetDateKey: event.target?.closest?.("[data-tdee-date-key]")?.dataset?.tdeeDateKey || "",
+      isHorizontal: false,
+      hasMoved: false,
+    };
+    tdeeDateDragRef.current = nextDrag;
+    setTdeeDateDrag({
+      isDragging: false,
+      dragStartX: event.clientX,
+      dragStartY: event.clientY,
+      dragOffsetX: 0,
+      isAnimating: false,
+      snapOffsetDays: 0,
+    });
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const moveTdeeDateDrag = (event) => {
+    const drag = tdeeDateDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - drag.dragStartX;
+    const deltaY = event.clientY - drag.dragStartY;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+    if (!drag.isHorizontal) {
+      if (absY > 8 && absY > absX) return;
+      if (absX <= 6 || absX <= absY) return;
+      drag.isHorizontal = true;
+    }
+    drag.hasMoved = absX > 8;
+    event.preventDefault();
+    setTdeeDateDrag({
+      isDragging: true,
+      dragStartX: drag.dragStartX,
+      dragStartY: drag.dragStartY,
+      dragOffsetX: deltaX,
+      isAnimating: false,
+      snapOffsetDays: 0,
+    });
+  };
+  const endTdeeDateDrag = (event) => {
+    const drag = tdeeDateDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    tdeeDateDragRef.current = null;
+    const deltaX = event.clientX - drag.dragStartX;
+    const deltaY = event.clientY - drag.dragStartY;
+    const isSwipe = Math.abs(deltaX) > 35 && Math.abs(deltaX) > Math.abs(deltaY);
+    if (!drag.isHorizontal && !isSwipe) {
+      if (drag.targetDateKey) {
+        tdeeDateSuppressClickUntilRef.current = Date.now() + 120;
+        onSelectDate?.(drag.targetDateKey);
+      }
+      setTdeeDateDrag(current => ({ ...current, isDragging: false, dragOffsetX: 0 }));
+      return;
+    }
+    tdeeDateSuppressClickUntilRef.current = Date.now() + 300;
+    const snapOffsetDays = isSwipe ? (deltaX < 0 ? 1 : -1) : 0;
+    setTdeeDateDrag({
+      isDragging: false,
+      dragStartX: drag.dragStartX,
+      dragStartY: drag.dragStartY,
+      dragOffsetX: 0,
+      isAnimating: true,
+      snapOffsetDays,
+    });
+    finishTdeeDateSnap(snapOffsetDays);
+  };
+  const cancelTdeeDateDrag = (event) => {
+    const drag = tdeeDateDragRef.current;
+    if (drag && event?.pointerId !== undefined && drag.pointerId !== event.pointerId) return;
+    tdeeDateDragRef.current = null;
+    setTdeeDateDrag(current => ({
+      ...current,
+      isDragging: false,
+      dragOffsetX: 0,
+      isAnimating: true,
+      snapOffsetDays: 0,
+    }));
+    finishTdeeDateSnap(0);
+  };
+  const tdeeDateDragHandlers = {
+    onPointerDown: startTdeeDateDrag,
+    onPointerMove: moveTdeeDateDrag,
+    onPointerUp: endTdeeDateDrag,
+    onPointerCancel: cancelTdeeDateDrag,
+  };
   const active = summary?.components?.[activeKey] || summary?.components?.bmr;
   const personSrc = getTdeeCharacterAsset(summary?.sex);
   const toneByKey = { bmr: "bmr", neat: "neat", tef: "tef", eat: "eat" };
@@ -10956,7 +11093,10 @@ function TdeeEnergyDetailSheet({ summary, healthLogs = [], selectedDateKey = for
   };
   useEffect(() => {
     document.documentElement.classList.add("onlypump-mobile-modal-open");
-    return () => document.documentElement.classList.remove("onlypump-mobile-modal-open");
+    return () => {
+      document.documentElement.classList.remove("onlypump-mobile-modal-open");
+      clearTimeout(tdeeDateSnapTimerRef.current);
+    };
   }, []);
   const screen = <div className="fixed inset-0 z-[9999] overflow-y-auto bg-[var(--onlypump-card-solid)] text-[var(--onlypump-text)]" role="dialog" aria-modal="true" aria-label="Расход энергии">
     <div className="min-h-full px-5 pb-[calc(var(--onlypump-safe-bottom,0px)+1.5rem)] pt-[calc(var(--onlypump-safe-top,0px)+1rem)]">
@@ -10981,7 +11121,17 @@ function TdeeEnergyDetailSheet({ summary, healthLogs = [], selectedDateKey = for
         </div>
       </header>
       <main className="mx-auto w-full max-w-xl pt-5">
-        <TdeeSegmentCalendar healthLogs={healthLogs} selectedDateKey={selectedDateKey} selectedSummary={summary} onSelectDate={onSelectDate} resolveSummaryForDate={resolveSummaryForDate}/>
+        <TdeeSegmentCalendar
+          healthLogs={healthLogs}
+          selectedDateKey={selectedDateKey}
+          selectedSummary={summary}
+          dateKeys={tdeeBufferedDateKeys}
+          dragState={tdeeDateDrag}
+          dragHandlers={tdeeDateDragHandlers}
+          isClickSuppressed={isTdeeDateClickSuppressed}
+          onSelectDate={onSelectDate}
+          resolveSummaryForDate={resolveSummaryForDate}
+        />
         <TdeeEnergySummaryPanel summary={summary} personSrc={personSrc} activeKey={activeKey} onSelect={setActiveKey} framed={false}/>
         <h3 className="mt-5 text-xl font-black tracking-[-0.03em]">Подробнее:</h3>
         <div className="mt-3 grid grid-cols-2 gap-3">
@@ -11006,7 +11156,14 @@ function TdeeEnergyDetailSheet({ summary, healthLogs = [], selectedDateKey = for
             <span className="rounded-full px-3 py-1 text-sm font-black" style={{ backgroundColor: hexToRgba(activeColor, 0.16), color: activeColor }}>{Math.round(active?.percent || 0)}%</span>
           </div>
           <p className="mt-3 text-sm font-semibold leading-6 text-zinc-500">{descriptions[activeKey]}</p>
-          <TdeeDetailSparkline points={buildTdeeComponentTrend({ healthLogs, selectedDateKey, selectedSummary: summary, componentKey: activeKey, resolveSummaryForDate })} tone={toneByKey[activeKey]}/>
+              <TdeeDetailSparkline
+                points={buildTdeeComponentTrend({ healthLogs, selectedDateKey, chartWindowStartDate: tdeeChartStartDate, dateKeys: tdeeBufferedDateKeys, selectedSummary: summary, componentKey: activeKey, resolveSummaryForDate })}
+                tone={toneByKey[activeKey]}
+                dragState={tdeeDateDrag}
+                dragHandlers={tdeeDateDragHandlers}
+                isClickSuppressed={isTdeeDateClickSuppressed}
+                onSelectDate={onSelectDate}
+              />
         </section>
       </main>
       {tdeeInfoOpen && <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/55 px-3 pt-10 backdrop-blur-sm" onClick={() => setTdeeInfoOpen(false)}>
@@ -11574,7 +11731,13 @@ function DailyNoteWidgetCard({ healthLog = DEFAULT_HEALTH_LOG, onOpen, widgetKey
 	      <div className="min-w-0">
 	        <p className="onlypump-line-clamp-1 text-[11px] text-yellow-800/70">Заметки</p>
 	      </div>
-	      <WidgetInfoIcon widgetKey={widgetKey} label="Заметки" onOpen={onInfoOpen} className="shrink-0 text-yellow-800"><StickyNote size={18}/></WidgetInfoIcon>
+	      <WidgetInfoIcon widgetKey={widgetKey} label="Заметки" onOpen={onInfoOpen} className="shrink-0 text-yellow-800">
+	        <SafeAssetIcon
+	          src={homeWidgetIconPaths.notesIcon}
+	          className="h-[18px] w-[18px]"
+	          fallback={<StickyNote size={18}/>}
+	        />
+	      </WidgetInfoIcon>
 	    </div>
     <div
       className="onlypump-note-paper mt-3 min-h-0 flex-1 rounded-2xl border border-yellow-700/20 px-3 py-2 text-sm font-bold text-zinc-900"
@@ -12981,6 +13144,22 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     ? buildNutritionTotalsForDate(selectedDateKey, nutritionDay?.totals || nutritionTotals)
     : { calories: 0, protein: 0, fat: 0, carbs: 0 }, [selectedDateKey, selectedNutritionDayMatches, nutritionDay?.totals, nutritionTotals]);
   const selectedNutritionMeals = useMemo(() => selectedNutritionDayMatches ? deriveHomeMealsFromNutritionDay(nutritionDay) : [], [selectedNutritionDayMatches, nutritionDay]);
+  const tdeeNutritionDayByDate = useMemo(() => {
+    const byDate = new Map();
+    normalizeNutritionFilledDateKeys(nutritionMarkedDateKeys).forEach(dateKey => {
+      const cachedDay = profile ? readCachedNutritionForProfile(profile, dateKey) : null;
+      if (cachedDay) byDate.set(dateKey, normalizeNutritionDay(cachedDay, dateKey, nutritionGoal));
+    });
+    const currentNutritionDate = normalizeDateKey(nutritionDay?.date || nutritionDay?.log_date || nutritionDay?.nutrition_date, "");
+    if (currentNutritionDate) byDate.set(currentNutritionDate, normalizeNutritionDay(nutritionDay, currentNutritionDate, nutritionGoal));
+    return byDate;
+  }, [profile?.id, profile?.telegram_id, profile?.telegramId, JSON.stringify(nutritionMarkedDateKeys), nutritionDay, nutritionGoal]);
+  const selectedTdeeNutritionDay = tdeeNutritionDayByDate.get(selectedDateKey) || null;
+  const selectedTdeeNutritionHasFood = nutritionDayHasFood(selectedTdeeNutritionDay);
+  const selectedTdeeNutritionTotals = useMemo(() => selectedTdeeNutritionHasFood
+    ? pumpXpNutritionTotals(selectedTdeeNutritionDay)
+    : { calories: 0, protein: 0, fat: 0, carbs: 0 }, [selectedTdeeNutritionDay, selectedTdeeNutritionHasFood]);
+  const selectedTdeeNutritionMeals = useMemo(() => selectedTdeeNutritionHasFood ? deriveHomeMealsFromNutritionDay(selectedTdeeNutritionDay) : [], [selectedTdeeNutritionDay, selectedTdeeNutritionHasFood]);
   const personalTrackerMarkedDateKeys = useMemo(() => personalTrackers.flatMap(tracker => Object.keys(tracker.entries || {}).filter(dateKey => {
     const entry = getPersonalTrackerEntry(tracker, dateKey);
     return entry.done || profileNonNegativeNumber(entry.value, 0) > 0 || String(entry.note || "").trim();
@@ -13189,18 +13368,18 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     selectedMeasurements,
     measurementRecords,
     selectedDateKey,
-    nutritionTotals: selectedNutritionTotals,
-    nutritionMeals: selectedNutritionMeals,
+    nutritionTotals: selectedTdeeNutritionTotals,
+    nutritionMeals: selectedTdeeNutritionMeals,
     workouts: selectedDateWorkouts,
     healthLog: selectedHealthLog,
-  }), [profile, selectedMeasurements, measurementRecords, selectedDateKey, selectedNutritionTotals, selectedNutritionMeals, selectedDateWorkouts, selectedHealthLog]);
+  }), [profile, selectedMeasurements, measurementRecords, selectedDateKey, selectedTdeeNutritionTotals, selectedTdeeNutritionMeals, selectedDateWorkouts, selectedHealthLog]);
   const selectedTdeeHasSourceData = useMemo(() => {
     const isFutureDate = getDayOffsetFromToday(selectedDateKey) > 0;
     return selectedDateWorkouts.some(workoutCountsForTdee)
-      || selectedNutritionDayMatches && nutritionDayHasFood(nutritionDay)
+      || selectedTdeeNutritionHasFood
       || healthLogHasRealData(selectedHealthLog)
       || (!isFutureDate && healthLogHasStoredTdeeData(selectedHealthLog));
-  }, [nutritionDay, selectedDateKey, selectedDateWorkouts, selectedHealthLog, selectedNutritionDayMatches]);
+  }, [selectedDateKey, selectedDateWorkouts, selectedHealthLog, selectedTdeeNutritionHasFood]);
   const getTdeeSummaryForDate = useCallback((targetDateKey) => {
     const targetKey = normalizeDateKey(targetDateKey, "");
     if (!targetKey) return null;
@@ -13209,8 +13388,8 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     const storedHealthLog = tdeeHealthLogByDate.get(targetKey);
     const dayWorkouts = (Array.isArray(workouts) ? workouts : []).filter(workout => normalizeDateKey(workout.date || workout.workout_date || workout.scheduled_date, "") === targetKey);
     const hasCompletedWorkout = dayWorkouts.some(workoutCountsForTdee);
-    const nutritionDayKey = normalizeDateKey(nutritionDay?.date || nutritionDay?.log_date || nutritionDay?.nutrition_date, "");
-    const hasNutritionForDate = nutritionDayKey === targetKey && nutritionDayHasFood(nutritionDay);
+    const targetNutritionDay = tdeeNutritionDayByDate.get(targetKey) || null;
+    const hasNutritionForDate = nutritionDayHasFood(targetNutritionDay);
     const hasHealthForDate = storedHealthLog && healthLogHasRealData(storedHealthLog);
     const hasRealSourceData = hasCompletedWorkout || hasNutritionForDate || hasHealthForDate;
     if (!hasRealSourceData && getDayOffsetFromToday(targetKey) > 0) return null;
@@ -13222,12 +13401,12 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       selectedMeasurements: buildMeasurementsForDate(targetKey, measurements),
       measurementRecords,
       selectedDateKey: targetKey,
-      nutritionTotals: hasNutritionForDate ? buildNutritionTotalsForDate(targetKey, nutritionDay?.totals || {}) : { calories: 0, protein: 0, fat: 0, carbs: 0 },
-      nutritionMeals: hasNutritionForDate ? deriveHomeMealsFromNutritionDay(nutritionDay) : [],
+      nutritionTotals: hasNutritionForDate ? pumpXpNutritionTotals(targetNutritionDay) : { calories: 0, protein: 0, fat: 0, carbs: 0 },
+      nutritionMeals: hasNutritionForDate ? deriveHomeMealsFromNutritionDay(targetNutritionDay) : [],
       workouts: dayWorkouts,
       healthLog: normalizeHealthLog(storedHealthLog || {}, targetKey),
     });
-  }, [measurementRecords, measurements, nutritionDay, profile, selectedDateKey, selectedTdeeHasSourceData, tdeeHealthLogByDate, tdeeSummary, workouts]);
+  }, [measurementRecords, measurements, profile, selectedDateKey, selectedTdeeHasSourceData, tdeeHealthLogByDate, tdeeNutritionDayByDate, tdeeSummary, workouts]);
   const tdeeLogPatch = useMemo(() => buildTdeeHealthLogPatch(tdeeSummary), [tdeeSummary]);
   const tdeeSaveSignatureRef = useRef("");
   useEffect(() => {
