@@ -7104,6 +7104,25 @@ const collectWorkoutRescueProfileIds = async (client, profile = {}) => {
   return Array.from(ids);
 };
 
+const chunkWorkoutRescueRows = (rows = [], size = 30) => {
+  const chunks = [];
+  for (let index = 0; index < rows.length; index += size) chunks.push(rows.slice(index, index + size));
+  return chunks;
+};
+
+const selectWorkoutRescueRowsInChunks = async (client, table, column, ids = [], options = {}) => {
+  const uniqueIds = Array.from(new Set((ids || []).map(id => String(id || "").trim()).filter(Boolean)));
+  const rows = [];
+  for (const idChunk of chunkWorkoutRescueRows(uniqueIds)) {
+    let query = client.from(table).select(options.select || "*").in(column, idChunk);
+    if (options.orderColumn) query = query.order(options.orderColumn, { ascending: true });
+    const { data, error } = await query;
+    if (error) throw error;
+    rows.push(...(data || []));
+  }
+  return rows;
+};
+
 const loadWorkoutsFromSupabaseTables = async (profile = {}, fallbackDateKey = formatDateKey(new Date())) => {
   try {
     const client = createOnlyPumpSupabaseClient();
@@ -7121,15 +7140,13 @@ const loadWorkoutsFromSupabaseTables = async (profile = {}, fallbackDateKey = fo
       .order("workout_date", { ascending: false });
     if (workoutsError) throw workoutsError;
     const workoutIds = (workoutRows || []).map((item) => item.id).filter(Boolean);
-    const { data: exerciseRows, error: exercisesError } = workoutIds.length
-      ? await client.from("workout_exercises").select("*").in("workout_id", workoutIds).order("exercise_order", { ascending: true })
-      : { data: [], error: null };
-    if (exercisesError) throw exercisesError;
+    const exerciseRows = workoutIds.length
+      ? await selectWorkoutRescueRowsInChunks(client, "workout_exercises", "workout_id", workoutIds, { orderColumn: "exercise_order" })
+      : [];
     const exerciseIds = (exerciseRows || []).map((item) => item.id).filter(Boolean);
-    const { data: setRows, error: setsError } = exerciseIds.length
-      ? await client.from("workout_sets").select("*").in("workout_exercise_id", exerciseIds).order("set_order", { ascending: true })
-      : { data: [], error: null };
-    if (setsError) throw setsError;
+    const setRows = exerciseIds.length
+      ? await selectWorkoutRescueRowsInChunks(client, "workout_sets", "workout_exercise_id", exerciseIds, { orderColumn: "set_order" })
+      : [];
     const rescued = buildWorkoutsTreeFromApiResponse({
       workouts: workoutRows || [],
       workout_exercises: exerciseRows || [],
@@ -14828,6 +14845,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 	  const workoutScrollRef = useRef(null);
 	  const plannedWorkoutsScrollRef = useRef(null);
 	  const plannedWorkoutsManualScrollRef = useRef(false);
+  const repeatCreateInFlightRef = useRef(new Set());
   const customKeyboardClickGuardRef = useRef(0);
   const restAdvanceRef = useRef(null);
   const restTimerStateRef = useRef(null);
@@ -17476,6 +17494,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 	    const workoutDateKey = normalizeDateKey(workout?.date || workout?.workout_date, selectedDateKey);
 	    return {
 	      profile_id: profile?.id,
+	      client_workout_id: workout?.clientWorkoutId || workout?.client_workout_id || workout?.id,
       workout_date: workoutDateKey,
       title: workout?.title || "Новая тренировка",
       status: normalizeWorkoutStatus(workout?.status),
@@ -18575,6 +18594,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return normalizeWorkoutSupersetMetadata({
       id: `workout-supabase-${row.id || index}`,
       supabaseId: row.id || null,
+      clientWorkoutId: row.client_workout_id || row.clientWorkoutId || null,
       date: dateKey,
       weekday: weekdayNames[date.getDay()] || "",
       title: row.title || "Новая тренировка",
@@ -20978,6 +20998,14 @@ const toggleExerciseMeasurementSetting = (field) => {
   const repeatWorkout = async (workout, options = {}) => {
     const mode = options.mode || "now";
     const targetDateKey = mode === "now" ? formatDateKey(new Date()) : (options.dateKey || selectedDateKey);
+    const repeatSourceKey = workout?.supabaseId || workout?.sourceWorkoutId || workout?.id || workout?.title || "workout";
+    const repeatRequestKey = `${repeatSourceKey}:${mode}:${targetDateKey}:${options.hour ?? ""}:${options.minute ?? ""}`;
+    if (repeatCreateInFlightRef.current.has(repeatRequestKey)) {
+      console.warn("Repeat workout create skipped: already in flight", { repeatRequestKey });
+      return;
+    }
+    repeatCreateInFlightRef.current.add(repeatRequestKey);
+    const releaseRepeatCreateLock = () => repeatCreateInFlightRef.current.delete(repeatRequestKey);
     const status = mode === "planned" ? "planned" : mode === "completed" ? "completed" : "active";
     const workoutType = normalizeWorkoutType(workout?.workoutType);
     const repeatGroupId = workout?.repeatGroupId || workout?.repeat_group_id || createOnlyPumpUuid();
@@ -21041,6 +21069,7 @@ const toggleExerciseMeasurementSetting = (field) => {
         setSelectedDateKey(targetDateKey);
         await loadWorkoutsFromApi({ preserveSelected: false, selectedSupabaseId: id });
       }
+      releaseRepeatCreateLock();
       return;
     }
 
@@ -21059,6 +21088,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       setElapsedWorkoutTime(0);
       stopRestTimer();
     }
+    releaseRepeatCreateLock();
   };
 
   const createWorkoutFromTypePicker = async (workoutType) => {
