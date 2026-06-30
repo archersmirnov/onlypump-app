@@ -17837,10 +17837,27 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     set_updates: mergeById([...(base.set_updates || []), ...(patch.set_updates || [])]),
     exercise_creates: mergeCreatesByClientId([...(base.exercise_creates || []), ...(patch.exercise_creates || [])]),
     set_creates: mergeCreatesByClientId([...(base.set_creates || []), ...(patch.set_creates || [])]),
+    exercise_upserts: mergeCreatesByClientId([...(base.exercise_upserts || []), ...(patch.exercise_upserts || [])]),
+    set_upserts: mergeCreatesByClientId([...(base.set_upserts || []), ...(patch.set_upserts || [])]),
     deleted_workout_ids: uniqueIds([...(base.deleted_workout_ids || []), ...(patch.deleted_workout_ids || [])]),
     deleted_exercise_ids: uniqueIds([...(base.deleted_exercise_ids || []), ...(patch.deleted_exercise_ids || [])]),
     deleted_set_ids: uniqueIds([...(base.deleted_set_ids || []), ...(patch.deleted_set_ids || [])]),
+    deleted_set_refs: mergeCreatesByClientId([...(base.deleted_set_refs || []), ...(patch.deleted_set_refs || [])]),
   });
+
+  const isPendingRemoteCreate = (item) => Boolean(item?.pending || item?.isSaving || item?.isSyncing);
+
+  const hasPendingWorkoutSyncState = (workout) => Boolean(
+    workout?.pending ||
+    workout?.isDirty ||
+    workout?.isSaving ||
+    workout?.isSyncing ||
+    workout?.syncError ||
+    workout?.pendingPatch ||
+    workout?.pendingDeletedExerciseIds?.length ||
+    workout?.pendingDeletedSetIds?.length ||
+    pendingWorkoutPatchesRef.current[workout?.id]
+  );
 
   const patchWorkoutInState = (workoutId, patcher) => {
     setWorkouts(prev => prev.map(workout => workout.id === workoutId ? patcher(workout) : workout));
@@ -17873,16 +17890,46 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const sendWorkoutPatch = async (workoutId, patch) => {
     const normalizedPatch = mergeWorkoutPatch({}, patch);
+    const deletedExerciseIds = normalizedPatch.deleted_exercise_ids || [];
+    const deletedSetIds = normalizedPatch.deleted_set_ids || [];
     console.log("save_workout_patch payload", normalizedPatch);
     if (normalizedPatch.workout_updates?.length) console.log("Saving workout totals:", normalizedPatch);
+    patchWorkoutInState(workoutId, workout => ({
+      ...workout,
+      isDirty: true,
+      isSaving: true,
+      isSyncing: true,
+      syncError: false,
+      pendingPatch: normalizedPatch,
+      pendingDeletedExerciseIds: uniqueIds([...(workout.pendingDeletedExerciseIds || []), ...deletedExerciseIds]),
+      pendingDeletedSetIds: uniqueIds([...(workout.pendingDeletedSetIds || []), ...deletedSetIds]),
+    }));
     try {
       const result = await callWorkoutsApi("save_workout_patch", normalizedPatch);
       console.log("save_workout_patch response", result);
       if (normalizedPatch.workout_updates?.length) console.log("Saved workout totals response:", result);
       applyWorkoutTreeResponse({ id: workoutId }, result);
+      patchWorkoutInState(workoutId, workout => ({
+        ...workout,
+        isDirty: false,
+        isSaving: false,
+        isSyncing: false,
+        syncError: false,
+        pendingPatch: null,
+        pendingDeletedExerciseIds: (workout.pendingDeletedExerciseIds || []).filter(id => !deletedExerciseIds.includes(id)),
+        pendingDeletedSetIds: (workout.pendingDeletedSetIds || []).filter(id => !deletedSetIds.includes(id)),
+        lastSavedAt: new Date().toISOString(),
+      }));
       return result;
     } catch (error) {
       console.error("save_workout_patch error", { workoutId, patch: normalizedPatch, error });
+      patchWorkoutInState(workoutId, workout => ({
+        ...workout,
+        isSaving: false,
+        isSyncing: false,
+        syncError: true,
+        pendingPatch: normalizedPatch,
+      }));
       return null;
     }
   };
@@ -17896,9 +17943,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       patch.set_updates,
       patch.exercise_creates,
       patch.set_creates,
+      patch.exercise_upserts,
+      patch.set_upserts,
       patch.deleted_workout_ids,
       patch.deleted_exercise_ids,
       patch.deleted_set_ids,
+      patch.deleted_set_refs,
     ].some(items => items?.length);
     if (!hasChanges) return null;
 
@@ -17974,12 +18024,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
     const exercises = normalizedWorkout.exercises || [];
     const savedExercises = exercises.filter(exercise => exercise.supabaseId);
+    const missingExercises = exercises.filter(exercise => !exercise.supabaseId);
     return {
       workout_updates: [buildWorkoutPatchPayload(normalizedWorkout)].filter(Boolean),
       exercise_updates: savedExercises.map(buildExercisePatchPayload).filter(Boolean),
       set_updates: savedExercises.flatMap(exercise => (exercise.sets || []).filter(set => set.supabaseId).map(buildSetPatchPayload).filter(Boolean)),
-      exercise_creates: exercises.filter(exercise => !exercise.supabaseId).map(exercise => buildExerciseCreatePayload(normalizedWorkout.supabaseId, exercise)).filter(Boolean),
-      set_creates: savedExercises.flatMap(exercise => (exercise.sets || []).filter(set => !set.supabaseId).map(set => buildSetCreatePayload(exercise.supabaseId, exercise.id, set)).filter(Boolean)),
+      exercise_creates: missingExercises.filter(isPendingRemoteCreate).map(exercise => buildExerciseCreatePayload(normalizedWorkout.supabaseId, exercise)).filter(Boolean),
+      exercise_upserts: missingExercises.filter(exercise => !isPendingRemoteCreate(exercise)).map(exercise => buildExerciseCreatePayload(normalizedWorkout.supabaseId, exercise)).filter(Boolean),
+      set_creates: savedExercises.flatMap(exercise => (exercise.sets || []).filter(set => !set.supabaseId && isPendingRemoteCreate(set)).map(set => buildSetCreatePayload(exercise.supabaseId, exercise.id, set)).filter(Boolean)),
+      set_upserts: savedExercises.flatMap(exercise => (exercise.sets || []).filter(set => !set.supabaseId && !isPendingRemoteCreate(set)).map(set => buildSetCreatePayload(exercise.supabaseId, exercise.id, set)).filter(Boolean)),
     };
   };
 
@@ -18170,12 +18223,12 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const localPending = [];
     workoutsRef.current.forEach(workout => {
       if (workout.supabaseId) localBySupabaseId.set(String(workout.supabaseId), workout);
-      else if (workout.pending || workout.isDirty || pendingWorkoutPatchesRef.current[workout.id]) localPending.push(workout);
+      else if (hasPendingWorkoutSyncState(workout)) localPending.push(workout);
     });
 
     const merged = loadedWorkouts.map(serverWorkout => {
       const local = localBySupabaseId.get(String(serverWorkout.supabaseId || ""));
-      const hasDirtyPatch = local && (local.isDirty || local.isSaving || pendingWorkoutPatchesRef.current[local.id]);
+      const hasDirtyPatch = local && hasPendingWorkoutSyncState(local);
       if (!hasDirtyPatch) return serverWorkout;
       return {
         ...local,
@@ -18655,13 +18708,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       loadedWorkoutProfileRef.current = null;
       const rescued = filterPendingDeletedWorkouts(await loadWorkoutsFromSupabaseTables(profile, selectedDateKey));
       if (rescued.length) {
+        const mergedRescued = filterPendingDeletedWorkouts(mergeLoadedWorkoutsWithDirtyState(rescued));
         console.warn("Workouts restored from Supabase tables inside WorkoutsPage", {
           requested_profile_id: profile?.id,
-          restored_count: rescued.length,
+          restored_count: mergedRescued.length,
         });
-        writeCachedWorkoutsForProfile(profile, rescued, { skipEmpty: true });
-        setWorkouts(rescued);
-        return rescued;
+        writeCachedWorkoutsForProfile(profile, mergedRescued, { skipEmpty: true });
+        setWorkouts(mergedRescued);
+        return mergedRescued;
       }
       return null;
     }
@@ -18673,22 +18727,23 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       const responseProfile = result?.profile ? normalizeProfileRecord(result.profile, profile || DEFAULT_PROFILE) : profile;
       const rescued = filterPendingDeletedWorkouts(await loadWorkoutsFromSupabaseTables(responseProfile || profile, selectedDateKey));
       if (rescued.length) {
+        const mergedRescued = filterPendingDeletedWorkouts(mergeLoadedWorkoutsWithDirtyState(rescued));
         console.warn("Workouts restored from Supabase tables after empty API load", {
           requested_profile_id: profile?.id,
           response_profile_id: responseProfile?.id,
-          restored_count: rescued.length,
+          restored_count: mergedRescued.length,
         });
-        writeCachedWorkoutsForProfile(profile, rescued, { skipEmpty: true });
+        writeCachedWorkoutsForProfile(profile, mergedRescued, { skipEmpty: true });
         if (responseProfile?.id || responseProfile?.telegram_id) {
-          writeCachedWorkoutsForProfile(responseProfile, rescued, { skipEmpty: true });
+          writeCachedWorkoutsForProfile(responseProfile, mergedRescued, { skipEmpty: true });
         }
-        setWorkouts(rescued);
+        setWorkouts(mergedRescued);
         setSelectedWorkout(prev => {
           const targetSupabaseId = selectedSupabaseId || prev?.supabaseId;
           if (!preserveSelected || !targetSupabaseId) return null;
-          return rescued.find(workout => workout.supabaseId === targetSupabaseId) || null;
+          return mergedRescued.find(workout => workout.supabaseId === targetSupabaseId) || null;
         });
-        return rescued;
+        return mergedRescued;
       }
     }
     if (!mergedWorkouts.length && fallbackWorkouts.length) {
@@ -19844,16 +19899,10 @@ const toggleExerciseMeasurementSetting = (field) => {
     }), { sync: false });
     setActiveSetId(newSet.id);
     setOpenMenu(null);
-    if (canUseWorkoutApi && currentExercise?.supabaseId) {
-      createSetViaApi(selectedWorkout.id, currentExercise.id, currentExercise.supabaseId, { ...newSet, pending: true, isSaving: true, isSyncing: true }).then(id => {
-        if (!id) patchSetInState(selectedWorkout.id, currentExercise.id, newSet.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
-        const nextWorkout = getWorkoutWithInsertedSet(selectedWorkout);
-        const nextExercise = (nextWorkout.exercises || []).find(exercise => exercise.id === currentExercise.id);
-        queueWorkoutPatch(selectedWorkout.id, {
-          workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
-          set_updates: (nextExercise?.sets || []).map(buildSetPatchPayload).filter(Boolean),
-        }, { immediate: true });
-      });
+    if (canUseWorkoutApi && selectedWorkout.supabaseId) {
+      const nextWorkout = getWorkoutWithInsertedSet(selectedWorkout);
+      const workoutPatch = buildWorkoutTreePatch(nextWorkout);
+      if (workoutPatch) queueWorkoutPatch(selectedWorkout.id, workoutPatch);
     }
   };
 
@@ -19886,6 +19935,40 @@ const toggleExerciseMeasurementSetting = (field) => {
       });
       const deleted = patchResult || await deleteSetViaApi(removedSet);
       if (!deleted) {
+        triggerOnlyPumpHaptic("error");
+        setWorkouts(previousWorkouts);
+        setSelectedWorkout(previousSelectedWorkout);
+      }
+      return;
+    }
+    if (canUseWorkoutApi && selectedWorkout?.supabaseId && currentExercise?.supabaseId && removedSet) {
+      const previousWorkouts = workoutsRef.current;
+      const previousSelectedWorkout = selectedWorkout;
+      setActiveSetId((remaining.find(set => getSetStatus(set) === "pending") || remaining[0] || null)?.id || null);
+      setOpenMenu(null);
+      const nextWorkout = {
+        ...selectedWorkout,
+        exercises: (selectedWorkout.exercises || []).map((exercise, exerciseIndex) => exerciseIndex === activeExerciseIndex ? {
+          ...exercise,
+          sets: (exercise.sets || []).filter(set => set.id !== setId).map((set, index) => ({ ...set, order: index + 1 })),
+        } : exercise),
+        updatedAt: new Date().toISOString(),
+      };
+      setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? nextWorkout : workout));
+      setSelectedWorkout(nextWorkout);
+      const nextExercise = (nextWorkout.exercises || [])[activeExerciseIndex];
+      const patchResult = await sendWorkoutPatch(selectedWorkout.id, {
+        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
+        exercise_updates: [buildExercisePatchPayload(nextExercise)].filter(Boolean),
+        set_updates: (nextExercise?.sets || []).map(buildSetPatchPayload).filter(Boolean),
+        set_upserts: (nextExercise?.sets || []).filter(set => !set.supabaseId && !isPendingRemoteCreate(set)).map(set => buildSetCreatePayload(currentExercise.supabaseId, currentExercise.id, set)).filter(Boolean),
+        deleted_set_refs: [{
+          workout_exercise_id: currentExercise.supabaseId,
+          set_order: removedSet.order,
+          client_id: removedSet.id,
+        }],
+      });
+      if (!patchResult) {
         triggerOnlyPumpHaptic("error");
         setWorkouts(previousWorkouts);
         setSelectedWorkout(previousSelectedWorkout);
@@ -20267,17 +20350,11 @@ const toggleExerciseMeasurementSetting = (field) => {
         exercises: [...(workout.exercises || []), ...additions],
         updatedAt: new Date().toISOString(),
       });
+      const nextWorkout = patch(selectedWorkout);
       setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? patch(workout) : workout));
       setSelectedWorkout(prev => prev ? patch(prev) : prev);
-      for (const exercise of additions) {
-        const id = await createExerciseViaApi(selectedWorkout.id, selectedWorkout.supabaseId, exercise);
-        if (!id) patchExerciseInState(selectedWorkout.id, exercise.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
-      }
-      const nextWorkout = patch(selectedWorkout);
-      queueWorkoutPatch(selectedWorkout.id, {
-        workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
-        exercise_updates: (nextWorkout.exercises || []).map(buildExercisePatchPayload).filter(Boolean),
-      }, { immediate: true });
+      const workoutPatch = buildWorkoutTreePatch(nextWorkout);
+      if (workoutPatch) queueWorkoutPatch(selectedWorkout.id, workoutPatch);
       return;
     }
 
@@ -33772,6 +33849,7 @@ function OnlyPumpPlatform() {
   }, [globalSelectedDateKey]);
   const homeLayoutMode = useOnlyPumpHomeLayoutMode();
   const [workouts, setWorkouts] = useState([]);
+  const workoutsStateRef = useRef([]);
   const [workoutsRefreshing, setWorkoutsRefreshing] = useState(false);
   const [nutritionGoal, setNutritionGoal] = useState(initialNutritionGoal);
   const [nutritionDay, setNutritionDay] = useState(() => buildLocalNutritionDay(formatDateKey(new Date()), initialNutritionGoal));
@@ -33788,6 +33866,38 @@ function OnlyPumpPlatform() {
   useEffect(() => {
     activeRef.current = active;
   }, [active]);
+
+  useEffect(() => {
+    workoutsStateRef.current = workouts;
+  }, [workouts]);
+
+  const hasProtectedWorkoutLocalState = (workout) => Boolean(
+    workout?.pending ||
+    workout?.isDirty ||
+    workout?.isSaving ||
+    workout?.isSyncing ||
+    workout?.syncError ||
+    workout?.pendingPatch ||
+    workout?.pendingDeletedExerciseIds?.length ||
+    workout?.pendingDeletedSetIds?.length
+  );
+
+  const mergeRemoteWorkoutsWithProtectedLocalState = useCallback((loaded = []) => {
+    const current = Array.isArray(workoutsStateRef.current) ? workoutsStateRef.current : [];
+    const localBySupabaseId = new Map();
+    const protectedLocal = [];
+    current.forEach(workout => {
+      if (workout?.supabaseId) localBySupabaseId.set(String(workout.supabaseId), workout);
+      if (hasProtectedWorkoutLocalState(workout)) protectedLocal.push(workout);
+    });
+    const loadedIds = new Set((loaded || []).map(workout => String(workout?.supabaseId || "")).filter(Boolean));
+    const protectedWithoutRemote = protectedLocal.filter(workout => !workout.supabaseId || !loadedIds.has(String(workout.supabaseId)));
+    const merged = (loaded || []).map(serverWorkout => {
+      const local = localBySupabaseId.get(String(serverWorkout?.supabaseId || ""));
+      return hasProtectedWorkoutLocalState(local) ? { ...local, supabaseId: serverWorkout.supabaseId || local.supabaseId } : serverWorkout;
+    });
+    return [...protectedWithoutRemote, ...merged];
+  }, []);
 
 	  useEffect(() => {
 	    navigationStackRef.current = navigationStack;
@@ -33964,7 +34074,7 @@ function OnlyPumpPlatform() {
     const cached = readCachedWorkoutsForProfile(activeProfile);
     if (cached.length && options.useCache !== false) {
       console.log("Workouts cache loaded", { key: getWorkoutsCacheKey(activeProfile), count: cached.length });
-      setWorkouts(cached);
+      setWorkouts(mergeRemoteWorkoutsWithProtectedLocalState(cached));
     }
 
     if (!hasOnlyPumpRemoteAuth(initData) || !activeProfile.id) return cached;
@@ -33995,12 +34105,13 @@ function OnlyPumpPlatform() {
             response_profile_id: responseProfile?.id,
             restored_count: rescued.length,
           });
-          setWorkouts(rescued);
-          writeCachedWorkoutsForProfile(activeProfile, rescued, { skipEmpty: true });
+          const mergedRescued = mergeRemoteWorkoutsWithProtectedLocalState(rescued);
+          setWorkouts(mergedRescued);
+          writeCachedWorkoutsForProfile(activeProfile, mergedRescued, { skipEmpty: true });
           if (responseProfile?.id || responseProfile?.telegram_id) {
-            writeCachedWorkoutsForProfile(responseProfile, rescued, { skipEmpty: true });
+            writeCachedWorkoutsForProfile(responseProfile, mergedRescued, { skipEmpty: true });
           }
-          return rescued;
+          return mergedRescued;
         }
       }
       if (!loaded.length && cached.length) {
@@ -34014,13 +34125,14 @@ function OnlyPumpPlatform() {
         }
         return cached;
       }
-      setWorkouts(loaded);
-      writeCachedWorkoutsForProfile(activeProfile, loaded, { skipEmpty: !loaded.length });
+      const mergedLoaded = mergeRemoteWorkoutsWithProtectedLocalState(loaded);
+      setWorkouts(mergedLoaded);
+      writeCachedWorkoutsForProfile(activeProfile, mergedLoaded, { skipEmpty: !mergedLoaded.length });
       if (responseProfile?.id || responseProfile?.telegram_id) {
-        writeCachedWorkoutsForProfile(responseProfile, loaded, { skipEmpty: !loaded.length });
+        writeCachedWorkoutsForProfile(responseProfile, mergedLoaded, { skipEmpty: !mergedLoaded.length });
       }
-      console.log("Workouts loaded", loaded);
-      return loaded;
+      console.log("Workouts loaded", mergedLoaded);
+      return mergedLoaded;
     } catch (error) {
       console.error("Supabase workout error", { action: "load", error });
       const rescued = await loadWorkoutsFromSupabaseTables(activeProfile, globalSelectedDateKey);
@@ -34029,15 +34141,16 @@ function OnlyPumpPlatform() {
           requested_profile_id: activeProfile?.id,
           restored_count: rescued.length,
         });
-        setWorkouts(rescued);
-        writeCachedWorkoutsForProfile(activeProfile, rescued, { skipEmpty: true });
-        return rescued;
+        const mergedRescued = mergeRemoteWorkoutsWithProtectedLocalState(rescued);
+        setWorkouts(mergedRescued);
+        writeCachedWorkoutsForProfile(activeProfile, mergedRescued, { skipEmpty: true });
+        return mergedRescued;
       }
       return cached;
     } finally {
       setWorkoutsRefreshing(false);
     }
-  }, [globalSelectedDateKey]);
+  }, [globalSelectedDateKey, mergeRemoteWorkoutsWithProtectedLocalState]);
 
   const [progressGoal, setProgressGoal] = useState({
     title: "Рекомпозиция тела",
