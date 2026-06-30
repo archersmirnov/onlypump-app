@@ -8450,10 +8450,24 @@ function DesktopSidebar({ active, setActive, profile }) {
   const displayName = getProfileDisplayName(profile);
   const subscriptionLabel = formatProfileSubscriptionLabel(profile);
   const visibleNav = getVisibleNavItems(profile);
+  const desktopMenuIcon = (name) => `assets/menu-icons/${name}.svg`;
+  const desktopNavAssets = {
+    home: desktopMenuIcon("home"),
+    workouts: desktopMenuIcon("workouts"),
+    nutrition: desktopMenuIcon("nutrition"),
+    students: desktopMenuIcon("students"),
+    calculators: desktopMenuIcon("home-widget-tools"),
+    education: desktopMenuIcon("education"),
+    lectures: desktopMenuIcon("book"),
+    progress: desktopMenuIcon("results"),
+    analytics: desktopMenuIcon("analytics"),
+    community: desktopMenuIcon("community"),
+    profile: desktopMenuIcon("settings"),
+  };
 
   return <aside className="hidden w-64 shrink-0 border-r border-white/10 bg-zinc-950/95 p-7 lg:block">
     <button onClick={() => setActive("home")} className="mb-10 text-left"><div className="text-3xl font-black tracking-tight">ONLY<span className="text-red-500">PUMP</span></div><div className="mt-1 text-xs uppercase tracking-[0.18em] text-zinc-500">фитнес-платформа</div></button>
-    <nav className="space-y-2">{visibleNav.map(({ icon: Icon, label, id }) => <button key={id} data-tour={`nav-${id}`} onClick={() => setActive(id)} className={`flex w-full items-center gap-4 rounded-lg px-4 py-3 text-left text-sm ${active === id ? "onlypump-side-menu-active bg-white/8 text-red-500" : "text-zinc-400 hover:bg-white/5 hover:text-white"}`}><Icon size={18}/><span>{label}</span></button>)}</nav>
+    <nav className="space-y-2">{visibleNav.map(({ icon: Icon, label, id }) => <button key={id} data-tour={`nav-${id}`} onClick={() => setActive(id)} className={`flex w-full items-center gap-4 rounded-lg px-4 py-3 text-left text-sm ${active === id ? "onlypump-side-menu-active bg-white/8 text-red-500" : "text-zinc-400 hover:bg-white/5 hover:text-white"}`}><MobileMenuAssetIcon src={desktopNavAssets[id]} alt="" FallbackIcon={Icon} className="h-[18px] w-[18px] shrink-0 object-contain" fallbackSize={18}/><span>{label}</span></button>)}</nav>
     <div className="mt-16 flex items-center gap-3"><div className="h-11 w-11 rounded-full border border-red-500/50 bg-[url('https://images.unsplash.com/photo-1568602471122-7832951cc4c5?q=80&w=200&auto=format&fit=crop')] bg-cover"/><div className="min-w-0"><div className="break-words text-sm">{displayName}</div><div className="text-xs text-zinc-500">Подписка: <span className="text-red-500">{subscriptionLabel}</span></div></div></div>
   </aside>;
 }
