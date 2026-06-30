@@ -16931,7 +16931,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       });
       console.log("delete_workout_scope response:", result);
       if (!isDeleteResponseOk(result)) {
-        throw new Error(result?.error || "delete_workout_scope was not confirmed");
+        throw new Error(formatWorkoutApiError(result?.error || result?.message) || "delete_workout_scope was not confirmed");
       }
       const deletedSupabaseIds = getDeletedWorkoutResponseIds(result);
       const deletedCount = getDeleteResponseCount(result);
@@ -17151,6 +17151,23 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     });
   };
 
+  const formatWorkoutApiError = (value) => {
+    if (!value) return "";
+    if (typeof value === "string") return value;
+    if (value instanceof Error) return value.message || String(value);
+    if (typeof value === "object") {
+      const record = value || {};
+      const directMessage = record.message || record.error_description || record.hint || record.details;
+      if (typeof directMessage === "string" && directMessage.trim()) return directMessage;
+      try {
+        return JSON.stringify(record);
+      } catch {
+        return String(record);
+      }
+    }
+    return String(value);
+  };
+
   const callWorkoutsApi = async (action, payload = {}) => {
     if (!canUseWorkoutApi) {
       logWorkoutPersistence(action, "skipped", { reason: "remote auth unavailable", payload });
@@ -17175,8 +17192,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       const result = await response.json().catch(() => ({}));
       logWorkoutPersistence(action, "response", { status: response.status, result });
       if (!response.ok || result?.ok !== true || result?.error) {
-        const message = result?.error || result?.message || `onlypump-workouts-api ${action} failed with ${response.status}`;
-        throw new Error(typeof message === "string" ? message : JSON.stringify(message));
+        const message = formatWorkoutApiError(result?.error || result?.message) || `onlypump-workouts-api ${action} failed with ${response.status}`;
+        throw new Error(message);
       }
       return result;
     } catch (error) {
