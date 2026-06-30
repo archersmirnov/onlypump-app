@@ -15379,6 +15379,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return;
     }
 
+    showWorkoutApiUnavailableWarning("create_workout");
     setWorkouts(prev => {
       const next = [workout, ...prev];
       writeCachedWorkoutsForProfile(profile, next, { skipEmpty: true });
@@ -16080,6 +16081,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 	        }
       } else {
         const localOnlyMessage = "Программа сохранена только на этом устройстве: нет активной синхронизации аккаунта. Войди в аккаунт или открой через Telegram и сохрани ещё раз.";
+        showWorkoutApiUnavailableWarning("save_program_template");
         updateProgramBuilderDraft({ error: localOnlyMessage });
         if (!autosave) throw new Error(localOnlyMessage);
         console.warn("Program template saved locally only:", { canUseWorkoutApi, profileId: profile?.id, hasRemoteAuth: hasOnlyPumpRemoteAuth(telegramInitData) });
@@ -16666,7 +16668,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     writeCachedWorkoutsForProfile(profile, optimisticWorkouts, { skipEmpty: true });
     setWorkouts(optimisticWorkouts);
 
-    if (!canUseWorkoutApi) return;
+    if (!canUseWorkoutApi) {
+      showWorkoutApiUnavailableWarning("create_user_program");
+      return;
+    }
     setProgramSaving(true);
     try {
       const result = await callWorkoutsApi("create_user_program", buildProgramCreatePayload(program, draft, createdWorkouts));
@@ -16712,6 +16717,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       if (!id) patchWorkoutInState(pendingWorkout.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
       return;
     }
+    showWorkoutApiUnavailableWarning("duplicate_workout");
     setWorkouts(prev => {
       const next = [copy, ...prev];
       writeCachedWorkoutsForProfile(profile, next, { skipEmpty: true });
@@ -16982,6 +16988,57 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const canUseWorkoutApi = Boolean(hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id);
+  const getWorkoutApiAvailabilityDiagnostic = () => {
+    const hasSupabaseUrl = Boolean(SUPABASE_URL);
+    const hasSupabaseAnonKey = Boolean(SUPABASE_PUBLISHABLE_KEY);
+    const hasProfile = Boolean(profile);
+    const profileId = profile?.id || null;
+    const authUserId = profile?.auth_user_id || profile?.authUserId || null;
+    const hasAuthUser = Boolean(authUserId || window.__ONLYPUMP_WEB_ACCESS_TOKEN__);
+    const hasWorkoutApiEndpoint = Boolean(ONLYPUMP_WORKOUTS_API_URL);
+    const hasRemoteAuth = hasOnlyPumpRemoteAuth(telegramInitData);
+    const reasons = [];
+    if (!hasSupabaseUrl) reasons.push("missing Supabase URL");
+    if (!hasSupabaseAnonKey) reasons.push("missing Supabase anon key");
+    if (!hasWorkoutApiEndpoint) reasons.push("missing workouts API endpoint");
+    if (!hasProfile) reasons.push("profile is not loaded");
+    if (!profileId) reasons.push("missing profile.id");
+    if (!hasRemoteAuth) reasons.push("missing Telegram initData or web auth token");
+    return {
+      canUseWorkoutApi,
+      hasSupabaseUrl,
+      hasSupabaseAnonKey,
+      hasProfile,
+      profileId,
+      hasAuthUser,
+      authUserId,
+      hasWorkoutApiEndpoint,
+      hasRemoteAuth,
+      hasTelegramInitData: Boolean(telegramInitData),
+      hasWebToken: Boolean(window.__ONLYPUMP_WEB_ACCESS_TOKEN__),
+      reasonIfFalse: canUseWorkoutApi ? null : (reasons.join("; ") || "unknown reason"),
+    };
+  };
+  const showWorkoutApiUnavailableWarning = (action = "save workout") => {
+    const diagnostic = getWorkoutApiAvailabilityDiagnostic();
+    console.error("[WorkoutPersistence] backend unavailable", { action, ...diagnostic });
+    setEditError({
+      title: "Сохранение недоступно",
+      description: `Backend недоступен: ${diagnostic.reasonIfFalse || "нет доступа к API"}. Изменение осталось только на этом устройстве и может исчезнуть после повторного входа.`,
+    });
+    return diagnostic;
+  };
+  useEffect(() => {
+    console.log("[WorkoutPersistence] api availability", getWorkoutApiAvailabilityDiagnostic());
+  }, [
+    canUseWorkoutApi,
+    profile?.id,
+    profile?.auth_user_id,
+    profile?.authUserId,
+    profile?.telegram_id,
+    profile?.telegramId,
+    telegramInitData,
+  ]);
   const workoutRemoteAuthKey = canUseWorkoutApi
     ? [
       profile?.id || "",
@@ -20339,6 +20396,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       }, { immediate: true });
     } else {
       ensureWorkoutPersistedViaApi(nextWorkout, { fallback: true });
+      if (!canUseWorkoutApi) showWorkoutApiUnavailableWarning("start_workout");
     }
   };
 
@@ -20834,6 +20892,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       return;
     }
 
+    showWorkoutApiUnavailableWarning("repeat_workout");
     setWorkouts(prev => {
       const next = [copy, ...prev];
       writeCachedWorkoutsForProfile(profile, next, { skipEmpty: true });
@@ -21112,6 +21171,7 @@ const toggleExerciseMeasurementSetting = (field) => {
         patchWorkoutInState(nextWorkout.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
       });
     } else {
+      showWorkoutApiUnavailableWarning("complete_workout");
       setCompletionSaving(false);
     }
   };
