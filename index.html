@@ -17056,13 +17056,54 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     logSupabaseWorkoutError(error);
   };
 
+  const workoutPersistenceActionLabels = {
+    create_workout: "create workout",
+    create_workout_tree: "create workout",
+    update_workout: "update workout",
+    update_workout_tree: "update workout",
+    save_workout_patch: "update workout",
+    delete_workout: "delete workout",
+    delete_workout_scope: "delete workout",
+    create_exercise: "create exercise",
+    update_exercise: "update exercise",
+    delete_exercise: "delete exercise",
+    create_set: "create set",
+    update_set: "update set",
+    delete_set: "delete set",
+    save_program_template: "create program",
+    update_program_template: "update program",
+    create_user_program: "create program",
+    delete_program_scope: "delete program",
+    load: "load workouts",
+    load_program_templates: "load programs",
+    load_user_programs: "load programs",
+  };
+
+  const logWorkoutPersistence = (action, phase, data = {}) => {
+    const label = workoutPersistenceActionLabels[action] || action || "unknown";
+    const method = phase === "failed" ? "error" : "log";
+    console[method](`[WorkoutPersistence] ${label} ${phase}`, {
+      action,
+      endpoint: ONLYPUMP_WORKOUTS_API_URL,
+      profile_id: profile?.id || null,
+      telegram_id: profile?.telegram_id || profile?.telegramId || null,
+      canUseWorkoutApi,
+      hasTelegramInitData: Boolean(telegramInitData),
+      hasWebToken: Boolean(window.__ONLYPUMP_WEB_ACCESS_TOKEN__),
+      ...data,
+    });
+  };
+
   const callWorkoutsApi = async (action, payload = {}) => {
-    if (!canUseWorkoutApi) return null;
-    console.log("callWorkoutsApi action", { action, payload });
-    console.log("Calling workouts API:", action, payload);
+    if (!canUseWorkoutApi) {
+      logWorkoutPersistence(action, "skipped", { reason: "remote auth unavailable", payload });
+      return null;
+    }
+    logWorkoutPersistence(action, "request", { payload });
     try {
       const response = await fetch(ONLYPUMP_WORKOUTS_API_URL, {
         method: "POST",
+        keepalive: true,
         headers: {
           Authorization: `Bearer ${getOnlyPumpApiAuthToken()}`,
           apikey: SUPABASE_PUBLISHABLE_KEY,
@@ -17075,16 +17116,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         }),
       });
       const result = await response.json().catch(() => ({}));
+      logWorkoutPersistence(action, "response", { status: response.status, result });
       if (!response.ok || result?.ok !== true || result?.error) {
         const message = result?.error || result?.message || `onlypump-workouts-api ${action} failed with ${response.status}`;
         throw new Error(typeof message === "string" ? message : JSON.stringify(message));
       }
-      console.log("Workouts API response:", result);
       return result;
     } catch (error) {
-      console.error("API error:", { action, error });
-      console.error("Workouts API error:", error);
-      console.error("onlypump-workouts-api error:", { action, error });
+      logWorkoutPersistence(action, "failed", { payload, error });
+      console.error("[WorkoutPersistence] save failed", { action, payload, error });
       throw error;
     }
   };
@@ -17789,6 +17829,25 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     delete saveWorkoutTimersRef.current[workoutId];
     delete pendingWorkoutPatchesRef.current[workoutId];
   };
+
+  useEffect(() => {
+    if (!canUseWorkoutApi) return undefined;
+    const flushPendingWorkoutSaves = () => {
+      Object.keys(pendingWorkoutPatchesRef.current || {}).forEach((workoutId) => {
+        clearTimeout(saveWorkoutTimersRef.current[workoutId]);
+        flushWorkoutPatch(workoutId);
+      });
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flushPendingWorkoutSaves();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", flushPendingWorkoutSaves);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", flushPendingWorkoutSaves);
+    };
+  }, [canUseWorkoutApi]);
 
   const buildWorkoutTreePatch = (workout) => {
     if (!workout?.supabaseId) return null;
@@ -21039,6 +21098,19 @@ const toggleExerciseMeasurementSetting = (field) => {
 
 	    if (nextWorkout.supabaseId) {
       saveCompletedWorkoutInBackground(nextWorkout);
+    } else if (canUseWorkoutApi) {
+      setCompletionSaving(true);
+      ensureWorkoutPersistedViaApi(nextWorkout, { fallback: true }).then(id => {
+        if (id) {
+          completionSaveRef.current = null;
+          setCompletionSaving(false);
+          setCompletionSaveError(null);
+          return;
+        }
+        setCompletionSaving(false);
+        setCompletionSaveError("Не удалось сохранить. Повторить?");
+        patchWorkoutInState(nextWorkout.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
+      });
     } else {
       setCompletionSaving(false);
     }
