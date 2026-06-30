@@ -15163,9 +15163,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const plannedAndMissedWorkouts = useMemo(() => {
     return sortedWorkouts
       .map(workout => ({ workout, diaryStatus: getWorkoutDiaryStatus(workout) }))
-      .filter(item => item.diaryStatus !== "completed")
+      .filter(item => item.diaryStatus !== "completed" && item.workout.date === selectedDateKey)
       .sort((a, b) => parseDateKey(a.workout.date || todayDateKey) - parseDateKey(b.workout.date || todayDateKey));
-  }, [sortedWorkouts, todayDateKey]);
+  }, [sortedWorkouts, selectedDateKey, todayDateKey]);
   const plannedAndMissedWorkoutsKey = plannedAndMissedWorkouts.map(item => `${item.workout.id}:${item.workout.date}:${item.diaryStatus}`).join("|");
   const hasMissedWorkouts = plannedAndMissedWorkouts.some(item => item.diaryStatus === "missed");
   const clampPlannedWorkoutsScrollLeft = (node, left) => {
@@ -15286,8 +15286,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       });
   }, [workouts, selectedDateKey]);
 
+  const getCompletedWorkoutSetCount = (workout) => getWorkoutSets(workout).filter(set => getSetStatusGlobal(set) === "completed").length;
+  const weeklyPerformedWorkouts = useMemo(() => weeklyWorkouts.filter(workout => getCompletedWorkoutSetCount(workout) > 0), [weeklyWorkouts]);
+
   const weeklySetCount = useMemo(() => {
-    return weeklyWorkouts.reduce((sum, workout) => sum + getWorkoutSetCount(workout), 0);
+    return weeklyWorkouts.reduce((sum, workout) => sum + getCompletedWorkoutSetCount(workout), 0);
   }, [weeklyWorkouts]);
 
   const activeWorkout = useMemo(() => sortedWorkouts.find(workout => workout.status === "active") || null, [sortedWorkouts]);
@@ -15296,7 +15299,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const stats = {};
     (workout?.exercises || []).forEach(exercise => {
       if (!isStrengthStatsExercise(exercise)) return;
-      const sets = exercise.sets || [];
+      const sets = normalizeWorkoutStatus(workout?.status) === "completed"
+        ? (exercise.sets || []).filter(set => getSetStatusGlobal(set) === "completed")
+        : (exercise.sets || []);
       getExerciseMuscleSetContributions(exercise, sets).forEach(contribution => {
         const group = contribution.muscleGroup || "Другое";
         if (!stats[group]) stats[group] = { muscleGroup: group, sets: 0, volume: 0 };
@@ -15309,7 +15314,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return Object.values(stats).map(finalizeMuscleSetStat).sort((a, b) => b.sets - a.sets);
   };
 
-  const getMuscleSetStatsForWorkouts = (items = []) => {
+  const getMuscleSetStatsForWorkouts = (items = [], options = {}) => {
+    const completedOnly = options.completedOnly !== false;
     const stats = standardMuscleGroups.reduce((acc, group) => {
       acc[group] = { muscleGroup: group, sets: 0, volume: 0, workouts: new Set(), order: standardMuscleGroups.indexOf(group) };
       return acc;
@@ -15317,7 +15323,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     items.forEach(workout => {
       (workout?.exercises || []).forEach(exercise => {
         if (!isStrengthStatsExercise(exercise)) return;
-        const sets = exercise.sets || [];
+        const sets = completedOnly
+          ? (exercise.sets || []).filter(set => getSetStatusGlobal(set) === "completed")
+          : (exercise.sets || []);
         getExerciseMuscleSetContributions(exercise, sets).forEach(contribution => {
           const group = contribution.muscleGroup || "Другое";
           if (!stats[group]) stats[group] = { muscleGroup: group, sets: 0, volume: 0, workouts: new Set(), order: standardMuscleGroups.length };
@@ -15335,7 +15343,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const weeklyMuscleStats = useMemo(() => getMuscleSetStatsForWorkouts(weeklyWorkouts), [weeklyWorkouts]);
-  const weeklyVolume = useMemo(() => weeklyWorkouts.filter(workout => workout.status === "completed").reduce((sum, workout) => sum + Number(getWorkoutVolume(workout)), 0), [weeklyWorkouts]);
+  const weeklyVolume = useMemo(() => weeklyWorkouts.reduce((sum, workout) => sum + Number(getWorkoutVolume(workout)), 0), [weeklyWorkouts]);
 
   const VolumeLoadBar = ({ count = 0, title = "Объем", subtitle = "подходы", experiencedAt = volumeStandards.workoutTotal, onClick, className = "" }) => {
     const level = getVolumeLoadLevel(count, experiencedAt);
