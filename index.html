@@ -2074,50 +2074,56 @@
     .onlypump-exercise-group-scroll {
       width: 100%;
       min-width: 0;
+      max-width: 100%;
       display: flex;
+      flex-wrap: nowrap;
       gap: 0.5rem;
       overflow-x: auto;
       overflow-y: hidden;
       white-space: nowrap;
       -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
       scroll-padding-inline: 1rem;
+      touch-action: pan-x;
     }
     .onlypump-exercise-group-chip {
       position: relative;
       display: inline-flex;
-      flex: 0 0 auto;
+      flex: 0 0 max-content;
       align-items: center;
       justify-content: center;
-      min-height: 2.25rem;
+      min-height: 2rem;
       min-width: max-content;
-      border-radius: 999px;
-      padding: 0.625rem 1rem;
+      border-radius: 0;
+      padding: 0.45rem 0.35rem 0.55rem;
       white-space: nowrap;
       line-height: 1;
-      background: rgba(255, 255, 255, 0.06);
+      background: transparent;
       color: #a1a1aa;
-      border: 1px solid transparent;
+      border: 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.16);
       text-align: center;
-      transition: background-color .18s ease, color .18s ease, border-color .18s ease;
+      transition: color .18s ease, border-color .18s ease;
     }
     .onlypump-exercise-group-chip > span {
       position: relative;
       z-index: 1;
     }
     .onlypump-exercise-group-chip.is-active {
-      background: #ef4444 !important;
-      color: #050505 !important;
-      border-color: rgba(239, 68, 68, 0.75);
-      box-shadow: 0 10px 24px rgba(239, 68, 68, 0.22);
+      background: transparent !important;
+      color: #ef4444 !important;
+      border-bottom-width: 2px;
+      border-color: rgba(239, 68, 68, 0.95);
+      box-shadow: none;
     }
     .theme-light .onlypump-exercise-group-chip {
-      background: rgba(17, 24, 39, 0.06) !important;
+      background: transparent !important;
       color: #475569 !important;
-      border-color: rgba(17, 24, 39, 0.08);
+      border-color: rgba(17, 24, 39, 0.14);
     }
     .theme-light .onlypump-exercise-group-chip.is-active {
-      background: #ef4444 !important;
-      color: #111827 !important;
+      background: transparent !important;
+      color: #dc2626 !important;
       border-color: rgba(220, 38, 38, 0.60);
     }
     .onlypump-exercise-base-controls {
@@ -5365,6 +5371,54 @@ const onlypumpBuiltInExerciseMuscleWorkImageFileAliases = Object.freeze({
   "GHR ГИПЕРЭЕКСТЕНЗИЯ": "GHR ГИПЕРЭКСТЕНЗИЯ",
 });
 const onlypumpBuiltInExerciseMuscleWorkImageFilesByKey = Object.freeze(Object.fromEntries(Object.entries(onlypumpBuiltInExerciseMuscleWorkImageFiles).map(([name, file]) => [normalizeExerciseDescriptionKey(name), file])));
+const onlypumpAvailableExerciseGifFiles = Object.freeze([
+  "bolgarskiy-prised-yag.gif",
+  "frantsuzskiy-zhim-v-krossovere-stoya.gif",
+  "frantsuzskiy-zhim.gif",
+  "frontalnaya-tyaga-po-odnoy.gif",
+  "ghr-giperekstenziya.gif",
+  "goblet-prised.gif",
+  "gorizontalnaya-shirokaya-tyaga.gif",
+  "gorizontalnaya-tyaga.gif",
+  "kik-bek-stoya.gif",
+  "kik-bek.gif",
+  "obratnyy-zhim-nogoy-v-trenazhere.gif",
+  "otvedeniya-beder-sidya.gif",
+  "otvedeniya-bedra-s-nizhnego-bloka.gif",
+  "otvedeniya-v-bloke.gif",
+  "podem-ganteley-na-bitseps.gif",
+  "podem-na-noski-s-gantelyu.gif",
+  "podem-na-noski-sidya.gif",
+  "podem-na-noski-stoya.gif",
+  "podem-nog.gif",
+  "prised-mayatnik.gif",
+  "prised-sidya-v-gakke.gif",
+  "prised-so-shtangoy-na-grudi.gif",
+  "prised-v-gakke.gif",
+  "privedeniya-v-krossovere.gif",
+  "pulover-s-verkhnego-bloka.gif",
+  "razgibaniya-goleni.gif",
+  "razgibaniya-predplechiy-kosichka.gif",
+  "rumynskaya-tyaga.gif",
+  "sgibaniya-goleni-sidya.gif",
+  "sgibaniya-s-gantelyami-lezha-s-uporom.gif",
+  "sgibaniya-s-nizhnego-bloka.gif",
+  "skruchivaniya-lezha.gif",
+  "stanovaya-tyaga.gif",
+  "t-tyaga.gif",
+  "vertikalnaya-tyaga-po-odnoy.gif",
+  "yagodichnyy-most-na-odnoy.png.gif",
+  "yagodichnyy-most-v-smite.gif",
+  "yagodichnyy-most-v-trenazhere.gif",
+  "yagodichnyy-most.gif",
+  "zhim-brusev.gif",
+  "zhim-ganteley-sidya.gif",
+  "zhim-shtangi-lezha-na-naklonnoy.gif",
+  "zhim-sidya-v-smite.gif",
+  "zhim-v-bloke.gif",
+  "zhim-v-trenazhere-sidya.gif",
+]);
+const onlypumpAvailableExerciseGifFileByKey = Object.freeze(Object.fromEntries(onlypumpAvailableExerciseGifFiles.map(file => [String(file || "").toLowerCase(), file])));
 const getOnlypumpBuiltInExerciseMuscleWorkImageFile = (name = "") => {
   const rawName = String(name || "").trim();
   const aliasName = onlypumpBuiltInExerciseMuscleWorkImageFileAliases[rawName] || rawName;
@@ -5404,9 +5458,36 @@ const isOnlypumpExercisePhotoUrl = (url = "") => {
   const value = String(url || "").trim();
   return value.startsWith(ONLYPUMP_EXERCISE_IMAGE_BASE_URL) && !value.startsWith(ONLYPUMP_EXERCISE_MUSCLE_IMAGE_BASE_URL);
 };
+const getOnlypumpExerciseFileNameFromUrl = (url = "") => {
+  const value = String(url || "").split("?")[0].split("#")[0].trim();
+  if (!value) return "";
+  try {
+    return decodeURIComponent(value.split("/").pop() || "");
+  } catch (error) {
+    return value.split("/").pop() || "";
+  }
+};
+const getOnlypumpExerciseGifFileForImageUrl = (url = "") => {
+  if (!isOnlypumpExercisePhotoUrl(url)) return "";
+  const fileName = getOnlypumpExerciseFileNameFromUrl(url);
+  if (!fileName) return "";
+  const gifName = fileName.replace(/\.[^.]+$/, ".gif");
+  const appendedGifName = `${fileName}.gif`;
+  return onlypumpAvailableExerciseGifFileByKey[gifName.toLowerCase()] || onlypumpAvailableExerciseGifFileByKey[appendedGifName.toLowerCase()] || "";
+};
 const getExerciseImageUrlFromSource = (source = {}, systemSource = {}) => {
   const legacyMuscleImageUrl = source.muscleWorkImageUrl || source.muscle_work_image_url || "";
   return source.exerciseImageUrl || source.exercise_image_url || (isOnlypumpExercisePhotoUrl(legacyMuscleImageUrl) ? legacyMuscleImageUrl : "") || systemSource?.exerciseImageUrl || "";
+};
+const getExerciseMedia = (source = {}, systemSource = {}) => {
+  const pngSrc = getExerciseImageUrlFromSource(source, systemSource);
+  const gifSrc = source.exerciseGifUrl || source.exercise_gif_url || "";
+  const gifFileName = gifSrc ? "" : getOnlypumpExerciseGifFileForImageUrl(pngSrc);
+  const resolvedGifSrc = gifSrc || (gifFileName ? ONLYPUMP_EXERCISE_IMAGE_BASE_URL + gifFileName : "");
+  if (resolvedGifSrc) {
+    return { src: resolvedGifSrc, type: "gif", aspectRatio: "3/4", fallbackSrc: pngSrc };
+  }
+  return { src: pngSrc, type: "png", aspectRatio: "1/1", fallbackSrc: "" };
 };
 const getMuscleWorkImageUrlFromSource = (source = {}, systemSource = {}) => {
   const candidate = source.muscleWorkImageUrl || source.muscle_work_image_url || "";
@@ -5432,22 +5513,93 @@ const getOnlypumpYouTubeEmbedUrl = (url = "") => {
   }
 };
 
-const ExerciseMediaImage = ({ src, alt = "Рабочие мышцы", fallback = "Здесь будет фото рабочих мышечных групп", fit = "cover" }) => {
+const ExerciseMediaImage = ({ src, media = null, alt = "Рабочие мышцы", fallback = "Здесь будет фото рабочих мышечных групп", fit = "cover" }) => {
   const [hasError, setHasError] = React.useState(false);
-  const imageUrl = String(src || "").trim();
-  if (!imageUrl || hasError) return <>{fallback}</>;
+  const [useFallbackSrc, setUseFallbackSrc] = React.useState(false);
+  const resolvedMedia = media || { src, type: "png", fallbackSrc: "" };
+  const imageUrl = String(resolvedMedia.src || src || "").trim();
+  const fallbackSrc = String(resolvedMedia.fallbackSrc || "").trim();
+  React.useEffect(() => {
+    setHasError(false);
+    setUseFallbackSrc(false);
+  }, [imageUrl, fallbackSrc]);
+  const currentUrl = useFallbackSrc ? fallbackSrc : imageUrl;
+  if (!currentUrl || hasError) return <>{fallback}</>;
+  const mediaType = useFallbackSrc ? "png" : resolvedMedia.type;
   const objectFitClass = fit === "contain" ? "object-contain" : "object-cover";
-  return <img src={imageUrl} alt={alt} onError={() => setHasError(true)} className={`h-full w-full rounded-[24px] ${objectFitClass}`} />;
+  return <img
+    src={currentUrl}
+    alt={alt}
+    onError={() => {
+      if (mediaType === "gif" && fallbackSrc && !useFallbackSrc) {
+        setUseFallbackSrc(true);
+        return;
+      }
+      setHasError(true);
+    }}
+    className={`h-full w-full rounded-[24px] ${objectFitClass}`}
+  />;
 };
 
 const ExerciseThumbnail = ({ exercise = {}, className = "" }) => {
   const [hasError, setHasError] = React.useState(false);
-  const imageUrl = String(getExerciseImageUrlFromSource(exercise) || "").trim();
+  const [useFallbackSrc, setUseFallbackSrc] = React.useState(false);
+  const media = getExerciseMedia(exercise, findSystemExerciseByName(exercise.name) || {});
+  const imageUrl = String(media.src || "").trim();
+  const fallbackSrc = String(media.fallbackSrc || "").trim();
+  React.useEffect(() => {
+    setHasError(false);
+    setUseFallbackSrc(false);
+  }, [imageUrl, fallbackSrc]);
+  const mediaType = useFallbackSrc ? "png" : media.type;
+  const currentUrl = useFallbackSrc ? fallbackSrc : imageUrl;
   const label = String(exercise.name || "У").trim().slice(0, 1).toUpperCase();
-  return <span className={`flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] text-lg font-black text-zinc-500 ${className}`}>
-    {imageUrl && !hasError
-      ? <img src={imageUrl} alt={exercise.name || "Упражнение"} onError={() => setHasError(true)} className="h-full w-full object-cover" />
+  return <span className={`flex ${mediaType === "gif" ? "h-[60px] w-[45px]" : "h-14 w-14"} shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] text-lg font-black text-zinc-500 ${className}`}>
+    {currentUrl && !hasError
+      ? <img
+        src={currentUrl}
+        alt={exercise.name || "Упражнение"}
+        loading="lazy"
+        onError={() => {
+          if (mediaType === "gif" && fallbackSrc && !useFallbackSrc) {
+            setUseFallbackSrc(true);
+            return;
+          }
+          setHasError(true);
+        }}
+        className="h-full w-full object-cover"
+      />
       : label}
+  </span>;
+};
+
+const WorkoutExerciseMedia = ({ exercise = {}, positionClass = "right-3", className = "" }) => {
+  const [hasError, setHasError] = React.useState(false);
+  const [useFallbackSrc, setUseFallbackSrc] = React.useState(false);
+  const media = getExerciseMedia(exercise, findSystemExerciseByName(exercise.name) || {});
+  const imageUrl = String(media.src || "").trim();
+  const fallbackSrc = String(media.fallbackSrc || "").trim();
+  React.useEffect(() => {
+    setHasError(false);
+    setUseFallbackSrc(false);
+  }, [imageUrl, fallbackSrc]);
+  const mediaType = useFallbackSrc ? "png" : media.type;
+  const currentUrl = useFallbackSrc ? fallbackSrc : imageUrl;
+  if (!currentUrl || hasError) return null;
+  return <span className={`pointer-events-none absolute ${positionClass} top-4 flex ${mediaType === "gif" ? "h-[64px] w-12" : "h-12 w-12"} items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] ${className}`}>
+    <img
+      src={currentUrl}
+      alt=""
+      loading="lazy"
+      onError={() => {
+        if (mediaType === "gif" && fallbackSrc && !useFallbackSrc) {
+          setUseFallbackSrc(true);
+          return;
+        }
+        setHasError(true);
+      }}
+      className={`h-full w-full ${mediaType === "gif" ? "object-contain" : "object-cover"}`}
+    />
   </span>;
 };
 
@@ -14193,11 +14345,9 @@ function ExercisePickerSheet({ groups, activeGroup, setActiveGroup, search, setS
   return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[170] flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <BottomSheetPanel onClose={onClose} onClick={(e) => e.stopPropagation()} className="flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full max-w-3xl flex-col rounded-t-[2rem] border border-white/10 bg-zinc-950/90 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-white/20 sm:hidden"/>
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-wider text-red-500">База упражнений</p>
-          <h2 className="mt-2 text-2xl font-semibold">Добавить упражнение</h2>
-          <p className="mt-2 text-sm text-zinc-500">Поиск по названию и сортировка по мышечным группам.</p>
+          <h2 className="text-2xl font-semibold">Упражнения</h2>
         </div>
         <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-full bg-white/5 text-zinc-300 transition hover:bg-white/10 hover:text-white">×</button>
       </div>
@@ -14206,9 +14356,9 @@ function ExercisePickerSheet({ groups, activeGroup, setActiveGroup, search, setS
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Поиск упражнения" className="onlypump-search-input w-full bg-transparent text-base outline-none placeholder:text-zinc-600" />
       </div>
 
-      <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
-        {groups.map(group => <button key={group} onClick={() => setActiveGroup(group)} className={`shrink-0 rounded-full px-4 py-2 text-xs transition ${activeGroup === group ? "bg-red-500 text-black" : "bg-white/5 text-zinc-400 hover:bg-white/10"}`}>
-          {group}
+      <div className="onlypump-exercise-group-scroll mt-4 pb-2 onlypump-scrollbar-none">
+        {groups.map(group => <button key={group} onClick={() => setActiveGroup(group)} className={`onlypump-exercise-group-chip text-xs font-semibold ${activeGroup === group ? "is-active" : ""}`}>
+          <span>{group}</span>
         </button>)}
       </div>
 
@@ -16873,7 +17023,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     };
   }, [canUseWorkoutApi, profile?.id, telegramInitData]);
 
-  const openCustomExerciseEditor = (exercise = null) => {
+  const openCustomExerciseEditor = (exercise = null, options = {}) => {
     setEditError(null);
     const category = normalizeExerciseCategory(exercise?.exerciseCategory || exercise?.category || selectedWorkout?.workoutType || "strength");
     const settings = normalizeExerciseMeasurementSettings(exercise || { exerciseCategory: category });
@@ -16882,9 +17032,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const measurementMode = normalizeMeasurementMode(exercise?.measurementMode || settings.measurementMode, category === "strength" ? "weight_reps" : "time");
     const autoCountsInMuscleStats = shouldCountExerciseInMuscleStats(category, measurementMode);
     const searchedName = exerciseSearch.trim();
+    const hasInitialName = Object.prototype.hasOwnProperty.call(options || {}, "initialName");
     setCustomExerciseSheet({
       id: exercise?.sourceExerciseId || exercise?.id || null,
-      name: exercise?.name || searchedName || "",
+      name: exercise?.name || (hasInitialName ? options.initialName : searchedName) || "",
       exerciseCategory: category,
       primaryMuscles: primary.length ? primary : [],
       secondaryMuscles: settings.secondaryMuscles || [],
@@ -20932,6 +21083,12 @@ const toggleExerciseMeasurementSetting = (field) => {
       }))
       .filter(section => section.exercises.length);
   }, [exerciseSearch, selectedExerciseGroup, exerciseGroups, availableExerciseItems]);
+  const exerciseSearchCreateName = exerciseSearch.trim();
+  const openCreateExerciseFromSearch = () => {
+    const initialName = exerciseSearch.trim();
+    if (!initialName) return;
+    openCustomExerciseEditor(null, { initialName });
+  };
 
   const programBuilderListPreview = useMemo(() => {
     const draft = programBuilderSheet?.draft;
@@ -21539,9 +21696,12 @@ const toggleExerciseMeasurementSetting = (field) => {
     </div>
   </>;
 
-  const SecondaryContent = ({ title, description, children }) => <div className="mt-9 rounded-[28px] border border-white/10 bg-white/[0.035] p-6">
-    <h2 className="text-2xl font-black tracking-[-0.04em]">{title}</h2>
-    <p className="mt-3 text-sm leading-6 text-zinc-500">{description}</p>
+  const SecondaryContent = ({ title, description, action = null, children }) => <div className="mt-9 rounded-[28px] border border-white/10 bg-white/[0.035] p-6">
+    <div className="flex items-center justify-between gap-3">
+      <h2 className="text-2xl font-black tracking-[-0.04em]">{title}</h2>
+      {action}
+    </div>
+    {description && <p className="mt-3 text-sm leading-6 text-zinc-500">{description}</p>}
     {children}
   </div>;
 
@@ -21582,19 +21742,21 @@ const toggleExerciseMeasurementSetting = (field) => {
     <BottomSheetPanel onClose={closeExerciseBase} onClick={(e) => e.stopPropagation()} className="onlypump-bottom-sheet flex max-h-[calc(var(--onlypump-app-height)-28px)] w-full flex-col rounded-t-[34px] border-t border-white/10 bg-zinc-950/92 px-5 pt-4 shadow-2xl shadow-black/70 backdrop-blur-2xl">
       <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-white/20" />
       <div className="mx-auto flex min-h-0 w-full max-w-[430px] flex-1 flex-col">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-red-400">База упражнений</p>
-            <h2 className="mt-2 text-3xl font-black tracking-[-0.05em]">Упражнения</h2>
-            <p className="mt-2 text-sm leading-6 text-zinc-500">
-              {exerciseBaseMode === "add" ? "Выбери упражнение, чтобы добавить его в текущую тренировку." : exerciseBaseMode === "replace" ? "Выбери упражнение, чтобы заменить текущее." : "Поиск по названию и сортировка по мышечным группам."}
-            </p>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <h2 className="text-3xl font-black tracking-[-0.05em]">Упражнения</h2>
+            <button
+              type="button"
+              onClick={() => openCustomExerciseEditor(null, { initialName: "" })}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500 text-xl font-black text-black transition active:scale-[0.96]"
+              aria-label="Создать своё упражнение"
+            >+</button>
           </div>
           <button onClick={closeExerciseBase} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-400">×</button>
         </div>
 
         <div className="onlypump-exercise-base-controls">
-          <div className="onlypump-search-shell mt-5 rounded-2xl px-4 py-3">
+          <div className="onlypump-search-shell mt-4 rounded-2xl px-4 py-3">
             <input
               value={exerciseSearch}
               onChange={(e) => setExerciseSearch(e.target.value)}
@@ -21602,14 +21764,6 @@ const toggleExerciseMeasurementSetting = (field) => {
               className="onlypump-search-input w-full bg-transparent text-base outline-none placeholder:text-zinc-600"
             />
           </div>
-          <button
-            type="button"
-            onClick={() => openCustomExerciseEditor()}
-            className="mt-3 flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm font-black transition active:scale-[0.98] hover:bg-white/[0.07]"
-          >
-            <span>Создать своё упражнение</span>
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-black">+</span>
-          </button>
 
           <div className="onlypump-exercise-group-scroll mt-4 pb-3 onlypump-scrollbar-none">
             {exerciseGroups.map(group => <button
@@ -21668,6 +21822,14 @@ const toggleExerciseMeasurementSetting = (field) => {
               })}
             </div>
           </div>) : <div className="rounded-2xl bg-black/25 p-5 text-sm text-zinc-500">Ничего не найдено.</div>}
+          {exerciseSearchCreateName && <button
+            type="button"
+            onClick={openCreateExerciseFromSearch}
+            className="flex w-full items-center gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-left text-sm font-black text-emerald-300 transition active:scale-[0.98] hover:bg-emerald-500/15"
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-lg text-black">+</span>
+            <span className="min-w-0 truncate">“{exerciseSearchCreateName}”</span>
+          </button>}
         </div>
 
         {exerciseBaseMode === "add" && <div className="onlypump-exercise-add-footer mt-4 flex justify-center bg-transparent pb-[calc(var(--onlypump-safe-bottom)+4px)] pt-3">
@@ -21864,12 +22026,14 @@ const toggleExerciseMeasurementSetting = (field) => {
               };
               const circleStyle = supersetColor && !selectedForEdit ? { borderColor: supersetColor, backgroundColor: `${supersetColor}20`, color: supersetColor } : undefined;
               const numberStyle = supersetColor ? { backgroundColor: `${supersetColor}24`, color: supersetColor } : undefined;
+              const workoutExerciseMedia = getExerciseMedia(exercise);
+              const hasWorkoutExerciseMedia = Boolean(workoutExerciseMedia.src);
 
               const exerciseBody = isEditingWorkout ? <div data-workout-exercise-id={exercise.id} style={rowStyle} className="relative grid w-full grid-cols-[38px_1fr_38px] gap-3 px-4 py-5 text-left transition-transform duration-150">
                 <button type="button" onClick={(e) => { e.stopPropagation(); toggleExerciseSelection(exercise.id); }} className="relative mt-1 flex h-8 w-8 items-center justify-center">
                   <span style={circleStyle} className={`relative z-10 flex h-7 w-7 items-center justify-center rounded-full border text-xs font-black transition ${selectedForEdit ? 'border-red-500 bg-red-500 text-black' : supersetGroupId ? '' : 'border-white/20 bg-black text-zinc-500'}`}>{selectedForEdit ? "✓" : ""}</span>
                 </button>
-                <div>
+                <div className={hasWorkoutExerciseMedia ? "pr-24" : ""}>
                   <h4 className="break-words text-[21px] font-black leading-tight tracking-[-0.04em]">{exercise.name}</h4>
                   <p className="mt-1 text-xs font-semibold text-red-400">{exercise.muscleGroup}</p>
 	                  <p className="mt-2 break-words text-sm leading-6 text-zinc-500">{setMetrics}</p>
@@ -21892,14 +22056,16 @@ const toggleExerciseMeasurementSetting = (field) => {
                   <span className="h-0.5 w-4 rounded-full bg-current" />
                   <span className="h-0.5 w-4 rounded-full bg-current" />
                 </button>
-              </div> : <button data-tour="workouts-open-exercise" onClick={() => openExerciseFromOverview(index)} style={rowStyle} className="grid w-full grid-cols-[34px_1fr] gap-3 px-4 py-5 text-left transition active:scale-[0.99] hover:bg-white/[0.04]">
+                {hasWorkoutExerciseMedia && <WorkoutExerciseMedia exercise={exercise} positionClass="right-14" />}
+              </div> : <button data-tour="workouts-open-exercise" onClick={() => openExerciseFromOverview(index)} style={rowStyle} className="relative grid w-full grid-cols-[34px_1fr] items-start gap-3 px-4 py-5 text-left transition active:scale-[0.99] hover:bg-white/[0.04]">
                 <div style={numberStyle} className={`mt-1 flex h-7 w-7 items-center justify-center rounded-full text-xs font-black ${supersetColor ? '' : 'bg-white/[0.08] text-zinc-400'}`}>{exercise.order || index + 1}</div>
-                <div>
+                <div className={hasWorkoutExerciseMedia ? "pr-14" : ""}>
                   <h4 className="break-words text-[21px] font-black leading-tight tracking-[-0.04em]">{exercise.name}</h4>
                   <p className="mt-1 text-xs font-semibold text-red-400">{exercise.muscleGroup}</p>
 	                  <p className="mt-2 break-words text-sm leading-6 text-zinc-500">{setMetrics}</p>
 	                  {programPlanText && <p className="mt-1 text-xs font-bold text-red-300">{programPlanText}</p>}
 	                </div>
+                {hasWorkoutExerciseMedia && <WorkoutExerciseMedia exercise={exercise} />}
               </button>;
 
               if (isEditingWorkout) {
@@ -22430,16 +22596,8 @@ const toggleExerciseMeasurementSetting = (field) => {
             <div className="rounded-2xl bg-black/25 p-4"><div className="text-xs text-zinc-500">Тоннаж</div><div className="mt-2 text-3xl font-black">{formatVolumeNumber(workouts.filter(w => w.status === "completed").reduce((sum, w) => sum + Number(getWorkoutVolume(w)), 0))}</div></div>
           </div>
         </SecondaryContent>}
-        {activeTab === "exercises" && <SecondaryContent title="Упражнения" description="Полная база упражнений: поиск по названию и сортировка по мышечным группам.">
-          <button
-            type="button"
-            onClick={() => openCustomExerciseEditor()}
-            className="mt-5 flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left font-black transition active:scale-[0.98] hover:bg-white/[0.07]"
-          >
-            <span>Создать своё упражнение</span>
-            <Plus size={18} className="text-red-400" />
-          </button>
-          <div className="onlypump-search-shell mt-6 rounded-2xl p-3">
+        {activeTab === "exercises" && <SecondaryContent title="Упражнения" action={<button type="button" onClick={() => openCustomExerciseEditor(null, { initialName: "" })} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500 text-xl font-black text-black transition active:scale-[0.96]" aria-label="Создать своё упражнение">+</button>}>
+          <div className="onlypump-search-shell mt-5 rounded-2xl p-3">
             <input
               value={exerciseSearch}
               onChange={(e) => setExerciseSearch(e.target.value)}
@@ -22470,6 +22628,14 @@ const toggleExerciseMeasurementSetting = (field) => {
                 </button>)}
               </div>
             </div>) : <div className="rounded-2xl bg-black/25 p-5 text-sm text-zinc-500">Ничего не найдено.</div>}
+            {exerciseSearchCreateName && <button
+              type="button"
+              onClick={openCreateExerciseFromSearch}
+              className="flex w-full items-center gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-left text-sm font-black text-emerald-300 transition active:scale-[0.98] hover:bg-emerald-500/15"
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-lg text-black">+</span>
+              <span className="min-w-0 truncate">“{exerciseSearchCreateName}”</span>
+            </button>}
           </div>
         </SecondaryContent>}
         {activeTab === "settings" && <SecondaryContent title="Настройки" description="Настройки дневника: единицы измерения, автопрогрессия, программы и экспорт.">
@@ -23482,6 +23648,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       const instruction = exercise.instruction || exercise.description || description;
       const techniqueDescription = exercise.techniqueDescription || exercise.description || description;
       const muscleWorkImageUrl = getOnlypumpMuscleWorkImageUrlForProfile(exercise, profile) || exercise.muscleWorkImageUrl || "";
+      const exerciseMedia = getExerciseMedia(exercise);
       const guideTabs = [
         ["description", "Описание"],
         ["video", "Видео"],
@@ -23511,8 +23678,8 @@ const toggleExerciseMeasurementSetting = (field) => {
 
           <div className="onlypump-list-62 mt-5 space-y-4 overflow-y-auto onlypump-scrollbar-none">
             {guideTab === "description" && <>
-              <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500">
-                <ExerciseMediaImage src={exercise.exerciseImageUrl} alt={`${exercise.name || "Упражнение"}: фото`} fallback="Здесь будет фото упражнения" />
+              <div className={`flex ${exerciseMedia.type === "gif" ? "mx-auto aspect-[3/4] w-full max-w-[280px]" : "aspect-[4/3]"} items-center justify-center overflow-hidden rounded-[24px] border border-dashed border-white/14 bg-black/30 text-center text-sm font-bold text-zinc-500`}>
+                <ExerciseMediaImage media={exerciseMedia} src={exercise.exerciseImageUrl} alt={`${exercise.name || "Упражнение"}: фото`} fallback="Здесь будет фото упражнения" />
               </div>
               <div className="rounded-[24px] bg-white/[0.04] p-4">
                 <h3 className="text-sm font-black uppercase tracking-[0.16em] text-zinc-500">Описание</h3>
