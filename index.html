@@ -17637,6 +17637,14 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const uniqueIds = (ids = []) => Array.from(new Set(ids.filter(Boolean).map(String)));
 
+  const getPatchItemId = (item = {}, keys = ["id"]) => {
+    for (const key of keys) {
+      const value = item?.[key];
+      if (value !== undefined && value !== null && String(value).trim()) return String(value);
+    }
+    return "";
+  };
+
 	  const buildWorkoutPatchPayload = (workout) => {
 	    if (!workout?.supabaseId) return null;
 	    const totals = getWorkoutTotals(workout);
@@ -17850,19 +17858,27 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     };
   };
 
-  const mergeWorkoutPatch = (base = {}, patch = {}) => ({
-    workout_updates: mergeById([...(base.workout_updates || []), ...(patch.workout_updates || [])]),
-    exercise_updates: mergeById([...(base.exercise_updates || []), ...(patch.exercise_updates || [])]),
-    set_updates: mergeById([...(base.set_updates || []), ...(patch.set_updates || [])]),
-    exercise_creates: mergeCreatesByClientId([...(base.exercise_creates || []), ...(patch.exercise_creates || [])]),
-    set_creates: mergeCreatesByClientId([...(base.set_creates || []), ...(patch.set_creates || [])]),
-    exercise_upserts: mergeCreatesByClientId([...(base.exercise_upserts || []), ...(patch.exercise_upserts || [])]),
-    set_upserts: mergeCreatesByClientId([...(base.set_upserts || []), ...(patch.set_upserts || [])]),
-    deleted_workout_ids: uniqueIds([...(base.deleted_workout_ids || []), ...(patch.deleted_workout_ids || [])]),
-    deleted_exercise_ids: uniqueIds([...(base.deleted_exercise_ids || []), ...(patch.deleted_exercise_ids || [])]),
-    deleted_set_ids: uniqueIds([...(base.deleted_set_ids || []), ...(patch.deleted_set_ids || [])]),
-    deleted_set_refs: mergeCreatesByClientId([...(base.deleted_set_refs || []), ...(patch.deleted_set_refs || [])]),
-  });
+  const mergeWorkoutPatch = (base = {}, patch = {}) => {
+    const deletedExerciseIds = uniqueIds([...(base.deleted_exercise_ids || []), ...(patch.deleted_exercise_ids || [])]);
+    const deletedSetIds = uniqueIds([...(base.deleted_set_ids || []), ...(patch.deleted_set_ids || [])]);
+    const deletedExerciseIdSet = new Set(deletedExerciseIds);
+    const deletedSetIdSet = new Set(deletedSetIds);
+    const isForDeletedExercise = (item = {}) => deletedExerciseIdSet.has(getPatchItemId(item, ["workout_exercise_id", "workoutExerciseId", "exercise_id", "exerciseId"]));
+    const isDeletedSetUpdate = (item = {}) => deletedSetIdSet.has(getPatchItemId(item, ["id", "set_id", "setId", "workout_set_id", "workoutSetId"]));
+    return {
+      workout_updates: mergeById([...(base.workout_updates || []), ...(patch.workout_updates || [])]),
+      exercise_updates: mergeById([...(base.exercise_updates || []), ...(patch.exercise_updates || [])]).filter(item => !deletedExerciseIdSet.has(getPatchItemId(item, ["id", "exercise_id", "exerciseId", "workout_exercise_id", "workoutExerciseId"]))),
+      set_updates: mergeById([...(base.set_updates || []), ...(patch.set_updates || [])]).filter(item => !isDeletedSetUpdate(item) && !isForDeletedExercise(item)),
+      exercise_creates: mergeCreatesByClientId([...(base.exercise_creates || []), ...(patch.exercise_creates || [])]),
+      set_creates: mergeCreatesByClientId([...(base.set_creates || []), ...(patch.set_creates || [])]).filter(item => !isForDeletedExercise(item)),
+      exercise_upserts: mergeCreatesByClientId([...(base.exercise_upserts || []), ...(patch.exercise_upserts || [])]),
+      set_upserts: mergeCreatesByClientId([...(base.set_upserts || []), ...(patch.set_upserts || [])]).filter(item => !isForDeletedExercise(item)),
+      deleted_workout_ids: uniqueIds([...(base.deleted_workout_ids || []), ...(patch.deleted_workout_ids || [])]),
+      deleted_exercise_ids: deletedExerciseIds,
+      deleted_set_ids: deletedSetIds,
+      deleted_set_refs: mergeCreatesByClientId([...(base.deleted_set_refs || []), ...(patch.deleted_set_refs || [])]).filter(item => !isForDeletedExercise(item)),
+    };
+  };
 
   const isPendingRemoteCreate = (item) => Boolean(item?.pending || item?.isSaving || item?.isSyncing);
 
