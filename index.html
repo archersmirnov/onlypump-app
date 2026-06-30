@@ -23748,6 +23748,176 @@ const defaultUnitOption = { id: "grams", label: "Граммы", unitLabel: "г",
 const unitOption = (id, label, unitLabel, grams, amountStep = 1) => ({ id, label, unitLabel, grams, amountStep, inputLabel: label.toLowerCase() });
 const withUnits = (...units) => ({ unitOptions: [defaultUnitOption, ...units], defaultUnit: units[0]?.id || "grams" });
 
+const nutritionVisualUnits = {
+  palm: { id: "palm", label: "Ладонь", unitLabel: "лад.", amounts: [0.5, 1, 1.5, 2] },
+  cupped_hand: { id: "cupped_hand", label: "Пригоршня", unitLabel: "приг.", amounts: [0.5, 1, 1.5, 2] },
+  fist: { id: "fist", label: "Кулак", unitLabel: "кул.", amounts: [0.5, 1, 2] },
+  thumb: { id: "thumb", label: "Большой палец", unitLabel: "пал.", amounts: [0.5, 1, 1.5, 2] },
+  gram: { id: "gram", label: "Граммы", unitLabel: "г" },
+  ml: { id: "ml", label: "Миллилитры", unitLabel: "мл" },
+  piece: { id: "piece", label: "Штуки", unitLabel: "шт" },
+  serving: { id: "serving", label: "Порция", unitLabel: "порц.", amounts: [0.5, 1, 1.5] },
+  tsp: { id: "tsp", label: "Чайная ложка", unitLabel: "ч.л." },
+  tbsp: { id: "tbsp", label: "Столовая ложка", unitLabel: "ст.л." },
+  cup: { id: "cup", label: "Чашка", unitLabel: "чаш." },
+  half_cup: { id: "half_cup", label: "Половина чашки", unitLabel: "1/2 чаш." },
+  glass: { id: "glass", label: "Стакан", unitLabel: "стак." },
+};
+
+const nutritionCategoryAllowedUnits = {
+  protein: ["palm", "gram", "serving", "piece"],
+  carbs: ["cupped_hand", "gram", "serving", "piece"],
+  vegetables: ["fist", "gram", "serving", "piece"],
+  fats: ["thumb", "tsp", "tbsp", "gram", "serving"],
+  drinks: ["ml", "cup", "half_cup", "glass", "serving"],
+  mixed: ["serving", "gram"],
+  other: ["gram", "serving", "piece"],
+};
+
+const nutritionDefaultVisualUnitByCategory = {
+  protein: "palm",
+  carbs: "cupped_hand",
+  vegetables: "fist",
+  fats: "thumb",
+  drinks: "ml",
+  mixed: "serving",
+  other: "gram",
+};
+
+const nutritionVisualUnitFallbackGrams = {
+  palm: 110,
+  cupped_hand: 90,
+  fist: 120,
+  thumb: 10,
+  cup: 250,
+  half_cup: 125,
+  glass: 250,
+  tsp: 5,
+  tbsp: 15,
+  serving: 100,
+};
+
+const nutritionVisualUnitImages = {
+  palm: "assets/menu-icons/nutrition-palms.svg",
+  cupped_hand: "assets/visual-units/cupped-hand.svg",
+  fist: "assets/visual-units/fist.svg",
+  thumb: "assets/visual-units/thumb.svg",
+};
+
+const palmRuleNutritionCategories = [
+  { id: "all", label: "Все" },
+  { id: "protein", label: "Белки" },
+  { id: "carbs", label: "Углеводы" },
+  { id: "fats", label: "Жиры" },
+  { id: "vegetables", label: "Овощи" },
+];
+
+const palmRuleCategoryIds = new Set(["protein", "carbs", "fats", "vegetables"]);
+const palmRuleVisualUnitIds = new Set(["palm", "cupped_hand", "fist", "thumb"]);
+
+function getBodySizeFactor(profile = {}) {
+  const sex = (profile.sex || profile.gender || "male") === "female" ? "female" : "male";
+  const heightCm = Number(profile.height_cm || profile.heightCm || 175);
+  const weightKg = Number(profile.weight_kg || profile.weightKg || 75);
+  const referenceHeight = sex === "female" ? 162 : 175;
+  const referenceWeight = sex === "female" ? 60 : 75;
+  const heightFactor = heightCm / referenceHeight;
+  const weightFactor = Math.sqrt(weightKg / referenceWeight);
+  const rawFactor = heightFactor * 0.75 + weightFactor * 0.25;
+  return Math.min(1.25, Math.max(0.8, rawFactor));
+}
+
+const normalizeNutritionCategory = (category) => {
+  const normalized = String(category || "").trim().toLowerCase();
+  return nutritionCategoryAllowedUnits[normalized] ? normalized : "other";
+};
+
+const inferNutritionCategory = (foodItem = {}) => {
+  if (foodItem.nutrition_category || foodItem.nutritionCategory) return normalizeNutritionCategory(foodItem.nutrition_category || foodItem.nutritionCategory);
+  const name = String(foodItem.name || foodItem.food_name || foodItem.foodName || "").toLowerCase();
+  const category = String(foodItem.category || foodItem.food_category || foodItem.foodCategory || "").toLowerCase();
+  const text = `${category} ${name}`;
+  if (/бургер|чизбургер|биг мак|шаурм|кебаб|хот-дог|наггетс|тако|пицц|ролл|суши|поке|боул|завтрак|сырник|круассан|авокадо-тост|блин|панкейк|паста с соусом|паста карбонара|паста болоньезе|плов|рамен|цезарь|греческий салат/.test(text)) return "mixed";
+  if (/суп|том-ям|борщ|солянк|капучино|латте|американо|напит|(^|\s)кола|coca cola|cola|сок|смузи|шейк|энергетик|кефир|айран|молоко|питьевой йогурт|йогурт питьевой|чай/.test(text)) return "drinks";
+  if (/масло|майонез|соус|орех|миндаль|фисташ|семеч|семен|паста арахис|арахисовая паста|нутел|авокадо|сыр твердый|легкий сыр|моцарелла|сыр\b/.test(text)) return "fats";
+  if (/овощ|огурц|помид|томат|брокколи|салат листовой|овощной салат|капуст|зелень|клубник|черник|ягод|морковь/.test(text)) return "vegetables";
+  if (/белков|куриц|курин|крылышк|индей|говя|рыб|тунец|лосось|кревет|кальмар|морепродукт|творог|йогурт|яйц|омлет|тофу|свинин|стейк|фарш|колбас|сосиск|котлет/.test(text)) return "protein";
+  if (/гарнир|круп|рис|гречк|греча|макарон|овсян|геркулес|хлеб|лаваш|хлебц|картоф|пюре|булгур|киноа|перлов|пшено|кускус|манка|кукурузная крупа|лапша|фрукт|банан|яблок|апельсин|манго|арбуз|виноград|груша|ананас|слад|шоколад|печенье|торт|чизкейк|морожен|джем|варенье|сироп|гранола|попкорн|чипс|буэно/.test(text)) return "carbs";
+  return "other";
+};
+
+const hasFoodUnitOption = (foodItem = {}, unitId) => normalizeFoodUnitOptions({ unitOptions: foodItem.unit_options || foodItem.unitOptions }, foodItem.default_grams).some(unit => unit.id === unitId);
+
+const getAllowedFoodUnits = (foodItem = {}) => {
+  const category = inferNutritionCategory(foodItem);
+  const unitIds = foodItem.allowed_visual_units || foodItem.allowedVisualUnits || nutritionCategoryAllowedUnits[category] || nutritionCategoryAllowedUnits.other;
+  return unitIds
+    .filter(unitId => unitId !== "piece" || hasFoodUnitOption(foodItem, "piece"))
+    .map(unitId => nutritionVisualUnits[unitId])
+    .filter(Boolean);
+};
+
+const getDefaultVisualUnit = (foodItem = {}) => {
+  const allowedUnits = getAllowedFoodUnits(foodItem);
+  const allowedIds = allowedUnits.map(unit => unit.id);
+  const configuredUnit = foodItem.default_visual_unit || foodItem.defaultVisualUnit;
+  if (configuredUnit && allowedIds.includes(configuredUnit)) return configuredUnit;
+  const categoryDefault = nutritionDefaultVisualUnitByCategory[inferNutritionCategory(foodItem)] || "gram";
+  return allowedIds.includes(categoryDefault) ? categoryDefault : (allowedIds[0] || "gram");
+};
+
+const getPalmRuleFoodUnit = (foodItem = {}) => {
+  const category = inferNutritionCategory(foodItem);
+  if (!palmRuleCategoryIds.has(category)) return null;
+  const unitId = nutritionDefaultVisualUnitByCategory[category];
+  return nutritionVisualUnits[unitId] || null;
+};
+
+const getPalmRuleFoodUnits = (foodItem = {}) => {
+  const unit = getPalmRuleFoodUnit(foodItem);
+  return unit ? [unit] : [];
+};
+
+const isPalmRuleFood = (foodItem = {}) => palmRuleCategoryIds.has(inferNutritionCategory(foodItem));
+
+const getVisualUnitGrams = (foodItem = {}, unitId = "gram", amount = 1, profile = {}) => {
+  const numericAmount = Math.max(0, Number(amount || 0));
+  const normalizedUnitId = unitId === "grams" ? "gram" : unitId;
+  const visualUnitGrams = foodItem.visualUnitGrams || foodItem.visual_unit_grams || {};
+  const productUnitGrams = Number(visualUnitGrams[normalizedUnitId]);
+  if (Number.isFinite(productUnitGrams) && productUnitGrams > 0) return Math.round(numericAmount * productUnitGrams);
+  if (normalizedUnitId === "gram") return numericAmount;
+  if (normalizedUnitId === "ml") return numericAmount;
+  if (normalizedUnitId === "piece") {
+    const pieceUnit = normalizeFoodUnitOptions({ unitOptions: foodItem.unit_options || foodItem.unitOptions }, foodItem.default_grams).find(unit => unit.id === "piece");
+    return Math.round(numericAmount * Math.max(1, Number(pieceUnit?.grams || foodItem.default_grams || 100)));
+  }
+  if (normalizedUnitId === "serving") return Math.round(numericAmount * Math.max(1, Number(foodItem.default_grams || nutritionVisualUnitFallbackGrams.serving)));
+  const fallbackGrams = Math.max(1, Number(nutritionVisualUnitFallbackGrams[normalizedUnitId] || foodItem.default_grams || 100));
+  const bodyFactor = palmRuleVisualUnitIds.has(normalizedUnitId) ? getBodySizeFactor(profile) : 1;
+  return Math.round(numericAmount * fallbackGrams * bodyFactor);
+};
+
+const canUseVisualUnitForFood = (foodItem = {}, unitId = "") => getAllowedFoodUnits(foodItem).some(unit => unit.id === unitId);
+
+const getValidatedVisualUnitGrams = (foodItem = {}, unitId = "gram", amount = 1, profile = {}) => {
+  const normalizedUnitId = unitId === "grams" ? "gram" : unitId;
+  if (!canUseVisualUnitForFood(foodItem, normalizedUnitId)) return null;
+  const grams = getVisualUnitGrams(foodItem, normalizedUnitId, amount, profile);
+  return Number.isFinite(Number(grams)) && Number(grams) > 0 ? Number(grams) : null;
+};
+
+const getVisualUnitAmountOptions = (unitId) => {
+  const unit = nutritionVisualUnits[unitId];
+  if (unit?.amounts?.length) return unit.amounts;
+  if (unitId === "gram") return [50, 100, 150, 200];
+  if (unitId === "ml") return [100, 250, 330, 500];
+  if (unitId === "tsp" || unitId === "tbsp") return [1, 2, 3];
+  if (unitId === "piece") return [1, 2, 3];
+  if (unitId === "cup" || unitId === "half_cup" || unitId === "glass") return [1, 2];
+  return [1];
+};
+
 const normalizeFoodUnitOptions = (options = {}, defaultGrams = 100) => {
   const source = Array.isArray(options.unitOptions || options.unit_options) ? (options.unitOptions || options.unit_options) : [];
   const merged = source.length ? source : [defaultUnitOption];
@@ -23769,35 +23939,35 @@ const food = (name, category, calories, protein, fat, carbs, defaultGrams = 100,
   protein_per_100: protein,
   fat_per_100: fat,
   carbs_per_100: carbs,
+  fiber_per_100: Number(options.fiberPer100 || options.fiber_per_100 || 0),
   default_grams: defaultGrams,
   modifiers,
   unit_options: normalizeFoodUnitOptions(options, defaultGrams),
   default_unit: options.defaultUnit || options.default_unit || "grams",
+  nutrition_category: normalizeNutritionCategory(options.nutritionCategory || options.nutrition_category || inferNutritionCategory({ category, name })),
+  allowed_visual_units: options.allowedVisualUnits || options.allowed_visual_units || null,
+  default_visual_unit: options.defaultVisualUnit || options.default_visual_unit || null,
+  visual_unit_grams: options.visualUnitGrams || options.visual_unit_grams || null,
   palm_kind: options.palmKind || options.palm_kind || null,
 });
 
 const getPalmGramConfig = (profile = {}) => {
-  const sex = profile?.sex === "female" ? "female" : "male";
-  const fallbackWeight = sex === "female" ? 62 : 78;
-  const weight = safeProfileNumber(profile?.weight_kg ?? profile?.weightKg, fallbackWeight);
-  const factor = Math.min(1.18, Math.max(0.82, weight / fallbackWeight));
+  const factor = getBodySizeFactor(profile);
   const scale = (base) => Math.max(5, Math.round(base * factor));
   return {
-    protein: scale(sex === "female" ? 90 : 110),
-    carbs: scale(sex === "female" ? 120 : 150),
-    fat: scale(sex === "female" ? 10 : 14),
-    vegetables: scale(sex === "female" ? 100 : 120),
-    mixed: scale(sex === "female" ? 130 : 160),
+    protein: scale(110),
+    carbs: scale(90),
+    fat: scale(10),
+    vegetables: scale(120),
+    mixed: scale(100),
   };
 };
 
 const getFoodPalmKind = (foodItem = {}) => {
   if (foodItem.palm_kind) return foodItem.palm_kind;
-  const text = `${foodItem.category || ""} ${foodItem.name || ""}`.toLowerCase();
-  if (/овощ|салат|суп/.test(text)) return "vegetables";
-  if (/масло|соус|орех|паста арахис|нутел|сыр/.test(text)) return "fat";
-  if (/белков|кур|индей|говя|рыб|тунец|лосось|кревет|творог|йогурт|яйц|молоко/.test(text)) return "protein";
-  if (/гарнир|круп|рис|греч|макарон|овсян|геркулес|хлеб|лаваш|фрукт|пицц|слад|джем|варенье|сироп|панкейк|блин/.test(text)) return "carbs";
+  const category = inferNutritionCategory(foodItem);
+  if (category === "fats") return "fat";
+  if (category === "protein" || category === "carbs" || category === "vegetables") return category;
   return "mixed";
 };
 
@@ -23820,7 +23990,23 @@ const buildNutritionEntryMetaModifier = (meta = {}) => ({
   entry_meta: meta,
 });
 
-const getFoodUnitOptions = (foodItem = {}) => normalizeFoodUnitOptions({ unitOptions: foodItem.unit_options || foodItem.unitOptions }, foodItem.default_grams);
+const getFoodUnitOptions = (foodItem = {}) => {
+  const baseUnits = normalizeFoodUnitOptions({ unitOptions: foodItem.unit_options || foodItem.unitOptions }, foodItem.default_grams);
+  const category = inferNutritionCategory(foodItem);
+  const extras = [unitOption("serving", "Порции", "порц.", Math.max(1, Number(foodItem.default_grams || 100)))];
+  if (category === "drinks") {
+    extras.push(unitOption("ml", "Миллилитры", "мл", 1, 50), unitOption("cup", "Чашка", "чаш.", 250), unitOption("glass", "Стакан", "стак.", 250));
+  }
+  if (category === "fats" || /соус|масло|майонез|паста|сироп|джем|варенье/i.test(`${foodItem.category || ""} ${foodItem.name || ""}`)) {
+    extras.push(unitOption("tsp", "Чайные ложки", "ч.л.", 5), unitOption("tbsp", "Столовые ложки", "ст.л.", 15));
+  }
+  const seen = new Set();
+  return [...baseUnits, ...extras].filter(unit => {
+    if (seen.has(unit.id)) return false;
+    seen.add(unit.id);
+    return true;
+  });
+};
 const getFoodUnitOption = (foodItem, unitId) => getFoodUnitOptions(foodItem).find(unit => unit.id === unitId) || defaultUnitOption;
 const formatFoodDefaultServing = (foodItem = {}) => {
   const option = getFoodUnitOption(foodItem, foodItem.default_unit || "grams");
@@ -23829,24 +24015,43 @@ const formatFoodDefaultServing = (foodItem = {}) => {
 };
 
 const getFoodDraftServingGrams = (draft = {}, profile = {}) => {
-  if (draft.entryMode === "palms") return palmAmountToGrams(draft.palms, draft.food, profile);
+  if (draft.entryMode === "palms") return getValidatedVisualUnitGrams(draft.food, draft.visualUnitId || getDefaultVisualUnit(draft.food), draft.palms, profile) || 0;
   const unit = getFoodUnitOption(draft.food, draft.unitId || "grams");
   const amount = Math.max(0, Number(draft.unitAmount ?? draft.grams ?? 0));
   return unit.id === "grams" ? amount : Math.round(amount * unit.grams);
 };
 
-const buildFoodDraftEntryMeta = (draft = {}, profile = {}) => {
+const buildFoodDraftEntryMeta = (draft = {}, profile = {}, totals = null) => {
   const grams = getFoodDraftServingGrams(draft, profile);
   const unit = getFoodUnitOption(draft.food, draft.unitId || "grams");
   const amount = draft.entryMode === "palms"
     ? Math.max(0, Number(draft.palms || 0))
     : Math.max(0, Number(draft.unitAmount ?? grams));
+  const visualUnitId = draft.visualUnitId || getDefaultVisualUnit(draft.food);
+  const visualUnit = nutritionVisualUnits[visualUnitId] || nutritionVisualUnits.gram;
+  const inputMode = draft.entryMode === "palms" ? "visual" : "precise";
+  const macroTotals = totals || calculateNutritionItemTotals(draft.food, grams, draft.selectedModifierIds || []);
   return {
     entry_mode: draft.entryMode === "palms" ? "palms" : "calories",
-    unit_id: draft.entryMode === "palms" ? "palm" : unit.id,
-    unit_label: draft.entryMode === "palms" ? "лад." : unit.unitLabel,
+    inputMode,
+    input_mode: inputMode,
+    unit_id: draft.entryMode === "palms" ? visualUnit.id : unit.id,
+    unit_label: draft.entryMode === "palms" ? visualUnit.unitLabel : unit.unitLabel,
     amount: roundMacro(amount),
     grams,
+    visualUnit: draft.entryMode === "palms" ? visualUnit.id : null,
+    visual_unit: draft.entryMode === "palms" ? visualUnit.id : null,
+    visualAmount: draft.entryMode === "palms" ? roundMacro(amount) : null,
+    visual_amount: draft.entryMode === "palms" ? roundMacro(amount) : null,
+    estimatedGrams: draft.entryMode === "palms" ? grams : null,
+    estimated_grams: draft.entryMode === "palms" ? grams : null,
+    originalUnit: draft.entryMode === "palms" ? visualUnit.id : unit.id,
+    original_unit: draft.entryMode === "palms" ? visualUnit.id : unit.id,
+    calories: macroTotals.calories,
+    protein: macroTotals.protein,
+    fat: macroTotals.fat,
+    carbs: macroTotals.carbs,
+    fiber: macroTotals.fiber || 0,
     palm_kind: getFoodPalmKind(draft.food),
     palm_grams: getPalmGramsForFood(draft.food, profile),
   };
@@ -24032,12 +24237,14 @@ const calculateNutritionItemTotals = (foodItem, grams = foodItem?.default_grams 
     protein: acc.protein + Number(modifier.protein || 0),
     fat: acc.fat + Number(modifier.fat || 0),
     carbs: acc.carbs + Number(modifier.carbs || 0),
-  }), { calories: 0, protein: 0, fat: 0, carbs: 0 });
+    fiber: acc.fiber + Number(modifier.fiber || 0),
+  }), { calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 });
   return {
     calories: Math.max(0, roundCalories(Number(foodItem?.calories_per_100 || 0) * ratio + modifierTotals.calories)),
     protein: Math.max(0, roundMacro(Number(foodItem?.protein_per_100 || 0) * ratio + modifierTotals.protein)),
     fat: Math.max(0, roundMacro(Number(foodItem?.fat_per_100 || 0) * ratio + modifierTotals.fat)),
     carbs: Math.max(0, roundMacro(Number(foodItem?.carbs_per_100 || 0) * ratio + modifierTotals.carbs)),
+    fiber: Math.max(0, roundMacro(Number(foodItem?.fiber_per_100 || foodItem?.fiberPer100 || 0) * ratio + modifierTotals.fiber)),
   };
 };
 
@@ -24078,6 +24285,7 @@ const mapNutritionItem = (row = {}) => ({
   protein: roundMacro(row.protein_total ?? row.proteinTotal ?? row.protein ?? 0),
   fat: roundMacro(row.fat_total ?? row.fatTotal ?? row.fat ?? 0),
   carbs: roundMacro(row.carbs_total ?? row.carbsTotal ?? row.carbs ?? 0),
+  fiber: roundMacro(row.fiber_total ?? row.fiberTotal ?? row.fiber ?? getNutritionEntryMeta(Array.isArray(row.selected_modifiers) ? row.selected_modifiers : (Array.isArray(row.selectedModifiers) ? row.selectedModifiers : []))?.fiber ?? 0),
   itemOrder: Number(row.item_order ?? row.itemOrder ?? 0),
   notes: row.notes || "",
   createdAt: row.created_at || row.createdAt || null,
@@ -24134,7 +24342,7 @@ const getNutritionPalmSummary = (day = {}, goal = initialNutritionGoal, profile 
       const foodSnapshot = snapshotFoodFromPayload(item);
       const meta = item.entryMeta || getNutritionEntryMeta(item.selectedModifiers);
       const kind = meta?.palm_kind || getFoodPalmKind(foodSnapshot);
-      const amount = meta?.entry_mode === "palms"
+      const amount = meta?.entry_mode === "palms" && (meta.inputMode || meta.input_mode) !== "visual"
         ? Number(meta.amount || 0)
         : gramsToPalmAmount(item.servingGrams, foodSnapshot, profile);
       totals[kind] = roundMacro((totals[kind] || 0) + Math.max(0, amount));
@@ -24155,7 +24363,7 @@ const getNutritionPalmSummary = (day = {}, goal = initialNutritionGoal, profile 
 const palmLabel = (value) => `${roundMacro(value)} лад.`;
 const formatNutritionItemServing = (item = {}) => {
   const meta = item.entryMeta || getNutritionEntryMeta(item.selectedModifiers);
-  if (meta?.entry_mode === "palms") return `${roundMacro(meta.amount || 0)} лад. · ${item.servingGrams} г`;
+  if (meta?.entry_mode === "palms") return `${roundMacro(meta.amount || 0)} ${meta.unit_label || "лад."} · ${item.servingGrams} г`;
   if (meta?.entry_mode === "calories" && meta.unit_id && meta.unit_id !== "grams") {
     return `${roundMacro(meta.amount || 0)} ${meta.unit_label || "шт"} · ${item.servingGrams} г`;
   }
@@ -24275,11 +24483,16 @@ const snapshotFoodFromPayload = (item = {}) => ({
   protein_per_100: Number(item.base_protein_per_100 ?? item.baseProteinPer100 ?? item.protein_per_100 ?? 0),
   fat_per_100: Number(item.base_fat_per_100 ?? item.baseFatPer100 ?? item.fat_per_100 ?? 0),
   carbs_per_100: Number(item.base_carbs_per_100 ?? item.baseCarbsPer100 ?? item.carbs_per_100 ?? 0),
+  fiber_per_100: Number(item.base_fiber_per_100 ?? item.baseFiberPer100 ?? item.fiber_per_100 ?? item.fiberPer100 ?? 0),
   default_grams: Number(item.serving_grams ?? item.servingGrams ?? item.default_grams ?? 100),
   modifiers: (Array.isArray(item.modifiers) ? item.modifiers : (item.selected_modifiers || item.selectedModifiers || [])).filter(modifier => (modifier?.id || modifier) !== nutritionEntryMetaId),
   defaultSelectedModifierIds: item.defaultSelectedModifierIds || (item.selected_modifiers || item.selectedModifiers || []).map(modifier => modifier.id || modifier).filter(id => id && id !== nutritionEntryMetaId),
   unit_options: normalizeFoodUnitOptions({ unitOptions: item.unit_options || item.unitOptions }, item.default_grams ?? item.serving_grams ?? item.servingGrams ?? 100),
   default_unit: item.default_unit || item.defaultUnit || "grams",
+  nutrition_category: normalizeNutritionCategory(item.nutrition_category || item.nutritionCategory || inferNutritionCategory(item)),
+  allowed_visual_units: item.allowed_visual_units || item.allowedVisualUnits || null,
+  default_visual_unit: item.default_visual_unit || item.defaultVisualUnit || null,
+  visual_unit_grams: item.visual_unit_grams || item.visualUnitGrams || null,
   palm_kind: item.palm_kind || item.palmKind || null,
   synonyms: Array.isArray(item.synonyms) ? item.synonyms : [],
 });
@@ -24367,6 +24580,8 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   const [targetMealType, setTargetMealType] = useState(null);
   const [activeFoodTab, setActiveFoodTab] = useState("eyeball");
   const [activeEyeballTab, setActiveEyeballTab] = useState("all");
+  const [activePalmRuleCategory, setActivePalmRuleCategory] = useState("protein");
+  const [foodPickerEntryMode, setFoodPickerEntryMode] = useState(() => profileUsesPalmNutrition(profile) ? "palms" : "calories");
   const [foodSearch, setFoodSearch] = useState("");
   const [foodDraft, setFoodDraft] = useState(null);
   const [manualEntryOpen, setManualEntryOpen] = useState(false);
@@ -24384,6 +24599,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
   const totals = day.totals || { calories: 0, protein: 0, fat: 0, carbs: 0 };
   const goal = day.goal || nutritionGoal || initialNutritionGoal;
   const usePalmNutrition = profileUsesPalmNutrition(profile);
+  const usePalmPicker = foodPickerEntryMode === "palms";
   const palmSummary = getNutritionPalmSummary(day, goal, profile);
   const palmPercent = Math.min(100, Math.round((palmSummary.total / Math.max(1, palmSummary.target || 1)) * 100));
   const dayHasItems = (day.meals || []).some(meal => (meal.items || []).length > 0);
@@ -24444,6 +24660,8 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
     setMealChoiceOpen(false);
     setFoodPickerOpen(true);
     setActiveFoodTab("eyeball");
+    setActiveEyeballTab("all");
+    setFoodPickerEntryMode(profileUsesPalmNutrition(profile) ? "palms" : "calories");
     if (options.resetSearch) setFoodSearch("");
     setFoodDraft(null);
   };
@@ -24476,15 +24694,22 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
     const normalizedFood = snapshotFoodFromPayload(foodItem);
     const entryMeta = item?.entryMeta || getNutritionEntryMeta(item?.selectedModifiers);
     const servingGrams = Number(item?.servingGrams || normalizedFood.default_grams || 100);
-    const entryMode = normalizeNutritionTrackingMode(entryMeta?.entry_mode, usePalmNutrition ? "palms" : "calories");
-    const unitId = entryMeta?.unit_id && entryMeta.unit_id !== "palm" ? entryMeta.unit_id : (normalizedFood.default_unit || "grams");
+    const entryMode = item
+      ? normalizeNutritionTrackingMode(entryMeta?.entry_mode, usePalmNutrition ? "palms" : "calories")
+      : foodPickerEntryMode;
+    const visualUnitCandidate = entryMeta?.entry_mode === "palms" && entryMeta.unit_id ? entryMeta.unit_id : getDefaultVisualUnit(normalizedFood);
+    const allowedVisualUnitIds = getAllowedFoodUnits(normalizedFood).map(unit => unit.id);
+    const visualUnitId = allowedVisualUnitIds.includes(visualUnitCandidate) ? visualUnitCandidate : getDefaultVisualUnit(normalizedFood);
+    const unitId = entryMeta?.entry_mode === "calories" && entryMeta?.unit_id && entryMeta.unit_id !== "palm"
+      ? entryMeta.unit_id
+      : (normalizedFood.default_unit || "grams");
     const unit = getFoodUnitOption(normalizedFood, unitId);
     const unitAmount = entryMeta?.entry_mode === "calories" && entryMeta.amount != null
       ? entryMeta.amount
       : unit.id === "grams" ? servingGrams : roundMacro(servingGrams / Math.max(1, unit.grams));
     const palms = entryMeta?.entry_mode === "palms" && entryMeta.amount != null
       ? entryMeta.amount
-      : gramsToPalmAmount(servingGrams, normalizedFood, profile);
+      : roundMacro(servingGrams / Math.max(1, getVisualUnitGrams(normalizedFood, visualUnitId, 1, profile)));
     setFoodDraft({
       mode: item ? "edit" : "add",
       itemId: item?.id || null,
@@ -24494,6 +24719,7 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
       entryMode,
       unitId,
       unitAmount,
+      visualUnitId,
       palms,
       selectedModifierIds,
       notes: item?.notes || "",
@@ -24509,20 +24735,33 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
 
   const filteredFoods = useMemo(() => {
     const query = foodSearch.trim().toLowerCase().replace(/ё/g, "е");
-    const source = activeEyeballFoods.filter(Boolean).map(item => snapshotFoodFromPayload(item));
+    const source = activeEyeballFoods.filter(Boolean).map(item => snapshotFoodFromPayload(item)).filter(item => {
+      if (!usePalmPicker) return true;
+      if (!isPalmRuleFood(item)) return false;
+      if (inferNutritionCategory(item) !== activePalmRuleCategory) return false;
+      return true;
+    });
     if (!query) return source.slice(0, activeEyeballTab === "all" ? 80 : 40);
     return source.filter(item => getFoodSearchText(item).includes(query)).slice(0, 90);
-  }, [activeEyeballFoods, activeEyeballTab, foodSearch]);
+  }, [activeEyeballFoods, activeEyeballTab, activePalmRuleCategory, foodSearch, usePalmPicker]);
 
   const favoriteKeys = new Set((day.favorites || []).map(item => item.foodKey));
   const draftServingGrams = foodDraft ? getFoodDraftServingGrams(foodDraft, profile) : 0;
   const draftTotals = foodDraft ? calculateNutritionItemTotals(foodDraft.food, draftServingGrams, foodDraft.selectedModifierIds) : null;
+  const draftVisualUnits = foodDraft ? (foodDraft.entryMode === "palms" ? getPalmRuleFoodUnits(foodDraft.food) : getAllowedFoodUnits(foodDraft.food)) : [];
+  const activeVisualUnitId = foodDraft?.visualUnitId || (foodDraft ? getDefaultVisualUnit(foodDraft.food) : "gram");
+  const activeVisualUnit = nutritionVisualUnits[activeVisualUnitId] || nutritionVisualUnits.gram;
+  const activeVisualAmounts = getVisualUnitAmountOptions(activeVisualUnitId);
 
   const saveFoodDraft = async () => {
     if (!foodDraft?.food || pendingFoodAction) return;
+    if (foodDraft.entryMode === "palms" && !getValidatedVisualUnitGrams(foodDraft.food, foodDraft.visualUnitId || getDefaultVisualUnit(foodDraft.food), foodDraft.palms, profile)) {
+      showNutritionError("Не удалось пересчитать выбранную меру. Выбери другую меру или граммы");
+      return;
+    }
     const actionKey = `${foodDraft.mode}-${foodDraft.mealType}-${foodDraft.food.key}`;
     setPendingFoodAction(actionKey);
-    const entryMeta = buildFoodDraftEntryMeta(foodDraft, profile);
+    const entryMeta = buildFoodDraftEntryMeta(foodDraft, profile, draftTotals);
     const payload = buildNutritionPayloadFromFood(foodDraft.food, entryMeta.grams, foodDraft.selectedModifierIds, foodDraft.notes, entryMeta);
     const action = foodDraft.mode === "edit" ? "update_item" : "add_item";
     const requestPayload = {
@@ -24585,15 +24824,17 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
 
   const renderFoodButton = (foodItem, source = "", index = 0) => {
     const foodCard = snapshotFoodFromPayload(foodItem || {});
+    const palmUnit = getPalmRuleFoodUnit(foodCard);
+    const palmUnitLabel = palmUnit?.id === "cupped_hand" ? "Горсть" : palmUnit?.label;
     return <button key={`${source}-${foodCard.key}`} data-tour={index === 0 ? "nutrition-food-option" : undefined} onClick={() => openFoodDraft(foodCard)} className="w-full rounded-2xl bg-white/[0.04] p-4 text-left transition active:scale-[0.99] hover:bg-white/[0.07]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="break-words text-base font-black text-zinc-100">{foodCard.name}</div>
           <div className="mt-1 text-xs font-semibold text-red-400">{foodCard.category}</div>
         </div>
-        <div className="shrink-0 text-right text-xs text-zinc-500">{formatFoodDefaultServing(foodCard)}</div>
+        <div className="shrink-0 text-right text-xs text-zinc-500">{usePalmPicker && palmUnit ? palmUnitLabel : formatFoodDefaultServing(foodCard)}</div>
       </div>
-      <div className="mt-3 text-xs text-zinc-500">{foodCard.calories_per_100} ккал · {foodCard.protein_per_100} Б · {foodCard.fat_per_100} Ж · {foodCard.carbs_per_100} У</div>
+      {!usePalmPicker && <div className="mt-3 text-xs text-zinc-500">{foodCard.calories_per_100} ккал · {foodCard.protein_per_100} Б · {foodCard.fat_per_100} Ж · {foodCard.carbs_per_100} У</div>}
     </button>;
   };
 
@@ -24708,20 +24949,28 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
             <button onClick={() => setFoodPickerOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
           </div>
         </div>
-        <div className="mt-5 grid grid-cols-3 gap-2">
-          {[["products", "Продукты"], ["recipes", "Рецепты"], ["eyeball", "На глаз"]].map(([id, label]) => <button key={id} onClick={() => id === "eyeball" ? setActiveFoodTab(id) : (setActiveFoodTab(id), showSoon())} className={`h-11 rounded-full text-sm font-black ${activeFoodTab === id ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-400"}`}>{label}</button>)}
+        <div className={`mt-5 grid gap-2 ${usePalmPicker ? "grid-cols-4" : "grid-cols-3"}`}>
+          {usePalmPicker
+            ? palmRuleNutritionCategories.filter(category => category.id !== "all").map(({ id, label }) => <button key={id} onClick={() => setActivePalmRuleCategory(id)} className={`h-9 border-b text-xs font-black transition ${activePalmRuleCategory === id ? "border-b-2 border-red-500 text-red-300" : "border-white/15 text-zinc-400"}`}>{label}</button>)
+            : [["products", "Продукты"], ["recipes", "Рецепты"], ["eyeball", "На глаз"]].map(([id, label]) => <button key={id} onClick={() => id === "eyeball" ? setActiveFoodTab(id) : (setActiveFoodTab(id), showSoon())} className={`h-9 rounded-full text-xs font-black transition ${activeFoodTab === id ? "bg-red-500/90 text-black" : "bg-white/[0.06] text-zinc-400"}`}>{label}</button>)}
         </div>
-        {activeFoodTab !== "eyeball" ? <div className="mt-5 rounded-3xl bg-white/[0.04] p-8 text-center text-zinc-500">В разработке</div> : <>
+        <div className="mt-4 grid grid-cols-2 gap-4 border-b border-white/10">
+          {[["calories", "Классика"], ["palms", "Правило ладони"]].map(([mode, label]) => <button key={mode} onClick={() => {
+            setFoodPickerEntryMode(mode);
+            if (mode === "palms") setActiveFoodTab("eyeball");
+          }} className={`h-8 border-b text-sm font-black transition ${foodPickerEntryMode === mode ? "border-b-2 border-red-500 text-red-300" : "border-white/20 text-zinc-500"}`}>{label}</button>)}
+        </div>
+        {!usePalmPicker && activeFoodTab !== "eyeball" ? <div className="mt-5 rounded-3xl bg-white/[0.04] p-8 text-center text-zinc-500">В разработке</div> : <>
           <div className="mt-4 grid grid-cols-4 gap-2">
             {[
-              ["all", "Все"],
-              ["recent", "Недавние"],
-              ["frequent", "Частые"],
-              ["favorites", "Избранные"],
-            ].map(([id, label]) => <button key={id} onClick={() => setActiveEyeballTab(id)} className={`h-10 rounded-full text-xs font-black ${activeEyeballTab === id ? "bg-white text-black" : "bg-white/[0.06] text-zinc-400"}`}>{label}</button>)}
+              { id: "all", label: "Все" },
+              { id: "recent", label: "Недавние" },
+              { id: "frequent", label: "Частые" },
+              { id: "favorites", label: "Избранные" },
+            ].map(({ id, label }) => <button key={id} onClick={() => setActiveEyeballTab(id)} className={`h-10 border-b text-xs font-black transition ${activeEyeballTab === id ? "border-red-500 text-red-300" : "border-white/10 text-zinc-500"}`}>{label}</button>)}
           </div>
           <div className="mt-5 flex-1 overflow-y-auto pr-1 onlypump-scrollbar-none">
-            <div className="space-y-2">{filteredFoods.length ? filteredFoods.map((item, index) => renderFoodButton(item, activeEyeballTab, index)) : <div className="rounded-3xl bg-white/[0.04] p-8 text-center text-sm text-zinc-500">
+            <div className="space-y-2">{filteredFoods.length ? filteredFoods.map((item, index) => renderFoodButton(item, usePalmPicker ? `${activePalmRuleCategory}-${activeEyeballTab}` : activeEyeballTab, index)) : <div className="rounded-3xl bg-white/[0.04] p-8 text-center text-sm text-zinc-500">
               {foodSearch.trim()
                 ? "Ничего не найдено. Попробуй другое название."
                 : activeEyeballTab === "recent"
@@ -24730,7 +24979,9 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
                     ? "Пока нет частых"
                     : activeEyeballTab === "favorites"
                       ? "Пока нет избранных"
-                      : "Ничего не найдено. Попробуй другое название."}
+                      : usePalmPicker
+                        ? "В этой категории пока нет продуктов"
+                        : "Ничего не найдено. Попробуй другое название."}
             </div>}</div>
           </div>
           <div className="onlypump-search-shell mt-4 rounded-2xl px-4 py-3">
@@ -24755,19 +25006,15 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
           <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">{foodDraft.food.category}</p><h2 className="mt-2 break-words text-2xl font-black tracking-[-0.04em]">{foodDraft.food.name}</h2></div>
           <button onClick={() => setFoodDraft(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
         </div>
-        <div className="mt-4 grid grid-cols-4 gap-2 rounded-3xl bg-white/[0.04] p-3 text-center text-xs">
+        {foodDraft.entryMode !== "palms" && <div className="mt-4 grid grid-cols-5 gap-2 rounded-3xl bg-white/[0.04] p-3 text-center text-xs">
           <div><b className="block text-lg text-white">{foodDraft.food.calories_per_100}</b><span className="text-zinc-500">ккал</span></div>
           <div><b className="block text-lg text-white">{foodDraft.food.protein_per_100}</b><span className="text-zinc-500">Б</span></div>
           <div><b className="block text-lg text-white">{foodDraft.food.fat_per_100}</b><span className="text-zinc-500">Ж</span></div>
           <div><b className="block text-lg text-white">{foodDraft.food.carbs_per_100}</b><span className="text-zinc-500">У</span></div>
-        </div>
+          <div><b className="block text-lg text-white">{foodDraft.food.fiber_per_100 || 0}</b><span className="text-zinc-500">Кл</span></div>
+        </div>}
         <div className="mt-4 flex-1 overflow-y-auto pr-1 onlypump-scrollbar-none">
           <div className="rounded-3xl bg-black/28 p-4">
-            <div className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Как считать</div>
-            <div className="grid grid-cols-2 gap-2">
-              {[["calories", "Калории"], ["palms", "Ладони"]].map(([mode, label]) => <button key={mode} onClick={() => setFoodDraft(prev => ({ ...prev, entryMode: mode }))} className={`h-10 rounded-full text-sm font-black ${foodDraft.entryMode === mode ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-300"}`}>{label}</button>)}
-            </div>
-
             {foodDraft.entryMode !== "palms" ? <div className="mt-4">
               <div className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Порция</div>
               <div className="grid grid-cols-3 gap-2">
@@ -24775,28 +25022,47 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
                   ...prev,
                   unitId: unit.id,
                   unitAmount: unit.id === "grams" ? (prev.grams || prev.unitAmount || prev.food.default_grams || 100) : 1,
-                }))} className={`h-10 rounded-full text-sm font-black ${foodDraft.unitId === unit.id ? "bg-white text-black" : "bg-white/[0.06] text-zinc-300"}`}>{unit.label}</button>)}
+                }))} className={`h-10 border-b text-sm font-black transition ${foodDraft.unitId === unit.id ? "border-b-2 border-red-500 text-red-300" : "border-white/15 text-zinc-400"}`}>{unit.label}</button>)}
               </div>
               {getFoodUnitOption(foodDraft.food, foodDraft.unitId).id === "grams" && <div className="mt-3 grid grid-cols-3 gap-2">
-                {[50, 100, 150, 200, 250, 300].map(grams => <button key={grams} onClick={() => setFoodDraft(prev => ({ ...prev, unitAmount: grams, grams }))} className={`h-10 rounded-full text-sm font-black ${Number(foodDraft.unitAmount) === grams ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-300"}`}>{grams} г</button>)}
+                {[50, 100, 150, 200, 250, 300].map(grams => <button key={grams} onClick={() => setFoodDraft(prev => ({ ...prev, unitAmount: grams, grams }))} className={`h-10 border-b text-sm font-black transition ${Number(foodDraft.unitAmount) === grams ? "border-b-2 border-red-500 text-red-300" : "border-white/15 text-zinc-400"}`}>{grams} г</button>)}
               </div>}
-              <label className="mt-3 flex items-center rounded-2xl bg-white/[0.05] px-4 py-3">
+              <label className="mt-3 flex items-center rounded-2xl border border-white/15 bg-white/[0.05] px-4 py-3 transition focus-within:border-red-500/60">
                 <input type="number" inputMode="decimal" value={foodDraft.unitAmount} onChange={(e) => setFoodDraft(prev => ({ ...prev, unitAmount: e.target.value, grams: getFoodUnitOption(prev.food, prev.unitId).id === "grams" ? e.target.value : prev.grams }))} className="w-full bg-transparent text-lg font-black outline-none" />
                 <span className="text-sm text-zinc-500">{getFoodUnitOption(foodDraft.food, foodDraft.unitId).unitLabel}</span>
               </label>
             </div> : <div className="mt-4">
-              <div className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Ладони</div>
-              <div className="grid grid-cols-5 gap-2">
-                {[0.5, 1, 1.5, 2, 3].map(amount => <button key={amount} onClick={() => setFoodDraft(prev => ({ ...prev, palms: amount }))} className={`h-10 rounded-full text-sm font-black ${Number(foodDraft.palms) === amount ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-300"}`}>{amount}</button>)}
+              <div className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Мера</div>
+              <div className="grid grid-cols-1 gap-2">
+                {draftVisualUnits.map(unit => {
+                  const selected = activeVisualUnitId === unit.id;
+                  return <button key={unit.id} type="button" onClick={() => setFoodDraft(prev => {
+                    const amounts = getVisualUnitAmountOptions(unit.id);
+                    const currentAmount = Number(prev.palms || 1);
+                    return { ...prev, visualUnitId: unit.id, palms: amounts.includes(currentAmount) ? currentAmount : (amounts[0] || 1) };
+                  })} className={`min-h-[92px] rounded-2xl border border-b-2 p-3 text-left transition ${selected ? "border-red-500 bg-red-500/14" : "border-white/10 border-b-white/15 bg-white/[0.04]"}`}>
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white/[0.06] text-[10px] font-black text-zinc-400">
+                        {nutritionVisualUnitImages[unit.id] ? <img src={nutritionVisualUnitImages[unit.id]} alt="" className="h-[72px] w-[72px] object-contain" /> : unit.unitLabel}
+                      </span>
+                      <span className="min-w-0">
+                        <span className={`block text-sm font-black ${selected ? "text-red-200" : "text-zinc-100"}`}>{unit.label}</span>
+                        <span className="mt-1 block text-xs font-semibold text-zinc-500">{inferNutritionCategory(foodDraft.food) === "protein" ? "Белки" : inferNutritionCategory(foodDraft.food) === "carbs" ? "Углеводы" : inferNutritionCategory(foodDraft.food) === "vegetables" ? "Овощи" : "Жиры"}</span>
+                      </span>
+                    </div>
+                  </button>;
+                })}
               </div>
-              <label className="mt-3 flex items-center rounded-2xl bg-white/[0.05] px-4 py-3">
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {activeVisualAmounts.map(amount => <button key={amount} onClick={() => setFoodDraft(prev => ({ ...prev, palms: amount }))} className={`h-10 border-b text-sm font-black transition ${Number(foodDraft.palms) === amount ? "border-b-2 border-red-500 text-red-300" : "border-white/15 text-zinc-400"}`}>{amount}</button>)}
+              </div>
+              <label className="mt-3 flex items-center rounded-2xl border border-white/15 bg-white/[0.05] px-4 py-3 transition focus-within:border-red-500/60">
                 <input type="number" inputMode="decimal" value={foodDraft.palms} onChange={(e) => setFoodDraft(prev => ({ ...prev, palms: e.target.value }))} className="w-full bg-transparent text-lg font-black outline-none" />
-                <span className="text-sm text-zinc-500">лад.</span>
+                <span className="text-sm text-zinc-500">{activeVisualUnit.unitLabel}</span>
               </label>
-              <p className="mt-2 text-xs leading-5 text-zinc-500">1 ладонь для этого продукта ≈ {getPalmGramsForFood(foodDraft.food, profile)} г. Вес порции пересчитается автоматически: {draftServingGrams} г.</p>
             </div>}
           </div>
-          {!!foodDraft.food.modifiers?.length && <div className="mt-4 rounded-3xl bg-black/28 p-4">
+          {foodDraft.entryMode !== "palms" && !!foodDraft.food.modifiers?.length && <div className="mt-4 rounded-3xl bg-black/28 p-4">
             <div className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-zinc-500">Дополнения</div>
             <div className="space-y-2">{foodDraft.food.modifiers.map(modifier => {
               const active = foodDraft.selectedModifierIds.includes(modifier.id);
@@ -24806,14 +25072,15 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
               </button>;
             })}</div>
           </div>}
-          <div className="mt-4 rounded-3xl border border-red-500/20 bg-red-500/10 p-4">
-            <div className="grid grid-cols-4 gap-2 text-center">
+          {foodDraft.entryMode !== "palms" && <div className="mt-4 rounded-3xl border border-red-500/20 bg-red-500/10 p-4">
+            <div className="grid grid-cols-5 gap-2 text-center">
               <div><b className="block text-2xl text-white">{draftTotals.calories}</b><span className="text-xs text-zinc-500">ккал</span></div>
               <div><b className="block text-2xl text-white">{draftTotals.protein}</b><span className="text-xs text-zinc-500">Б</span></div>
               <div><b className="block text-2xl text-white">{draftTotals.fat}</b><span className="text-xs text-zinc-500">Ж</span></div>
               <div><b className="block text-2xl text-white">{draftTotals.carbs}</b><span className="text-xs text-zinc-500">У</span></div>
+              <div><b className="block text-2xl text-white">{draftTotals.fiber}</b><span className="text-xs text-zinc-500">Кл</span></div>
             </div>
-          </div>
+          </div>}
         </div>
         <div className="mt-5 grid grid-cols-[48px_1fr_1fr] gap-3 pb-[var(--onlypump-safe-bottom)]">
           <button disabled={pendingFavoriteKeys.includes(foodDraft.food.key)} onClick={() => toggleFavorite(foodDraft.food)} className={`flex h-12 items-center justify-center rounded-full transition disabled:opacity-60 ${favoriteKeys.has(foodDraft.food.key) ? "bg-red-500 text-black" : "bg-white/8 text-zinc-200"}`}><Star size={20}/></button>
