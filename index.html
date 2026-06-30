@@ -17607,14 +17607,25 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return Array.from(map.values());
   };
 
+  const mergeCreatesByClientId = (items = []) => {
+    const map = new Map();
+    items.filter(Boolean).forEach((item, index) => {
+      const key = item.client_id || item.clientId || item.local_id || item.localId || item.id || `${item.workout_id || item.workout_exercise_id || "create"}-${item.exercise_order || item.set_order || index}`;
+      map.set(String(key), { ...(map.get(String(key)) || {}), ...item });
+    });
+    return Array.from(map.values());
+  };
+
   const uniqueIds = (ids = []) => Array.from(new Set(ids.filter(Boolean).map(String)));
 
 	  const buildWorkoutPatchPayload = (workout) => {
 	    if (!workout?.supabaseId) return null;
 	    const totals = getWorkoutTotals(workout);
 	    const isProgramWorkout = Boolean(workout?.isProgramGenerated || workout?.userProgramId || workout?.userProgramClientId || workout?.programName);
+	    const workoutDateKey = normalizeDateKey(workout?.date || workout?.workout_date, selectedDateKey);
 	    const payload = {
       id: workout.supabaseId,
+      workout_date: workoutDateKey,
       title: workout.title || "Новая тренировка",
       status: normalizeWorkoutStatus(workout.status),
       workout_type: normalizeWorkoutType(workout.workoutType ?? workout.workout_type),
@@ -17647,8 +17658,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const buildWorkoutTotalsPatchPayload = (workout) => {
     if (!workout?.supabaseId) return null;
     const totals = getWorkoutTotals(workout);
+    const workoutDateKey = normalizeDateKey(workout?.date || workout?.workout_date, selectedDateKey);
     const payload = {
       id: workout.supabaseId,
+      workout_date: workoutDateKey,
       total_sets: totals.totalSets,
       total_volume: totals.totalVolume,
       workout_type: normalizeWorkoutType(workout.workoutType ?? workout.workout_type),
@@ -17790,10 +17803,40 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     return payload;
   };
 
+  const buildSetCreatePayload = (exerciseSupabaseId, exerciseClientId, set) => {
+    if (!exerciseSupabaseId || !set) return null;
+    const { workout_exercise_id, ...setPayload } = buildSetSupabasePayload(exerciseSupabaseId, set);
+    return {
+      client_id: set.id,
+      exercise_client_id: exerciseClientId,
+      workout_exercise_id,
+      ...setPayload,
+    };
+  };
+
+  const buildExerciseCreatePayload = (workoutSupabaseId, exercise) => {
+    if (!workoutSupabaseId || !exercise) return null;
+    const { workout_id, ...exercisePayload } = buildExerciseSupabasePayload(workoutSupabaseId, exercise);
+    return {
+      client_id: exercise.id,
+      workout_id,
+      ...exercisePayload,
+      sets: (exercise.sets || []).map(set => {
+        const { workout_exercise_id, ...setPayload } = buildSetSupabasePayload(null, set);
+        return {
+          client_id: set.id,
+          ...setPayload,
+        };
+      }),
+    };
+  };
+
   const mergeWorkoutPatch = (base = {}, patch = {}) => ({
     workout_updates: mergeById([...(base.workout_updates || []), ...(patch.workout_updates || [])]),
     exercise_updates: mergeById([...(base.exercise_updates || []), ...(patch.exercise_updates || [])]),
     set_updates: mergeById([...(base.set_updates || []), ...(patch.set_updates || [])]),
+    exercise_creates: mergeCreatesByClientId([...(base.exercise_creates || []), ...(patch.exercise_creates || [])]),
+    set_creates: mergeCreatesByClientId([...(base.set_creates || []), ...(patch.set_creates || [])]),
     deleted_workout_ids: uniqueIds([...(base.deleted_workout_ids || []), ...(patch.deleted_workout_ids || [])]),
     deleted_exercise_ids: uniqueIds([...(base.deleted_exercise_ids || []), ...(patch.deleted_exercise_ids || [])]),
     deleted_set_ids: uniqueIds([...(base.deleted_set_ids || []), ...(patch.deleted_set_ids || [])]),
@@ -17836,6 +17879,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       const result = await callWorkoutsApi("save_workout_patch", normalizedPatch);
       console.log("save_workout_patch response", result);
       if (normalizedPatch.workout_updates?.length) console.log("Saved workout totals response:", result);
+      applyWorkoutTreeResponse({ id: workoutId }, result);
       return result;
     } catch (error) {
       console.error("save_workout_patch error", { workoutId, patch: normalizedPatch, error });
@@ -17850,6 +17894,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       patch.workout_updates,
       patch.exercise_updates,
       patch.set_updates,
+      patch.exercise_creates,
+      patch.set_creates,
       patch.deleted_workout_ids,
       patch.deleted_exercise_ids,
       patch.deleted_set_ids,
@@ -17925,10 +17971,15 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const buildWorkoutTreePatch = (workout) => {
     if (!workout?.supabaseId) return null;
+    const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
+    const exercises = normalizedWorkout.exercises || [];
+    const savedExercises = exercises.filter(exercise => exercise.supabaseId);
     return {
-      workout_updates: [buildWorkoutPatchPayload(workout)],
-      exercise_updates: (workout.exercises || []).map(buildExercisePatchPayload).filter(Boolean),
-      set_updates: (workout.exercises || []).flatMap(exercise => (exercise.sets || []).map(buildSetPatchPayload).filter(Boolean)),
+      workout_updates: [buildWorkoutPatchPayload(normalizedWorkout)].filter(Boolean),
+      exercise_updates: savedExercises.map(buildExercisePatchPayload).filter(Boolean),
+      set_updates: savedExercises.flatMap(exercise => (exercise.sets || []).filter(set => set.supabaseId).map(buildSetPatchPayload).filter(Boolean)),
+      exercise_creates: exercises.filter(exercise => !exercise.supabaseId).map(exercise => buildExerciseCreatePayload(normalizedWorkout.supabaseId, exercise)).filter(Boolean),
+      set_creates: savedExercises.flatMap(exercise => (exercise.sets || []).filter(set => !set.supabaseId).map(set => buildSetCreatePayload(exercise.supabaseId, exercise.id, set)).filter(Boolean)),
     };
   };
 
@@ -18970,6 +19021,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
         set_updates: [buildSetPatchPayload(set)],
       });
+    } else if (nextWorkout.supabaseId) {
+      const workoutPatch = buildWorkoutTreePatch(nextWorkout);
+      if (workoutPatch) queueWorkoutPatch(workoutId, workoutPatch);
     } else {
       ensureWorkoutPersistedViaApi(nextWorkout);
     }
@@ -20906,6 +20960,10 @@ const toggleExerciseMeasurementSetting = (field) => {
       }
       const id = await createWorkoutTreeViaApi(pendingWorkout);
       if (!id) patchWorkoutInState(pendingWorkout.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
+      if (id && mode !== "now") {
+        setSelectedDateKey(targetDateKey);
+        await loadWorkoutsFromApi({ preserveSelected: false, selectedSupabaseId: id });
+      }
       return;
     }
 
