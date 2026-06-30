@@ -31266,6 +31266,8 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [showConditionalSettings, setShowConditionalSettings] = useState(false);
   const [isTableFullscreen, setIsTableFullscreen] = useState(false);
+  const [graphPeriod, setGraphPeriod] = useState("month");
+  const [graphDateKey, setGraphDateKey] = useState(() => formatDateKey(new Date()));
   const columnSettingsKey = `onlypump_student_dashboard_columns_${student?.id || "unknown"}`;
   const formatSettingsKey = `onlypump_student_dashboard_format_${student?.id || "unknown"}`;
   const [columnOverrides, setColumnOverrides] = useState(() => {
@@ -31285,6 +31287,9 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
   const studentName = getManagedUserTitle(student);
   const monthKey = formatDateKey(monthDate);
   const monthLabel = monthDate.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+  const tabButtonClass = (activeTab) => `border-b px-2 py-2 text-xs font-black transition ${tab === activeTab ? "border-b-2 border-red-500 text-red-300" : "border-white/15 text-zinc-500 hover:border-white/35 hover:text-zinc-300"}`;
+  const lightActionButtonClass = "rounded-full border border-white/12 bg-white/[0.035] px-4 py-2 text-xs font-black text-zinc-200 transition hover:border-red-500/45 hover:bg-red-500/10 hover:text-red-200";
+  const activeLineButtonClass = (active) => `rounded-2xl border px-3 py-2 text-xs font-black transition ${active ? "border-red-500/70 bg-red-500/10 text-red-200" : "border-white/10 bg-white/[0.035] text-zinc-400 hover:border-white/25 hover:text-zinc-200"}`;
 
   useEffect(() => {
     try {
@@ -31302,6 +31307,10 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
       setConditionalRules(mergeTrainerDashboardFormatRules({}));
     }
   }, [formatSettingsKey]);
+
+  useEffect(() => {
+    setGraphDateKey(monthKey);
+  }, [monthKey]);
 
   const setColumnVisible = (key, value) => {
     setColumnOverrides(prev => {
@@ -31699,8 +31708,56 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 500);
   };
-  const isDashboardFullscreen = tab === "table" && isTableFullscreen;
+  const isDashboardFullscreen = tab === "graphs" || (tab === "table" && isTableFullscreen);
   const DashboardFullscreenIcon = isDashboardFullscreen ? Minimize2 : Maximize2;
+  const graphPeriodOptions = analyticsPeriods.filter(item => ["week", "month", "sixMonths", "year"].includes(item.id));
+  const studentGraphConfigs = [
+    { id: "weight", title: "Вес", type: "weight", metric: "weight_kg" },
+    { id: "measurements", title: "Замеры", type: "measurements", metric: "waist_cm" },
+    { id: "calories", title: "Калории", type: "calories", metric: "calories_total" },
+    { id: "protein", title: "Белок", type: "protein", metric: "protein_total" },
+    { id: "steps", title: "Шаги", type: "steps", metric: "steps_count" },
+    { id: "sleep", title: "Сон", type: "sleep", metric: "sleep_duration_minutes" },
+    { id: "volume", title: "Тоннаж", type: "training_load", metric: "volume" },
+    { id: "workouts", title: "Тренировки", type: "training_load", metric: "workouts" },
+  ];
+  const getStudentGraphData = (config) => {
+    const typeConfig = analyticsTypeConfigs[config.type] || analyticsTypeConfigs.measurements;
+    const metricOptions = typeConfig.metrics.length ? typeConfig.metrics : measurementAnalyticsMetrics;
+    const metricConfig = metricOptions.find(item => item.key === config.metric) || metricOptions[0];
+    const isNutritionAnalytics = typeConfig.source === "nutrition";
+    const usesRollingChartRange = ["measurements", "health", "training"].includes(typeConfig.source) || isNutritionAnalytics;
+    const allPoints = typeConfig.source === "training"
+      ? buildTrainingSeries(data.workouts, config.metric)
+      : typeConfig.source === "health"
+        ? buildHealthSeries(data.health_logs, config.metric)
+        : typeConfig.source === "nutrition"
+          ? buildNutritionSeries(data.nutrition_days, config.metric)
+          : buildMeasurementSeries(data.measurements, config.metric);
+    const points = usesRollingChartRange
+      ? filterRollingAnalyticsPoints(allPoints, graphPeriod, graphDateKey)
+      : filterAnalyticsPoints(allPoints, graphPeriod, graphDateKey);
+    const nutritionSeriesByMetric = isNutritionAnalytics
+      ? nutritionAnalyticsMetrics.reduce((acc, item) => {
+        acc[item.key] = filterRollingAnalyticsPoints(buildNutritionSeries(data.nutrition_days, item.key), graphPeriod, graphDateKey);
+        return acc;
+      }, {})
+      : {};
+    return {
+      chartType: metricConfig.type || (typeConfig.source === "health" || typeConfig.source === "nutrition" ? "bar" : "line"),
+      metricConfig,
+      nutritionSeriesByMetric,
+      points,
+      summary: analyticsSummary(points),
+      typeConfig,
+      usesRollingChartRange,
+    };
+  };
+  const shiftStudentGraphPeriod = (amount, mode = "division") => {
+    setGraphDateKey(current => mode === "division"
+      ? shiftAnalyticsChartDivisionDate(current, graphPeriod, amount)
+      : shiftAnalyticsPeriodDate(current, graphPeriod, amount));
+  };
 
   return <div onClick={onClose} style={{ alignItems: isDashboardFullscreen ? "flex-start" : "center", justifyContent: "center" }} className={`student-dashboard-layer profile-screen onlypump-modal-layer fixed inset-0 z-[235] flex bg-black/70 backdrop-blur-sm ${isDashboardFullscreen ? "is-dashboard-fullscreen p-2 md:p-4" : "p-4"}`}>
     <BottomSheetPanel onClose={onClose} priority={235} onClick={(event) => event.stopPropagation()} className={`student-dashboard-panel flex w-full flex-col overflow-hidden border border-white/10 bg-zinc-950/96 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl ${isDashboardFullscreen ? "is-fullscreen max-w-none rounded-[1.5rem] md:w-[calc(100vw-32px)]" : "max-h-[min(calc(var(--onlypump-app-height)-72px),860px)] max-w-6xl rounded-[2rem]"}`}>
@@ -31725,12 +31782,12 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
         </div>
       </div>
       <div className="student-dashboard-month-row mt-4 flex items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-2">
-        <button type="button" onClick={() => setMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))} className="rounded-full bg-white/8 px-4 py-2 text-sm font-black">‹</button>
+        <button type="button" onClick={() => setMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))} className="rounded-full border border-white/10 bg-white/[0.035] px-4 py-2 text-sm font-black text-zinc-300 transition hover:border-red-500/45 hover:text-red-200">‹</button>
         <b className="text-center text-sm capitalize">{monthLabel}</b>
-        <button type="button" onClick={() => setMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))} className="rounded-full bg-white/8 px-4 py-2 text-sm font-black">›</button>
+        <button type="button" onClick={() => setMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))} className="rounded-full border border-white/10 bg-white/[0.035] px-4 py-2 text-sm font-black text-zinc-300 transition hover:border-red-500/45 hover:text-red-200">›</button>
       </div>
-      <div className="student-dashboard-tabs mt-3 grid grid-cols-3 gap-2">
-        {[["overview", "Обычный вид"], ["table", "Таблица"], ["training", "Тренировки"]].map(([id, label]) => <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-full px-3 py-2 text-xs font-black transition ${tab === id ? "bg-red-500 text-black" : "bg-white/8 text-zinc-300"}`}>{label}</button>)}
+      <div className="student-dashboard-tabs mt-3 grid grid-cols-4 gap-2 border-b border-white/10">
+        {[["overview", "Обычный вид"], ["table", "Таблица"], ["training", "Тренировки"], ["graphs", "Графики"]].map(([id, label]) => <button key={id} type="button" onClick={() => setTab(id)} className={tabButtonClass(id)}>{label}</button>)}
       </div>
       {error && <p className="mt-3 rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{error}</p>}
       {refreshing && !error && <p className="mt-3 rounded-2xl bg-white/[0.04] p-3 text-xs font-bold uppercase tracking-[0.14em] text-zinc-500">Обновляю таблицу...</p>}
@@ -31742,21 +31799,66 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
             <div className="rounded-2xl bg-white/[0.04] p-4"><span className="text-xs text-zinc-500">Шаги сред.</span><b className="mt-2 block text-2xl">{Math.round(monthSummary.steps).toLocaleString("ru-RU")}</b></div>
             <div className="rounded-2xl bg-white/[0.04] p-4"><span className="text-xs text-zinc-500">Сон сред.</span><b className="mt-2 block text-2xl">{roundMacro(monthSummary.sleep)} ч</b></div>
           </div>}
+          {tab === "graphs" && <div className="space-y-4">
+            <div className="flex flex-col gap-3 rounded-[24px] border border-white/10 bg-white/[0.035] p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-red-300">Графики</p>
+                <p className="mt-1 text-xs text-zinc-500">Крупный просмотр по данным ученика за выбранный период.</p>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
+                {graphPeriodOptions.map(item => <button key={item.id} type="button" onClick={() => setGraphPeriod(item.id)} className={`shrink-0 border-b px-3 py-2 text-xs font-black transition ${graphPeriod === item.id ? "border-b-2 border-red-500 text-red-300" : "border-white/20 text-zinc-500 hover:border-white/40 hover:text-zinc-300"}`}>{item.label}</button>)}
+              </div>
+            </div>
+            <div className="grid gap-4 xl:grid-cols-2">
+              {studentGraphConfigs.map(config => {
+                const graph = getStudentGraphData(config);
+                const nutritionGoalForGraph = graph.typeConfig.source === "nutrition" ? profileNutritionGoalFromProfile(student || DEFAULT_PROFILE, initialNutritionGoal) : initialNutritionGoal;
+                return <section key={config.id} className="rounded-[28px] border border-white/10 bg-white/[0.025] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">{graph.typeConfig.title}</p>
+                      <h3 className="mt-1 text-lg font-black">{config.title}</h3>
+                    </div>
+                    <button type="button" onClick={() => setDetail({ mode: "graph", title: config.title, type: config.type, initialMetric: config.metric })} className="rounded-full border border-white/12 bg-white/[0.035] px-3 py-2 text-[11px] font-black text-zinc-300 transition hover:border-red-500/45 hover:text-red-200">Открыть</button>
+                  </div>
+                  <AnalyticsChart
+                    points={graph.points}
+                    type={graph.chartType}
+                    unit={graph.metricConfig.unit}
+                    metricKey={config.metric}
+                    period={graphPeriod}
+                    selectedDateKey={graphDateKey}
+                    profile={student || DEFAULT_PROFILE}
+                    nutritionGoal={nutritionGoalForGraph}
+                    nutritionSeriesByMetric={graph.nutritionSeriesByMetric}
+                    onSelectMetric={graph.typeConfig.source === "nutrition" ? undefined : undefined}
+                    onSwipePeriod={shiftStudentGraphPeriod}
+                  />
+                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div className="rounded-2xl bg-white/[0.035] p-3"><p className="text-[10px] uppercase text-zinc-500">Среднее</p><b>{roundMacro(graph.summary.avg)}</b></div>
+                    <div className="rounded-2xl bg-white/[0.035] p-3"><p className="text-[10px] uppercase text-zinc-500">Мин</p><b>{roundMacro(graph.summary.min)}</b></div>
+                    <div className="rounded-2xl bg-white/[0.035] p-3"><p className="text-[10px] uppercase text-zinc-500">Макс</p><b>{roundMacro(graph.summary.max)}</b></div>
+                    <div className="rounded-2xl bg-white/[0.035] p-3"><p className="text-[10px] uppercase text-zinc-500">Тренд</p><b>{graph.summary.trend}</b></div>
+                  </div>
+                </section>;
+              })}
+            </div>
+          </div>}
           {tab === "table" && <div className="student-dashboard-table-pane space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">{visibleMetricColumns.length} колонок</p>
 	              <div className="student-dashboard-table-actions flex flex-wrap gap-2">
-	                <button type="button" onClick={() => setShowColumnPicker(prev => !prev)} className="rounded-full bg-white/8 px-4 py-2 text-xs font-black text-zinc-200 transition hover:bg-white/12">Колонки</button>
-	                <button type="button" onClick={() => setShowConditionalSettings(prev => !prev)} className="rounded-full bg-red-500/15 px-4 py-2 text-xs font-black text-red-200 transition hover:bg-red-500/25">Формат</button>
-	                <button type="button" onClick={downloadStudentDashboardTable} className="rounded-full bg-red-500 px-4 py-2 text-xs font-black text-black transition hover:bg-red-400">Скачать</button>
+	                <button type="button" onClick={() => setShowColumnPicker(prev => !prev)} className={lightActionButtonClass}>Колонки</button>
+	                <button type="button" onClick={() => setShowConditionalSettings(prev => !prev)} className={lightActionButtonClass}>Формат</button>
+	                <button type="button" onClick={downloadStudentDashboardTable} className={lightActionButtonClass}>Скачать</button>
 	              </div>
             </div>
             {showColumnPicker && <div className="grid gap-2 rounded-[22px] border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-2 lg:grid-cols-3">
               {optionalMetricColumns.map(column => {
                 const hasData = columnHasData(column);
                 const visible = visibleMetricColumns.some(item => item.key === column.key);
-                return <button key={column.key} type="button" onClick={() => setColumnVisible(column.key, !visible)} className={`flex items-center justify-between gap-2 rounded-2xl px-3 py-2 text-left text-xs font-black transition ${visible ? "bg-red-500 text-black" : "bg-white/[0.05] text-zinc-300"}`}>
-                  <span>{column.label}<span className={`mt-0.5 block text-[10px] font-bold ${visible ? "text-black/55" : "text-zinc-500"}`}>{hasData ? "есть данные" : "нет данных"}</span></span>
+                return <button key={column.key} type="button" onClick={() => setColumnVisible(column.key, !visible)} className={`flex items-center justify-between gap-2 text-left ${activeLineButtonClass(visible)}`}>
+                  <span>{column.label}<span className={`mt-0.5 block text-[10px] font-bold ${visible ? "text-red-200/70" : "text-zinc-500"}`}>{hasData ? "есть данные" : "нет данных"}</span></span>
                   <span>{visible ? "✓" : "+"}</span>
                 </button>;
               })}
@@ -31780,10 +31882,10 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
                         <b className="block text-sm">{column.label}</b>
                         <span className="mt-1 block text-[11px] text-zinc-500">Цвет текста и фона ячейки</span>
                       </div>
-                      <button type="button" onClick={() => updateConditionalRule(column.key, { enabled: !rule.enabled })} className={`rounded-full px-3 py-1.5 text-[11px] font-black ${rule.enabled ? "bg-red-500 text-black" : "bg-white/8 text-zinc-400"}`}>{rule.enabled ? "Вкл" : "Выкл"}</button>
+                      <button type="button" onClick={() => updateConditionalRule(column.key, { enabled: !rule.enabled })} className={activeLineButtonClass(rule.enabled)}>{rule.enabled ? "Вкл" : "Выкл"}</button>
                     </div>
                     <div className="mt-3 grid grid-cols-4 gap-1 rounded-2xl bg-black/20 p-1 text-[10px] font-black">
-                      {[["previous", "Прошлое"], ["norm", "Норма"], ["range", "Диапазон"], ["formula", "Формула"]].map(([mode, label]) => <button key={mode} type="button" onClick={() => updateConditionalRule(column.key, { mode })} className={`rounded-xl px-2 py-2 ${activeMode === mode ? "bg-red-500 text-black" : "text-zinc-400"}`}>{label}</button>)}
+                      {[["previous", "Прошлое"], ["norm", "Норма"], ["range", "Диапазон"], ["formula", "Формула"]].map(([mode, label]) => <button key={mode} type="button" onClick={() => updateConditionalRule(column.key, { mode })} className={`border-b px-2 py-2 transition ${activeMode === mode ? "border-b-2 border-red-500 text-red-300" : "border-white/10 text-zinc-500 hover:border-white/30 hover:text-zinc-300"}`}>{label}</button>)}
                     </div>
                     {activeMode === "norm" && <label className="mt-3 block text-[11px] font-black uppercase tracking-[0.14em] text-zinc-500">Норма
                       <input type="number" value={rule.norm ?? ""} onChange={(event) => updateConditionalRule(column.key, { norm: event.target.value })} className="mt-1 w-full rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-sm font-black outline-none"/>
@@ -31800,8 +31902,8 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
                       <input value={rule.formula || ""} onChange={(event) => updateConditionalRule(column.key, { formula: event.target.value })} placeholder="Например: >=100 или 80..120" className="mt-1 w-full rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-sm font-black outline-none"/>
                     </label>}
                     <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-black">
-                      <button type="button" onClick={() => updateConditionalRule(column.key, { applyText: !rule.applyText })} className={`rounded-full px-3 py-1.5 ${rule.applyText ? "bg-white text-black" : "bg-white/8 text-zinc-400"}`}>Текст</button>
-                      <button type="button" onClick={() => updateConditionalRule(column.key, { applyCell: !rule.applyCell })} className={`rounded-full px-3 py-1.5 ${rule.applyCell ? "bg-white text-black" : "bg-white/8 text-zinc-400"}`}>Ячейка</button>
+                      <button type="button" onClick={() => updateConditionalRule(column.key, { applyText: !rule.applyText })} className={activeLineButtonClass(rule.applyText)}>Текст</button>
+                      <button type="button" onClick={() => updateConditionalRule(column.key, { applyCell: !rule.applyCell })} className={activeLineButtonClass(rule.applyCell)}>Ячейка</button>
                     </div>
                     <div className="mt-3 grid gap-2 text-[11px]">
                       {(activeMode === "range" ? [["inRange", "В диапазоне"], ["belowRange", "Ниже диапазона"], ["aboveRange", "Выше диапазона"]] : activeMode === "formula" ? [["formulaHit", "Формула да"], ["formulaMiss", "Формула нет"]] : [["greater", "> / >="], ["less", "< / <="], ["equal", "="]]).map(([colorKey, label]) => <div key={colorKey} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-2xl bg-black/15 px-3 py-2">
