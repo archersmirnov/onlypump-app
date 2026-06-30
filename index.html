@@ -15163,9 +15163,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const plannedAndMissedWorkouts = useMemo(() => {
     return sortedWorkouts
       .map(workout => ({ workout, diaryStatus: getWorkoutDiaryStatus(workout) }))
-      .filter(item => item.diaryStatus !== "completed" && item.workout.date === selectedDateKey)
+      .filter(item => item.diaryStatus !== "completed")
       .sort((a, b) => parseDateKey(a.workout.date || todayDateKey) - parseDateKey(b.workout.date || todayDateKey));
-  }, [sortedWorkouts, selectedDateKey, todayDateKey]);
+  }, [sortedWorkouts, todayDateKey]);
   const plannedAndMissedWorkoutsKey = plannedAndMissedWorkouts.map(item => `${item.workout.id}:${item.workout.date}:${item.diaryStatus}`).join("|");
   const hasMissedWorkouts = plannedAndMissedWorkouts.some(item => item.diaryStatus === "missed");
   const clampPlannedWorkoutsScrollLeft = (node, left) => {
@@ -15286,12 +15286,19 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       });
   }, [workouts, selectedDateKey]);
 
-  const getCompletedWorkoutSetCount = (workout) => getWorkoutSets(workout).filter(set => getSetStatusGlobal(set) === "completed").length;
-  const weeklyPerformedWorkouts = useMemo(() => weeklyWorkouts.filter(workout => getCompletedWorkoutSetCount(workout) > 0), [weeklyWorkouts]);
+  const isExpectedWeeklyWorkout = (workout = {}) => ["planned", "active", "completed"].includes(normalizeWorkoutStatus(workout.status));
+  const getExpectedWorkoutSets = (workout = {}) => {
+    const sets = getWorkoutSets(workout);
+    return normalizeWorkoutStatus(workout.status) === "completed"
+      ? sets.filter(set => getSetStatusGlobal(set) === "completed")
+      : sets;
+  };
+  const getExpectedWorkoutSetCount = (workout) => getExpectedWorkoutSets(workout).length;
+  const weeklyExpectedWorkouts = useMemo(() => weeklyWorkouts.filter(workout => isExpectedWeeklyWorkout(workout) && getExpectedWorkoutSetCount(workout) > 0), [weeklyWorkouts]);
 
   const weeklySetCount = useMemo(() => {
-    return weeklyWorkouts.reduce((sum, workout) => sum + getCompletedWorkoutSetCount(workout), 0);
-  }, [weeklyWorkouts]);
+    return weeklyExpectedWorkouts.reduce((sum, workout) => sum + getExpectedWorkoutSetCount(workout), 0);
+  }, [weeklyExpectedWorkouts]);
 
   const activeWorkout = useMemo(() => sortedWorkouts.find(workout => workout.status === "active") || null, [sortedWorkouts]);
 
@@ -15316,6 +15323,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const getMuscleSetStatsForWorkouts = (items = [], options = {}) => {
     const completedOnly = options.completedOnly !== false;
+    const expectedOnly = options.expectedOnly === true;
     const stats = standardMuscleGroups.reduce((acc, group) => {
       acc[group] = { muscleGroup: group, sets: 0, volume: 0, workouts: new Set(), order: standardMuscleGroups.indexOf(group) };
       return acc;
@@ -15323,7 +15331,9 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     items.forEach(workout => {
       (workout?.exercises || []).forEach(exercise => {
         if (!isStrengthStatsExercise(exercise)) return;
-        const sets = completedOnly
+        const sets = expectedOnly
+          ? (normalizeWorkoutStatus(workout?.status) === "completed" ? (exercise.sets || []).filter(set => getSetStatusGlobal(set) === "completed") : (exercise.sets || []))
+          : completedOnly
           ? (exercise.sets || []).filter(set => getSetStatusGlobal(set) === "completed")
           : (exercise.sets || []);
         getExerciseMuscleSetContributions(exercise, sets).forEach(contribution => {
@@ -15342,8 +15352,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       .sort((a, b) => b.sets - a.sets || b.volume - a.volume || a.order - b.order);
   };
 
-  const weeklyMuscleStats = useMemo(() => getMuscleSetStatsForWorkouts(weeklyWorkouts), [weeklyWorkouts]);
-  const weeklyVolume = useMemo(() => weeklyWorkouts.reduce((sum, workout) => sum + Number(getWorkoutVolume(workout)), 0), [weeklyWorkouts]);
+  const weeklyMuscleStats = useMemo(() => getMuscleSetStatsForWorkouts(weeklyExpectedWorkouts, { expectedOnly: true }), [weeklyExpectedWorkouts]);
+  const weeklyVolume = useMemo(() => weeklyExpectedWorkouts.reduce((sum, workout) => {
+    const completedOnly = normalizeWorkoutStatus(workout.status) === "completed";
+    return sum + Number(getWorkoutVolume(workout, completedOnly));
+  }, 0), [weeklyExpectedWorkouts]);
 
   const VolumeLoadBar = ({ count = 0, title = "Объем", subtitle = "подходы", experiencedAt = volumeStandards.workoutTotal, onClick, className = "" }) => {
     const level = getVolumeLoadLevel(count, experiencedAt);
@@ -24315,7 +24328,7 @@ const toggleExerciseMeasurementSetting = (field) => {
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-400">Анализ недели</p>
             <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">{formatWeekRange(toDateKey(weekStart), toDateKey(addLocalDays(weekStart, 6)))}</h2>
-            <p className="mt-2 text-sm text-zinc-500">{pluralizeWorkout(weeklyWorkouts.length)} · {weeklySetCount} подходов · {formatVolume(weeklyVolume)}</p>
+            <p className="mt-2 text-sm text-zinc-500">{pluralizeWorkout(weeklyExpectedWorkouts.length)} · {weeklySetCount} подходов · {formatVolume(weeklyVolume)}</p>
           </div>
           <button onClick={() => setWeekStatsOpen(false)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
         </div>
