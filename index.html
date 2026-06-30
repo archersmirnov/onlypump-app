@@ -31038,6 +31038,20 @@ const formatStudentDashboardNumber = (value, suffix = "") => {
   return `${roundMacro(number)}${suffix}`;
 };
 
+const normalizeStudentTodayActivity = (activity = {}) => ({
+  opened_app: Boolean(activity.opened_app || activity.openedApp),
+  entered_data: Boolean(activity.entered_data || activity.enteredData),
+  logged_nutrition: Boolean(activity.logged_nutrition || activity.loggedNutrition),
+  logged_steps: Boolean(activity.logged_steps || activity.loggedSteps),
+  logged_workout: Boolean(activity.logged_workout || activity.loggedWorkout),
+});
+
+const getStudentTodayActivityScore = (student = {}) => {
+  const activity = normalizeStudentTodayActivity(student.today_activity || student.todayActivity);
+  return ["opened_app", "entered_data", "logged_nutrition", "logged_steps", "logged_workout"]
+    .reduce((sum, key) => sum + (activity[key] ? 1 : 0), 0);
+};
+
 const getStudentDashboardChoiceLabel = (options = [], id = "") => findDailyChoice(options, id)?.label || "";
 
 const trainerDashboardConditionalColumns = ["calories", "protein", "fat", "carbs", "steps", "sleep", "weight"];
@@ -31907,7 +31921,9 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
 
 function StudentsPage({ profile = DEFAULT_PROFILE, telegramInitData = "" }) {
   const [students, setStudents] = useState([]);
+  const [viewMode, setViewMode] = useState("list");
   const [query, setQuery] = useState("");
+  const [controlDateKey, setControlDateKey] = useState(formatDateKey(new Date()));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -31927,7 +31943,16 @@ function StudentsPage({ profile = DEFAULT_PROFILE, telegramInitData = "" }) {
     setLoading(true);
     setError("");
     try {
-      const result = await callOnlyPumpProfileApi(telegramInitData, "load_access_panel", {});
+      const selectedDate = parseDateKeyLocal(controlDateKey);
+      const todayStart = new Date(selectedDate);
+      todayStart.setHours(0, 0, 0, 0);
+      const tomorrowStart = new Date(todayStart);
+      tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+      const result = await callOnlyPumpProfileApi(telegramInitData, "load_access_panel", {
+        today_date: formatDateKey(todayStart),
+        today_start_at: todayStart.toISOString(),
+        tomorrow_start_at: tomorrowStart.toISOString(),
+      });
       setStudents(Array.isArray(result.students) ? result.students : []);
     } catch (loadError) {
       console.error("students page load error:", loadError);
@@ -31935,7 +31960,7 @@ function StudentsPage({ profile = DEFAULT_PROFILE, telegramInitData = "" }) {
     } finally {
       setLoading(false);
     }
-  }, [canOpenStudents, telegramInitData]);
+  }, [canOpenStudents, controlDateKey, telegramInitData]);
 
   useEffect(() => {
     loadStudents();
@@ -31953,11 +31978,25 @@ function StudentsPage({ profile = DEFAULT_PROFILE, telegramInitData = "" }) {
         student.telegram_id,
         getProfileRoleLabels(student),
       ].some(value => String(value || "").toLowerCase().includes(normalizedQuery));
-    }).sort((a, b) => getManagedUserTitle(a).localeCompare(getManagedUserTitle(b), "ru"));
-  }, [students, normalizedQuery]);
+    }).sort((a, b) => {
+      if (viewMode === "control") {
+        const scoreDelta = getStudentTodayActivityScore(a) - getStudentTodayActivityScore(b);
+        if (scoreDelta) return scoreDelta;
+      }
+      return getManagedUserTitle(a).localeCompare(getManagedUserTitle(b), "ru");
+    });
+  }, [students, normalizedQuery, viewMode]);
+
+  const activityItems = [
+    ["opened_app", "Заходил"],
+    ["entered_data", "Данные"],
+    ["logged_nutrition", "Питание"],
+    ["logged_steps", "Шаги"],
+    ["logged_workout", "Тренировки"],
+  ];
 
   return <div>
-    <Header title="Ученики" subtitle="Список учеников и быстрый переход к их аналитике."/>
+    <Header title="Ученики" subtitle={viewMode === "control" ? "Контроль активности учеников по выбранной дате." : "Список учеников и быстрый переход к их аналитике."}/>
     <Card className="p-4 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <label className="flex min-h-12 flex-1 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-sm font-bold text-zinc-400">
@@ -31968,17 +32007,54 @@ function StudentsPage({ profile = DEFAULT_PROFILE, telegramInitData = "" }) {
           {loading ? "Обновляю..." : "Обновить"}
         </button>
       </div>
+      <div className="mt-4 grid grid-cols-2 gap-4 border-b border-white/10">
+        {[["list", "Список"], ["control", "Контроль"]].map(([mode, label]) => <button key={mode} type="button" onClick={() => setViewMode(mode)} className={`h-9 border-b text-sm font-black transition ${viewMode === mode ? "border-b-2 border-red-500 text-red-300" : "border-white/20 text-zinc-500"}`}>{label}</button>)}
+      </div>
       {error && <p className="mt-4 rounded-2xl bg-red-500/10 p-3 text-sm font-semibold text-red-300">{error}</p>}
-      <div className="mt-4 flex items-center justify-between gap-3 text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">
+      {viewMode === "control" ? <>
+        <div className="mt-4" data-calendar-swipe="true">
+          <AnalyticsPeriodCalendar period="day" selectedDateKey={controlDateKey} onSelect={setControlDateKey}/>
+        </div>
+        <p className="mt-3 text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">{filteredStudents.length} учеников</p>
+      </> : <div className="mt-4 flex items-center justify-between gap-3 text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">
         <span>{filteredStudents.length} учеников</span>
         <span>{students.length ? "данные профилей" : "список пуст"}</span>
-      </div>
+      </div>}
     </Card>
 
-    <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {loading ? Array.from({ length: 6 }, (_, index) => <Card key={index} className="h-40 animate-pulse bg-white/[0.035]"/>) : filteredStudents.length ? filteredStudents.map(student => {
+    <div className="mt-5 grid gap-4 pb-[calc(var(--onlypump-safe-bottom)+128px)] md:grid-cols-2 xl:grid-cols-3">
+      {loading ? Array.from({ length: 6 }, (_, index) => <Card key={index} className={`${viewMode === "control" ? "h-32" : "h-40"} animate-pulse bg-white/[0.035]`}/>) : filteredStudents.length ? filteredStudents.map(student => {
         const title = getManagedUserTitle(student);
         const identity = getManagedUserIdentity(student);
+        const activity = normalizeStudentTodayActivity(student.today_activity || student.todayActivity);
+        if (viewMode === "control") {
+          return <div key={student.id || identity} role="button" tabIndex={0} onClick={() => setSelectedStudent(student)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedStudent(student); }} className="cursor-pointer rounded-[var(--onlypump-card-radius)] border border-[var(--onlypump-border)] bg-[var(--onlypump-card)] p-4 text-left shadow-[var(--onlypump-shadow)] transition active:scale-[0.99]">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-red-500 to-red-800 text-base font-black text-black">
+                {String(title || "?").trim().slice(0, 1).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="break-words text-base font-black tracking-[-0.03em]">{title}</h3>
+                    <p className="mt-1 break-words text-xs text-zinc-500">{identity}</p>
+                    <p className="mt-2 text-[10px] font-black uppercase tracking-[0.14em] text-red-300">{getProfileRoleLabels(student)}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-white/[0.06] px-2 py-1 text-[10px] font-black text-zinc-400">{getStudentTodayActivityScore(student)}/5</span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-5 gap-1 text-center">
+              {activityItems.map(([key, label]) => {
+                const active = Boolean(activity[key]);
+                return <div key={key} className="min-w-0">
+                  <span className="block truncate text-[10px] font-bold text-zinc-500">{label}</span>
+                  <span className={`mt-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-sm font-black ${active ? "bg-red-500 text-black" : "bg-white/[0.06] text-zinc-500"}`}>{active ? "+" : "-"}</span>
+                </div>;
+              })}
+            </div>
+          </div>;
+        }
         return <Card key={student.id || identity} className="flex flex-col gap-4 p-5">
           <div className="flex items-start gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-red-500 to-red-800 text-lg font-black text-black">
@@ -32007,7 +32083,7 @@ function StudentsPage({ profile = DEFAULT_PROFILE, telegramInitData = "" }) {
       }) : <Card className="p-6 md:col-span-2 xl:col-span-3">
         <Users className="text-red-400"/>
         <h3 className="mt-4 text-xl font-black">Ученики не найдены</h3>
-        <p className="mt-2 text-sm text-zinc-500">Когда ученики появятся в твоём доступе, они будут отображаться здесь.</p>
+        <p className="mt-2 text-sm text-zinc-500">{students.length ? "По текущему поиску ничего не найдено." : "Когда ученики появятся в твоём доступе, они будут отображаться здесь."}</p>
       </Card>}
     </div>
 
