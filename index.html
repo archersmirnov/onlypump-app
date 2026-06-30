@@ -26278,6 +26278,7 @@ const trainingAnalyticsMetrics = [
   { key: "sets", label: "Подходы", unit: "", type: "bar" },
   { key: "volume", label: "Тоннаж", unit: "кг", type: "bar" },
   { key: "workouts", label: "Тренировки", unit: "", type: "bar" },
+  { key: "cardio", label: "Кардио", unit: "", type: "bar" },
 ];
 
 const nutritionAnalyticsMetrics = [
@@ -26940,10 +26941,12 @@ const buildTrainingSeries = (workouts = [], metricKey = "sets") => {
     const date = workoutDateKey(workout);
     if (!date) return;
     const sets = getWorkoutSets(workout).filter(set => getSetStatusGlobal(set) === "completed");
-    const current = map.get(date) || { date, sets: 0, volume: 0, workouts: 0 };
+    const workoutType = String(workout.workoutType || workout.workout_type || workout.type || "").toLowerCase();
+    const current = map.get(date) || { date, sets: 0, volume: 0, workouts: 0, cardio: 0 };
     current.sets += sets.length;
     current.volume += getWorkoutVolume(workout);
     current.workouts += 1;
+    current.cardio += ["cardio", "hiit", "mobility"].includes(workoutType) ? 1 : 0;
     map.set(date, current);
   });
   return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date)).map(item => ({ date: item.date, value: Number(item[metricKey] || 0) }));
@@ -31174,7 +31177,7 @@ const normalizeStudentDashboardData = (payload = {}, monthKey = formatDateKey(ne
 
 const studentDashboardMetricGraphByKey = {
   workout: { type: "training_load", metric: "workouts" },
-  cardio: { type: "training_load", metric: "workouts" },
+  cardio: { type: "training_load", metric: "cardio" },
   volume: { type: "training_load", metric: "volume" },
   sets: { type: "training_load", metric: "sets" },
   calories: { type: "calories", metric: "calories_total" },
@@ -31186,6 +31189,36 @@ const studentDashboardMetricGraphByKey = {
   weight: { type: "weight", metric: "weight_kg" },
   weightChange: { type: "weight", metric: "weight_kg" },
 };
+
+const studentDashboardMonthEndKey = (date = new Date()) => {
+  const target = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date();
+  return formatDateKey(new Date(target.getFullYear(), target.getMonth() + 1, 0));
+};
+
+const studentDashboardGraphValue = (row = {}, metricKey = "") => {
+  const measurement = row.measurement || {};
+  if (measurementAnalyticsMetricKeys.has(metricKey)) {
+    const raw = metricKey === "weight_kg" ? (measurement.weight_kg ?? measurement.weight ?? row.weight) : measurement[metricKey];
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+  if (metricKey === "calories_total") return Number(row.calories || 0);
+  if (metricKey === "protein_total") return Number(row.protein || 0);
+  if (metricKey === "fat_total") return Number(row.fat || 0);
+  if (metricKey === "carbs_total") return Number(row.carbs || 0);
+  if (metricKey === "palms_total") return Number(row.palms || 0);
+  if (metricKey === "steps_count") return Number(row.steps || 0);
+  if (metricKey === "sleep_duration_minutes") return Number(row.sleep || 0) * 60;
+  if (metricKey === "sets") return Number(row.sets || 0);
+  if (metricKey === "volume") return Number(row.volume || 0);
+  if (metricKey === "workouts") return Number(row.hasWorkout ? row.workoutsCount || 1 : 0);
+  if (metricKey === "cardio") return Number(row.cardio ? 1 : 0);
+  return null;
+};
+
+const buildStudentDashboardSeries = (rows = [], metricKey = "") => rows
+  .map(row => ({ date: normalizeDateKey(row.key || row.date, ""), value: studentDashboardGraphValue(row, metricKey) }))
+  .filter(point => point.date && point.value !== null && point.value !== undefined && Number.isFinite(Number(point.value)));
 
 const studentMeasurementValue = (measurement = {}, key = "") => {
   const value = Number(measurement?.[key]);
@@ -31317,8 +31350,8 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
   }, [formatSettingsKey]);
 
   useEffect(() => {
-    setGraphDateKey(monthKey);
-  }, [monthKey]);
+    setGraphDateKey(studentDashboardMonthEndKey(monthDate));
+  }, [monthDate]);
 
   const setColumnVisible = (key, value) => {
     setColumnOverrides(prev => {
@@ -31435,7 +31468,9 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
       const measurementsDone = health.measurements_done === true || measurementHasBodyValues(measurement);
       return {
         ...day,
+        measurement,
         workouts,
+        workoutsCount: completed.length,
         hasWorkout: completed.length > 0,
         cardio: cardioFromWorkout || health.cardio_completed === true || health.extra_activity_completed === true,
         volume: workoutSummary.completedVolume || 0,
@@ -31444,6 +31479,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
         protein: roundMacro(nutritionTotals.protein || 0),
         fat: roundMacro(nutritionTotals.fat || 0),
         carbs: roundMacro(nutritionTotals.carbs || 0),
+        palms: nutritionPalmValueFromDay(nutrition),
         sleep: roundMacro(profileNonNegativeNumber(health.sleep_duration_minutes, 0) / 60),
         sleepStart: formatStudentDashboardTime(health.sleep_started_at),
         sleepEnd: formatStudentDashboardTime(health.sleep_ended_at),
@@ -31728,27 +31764,20 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
     { id: "steps", title: "Шаги", type: "steps", metric: "steps_count" },
     { id: "sleep", title: "Сон", type: "sleep", metric: "sleep_duration_minutes" },
     { id: "volume", title: "Тоннаж", type: "training_load", metric: "volume" },
+    { id: "sets", title: "Подходы", type: "training_load", metric: "sets" },
     { id: "workouts", title: "Тренировки", type: "training_load", metric: "workouts" },
+    { id: "cardio", title: "Кардио", type: "training_load", metric: "cardio" },
   ];
   const getStudentGraphData = (config) => {
     const typeConfig = analyticsTypeConfigs[config.type] || analyticsTypeConfigs.measurements;
     const metricOptions = typeConfig.metrics.length ? typeConfig.metrics : measurementAnalyticsMetrics;
     const metricConfig = metricOptions.find(item => item.key === config.metric) || metricOptions[0];
     const isNutritionAnalytics = typeConfig.source === "nutrition";
-    const usesRollingChartRange = ["measurements", "health", "training"].includes(typeConfig.source) || isNutritionAnalytics;
-    const allPoints = typeConfig.source === "training"
-      ? buildTrainingSeries(data.workouts, config.metric)
-      : typeConfig.source === "health"
-        ? buildHealthSeries(data.health_logs, config.metric)
-        : typeConfig.source === "nutrition"
-          ? buildNutritionSeries(data.nutrition_days, config.metric)
-          : buildMeasurementSeries(data.measurements, config.metric);
-    const points = usesRollingChartRange
-      ? filterRollingAnalyticsPoints(allPoints, graphPeriod, graphDateKey)
-      : filterAnalyticsPoints(allPoints, graphPeriod, graphDateKey);
+    const allPoints = buildStudentDashboardSeries(dashboardRows, config.metric);
+    const points = filterRollingAnalyticsPoints(allPoints, graphPeriod, graphDateKey);
     const nutritionSeriesByMetric = isNutritionAnalytics
       ? nutritionAnalyticsMetrics.reduce((acc, item) => {
-        acc[item.key] = filterRollingAnalyticsPoints(buildNutritionSeries(data.nutrition_days, item.key), graphPeriod, graphDateKey);
+        acc[item.key] = filterRollingAnalyticsPoints(buildStudentDashboardSeries(dashboardRows, item.key), graphPeriod, graphDateKey);
         return acc;
       }, {})
       : {};
@@ -31759,7 +31788,7 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
       points,
       summary: analyticsSummary(points),
       typeConfig,
-      usesRollingChartRange,
+      usesRollingChartRange: true,
     };
   };
   const shiftStudentGraphPeriod = (amount, mode = "division") => {
