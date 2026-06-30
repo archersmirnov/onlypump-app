@@ -26882,6 +26882,7 @@ const analyticsChartRollingRange = (period = "month", selectedDateKey = formatDa
       endKey: selectedDateKey,
     };
   }
+  if (period === "month") return analyticsPeriodRange("month", selectedDateKey);
   const days = getAnalyticsChartPeriodSpanDays(period);
   return {
     startKey: dateKeyDaysAgo(selectedDateKey, days - 1),
@@ -27156,7 +27157,7 @@ const buildStepsAnalyticsChartPoints = (points = [], period = "month", selectedD
       };
     });
   }
-  const dayCount = period === "week" ? 7 : period === "month" ? 30 : 1;
+  const dayCount = period === "week" ? 7 : period === "month" ? analyticsChartDaysBetween(range.startKey, range.endKey) + 1 : 1;
   const start = parseDateKeyLocal(range.startKey);
   return Array.from({ length: dayCount }, (_, index) => {
     const key = formatDateKey(addLocalDaysToDate(start, index));
@@ -27256,7 +27257,7 @@ const buildNutritionAnalyticsChartPoints = (points = [], period = "month", selec
       };
     });
   }
-  const dayCount = period === "week" ? 7 : period === "month" ? 30 : 1;
+  const dayCount = period === "week" ? 7 : period === "month" ? analyticsChartDaysBetween(range.startKey, range.endKey) + 1 : 1;
   const start = parseDateKeyLocal(range.startKey);
   return Array.from({ length: dayCount }, (_, index) => {
     const key = formatDateKey(addLocalDaysToDate(start, index));
@@ -31195,6 +31196,37 @@ const studentDashboardMonthEndKey = (date = new Date()) => {
   return formatDateKey(new Date(target.getFullYear(), target.getMonth() + 1, 0));
 };
 
+const studentDashboardDateItems = (startKey, endKey) => {
+  const start = parseDateKeyLocal(startKey);
+  const end = parseDateKeyLocal(endKey);
+  const days = Math.max(0, analyticsChartDaysBetween(formatDateKey(start), formatDateKey(end)));
+  return Array.from({ length: days + 1 }, (_, index) => {
+    const date = addLocalDaysToDate(start, index);
+    return { date, key: formatDateKey(date), label: String(date.getDate()).padStart(2, "0"), weekday: date.toLocaleDateString("ru-RU", { weekday: "short" }).replace(".", "") };
+  });
+};
+
+const studentDashboardGraphRangeLabel = (period = "month", range = {}, selectedDateKey = formatDateKey(new Date())) => {
+  if (period === "month") return parseDateKeyLocal(selectedDateKey).toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+  if (period === "week") return `${formatShortDateRu(range.startKey)} - ${formatShortDateRu(range.endKey)}`;
+  if (period === "sixMonths") return `${formatShortDateRu(range.startKey)} - ${formatShortDateRu(range.endKey)}`;
+  if (period === "year") return `${formatShortDateRu(range.startKey)} - ${formatShortDateRu(range.endKey)}`;
+  return formatShortDateRu(selectedDateKey);
+};
+
+const shiftStudentDashboardGraphDate = (selectedDateKey, period = "month", amount = 1) => {
+  const date = parseDateKeyLocal(selectedDateKey);
+  if (period === "month") return studentDashboardMonthEndKey(new Date(date.getFullYear(), date.getMonth() + amount, 1));
+  if (period === "week") return formatDateKey(addLocalDaysToDate(date, amount * 7));
+  if (period === "sixMonths" || period === "year") {
+    const monthShift = period === "year" ? 12 : 6;
+    const targetMonth = new Date(date.getFullYear(), date.getMonth() + amount * monthShift, 1);
+    const lastDay = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0).getDate();
+    return formatDateKey(new Date(targetMonth.getFullYear(), targetMonth.getMonth(), Math.min(date.getDate(), lastDay)));
+  }
+  return formatDateKey(addLocalDaysToDate(date, amount));
+};
+
 const studentDashboardGraphValue = (row = {}, metricKey = "") => {
   const measurement = row.measurement || {};
   if (measurementAnalyticsMetricKeys.has(metricKey)) {
@@ -31308,7 +31340,14 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
   const [showConditionalSettings, setShowConditionalSettings] = useState(false);
   const [isTableFullscreen, setIsTableFullscreen] = useState(false);
   const [graphPeriod, setGraphPeriod] = useState("month");
-  const [graphDateKey, setGraphDateKey] = useState(() => formatDateKey(new Date()));
+  const [graphDateKey, setGraphDateKey] = useState(() => {
+    const seed = initialMonthDate ? parseDateKeyLocal(initialMonthDate) : new Date();
+    return studentDashboardMonthEndKey(seed);
+  });
+  const [graphData, setGraphData] = useState(null);
+  const [graphDataRangeKey, setGraphDataRangeKey] = useState("");
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState("");
   const columnSettingsKey = `onlypump_student_dashboard_columns_${student?.id || "unknown"}`;
   const formatSettingsKey = `onlypump_student_dashboard_format_${student?.id || "unknown"}`;
   const [columnOverrides, setColumnOverrides] = useState(() => {
@@ -31328,6 +31367,10 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
   const studentName = getManagedUserTitle(student);
   const monthKey = formatDateKey(monthDate);
   const monthLabel = monthDate.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+  const graphRange = analyticsChartRollingRange(graphPeriod, graphDateKey);
+  const graphRangeLabel = studentDashboardGraphRangeLabel(graphPeriod, graphRange, graphDateKey);
+  const isDashboardGraphs = tab === "graphs";
+  const isGraphDetailOpen = detail?.mode === "studentGraph";
   const tabButtonClass = (activeTab) => `border-b px-2 py-2 text-xs font-black transition ${tab === activeTab ? "border-b-2 border-red-500 text-red-300" : "border-white/15 text-zinc-500 hover:border-white/35 hover:text-zinc-300"}`;
   const lightActionButtonClass = "rounded-full border border-white/12 bg-white/[0.035] px-4 py-2 text-xs font-black text-zinc-200 transition hover:border-red-500/45 hover:bg-red-500/10 hover:text-red-200";
   const activeLineButtonClass = (active) => `rounded-2xl border px-3 py-2 text-xs font-black transition ${active ? "border-red-500/70 bg-red-500/10 text-red-200" : "border-white/10 bg-white/[0.035] text-zinc-400 hover:border-white/25 hover:text-zinc-200"}`;
@@ -31431,6 +31474,48 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
     return () => { alive = false; };
   }, [initialData, initialMonthDate, monthKey, student?.id, telegramInitData]);
 
+  useEffect(() => {
+    let alive = true;
+    const shouldLoadGraphs = isDashboardGraphs || isGraphDetailOpen;
+    if (!shouldLoadGraphs) return () => { alive = false; };
+    if (!student?.id || !hasOnlyPumpRemoteAuth(telegramInitData)) {
+      setGraphData(null);
+      setGraphDataRangeKey("");
+      setGraphLoading(false);
+      setGraphError("");
+      return () => { alive = false; };
+    }
+    const load = async () => {
+      setGraphLoading(true);
+      setGraphError("");
+      setGraphData(null);
+      setGraphDataRangeKey("");
+      try {
+        const rangeKey = `${graphRange.startKey}:${graphRange.endKey}`;
+        const result = await callOnlyPumpProfileApi(telegramInitData, "load_student_dashboard", {
+          target_profile_id: student?.id,
+          month: graphRange.endKey,
+          start_date: graphRange.startKey,
+          end_date: graphRange.endKey,
+        });
+        if (!alive) return;
+        setGraphData(normalizeStudentDashboardData(result, graphRange.startKey));
+        setGraphDataRangeKey(rangeKey);
+      } catch (loadError) {
+        console.error("student dashboard graph range error:", loadError);
+        if (alive) {
+          setGraphError(onlyPumpApiErrorMessage(loadError, "Не удалось загрузить период графиков."));
+          setGraphData(null);
+          setGraphDataRangeKey("");
+        }
+      } finally {
+        if (alive) setGraphLoading(false);
+      }
+    };
+    load();
+    return () => { alive = false; };
+  }, [graphRange.endKey, graphRange.startKey, isDashboardGraphs, isGraphDetailOpen, student?.id, telegramInitData]);
+
   const monthDays = useMemo(() => {
     const count = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
     return Array.from({ length: count }, (_, index) => {
@@ -31439,18 +31524,18 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
     });
   }, [monthDate]);
 
-  const dashboardRows = useMemo(() => {
+  const buildRowsFromDashboardData = (days, sourceData) => {
     const workoutsByDate = new Map();
-    data.workouts.forEach(workout => {
+    (sourceData?.workouts || []).forEach(workout => {
       const key = pumpXpDateKey(workout.date || workout.workout_date);
       if (!key) return;
       workoutsByDate.set(key, [...(workoutsByDate.get(key) || []), workout]);
     });
-    const healthByDate = new Map(data.health_logs.map(log => [pumpXpDateKey(log.log_date || log.date), log]));
-    const nutritionByDate = new Map(data.nutrition_days.map(day => [pumpXpDateKey(day.date || day.nutrition_date), day]));
-    const measurementsByDate = new Map(data.measurements.map(item => [pumpXpDateKey(item.measurement_date || item.date), item]));
+    const healthByDate = new Map((sourceData?.health_logs || []).map(log => [pumpXpDateKey(log.log_date || log.date), log]));
+    const nutritionByDate = new Map((sourceData?.nutrition_days || []).map(day => [pumpXpDateKey(day.date || day.nutrition_date), day]));
+    const measurementsByDate = new Map((sourceData?.measurements || []).map(item => [pumpXpDateKey(item.measurement_date || item.date), item]));
     let previousWeight = null;
-    return monthDays.map(day => {
+    return days.map(day => {
       const workouts = workoutsByDate.get(day.key) || [];
       const completed = workouts.filter(workout => normalizeWorkoutStatus(workout.status) === "completed");
       const workoutSummary = summarizeWorkouts(completed);
@@ -31493,7 +31578,14 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
         notes: normalizeStudentDashboardNote(health.notes),
       };
     });
-  }, [data, monthDays]);
+  };
+
+  const dashboardRows = useMemo(() => buildRowsFromDashboardData(monthDays, data), [data, monthDays]);
+  const graphDays = useMemo(() => studentDashboardDateItems(graphRange.startKey, graphRange.endKey), [graphRange.endKey, graphRange.startKey]);
+  const graphRangeUsesCurrentMonth = graphRange.startKey >= (monthDays[0]?.key || monthKey) && graphRange.endKey <= (monthDays[monthDays.length - 1]?.key || monthKey);
+  const graphCurrentRangeKey = `${graphRange.startKey}:${graphRange.endKey}`;
+  const graphSourceData = graphDataRangeKey === graphCurrentRangeKey && graphData ? graphData : (graphRangeUsesCurrentMonth ? data : { workouts: [], health_logs: [], nutrition_days: [], measurements: [] });
+  const graphRows = useMemo(() => buildRowsFromDashboardData(graphDays, graphSourceData), [graphDays, graphSourceData]);
 
   const summarizeRows = (rows) => {
     const withValue = (key) => rows.map(row => Number(row[key] || 0)).filter(value => value > 0);
@@ -31751,7 +31843,6 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 500);
   };
-  const isDashboardGraphs = tab === "graphs";
   const isDashboardFullscreen = isDashboardGraphs || (tab === "table" && isTableFullscreen);
   const DashboardFullscreenIcon = isDashboardFullscreen ? Minimize2 : Maximize2;
   const graphPeriodOptions = analyticsPeriods.filter(item => ["week", "month", "sixMonths", "year"].includes(item.id));
@@ -31772,11 +31863,11 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
     const metricOptions = typeConfig.metrics.length ? typeConfig.metrics : measurementAnalyticsMetrics;
     const metricConfig = metricOptions.find(item => item.key === config.metric) || metricOptions[0];
     const isNutritionAnalytics = typeConfig.source === "nutrition";
-    const allPoints = buildStudentDashboardSeries(dashboardRows, config.metric);
+    const allPoints = buildStudentDashboardSeries(graphRows, config.metric);
     const points = filterRollingAnalyticsPoints(allPoints, graphPeriod, graphDateKey);
     const nutritionSeriesByMetric = isNutritionAnalytics
       ? nutritionAnalyticsMetrics.reduce((acc, item) => {
-        acc[item.key] = filterRollingAnalyticsPoints(buildStudentDashboardSeries(dashboardRows, item.key), graphPeriod, graphDateKey);
+        acc[item.key] = filterRollingAnalyticsPoints(buildStudentDashboardSeries(graphRows, item.key), graphPeriod, graphDateKey);
         return acc;
       }, {})
       : {};
@@ -31794,6 +31885,13 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
     setGraphDateKey(current => mode === "division"
       ? shiftAnalyticsChartDivisionDate(current, graphPeriod, amount)
       : shiftAnalyticsPeriodDate(current, graphPeriod, amount));
+  };
+  const shiftStudentDashboardHeaderPeriod = (amount) => {
+    if (isDashboardGraphs) {
+      setGraphDateKey(current => shiftStudentDashboardGraphDate(current, graphPeriod, amount));
+      return;
+    }
+    setMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() + amount, 1));
   };
 
   return <div onClick={onClose} style={{ alignItems: isDashboardFullscreen ? "flex-start" : "center", justifyContent: "center" }} className={`student-dashboard-layer profile-screen onlypump-modal-layer fixed inset-0 z-[235] flex bg-black/70 backdrop-blur-sm ${isDashboardFullscreen ? "is-dashboard-fullscreen p-2 md:p-4" : "p-4"}`}>
@@ -31819,9 +31917,9 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
         </div>
       </div>
       <div className="student-dashboard-month-row mt-4 flex items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-2">
-        <button type="button" onClick={() => setMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))} className="rounded-full border border-white/10 bg-white/[0.035] px-4 py-2 text-sm font-black text-zinc-300 transition hover:border-red-500/45 hover:text-red-200">‹</button>
-        <b className="text-center text-sm capitalize">{monthLabel}</b>
-        <button type="button" onClick={() => setMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))} className="rounded-full border border-white/10 bg-white/[0.035] px-4 py-2 text-sm font-black text-zinc-300 transition hover:border-red-500/45 hover:text-red-200">›</button>
+        <button type="button" onClick={() => shiftStudentDashboardHeaderPeriod(-1)} className="rounded-full border border-white/10 bg-white/[0.035] px-4 py-2 text-sm font-black text-zinc-300 transition hover:border-red-500/45 hover:text-red-200">‹</button>
+        <b className="text-center text-sm capitalize">{isDashboardGraphs ? graphRangeLabel : monthLabel}</b>
+        <button type="button" onClick={() => shiftStudentDashboardHeaderPeriod(1)} className="rounded-full border border-white/10 bg-white/[0.035] px-4 py-2 text-sm font-black text-zinc-300 transition hover:border-red-500/45 hover:text-red-200">›</button>
       </div>
       <div className="student-dashboard-tabs mt-3 grid grid-cols-4 gap-2 border-b border-white/10">
         {[["overview", "Обычный вид"], ["table", "Таблица"], ["training", "Тренировки"], ["graphs", "Графики"]].map(([id, label]) => <button key={id} type="button" onClick={() => setTab(id)} className={tabButtonClass(id)}>{label}</button>)}
@@ -31840,12 +31938,13 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
             <div className="flex flex-col gap-3 rounded-[24px] border border-white/10 bg-white/[0.035] p-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-red-300">Графики</p>
-                <p className="mt-1 text-xs text-zinc-500">Крупный просмотр по данным ученика за выбранный период.</p>
+                <p className="mt-1 text-xs text-zinc-500">{graphRangeLabel}</p>
               </div>
               <div className="flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
                 {graphPeriodOptions.map(item => <button key={item.id} type="button" onClick={() => setGraphPeriod(item.id)} className={`shrink-0 border-b px-3 py-2 text-xs font-black transition ${graphPeriod === item.id ? "border-b-2 border-red-500 text-red-300" : "border-white/20 text-zinc-500 hover:border-white/40 hover:text-zinc-300"}`}>{item.label}</button>)}
               </div>
             </div>
+            {(graphLoading || graphError) && <p className={`rounded-2xl p-3 text-sm ${graphError ? "bg-red-500/10 text-red-300" : "bg-white/[0.04] text-zinc-500"}`}>{graphError || "Загружаю период графиков..."}</p>}
             <div className="grid gap-4 xl:grid-cols-2">
               {studentGraphConfigs.map(config => {
                 const graph = getStudentGraphData(config);
@@ -32044,13 +32143,14 @@ function TrainerStudentDashboardSheet({ student, telegramInitData = "", initialD
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.18em] text-red-400">График ученика</p>
                 <h2 className="mt-2 text-2xl font-black">{detail.title || config.title}</h2>
-                <p className="mt-1 text-sm text-zinc-500">{monthLabel}</p>
+                <p className="mt-1 text-sm text-zinc-500">{graphRangeLabel}</p>
               </div>
               <button type="button" onClick={() => setDetail(null)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-zinc-300">×</button>
             </div>
             <div className="mt-5 flex gap-2 overflow-x-auto pb-1 onlypump-scrollbar-none">
               {graphPeriodOptions.map(item => <button key={item.id} type="button" onClick={() => setGraphPeriod(item.id)} className={`shrink-0 border-b px-3 py-2 text-xs font-black transition ${graphPeriod === item.id ? "border-b-2 border-red-500 text-red-300" : "border-white/20 text-zinc-500 hover:border-white/40 hover:text-zinc-300"}`}>{item.label}</button>)}
             </div>
+            {(graphLoading || graphError) && <p className={`mt-3 rounded-2xl p-3 text-sm ${graphError ? "bg-red-500/10 text-red-300" : "bg-white/[0.04] text-zinc-500"}`}>{graphError || "Загружаю период графика..."}</p>}
             <AnalyticsChart
               points={graph.points}
               type={graph.chartType}
