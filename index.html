@@ -2085,6 +2085,10 @@
       overscroll-behavior-x: contain;
       scroll-padding-inline: 1rem;
       touch-action: pan-x;
+      cursor: grab;
+    }
+    .onlypump-exercise-group-scroll:active {
+      cursor: grabbing;
     }
     .onlypump-exercise-group-chip {
       position: relative;
@@ -5601,6 +5605,65 @@ const WorkoutExerciseMedia = ({ exercise = {}, positionClass = "right-3", classN
       className={`h-full w-full ${mediaType === "gif" ? "object-contain" : "object-cover"}`}
     />
   </span>;
+};
+
+const ExerciseGroupScroll = ({ className = "", children }) => {
+  const dragRef = React.useRef(null);
+  const suppressClickRef = React.useRef(false);
+  const suppressResetRef = React.useRef(null);
+  React.useEffect(() => () => window.clearTimeout(suppressResetRef.current), []);
+  const startDrag = (event) => {
+    if (event.pointerType !== "mouse" || event.button !== 0) return;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startScrollLeft: event.currentTarget.scrollLeft,
+      hasDragged: false,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const moveDrag = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (!drag.hasDragged && (absX < 6 || absX < absY * 1.2)) return;
+    drag.hasDragged = true;
+    suppressClickRef.current = true;
+    event.currentTarget.scrollLeft = drag.startScrollLeft - dx;
+    event.preventDefault();
+  };
+  const endDrag = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+    if (drag.hasDragged) {
+      window.clearTimeout(suppressResetRef.current);
+      suppressResetRef.current = window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 120);
+    }
+  };
+  const handleClickCapture = (event) => {
+    if (!suppressClickRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressClickRef.current = false;
+  };
+  return <div
+    className={`onlypump-exercise-group-scroll ${className}`}
+    onPointerDown={startDrag}
+    onPointerMove={moveDrag}
+    onPointerUp={endDrag}
+    onPointerCancel={endDrag}
+    onClickCapture={handleClickCapture}
+  >
+    {children}
+  </div>;
 };
 
 const parseOnlypumpBuiltInExerciseRows = (source = "") => source.trim().split(/\n+/).map((line, index) => {
@@ -14356,11 +14419,11 @@ function ExercisePickerSheet({ groups, activeGroup, setActiveGroup, search, setS
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Поиск упражнения" className="onlypump-search-input w-full bg-transparent text-base outline-none placeholder:text-zinc-600" />
       </div>
 
-      <div className="onlypump-exercise-group-scroll mt-4 pb-2 onlypump-scrollbar-none">
+      <ExerciseGroupScroll className="mt-4 pb-2 onlypump-scrollbar-none">
         {groups.map(group => <button key={group} onClick={() => setActiveGroup(group)} className={`onlypump-exercise-group-chip text-xs font-semibold ${activeGroup === group ? "is-active" : ""}`}>
           <span>{group}</span>
         </button>)}
-      </div>
+      </ExerciseGroupScroll>
 
       <div className="onlypump-sheet-scroll-list onlypump-list-50 mt-4 space-y-2 pr-1">
         {exercises.map(item => <button key={`${item.group}-${item.name}`} onClick={() => onAdd(item.name, item.group)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/[0.04] p-4 text-left transition hover:bg-red-500/10">
@@ -15303,7 +15366,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setWorkoutViewMode("overview");
     if (canUseWorkoutApi) {
       const pendingWorkout = { ...workout, pending: true, isSaving: true, isSyncing: true };
-      setWorkouts(prev => [pendingWorkout, ...prev]);
+      setWorkouts(prev => {
+        const next = [pendingWorkout, ...prev];
+        writeCachedWorkoutsForProfile(profile, next, { skipEmpty: true });
+        return next;
+      });
       setSelectedWorkout(pendingWorkout);
       const id = await createWorkoutTreeViaApi(pendingWorkout);
       if (!id) {
@@ -15312,7 +15379,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return;
     }
 
-    setWorkouts(prev => [workout, ...prev]);
+    setWorkouts(prev => {
+      const next = [workout, ...prev];
+      writeCachedWorkoutsForProfile(profile, next, { skipEmpty: true });
+      return next;
+    });
     setSelectedWorkout(workout);
   };
 
@@ -15939,6 +16010,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       const result = await callWorkoutsApi("load_program_templates", { profile_id: profile?.id || null });
       const rows = readApiArray(result, "program_templates", ["templates"]);
 	      const mapped = rows.map(mapProgramTemplateRowToProgram).filter(program => program?.id);
+      if (!mapped.length && fallbackLocal) {
+        const cached = readLocalProgramTemplates();
+        if (cached.length) {
+          setCustomTrainingPrograms(cached);
+          return cached;
+        }
+      }
       setCustomTrainingPrograms(mapped);
       writeLocalProgramTemplates(mapped);
       return mapped;
@@ -16585,6 +16663,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setActiveTab("diary");
     const optimisticWorkouts = [...createdWorkouts, ...workoutsRef.current];
     workoutsRef.current = optimisticWorkouts;
+    writeCachedWorkoutsForProfile(profile, optimisticWorkouts, { skipEmpty: true });
     setWorkouts(optimisticWorkouts);
 
     if (!canUseWorkoutApi) return;
@@ -16624,12 +16703,20 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setWeekMenuGroup(null);
     if (canUseWorkoutApi) {
       const pendingWorkout = { ...copy, pending: true, isSaving: true, isSyncing: true };
-      setWorkouts(prev => [pendingWorkout, ...prev]);
+      setWorkouts(prev => {
+        const next = [pendingWorkout, ...prev];
+        writeCachedWorkoutsForProfile(profile, next, { skipEmpty: true });
+        return next;
+      });
       const id = await createWorkoutTreeViaApi(pendingWorkout);
       if (!id) patchWorkoutInState(pendingWorkout.id, item => ({ ...item, isSaving: false, isSyncing: false, syncError: true }));
       return;
     }
-    setWorkouts(prev => [copy, ...prev]);
+    setWorkouts(prev => {
+      const next = [copy, ...prev];
+      writeCachedWorkoutsForProfile(profile, next, { skipEmpty: true });
+      return next;
+    });
   };
 
   const isProgramLinkedWorkout = (workout = {}) => Boolean(
@@ -16734,7 +16821,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       const previousSelectedWorkout = selectedWorkout;
       markWorkoutDeletePending(workout);
       clearWorkoutSaveQueue(id);
-      setWorkouts(prev => prev.filter(item => item.id !== id));
+      setWorkouts(prev => {
+        const next = prev.filter(item => item.id !== id);
+        writeCachedWorkoutsForProfile(profile, next);
+        return next;
+      });
       setSelectedWorkout(null);
       setWeekMenuGroup(null);
       setDetailMenuOpen(false);
@@ -16743,6 +16834,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         console.error("Workout delete was not confirmed by API:", { id: workout.id, supabaseId: workout.supabaseId, restoreOnFailure });
         unmarkWorkoutDeletePending(workout);
         if (restoreOnFailure) {
+          writeCachedWorkoutsForProfile(profile, previousWorkouts);
           setWorkouts(previousWorkouts);
           setSelectedWorkout(previousSelectedWorkout);
         }
@@ -16752,7 +16844,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       return;
     }
     markWorkoutDeletePending(deleteTarget);
-    setWorkouts(prev => prev.filter(workout => workout.id !== id));
+    setWorkouts(prev => {
+      const next = prev.filter(workout => workout.id !== id);
+      writeCachedWorkoutsForProfile(profile, next);
+      return next;
+    });
     setSelectedWorkout(null);
     setWeekMenuGroup(null);
     setDetailMenuOpen(false);
@@ -16808,7 +16904,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       markWorkoutDeletePending(item);
       clearWorkoutSaveQueue(item.id);
     });
-    setWorkouts(prev => prev.filter(item => !localIds.has(item.id)));
+    setWorkouts(prev => {
+      const next = prev.filter(item => !localIds.has(item.id));
+      writeCachedWorkoutsForProfile(profile, next);
+      return next;
+    });
     setSelectedWorkout(prev => prev && localIds.has(prev.id) ? null : prev);
     setWeekMenuGroup(null);
     setDetailMenuOpen(false);
@@ -16836,13 +16936,18 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         throw new Error("delete_workout_scope returned no deleted ids");
       }
       if (deletedSupabaseIds.size) {
-        setWorkouts(prev => prev.filter(item => !deletedSupabaseIds.has(String(item.supabaseId || item.id))));
+        setWorkouts(prev => {
+          const next = prev.filter(item => !deletedSupabaseIds.has(String(item.supabaseId || item.id)));
+          writeCachedWorkoutsForProfile(profile, next);
+          return next;
+        });
         setSelectedWorkout(prev => prev && deletedSupabaseIds.has(String(prev.supabaseId || prev.id)) ? null : prev);
       }
       await loadWorkoutsFromApi({ preserveSelected: false });
     } catch (error) {
       console.error("delete_workout_scope error:", error);
       restorePendingWorkoutDeletes(deleteTargets);
+      writeCachedWorkoutsForProfile(profile, previousWorkouts);
       setWorkouts(previousWorkouts);
       setSelectedWorkout(previousSelectedWorkout);
     }
@@ -17847,6 +17952,35 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }
   };
 
+  const ensureWorkoutPersistedViaApi = async (workout, options = {}) => {
+    if (!canUseWorkoutApi || !workout) return null;
+    if (workout.supabaseId) return workout.supabaseId;
+    const pendingWorkout = normalizeWorkoutSupersetMetadata({
+      ...workout,
+      pending: true,
+      isSaving: true,
+      isSyncing: true,
+      syncError: false,
+    });
+    patchWorkoutInState(pendingWorkout.id, item => ({
+      ...item,
+      pending: true,
+      isSaving: true,
+      isSyncing: true,
+      syncError: false,
+    }));
+    const id = await createWorkoutTreeViaApi(pendingWorkout, options);
+    if (!id) {
+      patchWorkoutInState(pendingWorkout.id, item => ({
+        ...item,
+        isSaving: false,
+        isSyncing: false,
+        syncError: true,
+      }));
+    }
+    return id;
+  };
+
   const mergeLoadedWorkoutsWithDirtyState = (loadedWorkouts = []) => {
     const localBySupabaseId = new Map();
     const localPending = [];
@@ -18703,6 +18837,8 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
         workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
         set_updates: [buildSetPatchPayload(set)],
       });
+    } else {
+      ensureWorkoutPersistedViaApi(nextWorkout);
     }
   };
 
@@ -18714,7 +18850,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     setSelectedWorkout(nextSelectedWorkout);
     if (options.sync !== false) {
       const patch = buildWorkoutTreePatch(nextSelectedWorkout);
-      if (patch) queueWorkoutPatch(nextSelectedWorkout.id, patch, options);
+      if (patch) {
+        queueWorkoutPatch(nextSelectedWorkout.id, patch, options);
+      } else {
+        ensureWorkoutPersistedViaApi(nextSelectedWorkout);
+      }
     }
   };
 
@@ -20138,6 +20278,8 @@ const toggleExerciseMeasurementSetting = (field) => {
         workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
         set_updates: (nextWorkout.exercises || []).flatMap(exercise => (exercise.sets || []).map(buildSetPatchPayload).filter(Boolean)),
       }, { immediate: true });
+    } else {
+      ensureWorkoutPersistedViaApi(nextWorkout, { fallback: true });
     }
   };
 
@@ -20614,7 +20756,11 @@ const toggleExerciseMeasurementSetting = (field) => {
     setRepeatScheduler(null);
     if (canUseWorkoutApi) {
       const pendingWorkout = { ...copy, pending: true, isSaving: true, isSyncing: true };
-      setWorkouts(prev => [pendingWorkout, ...prev]);
+      setWorkouts(prev => {
+        const next = [pendingWorkout, ...prev];
+        writeCachedWorkoutsForProfile(profile, next, { skipEmpty: true });
+        return next;
+      });
       if (mode === "now") {
         const firstTarget = getFirstWorkoutTarget(pendingWorkout);
         setSelectedWorkout(pendingWorkout);
@@ -20629,7 +20775,11 @@ const toggleExerciseMeasurementSetting = (field) => {
       return;
     }
 
-    setWorkouts(prev => [copy, ...prev]);
+    setWorkouts(prev => {
+      const next = [copy, ...prev];
+      writeCachedWorkoutsForProfile(profile, next, { skipEmpty: true });
+      return next;
+    });
     if (mode === "now") {
       const firstTarget = getFirstWorkoutTarget(copy);
       setSelectedWorkout(copy);
@@ -21765,7 +21915,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             />
           </div>
 
-          <div className="onlypump-exercise-group-scroll mt-4 pb-3 onlypump-scrollbar-none">
+          <ExerciseGroupScroll className="mt-4 pb-3 onlypump-scrollbar-none">
             {exerciseGroups.map(group => <button
               key={group}
               onClick={() => setSelectedExerciseGroup(group)}
@@ -21773,7 +21923,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             >
               <span>{group}</span>
             </button>)}
-          </div>
+          </ExerciseGroupScroll>
         </div>
 
         <div className="onlypump-exercise-base-list mt-3 space-y-6 pr-1 pb-4 onlypump-scrollbar-none">
@@ -22605,7 +22755,7 @@ const toggleExerciseMeasurementSetting = (field) => {
               className="onlypump-search-input w-full bg-transparent px-2 py-2 text-base outline-none placeholder:text-zinc-600"
             />
           </div>
-          <div className="onlypump-exercise-group-scroll mt-4 pb-1 onlypump-scrollbar-none">
+          <ExerciseGroupScroll className="mt-4 pb-1 onlypump-scrollbar-none">
             {exerciseGroups.map(group => <button
               key={group}
               onClick={() => setSelectedExerciseGroup(group)}
@@ -22613,7 +22763,7 @@ const toggleExerciseMeasurementSetting = (field) => {
             >
               <span>{group}</span>
             </button>)}
-          </div>
+          </ExerciseGroupScroll>
           <div className="mt-6 space-y-6">
             {filteredExerciseGroups.length ? filteredExerciseGroups.map(section => <div key={section.group}>
               <h3 className="text-sm font-bold uppercase tracking-[0.16em] text-zinc-500">{section.group}</h3>
@@ -34749,7 +34899,7 @@ function OnlyPumpPlatform() {
 
   useEffect(() => {
     if (!profile) return;
-    writeCachedWorkoutsForProfile(profile, workouts);
+    writeCachedWorkoutsForProfile(profile, workouts, { skipEmpty: true });
   }, [profile?.telegram_id, profile?.id, workouts]);
 
   useEffect(() => {
