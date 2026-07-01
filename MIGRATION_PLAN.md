@@ -505,6 +505,10 @@ Acceptance criteria:
 - вынесена view model для экрана тренировок: calendar days, workout cards, week summary, exercise rows и set rows;
 - создан `vite-shell/src/features/workouts/ui/WorkoutsPreview.jsx` для безопасного preview в Vite shell;
 - добавлен `pnpm run check:workouts-ui`;
+- создан `vite-shell/src/features/students/domain/studentDashboardModel.js`;
+- вынесена view model для учеников и тренера: control marks 0/5..5/5, карточки учеников, access labels, analytics summary и trainer panel summary;
+- создан `vite-shell/src/features/students/ui/StudentsTrainerPreview.jsx` для безопасного preview в Vite shell;
+- добавлен `pnpm run check:students-dashboard`;
 - legacy `index.html` пока не подключен к shared UI extraction.
 
 ## Branch and Commit Rules

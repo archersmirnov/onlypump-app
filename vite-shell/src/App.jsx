@@ -2,6 +2,7 @@ import { EDGE_FUNCTION_ENDPOINTS } from "./shared/api/index.js";
 import { AnalyticsChartsPreview } from "./features/analytics/ui/index.js";
 import { HomeWidgetsPreview } from "./features/home/index.js";
 import { NutritionScreensPreview } from "./features/nutrition/ui/index.js";
+import { StudentsTrainerPreview } from "./features/students/ui/index.js";
 import { WorkoutsPreview } from "./features/workouts/ui/index.js";
 import { ShellStatusPanel } from "./shared/ui/index.js";
 
@@ -28,6 +29,7 @@ export default function App() {
         <NutritionScreensPreview />
         <AnalyticsChartsPreview />
         <WorkoutsPreview />
+        <StudentsTrainerPreview />
       </div>
     </main>
   );
