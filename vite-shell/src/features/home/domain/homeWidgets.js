@@ -57,6 +57,122 @@ export const HOME_WIDGET_SIZE_CLASSES = {
   "4x1": "home-widget-card--banner",
 };
 
+export const HOME_WIDGET_READ_MODEL_DEFINITIONS = {
+  metricWeight: {
+    unit: "кг",
+    fractionDigits: 1,
+    metaLabel: "текущий замер",
+    paths: [
+      ["measurement", "weight"],
+      ["measurement", "weight_kg"],
+      ["measurements", "weight"],
+      ["profile", "weight"],
+      ["profile", "weight_kg"],
+      ["profile", "weightKg"],
+    ],
+  },
+  metricBodyFat: {
+    unit: "%",
+    fractionDigits: 1,
+    metaLabel: "оценка состава",
+    paths: [
+      ["measurement", "bodyFat"],
+      ["measurement", "body_fat_percent"],
+      ["measurements", "bodyFat"],
+      ["measurements", "body_fat_percent"],
+      ["profile", "bodyFat"],
+      ["profile", "body_fat_percent"],
+    ],
+  },
+  metricTonnage: {
+    unit: "кг",
+    fractionDigits: 0,
+    metaLabel: "неделя",
+    paths: [
+      ["training", "totalVolume"],
+      ["training", "total_volume"],
+      ["training", "weekVolume"],
+      ["workouts", "totalVolume"],
+      ["workoutSummary", "totalVolume"],
+      ["workoutSummary", "total_volume"],
+      ["weekSummary", "totalVolume"],
+    ],
+  },
+  metricSets: {
+    unit: "подходов",
+    fractionDigits: 0,
+    metaLabel: "неделя",
+    paths: [
+      ["training", "completedSets"],
+      ["training", "totalSets"],
+      ["training", "total_sets"],
+      ["workouts", "completedSets"],
+      ["workoutSummary", "completedSets"],
+      ["workoutSummary", "totalSets"],
+      ["weekSummary", "completedSets"],
+      ["weekSummary", "totalSets"],
+    ],
+  },
+  metricCalories: {
+    unit: "ккал",
+    fractionDigits: 0,
+    metaLabel: "сегодня",
+    paths: [
+      ["nutrition", "calories"],
+      ["nutrition", "calories_total"],
+      ["nutrition", "totals", "calories"],
+      ["nutritionSummary", "calories"],
+      ["nutritionSummary", "totals", "calories"],
+    ],
+  },
+  metricProtein: {
+    unit: "г",
+    fractionDigits: 0,
+    metaLabel: "белок сегодня",
+    paths: [
+      ["nutrition", "protein"],
+      ["nutrition", "protein_total"],
+      ["nutrition", "totals", "protein"],
+      ["nutritionSummary", "protein"],
+      ["nutritionSummary", "totals", "protein"],
+    ],
+  },
+  metricRecovery: {
+    unit: "%",
+    fractionDigits: 0,
+    metaLabel: "индекс",
+    paths: [
+      ["health", "recoveryScore"],
+      ["health", "recovery_score"],
+      ["healthSummary", "recoveryScore"],
+      ["healthSummary", "recovery_score"],
+      ["recovery", "score"],
+    ],
+  },
+  metricSleep: {
+    metaLabel: "последняя ночь",
+    paths: [
+      ["health", "sleepMinutes"],
+      ["health", "sleep_minutes"],
+      ["health", "sleep_duration_minutes"],
+      ["healthSummary", "sleepMinutes"],
+      ["healthSummary", "sleep_duration_minutes"],
+    ],
+    formatValue: formatHomeSleepMinutes,
+  },
+  metricSteps: {
+    unit: "шагов",
+    fractionDigits: 0,
+    metaLabel: "сегодня",
+    paths: [
+      ["health", "steps"],
+      ["health", "steps_count"],
+      ["healthSummary", "steps"],
+      ["activity", "steps"],
+    ],
+  },
+};
+
 function normalizeWidgetArrayValue(value, fallback = null) {
   if (Array.isArray(value)) return value;
   if (value === null || value === undefined) return fallback;
@@ -302,6 +418,87 @@ export function writeCachedHomeWidgetsForProfile(profile = {}, widgets = [], opt
   }
 }
 
+function getHomeDataByPath(source, path = []) {
+  return path.reduce((current, key) => {
+    if (current === null || current === undefined) return undefined;
+    if (typeof current !== "object") return undefined;
+    return current[key];
+  }, source);
+}
+
+function normalizeHomeDataValue(rawValue) {
+  if (rawValue && typeof rawValue === "object" && !Array.isArray(rawValue)) {
+    return {
+      value: rawValue.value ?? rawValue.current ?? rawValue.total ?? null,
+      valueLabel: rawValue.valueLabel || rawValue.label || "",
+      metaLabel: rawValue.metaLabel || rawValue.meta || "",
+    };
+  }
+
+  return { value: rawValue, valueLabel: "", metaLabel: "" };
+}
+
+function getHomeWidgetRawData(widgetId, source = {}, paths = []) {
+  const candidates = [
+    ["metrics", widgetId],
+    ["values", widgetId],
+    [widgetId],
+    ...paths,
+  ];
+
+  for (const path of candidates) {
+    const rawValue = getHomeDataByPath(source, path);
+    if (rawValue !== null && rawValue !== undefined && rawValue !== "") {
+      return normalizeHomeDataValue(rawValue);
+    }
+  }
+
+  return normalizeHomeDataValue(null);
+}
+
+function formatHomeNumber(value, fractionDigits = 0) {
+  if (value === null || value === undefined || value === "") return "";
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return "";
+  if (fractionDigits <= 0) return String(Math.round(numericValue));
+  return numericValue.toFixed(fractionDigits).replace(/\.0+$/, "");
+}
+
+function formatHomeMetricValue(value, definition = {}) {
+  if (typeof definition.formatValue === "function") return definition.formatValue(value);
+
+  const numberLabel = formatHomeNumber(value, definition.fractionDigits || 0);
+  if (!numberLabel) return "";
+  return definition.unit ? `${numberLabel} ${definition.unit}` : numberLabel;
+}
+
+function formatHomeSleepMinutes(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes <= 0) return "";
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = Math.round(minutes % 60);
+  if (!hours) return `${remainingMinutes} мин`;
+  if (!remainingMinutes) return `${hours} ч`;
+  return `${hours} ч ${remainingMinutes} мин`;
+}
+
+export function buildHomeWidgetValueModel(widgetId = "", source = {}) {
+  const definition = HOME_WIDGET_READ_MODEL_DEFINITIONS[widgetId];
+  if (!definition) return { hasValue: false, value: null, valueLabel: "", metaLabel: "" };
+
+  const rawData = getHomeWidgetRawData(widgetId, source, definition.paths || []);
+  const valueLabel = rawData.valueLabel || formatHomeMetricValue(rawData.value, definition);
+
+  return {
+    hasValue: Boolean(valueLabel),
+    value: rawData.value ?? null,
+    valueLabel,
+    metaLabel: rawData.metaLabel || definition.metaLabel || "",
+  };
+}
+
 export function buildHomeWidgetPreviewItems(widgets = DEFAULT_HOME_WIDGETS) {
   return normalizeHomeWidgetsOrder(widgets).map((id) => {
     const catalogItem = getHomeWidgetById(id);
@@ -314,4 +511,21 @@ export function buildHomeWidgetPreviewItems(widgets = DEFAULT_HOME_WIDGETS) {
       personalTrackerId: isPersonalTrackerWidgetId(id) ? personalTrackerIdFromWidget(id) : "",
     };
   });
+}
+
+export function buildHomeWidgetsViewModel(source = {}, options = {}) {
+  const widgets = normalizeHomeWidgetsOrder(options.widgets || source?.widgets || DEFAULT_HOME_WIDGETS);
+  const items = buildHomeWidgetPreviewItems(widgets).map((item) => ({
+    ...item,
+    ...buildHomeWidgetValueModel(item.id, source),
+  }));
+
+  return {
+    items,
+    widgets,
+    visibleCount: items.length,
+    catalogCount: HOME_WIDGET_CATALOG.length,
+    hasReadOnlyData: items.some((item) => item.hasValue),
+    selectedDateKey: source?.selectedDateKey || source?.dateKey || "",
+  };
 }

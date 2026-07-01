@@ -220,6 +220,21 @@ body {
   font-size: 14px;
 }
 
+.home-widget-card .home-widget-card__value {
+  margin-top: 12px;
+  color: #111827;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.home-widget-card .home-widget-card__meta {
+  margin-top: 6px;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .nutrition-preview {
   border: 1px solid #e5e7eb;
   border-radius: 8px;

@@ -6,12 +6,32 @@ import { WorkoutsPreview } from "../features/workouts/ui/index.js";
 
 export const ALL_PREVIEW_ROUTE_ID = "all";
 
+const HOME_WIDGETS_READ_ONLY_PREVIEW_SOURCE = {
+  measurement: {
+    weight: 82.4,
+    body_fat_percent: 18.6,
+  },
+  training: {
+    totalVolume: 128400,
+    completedSets: 190,
+  },
+  nutrition: {
+    totals: {
+      calories: 2130,
+      protein: 164,
+    },
+  },
+  health: {
+    recovery_score: 76,
+  },
+};
+
 export const PREVIEW_ROUTES = [
   {
     id: "home",
     label: "Home",
     title: "Home widgets",
-    render: () => <HomeWidgetsPreview />
+    render: () => <HomeWidgetsPreview source={HOME_WIDGETS_READ_ONLY_PREVIEW_SOURCE} />
   },
   {
     id: "nutrition",

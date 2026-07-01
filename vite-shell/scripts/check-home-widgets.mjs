@@ -4,6 +4,8 @@ import {
   DEFAULT_HOME_WIDGETS,
   HOME_LAYOUT_DESKTOP,
   buildHomeWidgetPreviewItems,
+  buildHomeWidgetValueModel,
+  buildHomeWidgetsViewModel,
   buildHomeWidgetsAfterAdding,
   buildHomeWidgetsAfterRemoving,
   enforceHomeWidgetRules,
@@ -54,6 +56,26 @@ assert.deepEqual(
 );
 assert.equal(buildHomeWidgetPreviewItems([trackerWidgetId])[0].personalTrackerId, "coffee");
 
+const readOnlyModel = buildHomeWidgetsViewModel({
+  measurement: { weight: 82.4, body_fat_percent: 18.6 },
+  training: { totalVolume: 128400, completedSets: 190 },
+  nutrition: { totals: { calories: 2130, protein: 164 } },
+  health: { recovery_score: 76, sleep_duration_minutes: 455 },
+}, {
+  widgets: ["metricWeight", "metricBodyFat", "metricTonnage", "metricSets", "metricCalories", "metricProtein", "metricRecovery", "metricSleep"]
+});
+assert.equal(readOnlyModel.visibleCount, 8);
+assert.equal(readOnlyModel.hasReadOnlyData, true);
+assert.equal(readOnlyModel.items.find((item) => item.id === "metricWeight").valueLabel, "82.4 кг");
+assert.equal(readOnlyModel.items.find((item) => item.id === "metricBodyFat").valueLabel, "18.6 %");
+assert.equal(readOnlyModel.items.find((item) => item.id === "metricTonnage").valueLabel, "128400 кг");
+assert.equal(readOnlyModel.items.find((item) => item.id === "metricSets").valueLabel, "190 подходов");
+assert.equal(readOnlyModel.items.find((item) => item.id === "metricCalories").valueLabel, "2130 ккал");
+assert.equal(readOnlyModel.items.find((item) => item.id === "metricProtein").valueLabel, "164 г");
+assert.equal(readOnlyModel.items.find((item) => item.id === "metricRecovery").valueLabel, "76 %");
+assert.equal(readOnlyModel.items.find((item) => item.id === "metricSleep").valueLabel, "7 ч 35 мин");
+assert.equal(buildHomeWidgetValueModel("metricWeight", {}).hasValue, false);
+
 const storageValue = homeWidgetsStorageWithLayout(
   { mobile: ["metricWeight"], desktop: ["workout"] },
   HOME_LAYOUT_DESKTOP,
@@ -79,8 +101,9 @@ assert.deepEqual(readCachedHomeWidgetsForProfile(profile, { storage, layoutMode:
 
 assert.match(homeIndexSource, /domain\/index\.js/);
 assert.match(homeIndexSource, /ui\/index\.js/);
-assert.match(previewSource, /buildHomeWidgetPreviewItems/);
+assert.match(previewSource, /buildHomeWidgetsViewModel/);
 assert.match(routesSource, /import \{ HomeWidgetsPreview \} from "\.\.\/features\/home\/index\.js"/);
+assert.match(routesSource, /HOME_WIDGETS_READ_ONLY_PREVIEW_SOURCE/);
 assert.match(routesSource, /id: "home"/);
 assert.match(routesSource, /<HomeWidgetsPreview/);
 
