@@ -247,7 +247,10 @@ Acceptance criteria:
 - создан `vite-shell/src/features/workouts/domain/workoutNormalize.js`;
 - вынесены чистые helpers для workout status/type/set completion;
 - добавлен `normalizeWorkoutSupersetMetadata`;
+- создан `vite-shell/src/features/workouts/api/workoutMapper.js`;
+- вынесен первый чистый mapper для totals patch payload;
 - добавлен `pnpm run check:workouts`;
+- добавлен `pnpm run check:workout-mapper`;
 - legacy `index.html` пока не подключен к этим helpers.
 
 Запрещено:
