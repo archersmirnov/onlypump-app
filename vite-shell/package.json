@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "check:api": "node scripts/check-shared-api.mjs",
+    "check": "pnpm run check:api && pnpm run build"
   },
   "dependencies": {
     "react": "^19.2.7",

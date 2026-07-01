@@ -191,6 +191,7 @@ Acceptance criteria:
 - файлы созданы внутри `vite-shell/src/shared/api/`;
 - сохранена текущая форма запроса `initData/action/payload`;
 - добавлены compatibility wrappers со старыми именами API-вызовов;
+- добавлен `pnpm run check:api` для проверки API-слоя без сети;
 - модуль пока не подключен к legacy `index.html`.
 
 Кандидаты на перенос:

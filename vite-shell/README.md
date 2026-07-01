@@ -11,6 +11,7 @@ into this shell until a migration step explicitly targets one bounded module.
 pnpm install
 pnpm run dev
 pnpm run build
+pnpm run check:api
 ```
 
 If the local shell cannot find `node`, run the same commands with the bundled
@@ -36,3 +37,9 @@ live next to the current app without changing runtime behavior.
 - Profile `load_profile` keeps the current `access_denied + profile` exception.
 
 These modules are not wired into the legacy `index.html` yet.
+
+## Checks
+
+Run `pnpm run check:api` to verify the shared API module without network calls.
+It checks endpoint names, request shape, legacy event names, readable API errors,
+and the current `load_profile` access-denied exception.
