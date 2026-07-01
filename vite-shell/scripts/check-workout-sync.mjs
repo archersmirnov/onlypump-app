@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  createWorkoutSyncController,
   createWorkoutPendingQueue,
   getWorkoutFailedState,
   getWorkoutPatchItemId,
@@ -9,6 +10,7 @@ import {
   mergeWorkoutPatch,
   mergeWorkoutPatchById,
   mergeWorkoutPatchCreatesByClientId,
+  requireWorkoutSyncRepository,
   uniqueWorkoutSyncIds,
   workoutPatchHasChanges,
   WORKOUT_PATCH_COLLECTION_KEYS
@@ -108,5 +110,100 @@ assert.equal(queue.has("workout-1"), false);
 queue.queue("workout-2", { workout_updates: [{ id: "workout-2" }] });
 queue.clearAll();
 assert.deepEqual(queue.ids(), []);
+
+assert.throws(() => requireWorkoutSyncRepository(null), /requires repository\.saveWorkoutPatch/);
+
+const stateByWorkoutId = new Map();
+const stateEvents = [];
+const makeApplyWorkoutState = () => (workoutId, patcher, meta) => {
+  const next = patcher(stateByWorkoutId.get(workoutId) || { id: workoutId });
+  stateByWorkoutId.set(workoutId, next);
+  stateEvents.push({ workoutId, meta, state: next });
+  return next;
+};
+
+const repositoryCalls = [];
+const repository = {
+  async saveWorkoutPatch(workout, options = {}) {
+    repositoryCalls.push({ workout, options });
+    return { result: { ok: true }, payload: options.prebuiltPatch };
+  }
+};
+
+const sync = createWorkoutSyncController({
+  repository,
+  applyWorkoutState: makeApplyWorkoutState(),
+  now: () => "2026-07-01T01:00:00.000Z"
+});
+
+const queuedPatch = sync.queuePatch("workout-3", { set_updates: [{ id: "set-3", reps: 12 }] });
+assert.equal(queuedPatch.set_updates[0].reps, 12);
+assert.equal(sync.hasPendingPatch("workout-3"), true);
+assert.deepEqual(sync.pendingWorkoutIds(), ["workout-3"]);
+assert.equal(stateByWorkoutId.get("workout-3").isDirty, true);
+assert.equal(stateByWorkoutId.get("workout-3").isSaving, false);
+
+const flushed = await sync.flushPatch("workout-3");
+assert.equal(flushed.ok, true);
+assert.equal(repositoryCalls[0].workout, null);
+assert.equal(repositoryCalls[0].options.prebuiltPatch.set_updates[0].id, "set-3");
+assert.equal(sync.hasPendingPatch("workout-3"), false);
+assert.equal(stateByWorkoutId.get("workout-3").isDirty, false);
+assert.equal(stateByWorkoutId.get("workout-3").lastSavedAt, "2026-07-01T01:00:00.000Z");
+
+const skipped = await sync.flushPatch("missing-workout");
+assert.equal(skipped.ok, true);
+assert.equal(skipped.skipped, true);
+
+const failingSync = createWorkoutSyncController({
+  repository: {
+    async saveWorkoutPatch() {
+      throw new Error("network down");
+    }
+  },
+  applyWorkoutState: makeApplyWorkoutState()
+});
+failingSync.queuePatch("workout-4", { workout_updates: [{ id: "workout-4", title: "Failed" }] });
+const failedFlush = await failingSync.flushPatch("workout-4");
+assert.equal(failedFlush.ok, false);
+assert.equal(failingSync.hasPendingPatch("workout-4"), true);
+assert.equal(stateByWorkoutId.get("workout-4").syncError, true);
+assert.equal(stateByWorkoutId.get("workout-4").pendingPatch.workout_updates[0].title, "Failed");
+
+let resolveSlowSave;
+const slowSave = new Promise((resolve) => {
+  resolveSlowSave = resolve;
+});
+const slowSync = createWorkoutSyncController({
+  repository: {
+    async saveWorkoutPatch() {
+      await slowSave;
+      return { result: { ok: true } };
+    }
+  },
+  applyWorkoutState: makeApplyWorkoutState()
+});
+slowSync.queuePatch("workout-5", { set_updates: [{ id: "set-5", reps: 8 }] });
+const flushPromise = slowSync.flushPatch("workout-5");
+slowSync.queuePatch("workout-5", { set_updates: [{ id: "set-5", weight_kg: 50 }] });
+resolveSlowSave();
+const slowResult = await flushPromise;
+assert.equal(slowResult.ok, true);
+assert.equal(slowResult.hasNewerPatch, true);
+assert.equal(slowSync.hasPendingPatch("workout-5"), true);
+assert.deepEqual(slowSync.getPendingPatch("workout-5").set_updates, [{ id: "set-5", reps: 8, weight_kg: 50 }]);
+
+slowSync.clearPendingPatch("workout-5");
+assert.equal(slowSync.hasPendingPatch("workout-5"), false);
+
+const flushAllSync = createWorkoutSyncController({
+  repository,
+  applyWorkoutState: makeApplyWorkoutState()
+});
+flushAllSync.queuePatch("workout-6", { workout_updates: [{ id: "workout-6" }] });
+flushAllSync.queuePatch("workout-7", { workout_updates: [{ id: "workout-7" }] });
+const flushAllResults = await flushAllSync.flushAll();
+assert.equal(flushAllResults.length, 2);
+assert.deepEqual(flushAllResults.map((item) => item.ok), [true, true]);
 
 console.log("workout sync checks passed");

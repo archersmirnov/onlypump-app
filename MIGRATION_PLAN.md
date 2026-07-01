@@ -350,6 +350,8 @@ Acceptance criteria:
 - вынесены чистые helpers для merge pending patches;
 - вынесены helpers для queued/sending/saved/failed workout state;
 - добавлен in-memory pending queue без таймеров, API и UI side effects;
+- создан `vite-shell/src/features/workouts/sync/workoutSync.js`;
+- добавлен sync-controller для `queuePatch`, `flushPatch`, `flushAll`, `retryPatch` поверх repository;
 - добавлен `pnpm run check:workout-sync`;
 - legacy `index.html` пока не подключен к sync helpers.
 
