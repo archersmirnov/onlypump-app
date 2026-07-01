@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import {
+  buildWorkoutExerciseCreatePayload,
+  buildWorkoutExercisePatchPayload,
+  buildWorkoutExerciseSupabasePayload,
   buildWorkoutSetCreatePayload,
   buildWorkoutSetPatchPayload,
   buildWorkoutSetSupabasePayload,
   buildWorkoutTotalsPatchPayload,
   formatWorkoutDateKey,
   getWorkoutDurationSeconds,
+  getWorkoutExerciseMeasurementSettings,
   getWorkoutEstimatedCalories,
   getWorkoutPatchTotals,
+  isProgramWorkoutExercise,
   mapSupabaseWorkoutSet,
   normalizeWorkoutDateKey,
   optionalWorkoutNumber,
@@ -22,6 +27,41 @@ assert.equal(optionalWorkoutNumber(""), null);
 assert.equal(optionalWorkoutNumber("bad"), null);
 assert.equal(pickSetActualNumber({ weightValue: "95" }, ["weight", "weightValue"]), 95);
 assert.equal(pickSetActualNumber({ weight: "", weight_kg: null }, ["weight", "weight_kg"]), null);
+
+assert.deepEqual(
+  getWorkoutExerciseMeasurementSettings({
+    source_exercise_id: "source-1",
+    exercise_category: "strength",
+    primary_muscles: "Back, Lats",
+    secondary_muscles: ["Biceps"],
+    measurement_mode: "weight_reps",
+    distance_unit: "km",
+    counts_in_muscle_stats: false,
+    measure_weight_enabled: true,
+    measure_reps_enabled: false,
+    measure_time_enabled: true,
+    measure_rir_enabled: true,
+    measure_rpe_enabled: false,
+    weight_unit: "lb",
+    double_count_in_statistics: true
+  }),
+  {
+    sourceExerciseId: "source-1",
+    exerciseCategory: "strength",
+    primaryMuscles: ["Back", "Lats"],
+    secondaryMuscles: ["Biceps"],
+    measurementMode: "weight_reps",
+    distanceUnit: "km",
+    countsInMuscleStats: false,
+    measureWeightEnabled: true,
+    measureRepsEnabled: false,
+    measureTimeEnabled: true,
+    measureRirEnabled: true,
+    measureRpeEnabled: false,
+    weightUnit: "lb",
+    doubleCountInStatistics: true
+  }
+);
 
 assert.equal(formatWorkoutDateKey(new Date(2026, 5, 30)), "2026-06-30");
 assert.equal(normalizeWorkoutDateKey("2026-06-30T18:00:00+00:00", "2026-07-01"), "2026-06-30");
@@ -73,6 +113,198 @@ assert.deepEqual(
     estimated_calories_burned: 410,
     started_at: "2026-06-30T18:00:00+00:00",
     auto_stopped_at: null
+  }
+);
+
+const supersetGroupId = "11111111-1111-4111-8111-111111111111";
+const exerciseMeasurementOptions = {
+  normalizeExerciseMeasurementSettings: () => ({
+    sourceExerciseId: "22222222-2222-4222-8222-222222222222",
+    exerciseCategory: "strength",
+    primaryMuscles: ["Back"],
+    secondaryMuscles: ["Biceps"],
+    measurementMode: "weight_reps",
+    distanceUnit: "km",
+    countsInMuscleStats: true,
+    measureWeightEnabled: true,
+    measureRepsEnabled: true,
+    measureTimeEnabled: false,
+    measureRirEnabled: true,
+    measureRpeEnabled: true,
+    weightUnit: "kg",
+    doubleCountInStatistics: true
+  })
+};
+const exerciseFixture = {
+  id: "exercise-local-1",
+  supabaseId: "exercise-server-1",
+  name: "Row",
+  muscleGroup: "Back",
+  order: "2",
+  note: "focus",
+  restSeconds: "150",
+  restAfterSeconds: "45",
+  supersetGroupId,
+  supersetOrder: "3",
+  userProgramExerciseSettingId: "program-setting-1",
+  userProgramExerciseSettingClientId: "program-setting-client-1",
+  programTemplateExerciseId: "template-exercise-1",
+  programTemplateExerciseKey: "template-key-1",
+  plannedSets: 4,
+  plannedRepMin: 8,
+  plannedRepMax: 12,
+  plannedWeight: 80,
+  plannedReps: 10,
+  progressionState: "ready",
+  sets: [{ id: "set-local-1", order: 1, weight: 80, reps: 10, status: "completed" }]
+};
+
+assert.equal(isProgramWorkoutExercise(exerciseFixture), true);
+assert.equal(isProgramWorkoutExercise({ name: "Free exercise" }), false);
+
+assert.deepEqual(
+  buildWorkoutExerciseSupabasePayload("workout-1", exerciseFixture, exerciseMeasurementOptions),
+  {
+    workout_id: "workout-1",
+    exercise_name: "Row",
+    muscle_group: "Back",
+    exercise_order: 2,
+    notes: "focus",
+    rest_between_seconds: 150,
+    rest_after_seconds: 45,
+    superset_group_id: supersetGroupId,
+    superset_order: 3,
+    is_superset: true,
+    source_exercise_id: "22222222-2222-4222-8222-222222222222",
+    exercise_category: "strength",
+    primary_muscles: ["Back"],
+    secondary_muscles: ["Biceps"],
+    measurement_mode: "weight_reps",
+    distance_unit: "km",
+    counts_in_muscle_stats: true,
+    measure_weight_enabled: true,
+    measure_reps_enabled: true,
+    measure_time_enabled: false,
+    measure_rir_enabled: true,
+    measure_rpe_enabled: true,
+    weight_unit: "kg",
+    double_weight_in_stats: true,
+    double_count_in_statistics: true,
+    user_program_exercise_setting_id: "program-setting-1",
+    user_program_exercise_setting_client_id: "program-setting-client-1",
+    program_template_exercise_id: "template-exercise-1",
+    program_template_exercise_key: "template-key-1",
+    planned_sets: 4,
+    planned_rep_min: 8,
+    planned_rep_max: 12,
+    planned_weight: 80,
+    planned_reps: 10,
+    progression_state: "ready"
+  }
+);
+
+assert.equal(buildWorkoutExercisePatchPayload({ id: "exercise-local" }), null);
+assert.deepEqual(
+  buildWorkoutExercisePatchPayload(exerciseFixture, exerciseMeasurementOptions),
+  {
+    id: "exercise-server-1",
+    exercise_name: "Row",
+    muscle_group: "Back",
+    exercise_order: 2,
+    notes: "focus",
+    rest_between_seconds: 150,
+    rest_after_seconds: 45,
+    superset_group_id: supersetGroupId,
+    superset_order: 3,
+    is_superset: true,
+    source_exercise_id: "22222222-2222-4222-8222-222222222222",
+    exercise_category: "strength",
+    primary_muscles: ["Back"],
+    secondary_muscles: ["Biceps"],
+    measurement_mode: "weight_reps",
+    distance_unit: "km",
+    counts_in_muscle_stats: true,
+    measure_weight_enabled: true,
+    measure_reps_enabled: true,
+    measure_time_enabled: false,
+    measure_rir_enabled: true,
+    measure_rpe_enabled: true,
+    weight_unit: "kg",
+    double_weight_in_stats: true,
+    double_count_in_statistics: true,
+    user_program_exercise_setting_id: "program-setting-1",
+    user_program_exercise_setting_client_id: "program-setting-client-1",
+    program_template_exercise_id: "template-exercise-1",
+    program_template_exercise_key: "template-key-1",
+    planned_sets: 4,
+    planned_rep_min: 8,
+    planned_rep_max: 12,
+    planned_weight: 80,
+    planned_reps: 10,
+    progression_state: "ready"
+  }
+);
+
+assert.equal(buildWorkoutExerciseCreatePayload(null, exerciseFixture, exerciseMeasurementOptions), null);
+assert.deepEqual(
+  buildWorkoutExerciseCreatePayload("workout-1", exerciseFixture, exerciseMeasurementOptions),
+  {
+    client_id: "exercise-local-1",
+    workout_id: "workout-1",
+    exercise_name: "Row",
+    muscle_group: "Back",
+    exercise_order: 2,
+    notes: "focus",
+    rest_between_seconds: 150,
+    rest_after_seconds: 45,
+    superset_group_id: supersetGroupId,
+    superset_order: 3,
+    is_superset: true,
+    source_exercise_id: "22222222-2222-4222-8222-222222222222",
+    exercise_category: "strength",
+    primary_muscles: ["Back"],
+    secondary_muscles: ["Biceps"],
+    measurement_mode: "weight_reps",
+    distance_unit: "km",
+    counts_in_muscle_stats: true,
+    measure_weight_enabled: true,
+    measure_reps_enabled: true,
+    measure_time_enabled: false,
+    measure_rir_enabled: true,
+    measure_rpe_enabled: true,
+    weight_unit: "kg",
+    double_weight_in_stats: true,
+    double_count_in_statistics: true,
+    user_program_exercise_setting_id: "program-setting-1",
+    user_program_exercise_setting_client_id: "program-setting-client-1",
+    program_template_exercise_id: "template-exercise-1",
+    program_template_exercise_key: "template-key-1",
+    planned_sets: 4,
+    planned_rep_min: 8,
+    planned_rep_max: 12,
+    planned_weight: 80,
+    planned_reps: 10,
+    progression_state: "ready",
+    sets: [{
+      client_id: "set-local-1",
+      set_order: 1,
+      weight_kg: 80,
+      reps: 10,
+      weight_value: 80,
+      reps_value: 10,
+      duration_seconds: 0,
+      distance_value: 0,
+      manual_calories: null,
+      estimated_calories: 0,
+      rir: null,
+      rpe: null,
+      work_time_seconds: 0,
+      rest_seconds: 120,
+      rest_after_seconds: 0,
+      tempo: null,
+      is_completed: true,
+      notes: ""
+    }]
   }
 );
 

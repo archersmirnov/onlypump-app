@@ -1,4 +1,21 @@
-import { getSetStatus, normalizeWorkoutType } from "../domain/index.js";
+import { getExerciseSupersetGroupId, getSetStatus, normalizeWorkoutType } from "../domain/index.js";
+
+export const DEFAULT_EXERCISE_MEASUREMENT_SETTINGS = Object.freeze({
+  sourceExerciseId: null,
+  exerciseCategory: "strength",
+  primaryMuscles: [],
+  secondaryMuscles: [],
+  measurementMode: "weight_reps",
+  distanceUnit: "km",
+  countsInMuscleStats: true,
+  measureWeightEnabled: true,
+  measureRepsEnabled: true,
+  measureTimeEnabled: false,
+  measureRirEnabled: false,
+  measureRpeEnabled: false,
+  weightUnit: "kg",
+  doubleCountInStatistics: false
+});
 
 export function safeWorkoutNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -19,6 +36,42 @@ export function pickSetActualNumber(set, keys = []) {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+function asWorkoutTextArray(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
+  if (typeof value === "string") return value.split(",").map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
+export function getWorkoutExerciseMeasurementSettings(exercise = {}, options = {}) {
+  const rawSettings = typeof options.normalizeExerciseMeasurementSettings === "function"
+    ? options.normalizeExerciseMeasurementSettings(exercise)
+    : exercise;
+  const settings = rawSettings || {};
+
+  return {
+    sourceExerciseId: settings.sourceExerciseId ?? settings.source_exercise_id ?? DEFAULT_EXERCISE_MEASUREMENT_SETTINGS.sourceExerciseId,
+    exerciseCategory: settings.exerciseCategory ?? settings.exercise_category ?? DEFAULT_EXERCISE_MEASUREMENT_SETTINGS.exerciseCategory,
+    primaryMuscles: asWorkoutTextArray(settings.primaryMuscles ?? settings.primary_muscles),
+    secondaryMuscles: asWorkoutTextArray(settings.secondaryMuscles ?? settings.secondary_muscles),
+    measurementMode: settings.measurementMode ?? settings.measurement_mode ?? DEFAULT_EXERCISE_MEASUREMENT_SETTINGS.measurementMode,
+    distanceUnit: settings.distanceUnit ?? settings.distance_unit ?? DEFAULT_EXERCISE_MEASUREMENT_SETTINGS.distanceUnit,
+    countsInMuscleStats: Boolean(settings.countsInMuscleStats ?? settings.counts_in_muscle_stats ?? DEFAULT_EXERCISE_MEASUREMENT_SETTINGS.countsInMuscleStats),
+    measureWeightEnabled: Boolean(settings.measureWeightEnabled ?? settings.measure_weight_enabled ?? DEFAULT_EXERCISE_MEASUREMENT_SETTINGS.measureWeightEnabled),
+    measureRepsEnabled: Boolean(settings.measureRepsEnabled ?? settings.measure_reps_enabled ?? DEFAULT_EXERCISE_MEASUREMENT_SETTINGS.measureRepsEnabled),
+    measureTimeEnabled: Boolean(settings.measureTimeEnabled ?? settings.measure_time_enabled ?? DEFAULT_EXERCISE_MEASUREMENT_SETTINGS.measureTimeEnabled),
+    measureRirEnabled: Boolean(settings.measureRirEnabled ?? settings.measure_rir_enabled ?? DEFAULT_EXERCISE_MEASUREMENT_SETTINGS.measureRirEnabled),
+    measureRpeEnabled: Boolean(settings.measureRpeEnabled ?? settings.measure_rpe_enabled ?? DEFAULT_EXERCISE_MEASUREMENT_SETTINGS.measureRpeEnabled),
+    weightUnit: settings.weightUnit ?? settings.weight_unit ?? DEFAULT_EXERCISE_MEASUREMENT_SETTINGS.weightUnit,
+    doubleCountInStatistics: Boolean(
+      settings.doubleCountInStatistics
+      ?? settings.double_count_in_statistics
+      ?? settings.doubleWeightInStats
+      ?? settings.double_weight_in_stats
+      ?? DEFAULT_EXERCISE_MEASUREMENT_SETTINGS.doubleCountInStatistics
+    )
+  };
 }
 
 export function formatWorkoutDateKey(date) {
@@ -85,6 +138,70 @@ export function buildWorkoutTotalsPatchPayload(workout, options = {}) {
   };
 }
 
+export function isProgramWorkoutExercise(exercise = {}) {
+  return Boolean(
+    exercise?.userProgramExerciseSettingId
+    || exercise?.userProgramExerciseSettingClientId
+    || exercise?.programTemplateExerciseKey
+    || exercise?.plannedSets
+  );
+}
+
+export function buildWorkoutExerciseSupabasePayload(workoutSupabaseId, exercise = {}, options = {}) {
+  const supersetGroupId = getExerciseSupersetGroupId(exercise);
+  const measurementSettings = getWorkoutExerciseMeasurementSettings(exercise, options);
+  const isProgramExercise = isProgramWorkoutExercise(exercise);
+
+  return {
+    workout_id: workoutSupabaseId,
+    exercise_name: exercise?.name || "Упражнение",
+    muscle_group: exercise?.muscleGroup || "Другое",
+    exercise_order: safeWorkoutNumber(exercise?.order, 1),
+    notes: exercise?.note || exercise?.notes || "",
+    rest_between_seconds: safeWorkoutNumber(exercise?.restSeconds, 120),
+    rest_after_seconds: safeWorkoutNumber(exercise?.restAfterSeconds, 0),
+    superset_group_id: supersetGroupId,
+    superset_order: supersetGroupId ? safeWorkoutNumber(exercise?.supersetOrder, 1) : null,
+    is_superset: Boolean(supersetGroupId),
+    source_exercise_id: measurementSettings.sourceExerciseId,
+    exercise_category: measurementSettings.exerciseCategory,
+    primary_muscles: measurementSettings.primaryMuscles,
+    secondary_muscles: measurementSettings.secondaryMuscles,
+    measurement_mode: measurementSettings.measurementMode,
+    distance_unit: measurementSettings.distanceUnit,
+    counts_in_muscle_stats: Boolean(measurementSettings.countsInMuscleStats),
+    measure_weight_enabled: Boolean(measurementSettings.measureWeightEnabled),
+    measure_reps_enabled: Boolean(measurementSettings.measureRepsEnabled),
+    measure_time_enabled: Boolean(measurementSettings.measureTimeEnabled),
+    measure_rir_enabled: Boolean(measurementSettings.measureRirEnabled),
+    measure_rpe_enabled: Boolean(measurementSettings.measureRpeEnabled),
+    weight_unit: measurementSettings.weightUnit,
+    double_weight_in_stats: Boolean(measurementSettings.doubleCountInStatistics),
+    double_count_in_statistics: Boolean(measurementSettings.doubleCountInStatistics),
+    ...(isProgramExercise ? {
+      user_program_exercise_setting_id: exercise?.userProgramExerciseSettingId || exercise?.user_program_exercise_setting_id || undefined,
+      user_program_exercise_setting_client_id: exercise?.userProgramExerciseSettingClientId || exercise?.user_program_exercise_setting_client_id || undefined,
+      program_template_exercise_id: exercise?.programTemplateExerciseId || exercise?.program_template_exercise_id || undefined,
+      program_template_exercise_key: exercise?.programTemplateExerciseKey || exercise?.program_template_exercise_key || undefined,
+      planned_sets: exercise?.plannedSets ?? exercise?.planned_sets,
+      planned_rep_min: exercise?.plannedRepMin ?? exercise?.planned_rep_min,
+      planned_rep_max: exercise?.plannedRepMax ?? exercise?.planned_rep_max,
+      planned_weight: exercise?.plannedWeight ?? exercise?.planned_weight,
+      planned_reps: exercise?.plannedReps ?? exercise?.planned_reps,
+      progression_state: exercise?.progressionState || exercise?.progression_state || undefined
+    } : {})
+  };
+}
+
+export function buildWorkoutExercisePatchPayload(exercise = {}, options = {}) {
+  if (!exercise?.supabaseId) return null;
+  const { workout_id, ...exercisePayload } = buildWorkoutExerciseSupabasePayload(null, exercise, options);
+  return {
+    id: exercise.supabaseId,
+    ...exercisePayload
+  };
+}
+
 export function buildWorkoutSetSupabasePayload(exerciseSupabaseId, set = {}) {
   const actualWeight = pickSetActualNumber(set, ["weight", "weight_kg", "weightValue", "weight_value"]);
   const actualReps = pickSetActualNumber(set, ["reps", "repsValue", "reps_value"]);
@@ -128,6 +245,23 @@ export function buildWorkoutSetCreatePayload(exerciseSupabaseId, exerciseClientI
     exercise_client_id: exerciseClientId,
     workout_exercise_id,
     ...setPayload
+  };
+}
+
+export function buildWorkoutExerciseCreatePayload(workoutSupabaseId, exercise = {}, options = {}) {
+  if (!workoutSupabaseId || !exercise) return null;
+  const { workout_id, ...exercisePayload } = buildWorkoutExerciseSupabasePayload(workoutSupabaseId, exercise, options);
+  return {
+    client_id: exercise.id,
+    workout_id,
+    ...exercisePayload,
+    sets: (exercise.sets || []).map((set) => {
+      const { workout_exercise_id, ...setPayload } = buildWorkoutSetSupabasePayload(null, set);
+      return {
+        client_id: set.id,
+        ...setPayload
+      };
+    })
   };
 }
 
