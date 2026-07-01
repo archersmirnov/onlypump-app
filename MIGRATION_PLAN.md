@@ -457,6 +457,15 @@ Acceptance criteria:
 - training analytics зависит от workout semantics;
 - переносить только после стабилизации workout mapper/repository/sync.
 
+Начато:
+
+- создан `vite-shell/src/features/analytics/domain/analyticsData.js`;
+- вынесены helpers для analytics periods, rolling chart ranges, graph summaries и chart layout flags;
+- вынесены series builders для measurements, health, nutrition и training;
+- вынесены workout analytics helpers для planned / actual / expected stats и current week summary;
+- добавлен `pnpm run check:analytics-domain`;
+- legacy `index.html` пока не подключен к analytics helpers.
+
 ## Этап 11. UI Extraction
 
 Цель: постепенно выносить UI-компоненты.
