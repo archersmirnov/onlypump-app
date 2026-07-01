@@ -176,7 +176,7 @@ Acceptance criteria:
 
 ## Этап 4. Shared API Client
 
-Статус: current.
+Статус: prepared, not wired.
 
 Цель: отделить общий вызов Edge Functions от UI и feature logic.
 
@@ -192,6 +192,7 @@ Acceptance criteria:
 - сохранена текущая форма запроса `initData/action/payload`;
 - добавлены compatibility wrappers со старыми именами API-вызовов;
 - добавлен `pnpm run check:api` для проверки API-слоя без сети;
+- статус и wiring gate описаны в `API_CLIENT_MIGRATION_STATUS.md`;
 - модуль пока не подключен к legacy `index.html`.
 
 Кандидаты на перенос:

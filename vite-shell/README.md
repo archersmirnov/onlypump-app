@@ -37,6 +37,7 @@ live next to the current app without changing runtime behavior.
 - Profile `load_profile` keeps the current `access_denied + profile` exception.
 
 These modules are not wired into the legacy `index.html` yet.
+See `../API_CLIENT_MIGRATION_STATUS.md` before wiring them into legacy code.
 
 ## Checks
 
