@@ -26,7 +26,8 @@
     "check:shared-ui": "node scripts/check-shared-ui.mjs",
     "check:home-widgets": "node scripts/check-home-widgets.mjs",
     "check:preview-routes": "node scripts/check-preview-routes.mjs",
-    "check": "pnpm run check:api && pnpm run check:legacy-api && pnpm run check:workouts && pnpm run check:workout-mapper && pnpm run check:workout-repository && pnpm run check:workout-sync && pnpm run check:workouts-ui && pnpm run check:nutrition-cache && pnpm run check:nutrition-day && pnpm run check:nutrition-repository && pnpm run check:nutrition-food && pnpm run check:nutrition-screens && pnpm run check:profile-repository && pnpm run check:analytics-domain && pnpm run check:analytics-charts && pnpm run check:students-dashboard && pnpm run check:shared-ui && pnpm run check:home-widgets && pnpm run check:preview-routes && pnpm run build"
+    "check:integration-boundaries": "node scripts/check-integration-boundaries.mjs",
+    "check": "pnpm run check:api && pnpm run check:legacy-api && pnpm run check:workouts && pnpm run check:workout-mapper && pnpm run check:workout-repository && pnpm run check:workout-sync && pnpm run check:workouts-ui && pnpm run check:nutrition-cache && pnpm run check:nutrition-day && pnpm run check:nutrition-repository && pnpm run check:nutrition-food && pnpm run check:nutrition-screens && pnpm run check:profile-repository && pnpm run check:analytics-domain && pnpm run check:analytics-charts && pnpm run check:students-dashboard && pnpm run check:shared-ui && pnpm run check:home-widgets && pnpm run check:preview-routes && pnpm run check:integration-boundaries && pnpm run build"
   },
   "dependencies": {
     "react": "^19.2.7",

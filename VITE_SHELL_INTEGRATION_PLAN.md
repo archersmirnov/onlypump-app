@@ -11,6 +11,9 @@
 
 - рабочее приложение остается в корневом `index.html`;
 - `vite-shell/` уже содержит отдельные React/Vite preview-модули;
+- preview route registry уже добавлен внутри `vite-shell`;
+- Home, Nutrition, Analytics, Workouts и Students можно открывать отдельными
+  preview-вкладками;
 - shared API client существует;
 - profile и nutrition уже подключены к legacy через browser bridge;
 - workouts API, mapper, repository и sync вынесены, но намеренно не подключены к
@@ -78,19 +81,30 @@
 - проверить данные после reload;
 - если затронуты тренировки, пройти `SAFETY_WORKOUT_PERSISTENCE_CHECKLIST.md`.
 
+## Уже закрыто в этом этапе
+
+- добавлен маленький navigation/route registry для preview-экранов;
+- preview-экраны открываются по одному внутри `vite-shell`;
+- общий preview остается доступен;
+- добавлена проверка, что Vite shell не подключен к корневому `index.html` и
+  preview-слой не тянет workout write-flow.
+
 ## Следующий безопасный шаг
 
-Добавить в `vite-shell` маленький navigation/route registry для preview-экранов:
+Пройти integration gate перед реальным подключением `vite-shell` к приложению:
 
-- без подключения реального production route;
-- без изменения `index.html`;
-- без Supabase изменений;
-- без workout persistence;
-- только чтобы каждый вынесенный экран можно было проверять отдельно.
+- не менять `index.html`;
+- не трогать workout persistence;
+- запустить полный `pnpm run check` в `vite-shell`;
+- открыть Vite preview и вручную проверить вкладки Home, Nutrition, Analytics,
+  Workouts, Students;
+- после этого планировать только read-only подключение первого безопасного
+  экрана.
 
 Acceptance criteria следующего шага:
 
-- preview-экраны открываются по одному внутри `vite-shell`;
-- общий preview остается доступен;
 - `pnpm run check` проходит;
-- legacy `index.html` не меняется.
+- legacy `index.html` не меняется;
+- preview route tabs работают;
+- нет изменений в Supabase/API;
+- нет изменений в workout save/load/delete.

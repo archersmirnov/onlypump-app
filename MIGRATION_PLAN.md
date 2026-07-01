@@ -513,7 +513,7 @@ Acceptance criteria:
 
 ## Этап 12. Vite Shell Integration Planning
 
-Статус: started.
+Статус: integration route registry added.
 
 Файл:
 
@@ -535,8 +535,9 @@ Acceptance criteria:
 
 Следующий безопасный шаг:
 
-- добавить в `vite-shell` маленький navigation/route registry для preview-экранов,
-  чтобы проверять вынесенные экраны по одному.
+- пройти integration gate: полный `pnpm run check`, ручная проверка preview-вкладок
+  и только после этого планирование read-only подключения первого безопасного
+  экрана.
 
 ## Branch and Commit Rules
 
@@ -586,13 +587,16 @@ Commit style:
 
 ## Recommended Next Concrete Step
 
-Текущий следующий шаг после integration planning:
+Текущий следующий шаг после route registry:
 
 1. Не менять `index.html`.
 2. Не трогать workout persistence.
-3. Добавить route registry/navigation только внутри `vite-shell`.
-4. Запустить `pnpm run check`.
+3. Запустить `pnpm run check` внутри `vite-shell`.
+4. Открыть Vite preview и проверить вкладки Home, Nutrition, Analytics,
+   Workouts, Students.
 5. После проверки сделать отдельный commit.
+6. Следующий кодовый шаг после gate - только read-only подключение первого
+   безопасного экрана.
 
 Untracked exercise GIF assets коммитить отдельным решением, не смешивать с
 архитектурной миграцией.
