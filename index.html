@@ -3176,6 +3176,7 @@ function normalizeProfileRecord(record = {}, fallback = DEFAULT_PROFILE) {
 }
 
 async function callOnlyPumpProfileApi(initData, action, payload = {}) {
+  emitOnlyPumpDomainEvent("profile.api.request", { action, payload });
   const response = await fetch(ONLYPUMP_PROFILE_API_URL, {
     method: "POST",
     headers: {
@@ -3187,13 +3188,16 @@ async function callOnlyPumpProfileApi(initData, action, payload = {}) {
   });
   const result = await response.json().catch(() => ({}));
   if (result?.access_denied && action === "load_profile" && result?.profile) {
+    emitOnlyPumpDomainEvent("profile.api.access_denied", { action, status: response.status, result });
     return result;
   }
   if (!response.ok || result?.ok === false || result?.error) {
     const error = new Error(result?.error || result?.message || `onlypump-profile-api ${action} failed with ${response.status}`);
     error.payload = result;
+    emitOnlyPumpDomainEvent("profile.api.failed", { action, status: response.status, error, result });
     throw error;
   }
+  emitOnlyPumpDomainEvent("profile.api.success", { action, status: response.status, result });
   return result;
 }
 
@@ -3394,6 +3398,40 @@ const profileNutritionGoalFromProfile = (profile = DEFAULT_PROFILE, fallback = i
   fat: safeProfileNumber(profile.fat_target, fallback.fat),
   carbs: safeProfileNumber(profile.carbs_target, fallback.carbs),
 });
+
+const normalizeNutritionGoalValues = (goal = {}, fallback = initialNutritionGoal) => ({
+  calories: Math.max(1, safeProfileNumber(goal?.calories, fallback.calories)),
+  protein: Math.max(1, safeProfileNumber(goal?.protein, fallback.protein)),
+  fat: Math.max(1, safeProfileNumber(goal?.fat, fallback.fat)),
+  carbs: Math.max(1, safeProfileNumber(goal?.carbs, fallback.carbs)),
+});
+
+const buildProfileReadModel = (profile = DEFAULT_PROFILE, options = {}) => {
+  const safeProfile = normalizeProfileRecord(profile || DEFAULT_PROFILE, DEFAULT_PROFILE);
+  const profileNutritionGoal = normalizeNutritionGoalValues(profileNutritionGoalFromProfile(safeProfile, initialNutritionGoal));
+  const nutritionGoal = normalizeNutritionGoalValues(options.nutritionGoal || profileNutritionGoal, profileNutritionGoal);
+  const stepsGoal = Math.max(1, profileNonNegativeNumber(safeProfile.steps_per_day, DEFAULT_PROFILE.steps_per_day));
+  const workoutsPerWeek = profileNonNegativeNumber(safeProfile.workouts_per_week, DEFAULT_PROFILE.workouts_per_week);
+  return {
+    profile: safeProfile,
+    nutritionGoal,
+    profileNutritionGoal,
+    activityGoals: {
+      steps: stepsGoal,
+      workoutsPerWeek,
+    },
+    body: {
+      sex: safeProfile.sex || "male",
+      age: calculateProfileAge(safeProfile.birth_date) || profileNumber(safeProfile.age, 30),
+      heightCm: profileNumber(safeProfile.height_cm, 175),
+      weightKg: profileNumber(safeProfile.weight_kg, 75),
+      targetWeightKg: profileNumber(safeProfile.target_weight_kg, null),
+      bodyFatPercent: profileNumber(safeProfile.body_fat_percent, null),
+    },
+    usesPalmNutrition: profileUsesPalmNutrition(safeProfile),
+    defaultWeightUnit: normalizeWeightUnit(safeProfile.default_weight_unit || DEFAULT_PROFILE.default_weight_unit),
+  };
+};
 
 const profileDraftFromProfile = (profile = DEFAULT_PROFILE) => ({
   display_name: profile.display_name || "",
@@ -4798,6 +4836,41 @@ const mergeHealthLogLists = (...sources) => {
   });
   return Array.from(byDate.values()).sort((a, b) => String(a.log_date || a.date).localeCompare(String(b.log_date || b.date)));
 };
+
+const healthLogDateKey = (log = {}) => normalizeDateKey(log?.log_date || log?.date, "");
+
+const buildHealthLogByDate = ({
+  healthLog = null,
+  healthLogs = [],
+} = {}) => {
+  const byDate = new Map();
+  const addLog = (rawLog, fallbackDate = "") => {
+    const dateKey = healthLogDateKey(rawLog) || normalizeDateKey(fallbackDate, "");
+    if (!rawLog || !dateKey) return;
+    byDate.set(dateKey, normalizeHealthLog(rawLog, dateKey));
+  };
+  (Array.isArray(healthLogs) ? healthLogs : []).forEach(log => addLog(log));
+  addLog(healthLog);
+  return byDate;
+};
+
+const getHealthLogForDate = ({
+  dateKey = formatDateKey(new Date()),
+  healthLogByDate = null,
+  healthLog = null,
+  healthLogs = [],
+} = {}) => {
+  const safeDateKey = normalizeDateKey(dateKey, "");
+  const source = healthLogByDate instanceof Map ? healthLogByDate : buildHealthLogByDate({ healthLog, healthLogs });
+  return normalizeHealthLog(safeDateKey ? source.get(safeDateKey) || {} : {}, safeDateKey || formatDateKey(new Date()));
+};
+
+const getHealthAnalyticsRows = (source = {}, range = null) => Array.from(buildHealthLogByDate(source).values())
+  .filter(log => {
+    const key = healthLogDateKey(log);
+    return key && (!range || isDateKeyInRange(key, range)) && healthLogHasRealData(log);
+  })
+  .sort((a, b) => healthLogDateKey(a).localeCompare(healthLogDateKey(b)));
 
 const formatSleepDuration = (minutes) => {
   const total = Math.max(0, Math.round(Number(minutes || 0)));
@@ -6801,6 +6874,59 @@ const getWorkoutVolume = (workout, completedOnly = true) => {
   return sets.reduce((sum, set) => sum + getSetVolumeForExercise(set, set.__exercise), 0);
 };
 
+const workoutPlanStatuses = new Set(["planned", "active", "completed"]);
+const workoutActualStatuses = new Set(["completed"]);
+const normalizeWorkoutDateKey = (workout = {}) => normalizeDateKey(workout.date || workout.workout_date || workout.scheduled_date, "");
+const buildWorkoutDateRangeFromStart = (startDate = new Date(), days = 7) => {
+  const start = startDate instanceof Date ? startDate : parseDateKeyLocal(startDate);
+  return {
+    start,
+    end: addLocalDaysToDate(start, days),
+    startKey: formatDateKey(start),
+    endKey: formatDateKey(addLocalDaysToDate(start, days - 1)),
+  };
+};
+const buildWorkoutWeekRange = (anchorDate = new Date()) => buildWorkoutDateRangeFromStart(startOfWeekMondayDate(anchorDate), 7);
+const isWorkoutInDateRange = (workout = {}, range = null) => {
+  if (!range) return true;
+  const dateKey = normalizeWorkoutDateKey(workout);
+  if (!dateKey) return false;
+  if (range.startKey || range.endKey) {
+    const startKey = range.startKey || "0000-00-00";
+    const endKey = range.endKey || "9999-99-99";
+    return dateKey >= startKey && dateKey <= endKey;
+  }
+  const time = parseDateKeyLocal(dateKey).getTime();
+  return time >= range.start.getTime() && time < range.end.getTime();
+};
+const filterWorkoutsByDateRange = (items = [], range = null) => (Array.isArray(items) ? items : []).filter(workout => isWorkoutInDateRange(workout, range));
+const getWorkoutCompletedSets = (workout = {}) => getWorkoutSets(workout).filter(set => getSetStatusGlobal(set) === "completed");
+const getWorkoutPlannedSets = (workout = {}) => getWorkoutSets(workout);
+const getWorkoutExpectedSets = (workout = {}) => {
+  const status = normalizeWorkoutStatus(workout.status);
+  return status === "completed" ? getWorkoutCompletedSets(workout) : getWorkoutPlannedSets(workout);
+};
+const getActualWorkouts = (items = [], range = null) => filterWorkoutsByDateRange(items, range)
+  .filter(workout => workoutActualStatuses.has(normalizeWorkoutStatus(workout.status)));
+const getPlannedWorkouts = (items = [], range = null) => filterWorkoutsByDateRange(items, range)
+  .filter(workout => workoutPlanStatuses.has(normalizeWorkoutStatus(workout.status)));
+const getExpectedWorkouts = (items = [], range = null) => getPlannedWorkouts(items, range)
+  .filter(workout => getWorkoutExpectedSets(workout).length > 0);
+const summarizeWorkoutSetList = (workouts = [], getSets = getWorkoutPlannedSets) => {
+  const sets = workouts.flatMap(workout => getSets(workout));
+  return {
+    workouts,
+    workoutsCount: workouts.length,
+    sets,
+    setCount: sets.length,
+    volume: sets.reduce((sum, set) => sum + getSetVolumeForExercise(set, set.__exercise), 0),
+    exerciseCount: workouts.reduce((sum, workout) => sum + (workout.exercises || []).length, 0),
+  };
+};
+const getActualWorkoutStats = (items = [], range = null) => summarizeWorkoutSetList(getActualWorkouts(items, range), getWorkoutCompletedSets);
+const getPlannedWorkoutStats = (items = [], range = null) => summarizeWorkoutSetList(getPlannedWorkouts(items, range), getWorkoutPlannedSets);
+const getExpectedWorkoutStats = (items = [], range = null) => summarizeWorkoutSetList(getExpectedWorkouts(items, range), getWorkoutExpectedSets);
+
 const formatVolumeForProfile = (valueKg, profile = DEFAULT_PROFILE) => {
   const unit = normalizeWeightUnit(profile?.default_weight_unit || DEFAULT_PROFILE.default_weight_unit);
   const value = unit === "lb" ? kgToLb(valueKg) : Number(valueKg || 0);
@@ -6809,42 +6935,32 @@ const formatVolumeForProfile = (valueKg, profile = DEFAULT_PROFILE) => {
 };
 
 const summarizeWorkouts = (items = []) => {
-  const sets = items.flatMap(getWorkoutSets);
-  const completedSets = sets.filter(set => getSetStatusGlobal(set) === "completed");
-  const completedVolume = completedSets.reduce((sum, set) => sum + getSetVolumeForExercise(set, set.__exercise), 0);
-  const plannedVolume = sets.reduce((sum, set) => sum + getSetVolumeForExercise(set, set.__exercise), 0);
-  const totalSets = sets.length;
+  const plannedStats = summarizeWorkoutSetList(items, getWorkoutPlannedSets);
+  const actualStats = summarizeWorkoutSetList(items, getWorkoutCompletedSets);
+  const totalSets = plannedStats.setCount;
   return {
-    completedSets: completedSets.length,
+    completedSets: actualStats.setCount,
     totalSets,
-    completedVolume,
-    plannedVolume,
-    progress: totalSets ? Math.round((completedSets.length / totalSets) * 100) : 0,
-    exerciseCount: items.reduce((sum, workout) => sum + (workout.exercises || []).length, 0),
+    completedVolume: actualStats.volume,
+    plannedVolume: plannedStats.volume,
+    progress: totalSets ? Math.round((actualStats.setCount / totalSets) * 100) : 0,
+    exerciseCount: plannedStats.exerciseCount,
   };
 };
 
 const summarizeCurrentWeekWorkouts = (items = [], anchorDate = new Date()) => {
-  const start = startOfWeekMondayDate(anchorDate).getTime();
-  const end = addLocalDaysToDate(startOfWeekMondayDate(anchorDate), 7).getTime();
-  const weekWorkouts = items.filter(workout => {
-    const time = parseDateKeyLocal(workout.date).getTime();
-    return time >= start && time < end;
-  });
-  const plannedWorkouts = weekWorkouts.filter(workout => ["planned", "active", "completed"].includes(workout.status || "completed"));
-  const completedWorkouts = weekWorkouts.filter(workout => workout.status === "completed");
-  const plannedSets = plannedWorkouts.flatMap(getWorkoutSets);
-  const completedSets = completedWorkouts.flatMap(getWorkoutSets).filter(set => getSetStatusGlobal(set) === "completed");
-  const completedVolume = completedSets.reduce((sum, set) => sum + getSetVolumeForExercise(set, set.__exercise), 0);
-  const totalSets = plannedSets.length;
+  const range = buildWorkoutWeekRange(anchorDate);
+  const plannedStats = getPlannedWorkoutStats(items, range);
+  const actualStats = getActualWorkoutStats(items, range);
+  const totalSets = plannedStats.setCount;
   return {
-    completedSets: completedSets.length,
+    completedSets: actualStats.setCount,
     totalSets,
     plannedSets: totalSets,
-    completedVolume,
-    plannedVolume: plannedSets.reduce((sum, set) => sum + getSetVolumeForExercise(set, set.__exercise), 0),
-    progress: totalSets ? Math.round((completedSets.length / totalSets) * 100) : 0,
-    exerciseCount: plannedWorkouts.reduce((sum, workout) => sum + (workout.exercises || []).length, 0),
+    completedVolume: actualStats.volume,
+    plannedVolume: plannedStats.volume,
+    progress: totalSets ? Math.round((actualStats.setCount / totalSets) * 100) : 0,
+    exerciseCount: plannedStats.exerciseCount,
   };
 };
 
@@ -7893,7 +8009,7 @@ const calculatePumpXp = ({
     }
   }
 
-  const level = getPumpXpLevel(totalXp);
+const level = getPumpXpLevel(totalXp);
   return {
     totalXp: Math.max(0, Math.round(totalXp)),
     level,
@@ -7904,7 +8020,50 @@ const calculatePumpXp = ({
   };
 };
 
+const ONLYPUMP_DOMAIN_EVENT_LIMIT = 300;
+
+const sanitizeOnlyPumpDomainEventValue = (value, depth = 0) => {
+  if (value === null || value === undefined) return value;
+  if (value instanceof Error) return { name: value.name, message: value.message };
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (depth >= 2) {
+    if (Array.isArray(value)) return { type: "array", count: value.length };
+    if (typeof value === "object") return { type: "object", keys: Object.keys(value).slice(0, 12) };
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return {
+      type: "array",
+      count: value.length,
+      sample: value.slice(0, 5).map(item => sanitizeOnlyPumpDomainEventValue(item, depth + 1)),
+    };
+  }
+  if (typeof value === "object") {
+    return Object.entries(value).slice(0, 24).reduce((acc, [key, item]) => {
+      acc[key] = sanitizeOnlyPumpDomainEventValue(item, depth + 1);
+      return acc;
+    }, {});
+  }
+  return String(value);
+};
+
+const emitOnlyPumpDomainEvent = (type, details = {}) => {
+  if (typeof window === "undefined") return null;
+  const event = {
+    id: `onlypump-event-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    at: new Date().toISOString(),
+    type: String(type || "unknown"),
+    details: sanitizeOnlyPumpDomainEventValue(details),
+  };
+  const current = Array.isArray(window.__ONLYPUMP_DOMAIN_EVENTS__) ? window.__ONLYPUMP_DOMAIN_EVENTS__ : [];
+  window.__ONLYPUMP_DOMAIN_EVENTS__ = [...current, event].slice(-ONLYPUMP_DOMAIN_EVENT_LIMIT);
+  window.__ONLYPUMP_LAST_DOMAIN_EVENT__ = event;
+  if (window.__ONLYPUMP_DEBUG_EVENTS__) console.log("[OnlyPumpDomainEvent]", event);
+  return event;
+};
+
 const callOnlyPumpWorkoutsApi = async (initData, action, payload = {}) => {
+  emitOnlyPumpDomainEvent("workouts.api.request", { action, payload });
   const response = await fetch(ONLYPUMP_WORKOUTS_API_URL, {
     method: "POST",
     headers: {
@@ -7916,12 +8075,16 @@ const callOnlyPumpWorkoutsApi = async (initData, action, payload = {}) => {
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok || result?.ok === false || result?.error) {
-    throw result?.error || result?.message || new Error(`onlypump-workouts-api ${action} failed with ${response.status}`);
+    const error = result?.error || result?.message || new Error(`onlypump-workouts-api ${action} failed with ${response.status}`);
+    emitOnlyPumpDomainEvent("workouts.api.failed", { action, status: response.status, error });
+    throw error;
   }
+  emitOnlyPumpDomainEvent("workouts.api.success", { action, status: response.status, result });
   return result;
 };
 
 const callOnlyPumpNutritionApi = async (initData, action, payload = {}) => {
+  emitOnlyPumpDomainEvent("nutrition.api.request", { action, payload });
   const response = await fetch(ONLYPUMP_NUTRITION_API_URL, {
     method: "POST",
     headers: {
@@ -7933,8 +8096,11 @@ const callOnlyPumpNutritionApi = async (initData, action, payload = {}) => {
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok || result?.ok === false || result?.error) {
-    throw result?.error || result?.message || new Error(`onlypump-nutrition-api ${action} failed with ${response.status}`);
+    const error = result?.error || result?.message || new Error(`onlypump-nutrition-api ${action} failed with ${response.status}`);
+    emitOnlyPumpDomainEvent("nutrition.api.failed", { action, status: response.status, error });
+    throw error;
   }
+  emitOnlyPumpDomainEvent("nutrition.api.success", { action, status: response.status, result });
   return result;
 };
 
@@ -9284,6 +9450,84 @@ const buildMealsForDate = (dateKey, baseMeals = []) => {
   return Array.isArray(baseMeals) ? baseMeals : [];
 };
 
+const emptyNutritionTotals = { calories: 0, protein: 0, fat: 0, carbs: 0 };
+
+const nutritionDateKey = (day = {}) => normalizeDateKey(day?.nutrition_date || day?.date || day?.log_date, "");
+
+const getNutritionTotalsFromDay = (day = null, fallbackTotals = emptyNutritionTotals) => {
+  if (!day) return buildNutritionTotalsForDate("", fallbackTotals);
+  return buildNutritionTotalsForDate(nutritionDateKey(day), day.totals || {
+    calories: day.calories_total ?? day.caloriesTotal ?? day.calories ?? fallbackTotals.calories,
+    protein: day.protein_total ?? day.proteinTotal ?? day.protein ?? fallbackTotals.protein,
+    fat: day.fat_total ?? day.fatTotal ?? day.fat ?? fallbackTotals.fat,
+    carbs: day.carbs_total ?? day.carbsTotal ?? day.carbs ?? fallbackTotals.carbs,
+  });
+};
+
+const buildNutritionDayByDate = ({
+  nutritionDay = null,
+  nutritionDays = [],
+  markedDateKeys = [],
+  profile = null,
+  nutritionGoal = initialNutritionGoal,
+  includeCache = true,
+} = {}) => {
+  const byDate = new Map();
+  const addDay = (rawDay, fallbackDate = "") => {
+    const dateKey = nutritionDateKey(rawDay) || normalizeDateKey(fallbackDate, "");
+    if (!rawDay || !dateKey) return;
+    byDate.set(dateKey, normalizeNutritionDay(rawDay, dateKey, nutritionGoal));
+  };
+
+  (Array.isArray(nutritionDays) ? nutritionDays : []).forEach(day => addDay(day));
+
+  if (includeCache && profile) {
+    normalizeNutritionFilledDateKeys(markedDateKeys).forEach(dateKey => {
+      if (byDate.has(dateKey)) return;
+      const cachedDay = readCachedNutritionForProfile(profile, dateKey);
+      if (cachedDay) addDay(cachedDay, dateKey);
+    });
+  }
+
+  addDay(nutritionDay);
+  return byDate;
+};
+
+const getNutritionDataForDate = ({
+  dateKey = formatDateKey(new Date()),
+  dayByDate = null,
+  nutritionDayByDate = null,
+  nutritionDay = null,
+  nutritionDays = [],
+  markedDateKeys = [],
+  profile = null,
+  nutritionGoal = initialNutritionGoal,
+  includeCache = true,
+} = {}) => {
+  const safeDateKey = normalizeDateKey(dateKey, "");
+  const sourceMap = dayByDate instanceof Map ? dayByDate : (nutritionDayByDate instanceof Map ? nutritionDayByDate : null);
+  const source = sourceMap
+    ? sourceMap
+    : buildNutritionDayByDate({ nutritionDay, nutritionDays, markedDateKeys, profile, nutritionGoal, includeCache });
+  const day = safeDateKey ? source.get(safeDateKey) || null : null;
+  const totals = getNutritionTotalsFromDay(day);
+  const hasFood = nutritionDayHasFood(day) || Object.values(totals).some(value => Number(value || 0) > 0);
+  return {
+    dateKey: safeDateKey,
+    day,
+    hasFood,
+    totals: hasFood ? totals : buildNutritionTotalsForDate(safeDateKey, emptyNutritionTotals),
+    meals: hasFood ? deriveHomeMealsFromNutritionDay(day) : [],
+  };
+};
+
+const getNutritionAnalyticsRows = (source = {}, range = null) => Array.from(buildNutritionDayByDate({ ...source, includeCache: source.includeCache ?? false }).values())
+  .filter(day => {
+    const key = nutritionDateKey(day);
+    return key && (!range || isDateKeyInRange(key, range)) && nutritionDayHasAnalyticsData(day);
+  })
+  .sort((a, b) => nutritionDateKey(a).localeCompare(nutritionDateKey(b)));
+
 const buildWorkoutSummaryForDate = (dateKey, baseSummary = {}) => {
   const diff = getDayOffsetFromToday(dateKey);
   if (diff === 0) return baseSummary;
@@ -9301,9 +9545,241 @@ const buildWorkoutSummaryForDate = (dateKey, baseSummary = {}) => {
   };
 };
 
-const buildMeasurementsForDate = (dateKey, baseMeasurements = {}) => {
-  return baseMeasurements || {};
+const measurementSelectorFields = [
+  { field: "weight", db: "weight_kg" },
+  { field: "bodyFat", db: "body_fat_percent" },
+  { field: "neck", db: "neck_cm" },
+  { field: "shoulders", db: "shoulders_cm" },
+  { field: "chest", db: "chest_cm" },
+  { field: "biceps", db: "biceps_cm" },
+  { field: "waist", db: "waist_cm" },
+  { field: "belly", db: "abdomen_cm" },
+  { field: "glutes", db: "glutes_cm" },
+  { field: "thigh", db: "thigh_cm" },
+  { field: "calf", db: "calf_cm" },
+];
+
+const measurementDateKey = (item = {}) => {
+  const source = item || {};
+  return normalizeDateKey(source.measurement_date || source.date, "");
 };
+
+const measurementRecordHasRealData = (record = {}) => measurementSelectorFields.some(item =>
+  profileNumber(record?.[item.db] ?? record?.[item.field], 0) > 0
+);
+
+const normalizeMeasurementValues = (record = {}, fallback = {}, profile = DEFAULT_PROFILE) => {
+  const normalized = { ...(fallback || {}) };
+  measurementSelectorFields.forEach(item => {
+    const raw = record?.[item.db] ?? record?.[item.field] ?? fallback?.[item.field] ?? fallback?.[item.db] ?? profile?.[item.db];
+    const value = profileNumber(raw, null);
+    if (value !== null) {
+      normalized[item.field] = value;
+      normalized[item.db] = value;
+    } else if (normalized[item.field] === undefined) {
+      normalized[item.field] = "";
+    }
+  });
+  const dateKey = measurementDateKey(record) || measurementDateKey(fallback);
+  if (dateKey) {
+    normalized.date = dateKey;
+    normalized.measurement_date = dateKey;
+  }
+  return normalized;
+};
+
+const buildMeasurementByDate = ({
+  measurements = {},
+  measurementRecords = [],
+  profile = DEFAULT_PROFILE,
+} = {}) => {
+  const byDate = new Map();
+  const addMeasurement = (rawMeasurement, fallbackDate = "", fallback = {}) => {
+    const dateKey = measurementDateKey(rawMeasurement) || normalizeDateKey(fallbackDate, "");
+    if (!rawMeasurement || !dateKey || !measurementRecordHasRealData(rawMeasurement)) return;
+    byDate.set(dateKey, normalizeMeasurementValues(rawMeasurement, fallback, profile));
+  };
+  (Array.isArray(measurementRecords) ? measurementRecords : []).forEach(row => addMeasurement(row));
+  if (measurements && Object.keys(measurements).length) {
+    const explicitDate = measurementDateKey(measurements);
+    if (explicitDate) addMeasurement(measurements, explicitDate);
+  }
+  return byDate;
+};
+
+const getMeasurementDataForDate = ({
+  dateKey = formatDateKey(new Date()),
+  measurementByDate = null,
+  measurements = {},
+  measurementRecords = [],
+  profile = DEFAULT_PROFILE,
+} = {}) => {
+  const safeDateKey = normalizeDateKey(dateKey, "");
+  const source = measurementByDate instanceof Map ? measurementByDate : buildMeasurementByDate({ measurements, measurementRecords, profile });
+  const fallback = normalizeMeasurementValues(measurements, {}, profile);
+  return source.get(safeDateKey) || normalizeMeasurementValues({ date: safeDateKey, measurement_date: safeDateKey }, fallback, profile);
+};
+
+const ONLYPUMP_DATA_INVARIANT_LIMIT = 80;
+const ONLYPUMP_DATA_INVARIANT_WORKOUT_SAMPLE = 180;
+const ONLYPUMP_DATA_INVARIANT_SET_SAMPLE = 800;
+const onlypumpKnownWorkoutStatuses = new Set(["planned", "scheduled", "plan", "active", "started", "in_progress", "in-progress", "completed", "done", "finished", "pending", "skipped", "missed"]);
+const onlypumpKnownSetStatuses = new Set(["pending", "active", "completed", "done", "skipped"]);
+
+const addOnlyPumpDataInvariantIssue = (issues, code, message, meta = {}) => {
+  if (!Array.isArray(issues) || issues.length >= ONLYPUMP_DATA_INVARIANT_LIMIT) return;
+  issues.push({ code, message, meta });
+};
+
+const isOnlyPumpPlainObject = (value) => Boolean(value && typeof value === "object" && !Array.isArray(value));
+const hasOnlyPumpFiniteNumber = (value) => value === "" || value === null || value === undefined || Number.isFinite(Number(value));
+
+const validateOnlyPumpProfileInvariant = ({ profile, profileStatus }, issues) => {
+  if (!profile) {
+    if (profileStatus === "verified") addOnlyPumpDataInvariantIssue(issues, "profile.missing", "Verified profile is missing");
+    return;
+  }
+  if (!isOnlyPumpPlainObject(profile)) {
+    addOnlyPumpDataInvariantIssue(issues, "profile.shape", "Profile must be an object", { type: typeof profile });
+    return;
+  }
+  if (profileStatus === "verified" && !profile.id) addOnlyPumpDataInvariantIssue(issues, "profile.id.missing", "Verified profile has no id");
+  ["weight_kg", "height_cm", "steps_per_day", "calories_target", "protein_target", "fat_target", "carbs_target"].forEach(key => {
+    if (!hasOnlyPumpFiniteNumber(profile[key])) addOnlyPumpDataInvariantIssue(issues, `profile.${key}.number`, "Profile numeric field is not finite", { key, value: profile[key] });
+  });
+};
+
+const validateOnlyPumpWorkoutInvariant = (workouts, issues) => {
+  if (!Array.isArray(workouts)) {
+    addOnlyPumpDataInvariantIssue(issues, "workouts.shape", "Workouts must be an array", { type: typeof workouts });
+    return;
+  }
+  const workoutIds = new Set();
+  let sampledSets = 0;
+  workouts.slice(0, ONLYPUMP_DATA_INVARIANT_WORKOUT_SAMPLE).forEach((workout, workoutIndex) => {
+    if (!isOnlyPumpPlainObject(workout)) {
+      addOnlyPumpDataInvariantIssue(issues, "workout.shape", "Workout must be an object", { workoutIndex });
+      return;
+    }
+    const workoutId = String(workout.id || "").trim();
+    if (!workoutId) addOnlyPumpDataInvariantIssue(issues, "workout.id.missing", "Workout has no client id", { workoutIndex, title: workout.title });
+    else if (workoutIds.has(workoutId)) addOnlyPumpDataInvariantIssue(issues, "workout.id.duplicate", "Duplicate workout id", { workoutId, title: workout.title });
+    else workoutIds.add(workoutId);
+
+    const rawStatus = String(workout.status || "").trim().toLowerCase();
+    if (rawStatus && !onlypumpKnownWorkoutStatuses.has(rawStatus)) addOnlyPumpDataInvariantIssue(issues, "workout.status.unknown", "Workout has unknown status", { workoutId, status: workout.status, title: workout.title });
+    if (!normalizeWorkoutDateKey(workout)) addOnlyPumpDataInvariantIssue(issues, "workout.date.missing", "Workout has no valid date", { workoutId, title: workout.title });
+    if (!Array.isArray(workout.exercises)) {
+      addOnlyPumpDataInvariantIssue(issues, "workout.exercises.shape", "Workout exercises must be an array", { workoutId, title: workout.title });
+      return;
+    }
+
+    const exerciseIds = new Set();
+    workout.exercises.forEach((exercise, exerciseIndex) => {
+      if (!isOnlyPumpPlainObject(exercise)) {
+        addOnlyPumpDataInvariantIssue(issues, "exercise.shape", "Workout exercise must be an object", { workoutId, exerciseIndex });
+        return;
+      }
+      const exerciseId = String(exercise.id || "").trim();
+      if (!exerciseId) addOnlyPumpDataInvariantIssue(issues, "exercise.id.missing", "Workout exercise has no client id", { workoutId, exerciseIndex, name: exercise.name });
+      else if (exerciseIds.has(exerciseId)) addOnlyPumpDataInvariantIssue(issues, "exercise.id.duplicate", "Duplicate exercise id inside workout", { workoutId, exerciseId, name: exercise.name });
+      else exerciseIds.add(exerciseId);
+      if (!String(exercise.name || "").trim()) addOnlyPumpDataInvariantIssue(issues, "exercise.name.missing", "Workout exercise has no name", { workoutId, exerciseId });
+      if (!Array.isArray(exercise.sets)) {
+        addOnlyPumpDataInvariantIssue(issues, "exercise.sets.shape", "Workout exercise sets must be an array", { workoutId, exerciseId, name: exercise.name });
+        return;
+      }
+
+      const setIds = new Set();
+      exercise.sets.forEach((set, setIndex) => {
+        if (sampledSets >= ONLYPUMP_DATA_INVARIANT_SET_SAMPLE) return;
+        sampledSets += 1;
+        if (!isOnlyPumpPlainObject(set)) {
+          addOnlyPumpDataInvariantIssue(issues, "set.shape", "Workout set must be an object", { workoutId, exerciseId, setIndex });
+          return;
+        }
+        const setId = String(set.id || "").trim();
+        if (!setId) addOnlyPumpDataInvariantIssue(issues, "set.id.missing", "Workout set has no client id", { workoutId, exerciseId, setIndex });
+        else if (setIds.has(setId)) addOnlyPumpDataInvariantIssue(issues, "set.id.duplicate", "Duplicate set id inside exercise", { workoutId, exerciseId, setId });
+        else setIds.add(setId);
+        const status = String(getSetStatusGlobal(set) || "").trim().toLowerCase();
+        if (status && !onlypumpKnownSetStatuses.has(status)) addOnlyPumpDataInvariantIssue(issues, "set.status.unknown", "Workout set has unknown status", { workoutId, exerciseId, setId, status });
+        ["weight", "weightValue", "reps", "repsValue", "rir", "rpe", "restSeconds", "restAfterSeconds"].forEach(key => {
+          if (!hasOnlyPumpFiniteNumber(set[key])) addOnlyPumpDataInvariantIssue(issues, `set.${key}.number`, "Workout set numeric field is not finite", { workoutId, exerciseId, setId, key, value: set[key] });
+        });
+      });
+    });
+  });
+};
+
+const validateOnlyPumpNutritionInvariant = ({ nutritionDay, nutritionGoal }, issues) => {
+  if (!nutritionDay) return;
+  if (!isOnlyPumpPlainObject(nutritionDay)) {
+    addOnlyPumpDataInvariantIssue(issues, "nutrition.shape", "Nutrition day must be an object", { type: typeof nutritionDay });
+    return;
+  }
+  const dateKey = nutritionDateKey(nutritionDay);
+  if (!dateKey) addOnlyPumpDataInvariantIssue(issues, "nutrition.date.missing", "Nutrition day has no valid date");
+  if (nutritionDay.meals !== undefined && !Array.isArray(nutritionDay.meals)) addOnlyPumpDataInvariantIssue(issues, "nutrition.meals.shape", "Nutrition day meals must be an array", { dateKey });
+  const totals = getNutritionTotalsFromDay(nutritionDay);
+  Object.entries(totals).forEach(([key, value]) => {
+    if (!Number.isFinite(Number(value))) addOnlyPumpDataInvariantIssue(issues, `nutrition.${key}.number`, "Nutrition total is not finite", { dateKey, key, value });
+  });
+  Object.entries(normalizeNutritionGoalValues(nutritionGoal || initialNutritionGoal)).forEach(([key, value]) => {
+    if (!Number.isFinite(Number(value)) || Number(value) <= 0) addOnlyPumpDataInvariantIssue(issues, `nutrition.goal.${key}.number`, "Nutrition goal must be positive", { key, value });
+  });
+};
+
+const validateOnlyPumpHealthInvariant = ({ healthLog, healthLogs }, issues) => {
+  const logs = [healthLog, ...(Array.isArray(healthLogs) ? healthLogs : [])].filter(Boolean);
+  if (healthLogs && !Array.isArray(healthLogs)) addOnlyPumpDataInvariantIssue(issues, "health.logs.shape", "Health logs must be an array", { type: typeof healthLogs });
+  logs.slice(0, 120).forEach((log, index) => {
+    if (!isOnlyPumpPlainObject(log)) {
+      addOnlyPumpDataInvariantIssue(issues, "health.log.shape", "Health log must be an object", { index });
+      return;
+    }
+    const dateKey = healthLogDateKey(log);
+    if (!dateKey) addOnlyPumpDataInvariantIssue(issues, "health.log.date.missing", "Health log has no valid date", { index });
+    ["steps_count", "water_ml", "sleep_duration_minutes", "recovery_score", "tdee_kcal", "bmr_kcal", "tef_kcal", "neat_kcal", "eat_kcal"].forEach(key => {
+      if (!hasOnlyPumpFiniteNumber(log[key])) addOnlyPumpDataInvariantIssue(issues, `health.${key}.number`, "Health numeric field is not finite", { dateKey, key, value: log[key] });
+    });
+  });
+};
+
+const validateOnlyPumpMeasurementInvariant = ({ measurements, measurementRecords }, issues) => {
+  if (measurementRecords && !Array.isArray(measurementRecords)) addOnlyPumpDataInvariantIssue(issues, "measurements.records.shape", "Measurement records must be an array", { type: typeof measurementRecords });
+  const records = Array.isArray(measurementRecords) ? measurementRecords : [];
+  records.slice(0, 120).forEach((record, index) => {
+    if (!isOnlyPumpPlainObject(record)) {
+      addOnlyPumpDataInvariantIssue(issues, "measurement.record.shape", "Measurement record must be an object", { index });
+      return;
+    }
+    const dateKey = measurementDateKey(record);
+    if (!dateKey && measurementRecordHasRealData(record)) addOnlyPumpDataInvariantIssue(issues, "measurement.date.missing", "Measurement record with data has no valid date", { index });
+    measurementSelectorFields.forEach(item => {
+      const value = record[item.db] ?? record[item.field];
+      if (!hasOnlyPumpFiniteNumber(value)) addOnlyPumpDataInvariantIssue(issues, `measurement.${item.db}.number`, "Measurement numeric field is not finite", { dateKey, key: item.db, value });
+    });
+  });
+  if (measurements && !isOnlyPumpPlainObject(measurements)) addOnlyPumpDataInvariantIssue(issues, "measurements.current.shape", "Current measurements must be an object", { type: typeof measurements });
+};
+
+const collectOnlyPumpDataInvariantIssues = (data = {}) => {
+  const issues = [];
+  validateOnlyPumpProfileInvariant(data, issues);
+  validateOnlyPumpWorkoutInvariant(data.workouts, issues);
+  validateOnlyPumpNutritionInvariant(data, issues);
+  validateOnlyPumpHealthInvariant(data, issues);
+  validateOnlyPumpMeasurementInvariant(data, issues);
+  return issues;
+};
+
+const onlyPumpDataInvariantSignature = (issues = []) => issues
+  .map(issue => `${issue.code}:${JSON.stringify(issue.meta || {})}`)
+  .join("|");
+
+const buildMeasurementsForDate = (dateKey, baseMeasurements = {}, measurementRecords = [], profile = DEFAULT_PROFILE) =>
+  getMeasurementDataForDate({ dateKey, measurements: baseMeasurements, measurementRecords, profile });
 
 const hasPositiveMetric = (value) => {
   const number = Number(value);
@@ -9488,17 +9964,14 @@ const formatActivityRingValue = (value, unit = "") => {
   return `${formatActivityRingNumber(Math.round(safe))}${unit ? ` ${unit}` : ""}`;
 };
 
-const getRingHealthLogForDate = ({ dateKey, healthLog = DEFAULT_HEALTH_LOG, healthLogs = [] }) => {
-  const currentKey = healthLog?.log_date || healthLog?.date;
-  const row = currentKey === dateKey ? healthLog : healthLogs.find(log => (log.log_date || log.date) === dateKey);
-  return normalizeHealthLog(row || {}, dateKey);
-};
+const getRingHealthLogForDate = (context = {}) => getHealthLogForDate(context);
 
-const getRingNutritionTotalsForDate = ({ dateKey, nutritionDay = null, nutritionTotals = {} }) => {
-  if (nutritionDay?.date === dateKey || nutritionDay?.log_date === dateKey) {
-    return buildNutritionTotalsForDate(dateKey, nutritionDay?.totals || nutritionTotals);
-  }
-  return buildNutritionTotalsForDate(dateKey, {});
+const getRingNutritionTotalsForDate = (context = {}) => {
+  const { dateKey, nutritionDay = null, nutritionTotals = {} } = context;
+  const nutritionData = getNutritionDataForDate({ ...context, includeCache: false });
+  const currentKey = nutritionDateKey(nutritionDay);
+  const safeDateKey = normalizeDateKey(dateKey, "");
+  return nutritionData.hasFood ? nutritionData.totals : buildNutritionTotalsForDate(safeDateKey, currentKey === safeDateKey ? nutritionTotals : {});
 };
 
 const getRingWorkoutsForDate = ({ dateKey, workouts = [] }) => workouts.filter(workout => workout.date === dateKey);
@@ -13378,42 +13851,45 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     fat: acc.fat + Number(meal.fat || 0),
     carbs: acc.carbs + Number(meal.carbs || 0),
   }), { calories: 0, protein: 0, fat: 0, carbs: 0 }), [nutritionMeals]);
+  const profileReadModel = useMemo(() => buildProfileReadModel(profile || DEFAULT_PROFILE, { nutritionGoal }), [profile, nutritionGoal]);
+  const activeProfile = profileReadModel.profile;
+  const activeNutritionGoal = profileReadModel.nutritionGoal;
 
   const bodyProgress = useMemo(() => {
-    const startWeight = profileNumber(profile?.start_weight_kg ?? profile?.weight_start_kg ?? null);
-    const targetWeight = profileNumber(progressGoal?.targetWeight || profile?.target_weight_kg);
-    const currentWeight = profileNumber(measurements?.weight || profile?.weight_kg);
+    const startWeight = profileNumber(activeProfile?.start_weight_kg ?? activeProfile?.weight_start_kg ?? null);
+    const targetWeight = profileNumber(progressGoal?.targetWeight || activeProfile?.target_weight_kg);
+    const currentWeight = profileNumber(measurements?.weight || activeProfile?.weight_kg);
     if (!startWeight || !targetWeight || !currentWeight || startWeight === targetWeight) return 0;
     const total = Math.abs(startWeight - targetWeight) || 1;
     const done = Math.abs(startWeight - currentWeight);
     return Math.min(100, Math.round((done / total) * 100));
-  }, [measurements, progressGoal, profile]);
+  }, [activeProfile, measurements, progressGoal]);
 
   const selectedDateKey = controlledSelectedDateKey || formatDateKey(new Date());
   const setSelectedDateKey = controlledSetSelectedDateKey || (() => {});
-  const selectedNutritionDayMatches = nutritionDay?.date === selectedDateKey;
   const selectedDateWorkouts = useMemo(() => workouts.filter(workout => workout.date === selectedDateKey), [workouts, selectedDateKey]);
   const selectedPrimaryWorkout = selectedDateWorkouts[0] || null;
-  const selectedNutritionTotals = useMemo(() => selectedNutritionDayMatches
-    ? buildNutritionTotalsForDate(selectedDateKey, nutritionDay?.totals || nutritionTotals)
-    : { calories: 0, protein: 0, fat: 0, carbs: 0 }, [selectedDateKey, selectedNutritionDayMatches, nutritionDay?.totals, nutritionTotals]);
-  const selectedNutritionMeals = useMemo(() => selectedNutritionDayMatches ? deriveHomeMealsFromNutritionDay(nutritionDay) : [], [selectedNutritionDayMatches, nutritionDay]);
-  const tdeeNutritionDayByDate = useMemo(() => {
-    const byDate = new Map();
-    normalizeNutritionFilledDateKeys(nutritionMarkedDateKeys).forEach(dateKey => {
-      const cachedDay = profile ? readCachedNutritionForProfile(profile, dateKey) : null;
-      if (cachedDay) byDate.set(dateKey, normalizeNutritionDay(cachedDay, dateKey, nutritionGoal));
-    });
-    const currentNutritionDate = normalizeDateKey(nutritionDay?.date || nutritionDay?.log_date || nutritionDay?.nutrition_date, "");
-    if (currentNutritionDate) byDate.set(currentNutritionDate, normalizeNutritionDay(nutritionDay, currentNutritionDate, nutritionGoal));
-    return byDate;
-  }, [profile?.id, profile?.telegram_id, profile?.telegramId, JSON.stringify(nutritionMarkedDateKeys), nutritionDay, nutritionGoal]);
-  const selectedTdeeNutritionDay = tdeeNutritionDayByDate.get(selectedDateKey) || null;
-  const selectedTdeeNutritionHasFood = nutritionDayHasFood(selectedTdeeNutritionDay);
-  const selectedTdeeNutritionTotals = useMemo(() => selectedTdeeNutritionHasFood
-    ? pumpXpNutritionTotals(selectedTdeeNutritionDay)
-    : { calories: 0, protein: 0, fat: 0, carbs: 0 }, [selectedTdeeNutritionDay, selectedTdeeNutritionHasFood]);
-  const selectedTdeeNutritionMeals = useMemo(() => selectedTdeeNutritionHasFood ? deriveHomeMealsFromNutritionDay(selectedTdeeNutritionDay) : [], [selectedTdeeNutritionDay, selectedTdeeNutritionHasFood]);
+  const nutritionDayByDate = useMemo(() => buildNutritionDayByDate({
+    nutritionDay,
+    markedDateKeys: nutritionMarkedDateKeys,
+    profile: activeProfile,
+    nutritionGoal: activeNutritionGoal,
+  }), [activeProfile, activeNutritionGoal, JSON.stringify(nutritionMarkedDateKeys), nutritionDay]);
+  const selectedNutritionData = useMemo(() => getNutritionDataForDate({
+    dateKey: selectedDateKey,
+    dayByDate: nutritionDayByDate,
+  }), [selectedDateKey, nutritionDayByDate]);
+  const selectedNutritionTotals = selectedNutritionData.totals;
+  const selectedNutritionMeals = selectedNutritionData.meals;
+  const selectedTdeeNutritionHasFood = selectedNutritionData.hasFood;
+  const selectedTdeeNutritionTotals = selectedNutritionData.totals;
+  const selectedTdeeNutritionMeals = selectedNutritionData.meals;
+  const healthLogByDate = useMemo(() => buildHealthLogByDate({ healthLog, healthLogs }), [healthLog, healthLogs]);
+  const measurementByDate = useMemo(() => buildMeasurementByDate({
+    measurements,
+    measurementRecords,
+    profile: activeProfile,
+  }), [activeProfile, measurements, measurementRecords]);
   const personalTrackerMarkedDateKeys = useMemo(() => personalTrackers.flatMap(tracker => Object.keys(tracker.entries || {}).filter(dateKey => {
     const entry = getPersonalTrackerEntry(tracker, dateKey);
     return entry.done || profileNonNegativeNumber(entry.value, 0) > 0 || String(entry.note || "").trim();
@@ -13421,33 +13897,35 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
   const homeMarkedDateKeys = useMemo(() => Array.from(new Set([
     ...workouts.map(workout => workout.date).filter(Boolean),
     ...nutritionMarkedDateKeys.filter(Boolean),
-    ...healthLogs.filter(healthLogHasRealData).map(log => log.log_date || log.date).filter(Boolean),
+    ...Array.from(healthLogByDate.values()).filter(healthLogHasRealData).map(log => healthLogDateKey(log)).filter(Boolean),
+    ...Array.from(measurementByDate.keys()),
     ...personalTrackerMarkedDateKeys,
-  ])).sort(), [workouts, nutritionMarkedDateKeys, healthLogs, personalTrackerMarkedDateKeys]);
-  const [activityRingSettings, setActivityRingSettings] = useState(() => readActivityRingSettings(profile || DEFAULT_PROFILE));
+  ])).sort(), [workouts, nutritionMarkedDateKeys, healthLogByDate, measurementByDate, personalTrackerMarkedDateKeys]);
+  const [activityRingSettings, setActivityRingSettings] = useState(() => readActivityRingSettings(activeProfile));
   const [activityRingSheetDateKey, setActivityRingSheetDateKey] = useState("");
   useEffect(() => {
-    setActivityRingSettings(readActivityRingSettings(profile || DEFAULT_PROFILE));
-  }, [profile?.id, profile?.telegram_id, profile?.telegramId, profile?.email]);
+    setActivityRingSettings(readActivityRingSettings(activeProfile));
+  }, [activeProfile?.id, activeProfile?.telegram_id, activeProfile?.telegramId, activeProfile?.email]);
   const activityRingConfig = activityRingSettings.config;
   const activityRingGoalOverrides = activityRingSettings.goals;
   const activityRingContext = useMemo(() => ({
-    profile: profile || DEFAULT_PROFILE,
-    nutritionGoal,
+    profile: activeProfile,
+    nutritionGoal: activeNutritionGoal,
     nutritionDay,
+    nutritionDayByDate,
     nutritionTotals,
     healthLog,
     healthLogs,
+    healthLogByDate,
     workouts,
     goals: activityRingGoalOverrides,
-  }), [profile, nutritionGoal, nutritionDay, nutritionTotals, healthLog, healthLogs, workouts, activityRingGoalOverrides]);
+  }), [activeProfile, activeNutritionGoal, nutritionDay, nutritionDayByDate, nutritionTotals, healthLog, healthLogs, healthLogByDate, workouts, activityRingGoalOverrides]);
   const homeActivityRingsByDate = useMemo(() => {
     const map = {};
     const dateKeys = new Set([
-      ...healthLogs.filter(healthLogHasRealData).map(log => normalizeDateKey(log.log_date || log.date, "")).filter(Boolean),
-      ...(healthLogHasRealData(healthLog) ? [normalizeDateKey(healthLog.log_date || healthLog.date, "")].filter(Boolean) : []),
+      ...Array.from(healthLogByDate.values()).filter(healthLogHasRealData).map(log => healthLogDateKey(log)).filter(Boolean),
       ...workouts.map(workout => normalizeDateKey(workout.date, "")).filter(Boolean),
-      ...(nutritionDayHasFood(nutritionDay) ? [normalizeDateKey(nutritionDay.date || nutritionDay.log_date, "")].filter(Boolean) : []),
+      ...Array.from(nutritionDayByDate.values()).filter(nutritionDayHasFood).map(day => nutritionDateKey(day)).filter(Boolean),
     ]);
     dateKeys.forEach(date => {
       const details = buildActivityRingMetricDetails({ ...activityRingContext, dateKey: date });
@@ -13455,7 +13933,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       if (progress) map[date] = progress;
     });
     return map;
-  }, [activityRingContext, activityRingConfig, healthLogs, healthLog, workouts, nutritionDay]);
+  }, [activityRingContext, activityRingConfig, healthLogByDate, workouts, nutritionDayByDate]);
   const homeHistoryByDate = useMemo(() => {
     const map = {};
     const push = (date, event) => {
@@ -13469,7 +13947,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       push(date, {
         type: workout.status === "planned" ? "План" : "Тренировка",
         title: workout.title || "Тренировка",
-        meta: `${summary.completedSets}/${summary.totalSets} подходов · ${formatVolumeForProfile(summary.completedVolume || 0, profile)}`,
+        meta: `${summary.completedSets}/${summary.totalSets} подходов · ${formatVolumeForProfile(summary.completedVolume || 0, activeProfile)}`,
         target: "workouts",
       });
     });
@@ -13479,8 +13957,8 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       meta: "Есть записи за день",
       target: "nutrition",
     }));
-    healthLogs.filter(healthLogHasRealData).forEach(log => {
-      const date = log.log_date || log.date;
+    Array.from(healthLogByDate.values()).filter(healthLogHasRealData).forEach(log => {
+      const date = healthLogDateKey(log);
       const items = [];
       if (profileNonNegativeNumber(log.steps_count, 0) > 0) items.push(`${profileNonNegativeNumber(log.steps_count, 0).toLocaleString("ru-RU")} шагов`);
       if (profileNonNegativeNumber(log.water_ml, 0) > 0) items.push(`${profileNonNegativeNumber(log.water_ml, 0)} мл воды`);
@@ -13511,44 +13989,40 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       });
     });
     return map;
-  }, [workouts, nutritionMarkedDateKeys, healthLogs, personalTrackers, profile]);
+  }, [activeProfile, workouts, nutritionMarkedDateKeys, healthLogByDate, personalTrackers]);
   const selectedWorkoutSummary = useMemo(() => summarizeWorkouts(selectedDateWorkouts), [selectedDateWorkouts]);
   const currentWeekWorkoutSummary = useMemo(() => summarizeCurrentWeekWorkouts(workouts, new Date()), [workouts]);
   const currentWeekTonnageProgress = currentWeekWorkoutSummary.plannedVolume
     ? Math.min(100, Math.round((currentWeekWorkoutSummary.completedVolume / Math.max(1, currentWeekWorkoutSummary.plannedVolume)) * 100))
     : 0;
-  const selectedMeasurements = useMemo(() => buildMeasurementsForDate(selectedDateKey, measurements), [selectedDateKey, measurements]);
-  const caloriesPercent = Math.min(100, Math.round((selectedNutritionTotals.calories / Math.max(1, nutritionGoal.calories)) * 100));
-  const proteinPercent = Math.min(100, Math.round((selectedNutritionTotals.protein / Math.max(1, nutritionGoal.protein)) * 100));
-  const fatPercent = Math.min(100, Math.round((selectedNutritionTotals.fat / Math.max(1, nutritionGoal.fat)) * 100));
-  const carbsPercent = Math.min(100, Math.round((selectedNutritionTotals.carbs / Math.max(1, nutritionGoal.carbs)) * 100));
-  const homeUsesPalmNutrition = profileUsesPalmNutrition(profile);
-  const selectedPalmSummary = useMemo(() => getNutritionPalmSummary(selectedNutritionDayMatches ? nutritionDay : buildLocalNutritionDay(selectedDateKey, nutritionGoal), nutritionGoal, profile), [selectedNutritionDayMatches, nutritionDay, selectedDateKey, nutritionGoal, profile]);
+  const selectedMeasurements = useMemo(() => getMeasurementDataForDate({
+    dateKey: selectedDateKey,
+    measurementByDate,
+    measurements,
+    profile: activeProfile,
+  }), [activeProfile, selectedDateKey, measurementByDate, measurements]);
+  const caloriesPercent = Math.min(100, Math.round((selectedNutritionTotals.calories / Math.max(1, activeNutritionGoal.calories)) * 100));
+  const proteinPercent = Math.min(100, Math.round((selectedNutritionTotals.protein / Math.max(1, activeNutritionGoal.protein)) * 100));
+  const fatPercent = Math.min(100, Math.round((selectedNutritionTotals.fat / Math.max(1, activeNutritionGoal.fat)) * 100));
+  const carbsPercent = Math.min(100, Math.round((selectedNutritionTotals.carbs / Math.max(1, activeNutritionGoal.carbs)) * 100));
+  const homeUsesPalmNutrition = profileReadModel.usesPalmNutrition;
+  const selectedPalmSummary = useMemo(() => getNutritionPalmSummary(selectedNutritionData.day || buildLocalNutritionDay(selectedDateKey, activeNutritionGoal), activeNutritionGoal, activeProfile), [activeNutritionGoal, activeProfile, selectedNutritionData.day, selectedDateKey]);
   const palmNutritionPercent = Math.min(100, Math.round((selectedPalmSummary.total / Math.max(1, selectedPalmSummary.target || 1)) * 100));
-  const selectedHealthRecord = (healthLog?.log_date || healthLog?.date) === selectedDateKey
-    ? healthLog
-    : healthLogs.find(log => (log.log_date || log.date) === selectedDateKey);
-  const selectedHealthLog = normalizeHealthLog(selectedHealthRecord || {}, selectedDateKey);
-  const tdeeHealthLogByDate = useMemo(() => {
-    const map = new Map();
-    (Array.isArray(healthLogs) ? healthLogs : []).forEach(log => {
-      const key = normalizeDateKey(log?.log_date || log?.date, "");
-      if (key) map.set(key, normalizeHealthLog(log, key));
-    });
-    const currentKey = normalizeDateKey(healthLog?.log_date || healthLog?.date, "");
-    if (currentKey) map.set(currentKey, normalizeHealthLog(healthLog, currentKey));
-    return map;
-  }, [healthLog, healthLogs]);
+  const selectedHealthLog = useMemo(() => getHealthLogForDate({
+    dateKey: selectedDateKey,
+    healthLogByDate,
+  }), [selectedDateKey, healthLogByDate]);
+  const tdeeHealthLogByDate = healthLogByDate;
   const recovery = selectedHealthLog.recovery_score;
   const selectedSteps = profileNonNegativeNumber(selectedHealthLog.steps_count, 0);
-  const stepsGoal = profileNonNegativeNumber(profile?.steps_per_day, DEFAULT_PROFILE.steps_per_day);
+  const stepsGoal = profileReadModel.activityGoals.steps;
   const stepsProgress = Math.min(100, Math.round((selectedSteps / Math.max(1, stepsGoal)) * 100));
   const stepsTrendPoints = useMemo(() => buildStepsTrendPoints({
-    healthLogs,
+    healthLogs: Array.from(healthLogByDate.values()),
     selectedHealthLog,
     selectedDateKey,
     goal: stepsGoal,
-  }), [healthLogs, selectedHealthLog, selectedDateKey, stepsGoal]);
+  }), [healthLogByDate, selectedHealthLog, selectedDateKey, stepsGoal]);
   const selectedWater = profileNonNegativeNumber(selectedHealthLog.water_ml, 0);
   const waterGoal = Math.max(1, profileNonNegativeNumber(selectedHealthLog.water_target_ml, DEFAULT_HEALTH_LOG.water_target_ml));
   const waterProgress = Math.min(100, Math.round((selectedWater / waterGoal) * 100));
@@ -13557,7 +14031,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     const normalizedGoals = normalizeActivityRingGoals(nextGoals);
     const activeMetrics = new Set(activityRingSlots.map(slot => normalizedConfig[slot.key]));
     const fallbackGoals = { ...activityRingGoalOverrides };
-    const profileDraft = profileDraftFromProfile(profile || DEFAULT_PROFILE);
+    const profileDraft = profileDraftFromProfile(activeProfile);
     const targetDateKey = activityRingSheetDateKey || selectedDateKey;
     let shouldSaveProfile = false;
     let waterTarget = null;
@@ -13599,7 +14073,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
 
     if (shouldSaveProfile && onSaveProfile) await onSaveProfile(profileDraft);
     if (waterTarget && onSaveHealthLog) {
-      const targetHealthLog = getRingHealthLogForDate({ dateKey: targetDateKey, healthLog, healthLogs });
+      const targetHealthLog = getRingHealthLogForDate({ dateKey: targetDateKey, healthLogByDate });
       await onSaveHealthLog({ ...targetHealthLog, date: targetDateKey, log_date: targetDateKey, water_target_ml: waterTarget });
     } else if (waterTarget) {
       fallbackGoals.water = waterTarget;
@@ -13607,9 +14081,9 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
 
     const nextSettings = { config: normalizedConfig, goals: normalizeActivityRingGoals(fallbackGoals) };
     setActivityRingSettings(nextSettings);
-    writeActivityRingSettings(profile || DEFAULT_PROFILE, nextSettings.config, nextSettings.goals);
+    writeActivityRingSettings(activeProfile, nextSettings.config, nextSettings.goals);
     setActivityRingSheetDateKey("");
-  }, [activityRingGoalOverrides, activityRingSheetDateKey, healthLog, healthLogs, onSaveHealthLog, onSaveProfile, profile, selectedDateKey]);
+  }, [activeProfile, activityRingGoalOverrides, activityRingSheetDateKey, healthLogByDate, onSaveHealthLog, onSaveProfile, selectedDateKey]);
   const currentWeightForWidget = profileNumber(selectedMeasurements?.weight, 0);
   const weightTrendPoints = useMemo(() => buildWeightTrendPoints({
     measurements,
@@ -13618,7 +14092,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     currentWeight: currentWeightForWidget,
   }), [measurements, measurementRecords, selectedDateKey, currentWeightForWidget]);
   const tdeeSummary = useMemo(() => buildTdeeSummary({
-    profile,
+    profile: activeProfile,
     selectedMeasurements,
     measurementRecords,
     selectedDateKey,
@@ -13626,7 +14100,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     nutritionMeals: selectedTdeeNutritionMeals,
     workouts: selectedDateWorkouts,
     healthLog: selectedHealthLog,
-  }), [profile, selectedMeasurements, measurementRecords, selectedDateKey, selectedTdeeNutritionTotals, selectedTdeeNutritionMeals, selectedDateWorkouts, selectedHealthLog]);
+  }), [activeProfile, selectedMeasurements, measurementRecords, selectedDateKey, selectedTdeeNutritionTotals, selectedTdeeNutritionMeals, selectedDateWorkouts, selectedHealthLog]);
   const selectedTdeeHasSourceData = useMemo(() => {
     const isFutureDate = getDayOffsetFromToday(selectedDateKey) > 0;
     return selectedDateWorkouts.some(workoutCountsForTdee)
@@ -13642,7 +14116,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     const storedHealthLog = tdeeHealthLogByDate.get(targetKey);
     const dayWorkouts = (Array.isArray(workouts) ? workouts : []).filter(workout => normalizeDateKey(workout.date || workout.workout_date || workout.scheduled_date, "") === targetKey);
     const hasCompletedWorkout = dayWorkouts.some(workoutCountsForTdee);
-    const targetNutritionDay = tdeeNutritionDayByDate.get(targetKey) || null;
+    const targetNutritionDay = nutritionDayByDate.get(targetKey) || null;
     const hasNutritionForDate = nutritionDayHasFood(targetNutritionDay);
     const hasHealthForDate = storedHealthLog && healthLogHasRealData(storedHealthLog);
     const hasRealSourceData = hasCompletedWorkout || hasNutritionForDate || hasHealthForDate;
@@ -13651,8 +14125,13 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     if (!hasRealSourceData) return null;
 
     return buildTdeeSummary({
-      profile,
-      selectedMeasurements: buildMeasurementsForDate(targetKey, measurements),
+      profile: activeProfile,
+      selectedMeasurements: getMeasurementDataForDate({
+        dateKey: targetKey,
+        measurementByDate,
+        measurements,
+        profile: activeProfile,
+      }),
       measurementRecords,
       selectedDateKey: targetKey,
       nutritionTotals: hasNutritionForDate ? pumpXpNutritionTotals(targetNutritionDay) : { calories: 0, protein: 0, fat: 0, carbs: 0 },
@@ -13660,7 +14139,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       workouts: dayWorkouts,
       healthLog: normalizeHealthLog(storedHealthLog || {}, targetKey),
     });
-  }, [measurementRecords, measurements, profile, selectedDateKey, selectedTdeeHasSourceData, tdeeHealthLogByDate, tdeeNutritionDayByDate, tdeeSummary, workouts]);
+  }, [activeProfile, measurementByDate, measurementRecords, measurements, nutritionDayByDate, selectedDateKey, selectedTdeeHasSourceData, tdeeHealthLogByDate, tdeeSummary, workouts]);
   const tdeeLogPatch = useMemo(() => buildTdeeHealthLogPatch(tdeeSummary), [tdeeSummary]);
   const tdeeSaveSignatureRef = useRef("");
   useEffect(() => {
@@ -13672,9 +14151,9 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
     tdeeSaveSignatureRef.current = signature;
     onSaveHealthLog({ ...selectedHealthLog, date: selectedDateKey, log_date: selectedDateKey, ...tdeeLogPatch, __silent: true });
   }, [homeWidgets, onSaveHealthLog, selectedDateKey, selectedHealthLog, selectedTdeeHasSourceData, tdeeLogPatch]);
-  const displayName = getProfileDisplayName(profile);
+  const displayName = getProfileDisplayName(activeProfile);
   const pumpXp = pumpXpSummary || emptyPumpXpSummary();
-  const homeVolumeUnit = normalizeWeightUnit(profile?.default_weight_unit || DEFAULT_PROFILE.default_weight_unit);
+  const homeVolumeUnit = profileReadModel.defaultWeightUnit;
   const formatHomeVolume = (valueKg) => {
     const value = homeVolumeUnit === "lb" ? kgToLb(valueKg) : Number(valueKg || 0);
     const rounded = Math.round(value * 10) / 10;
@@ -13876,15 +14355,15 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       case "metricWeight":
         return <WeightMetricWidgetCard title="Вес" value={formatOptionalMetric(currentWeightForWidget, "кг")} trendPoints={weightTrendPoints} icon={Scale} iconSrc={homeWidgetIconPaths.weightIcon} widgetKey="weight" onInfoOpen={openWidgetInfo} onClick={() => openAnalyticsFromHome("mobile_weight", { returnTo: "home" })}/>;
       case "metricBodyFat":
-        return <MetricWidgetCard title="Процент жира" value={formatOptionalMetric(selectedMeasurements?.bodyFat, "%")} progressContent={<BodyFatRangeScale value={selectedMeasurements?.bodyFat} profile={profile}/>} icon={Ruler} iconSrc={homeWidgetIconPaths.bodyFatIcon} widgetKey="bodyFat" onInfoOpen={openWidgetInfo} onClick={() => openAnalyticsFromHome("mobile_body_fat", { returnTo: "home" })}/>;
+        return <MetricWidgetCard title="Процент жира" value={formatOptionalMetric(selectedMeasurements?.bodyFat, "%")} progressContent={<BodyFatRangeScale value={selectedMeasurements?.bodyFat} profile={activeProfile}/>} icon={Ruler} iconSrc={homeWidgetIconPaths.bodyFatIcon} widgetKey="bodyFat" onInfoOpen={openWidgetInfo} onClick={() => openAnalyticsFromHome("mobile_body_fat", { returnTo: "home" })}/>;
       case "metricTonnage":
         return <MetricWidgetCard title="Тоннаж" value={formatHomeVolumeKg(currentWeekWorkoutSummary.completedVolume)} sub={`из ${formatHomeVolumeKg(currentWeekWorkoutSummary.plannedVolume)} запланировано`} progress={currentWeekTonnageProgress} icon={Dumbbell} iconSrc={homeWidgetIconPaths.tonnageIcon} thinProgress widgetKey="tonnage" onInfoOpen={openWidgetInfo} onClick={() => setActive("workouts")}/>;
       case "metricSets":
         return <MetricWidgetCard title="Подходы" value={currentWeekWorkoutSummary.completedSets} sub={`из ${currentWeekWorkoutSummary.plannedSets} запланировано`} progress={currentWeekWorkoutSummary.progress} icon={CheckCircle2} iconSrc={homeWidgetIconPaths.setsIcon} thinProgress widgetKey="sets" onInfoOpen={openWidgetInfo} onClick={() => setActive("workouts")}/>;
       case "metricCalories":
-        return <MetricWidgetCard title={homeUsesPalmNutrition ? "Ладони" : "Калории"} value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.total) : selectedNutritionTotals.calories} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.target)}` : `/ ${nutritionGoal.calories} ккал`} delta={`${homeUsesPalmNutrition ? palmNutritionPercent : caloriesPercent}% цели`} progress={homeUsesPalmNutrition ? palmNutritionPercent : caloriesPercent} icon={Apple} widgetKey="calories" onInfoOpen={openWidgetInfo} onClick={openNutritionFromHome}/>;
+        return <MetricWidgetCard title={homeUsesPalmNutrition ? "Ладони" : "Калории"} value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.total) : selectedNutritionTotals.calories} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.target)}` : `/ ${activeNutritionGoal.calories} ккал`} delta={`${homeUsesPalmNutrition ? palmNutritionPercent : caloriesPercent}% цели`} progress={homeUsesPalmNutrition ? palmNutritionPercent : caloriesPercent} icon={Apple} widgetKey="calories" onInfoOpen={openWidgetInfo} onClick={openNutritionFromHome}/>;
       case "metricProtein":
-        return <MetricWidgetCard title="Белок" value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.actual.protein) : `${selectedNutritionTotals.protein} г`} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.targets.protein)}` : `/ ${nutritionGoal.protein} г`} delta={`${homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}% цели`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent} icon={Utensils} iconSrc={homeWidgetIconPaths.proteinIcon} widgetKey="protein" onInfoOpen={openWidgetInfo} onClick={openNutritionFromHome}/>;
+        return <MetricWidgetCard title="Белок" value={homeUsesPalmNutrition ? palmLabel(selectedPalmSummary.actual.protein) : `${selectedNutritionTotals.protein} г`} sub={homeUsesPalmNutrition ? `/ ${palmLabel(selectedPalmSummary.targets.protein)}` : `/ ${activeNutritionGoal.protein} г`} delta={`${homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}% цели`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent} icon={Utensils} iconSrc={homeWidgetIconPaths.proteinIcon} widgetKey="protein" onInfoOpen={openWidgetInfo} onClick={openNutritionFromHome}/>;
       case "metricRecovery":
         return <MetricWidgetCard title="Восстановление" value={recovery == null ? "—" : `${recovery}%`} sub={selectedHealthLog.sleep_duration_minutes ? sleepQualityLabel(selectedHealthLog) : "сон не добавлен"} progress={recovery || 0} icon={HeartPulse} iconSrc={homeWidgetIconPaths.recoveryIcon} thinProgress widgetKey="recovery" onInfoOpen={openWidgetInfo} onClick={() => openAnalyticsFromHome("recovery")}/>;
       case "metricSleep":
@@ -13894,9 +14373,9 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       case "macros":
         return <MetricWidgetCard title={homeUsesPalmNutrition ? "Ладони" : "БЖУ"} value={`${homeUsesPalmNutrition ? palmNutritionPercent : proteinPercent}%`} sub={homeUsesPalmNutrition ? `${palmLabel(selectedPalmSummary.actual.protein)} белк. · ${palmLabel(selectedPalmSummary.actual.carbs)} угл.` : `${selectedNutritionTotals.protein} Б · ${selectedNutritionTotals.fat} Ж · ${selectedNutritionTotals.carbs} У`} icon={Utensils} widgetKey="macros" onInfoOpen={openWidgetInfo} onClick={openNutritionFromHome}>
           <div className="onlypump-macro-lines">
-            <HomeMacroLine label="Б" value={homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.protein)}/${roundMacro(selectedPalmSummary.targets.protein)}` : `${selectedNutritionTotals.protein}/${nutritionGoal.protein}`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}/>
-            <HomeMacroLine label="Ж" value={homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.fat)}/${roundMacro(selectedPalmSummary.targets.fat)}` : `${selectedNutritionTotals.fat}/${nutritionGoal.fat}`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.fat / Math.max(1, selectedPalmSummary.targets.fat)) * 100)) : fatPercent}/>
-            <HomeMacroLine label="У" value={homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.carbs)}/${roundMacro(selectedPalmSummary.targets.carbs)}` : `${selectedNutritionTotals.carbs}/${nutritionGoal.carbs}`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.carbs / Math.max(1, selectedPalmSummary.targets.carbs)) * 100)) : carbsPercent}/>
+            <HomeMacroLine label="Б" value={homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.protein)}/${roundMacro(selectedPalmSummary.targets.protein)}` : `${selectedNutritionTotals.protein}/${activeNutritionGoal.protein}`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.protein / Math.max(1, selectedPalmSummary.targets.protein)) * 100)) : proteinPercent}/>
+            <HomeMacroLine label="Ж" value={homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.fat)}/${roundMacro(selectedPalmSummary.targets.fat)}` : `${selectedNutritionTotals.fat}/${activeNutritionGoal.fat}`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.fat / Math.max(1, selectedPalmSummary.targets.fat)) * 100)) : fatPercent}/>
+            <HomeMacroLine label="У" value={homeUsesPalmNutrition ? `${roundMacro(selectedPalmSummary.actual.carbs)}/${roundMacro(selectedPalmSummary.targets.carbs)}` : `${selectedNutritionTotals.carbs}/${activeNutritionGoal.carbs}`} progress={homeUsesPalmNutrition ? Math.min(100, Math.round((selectedPalmSummary.actual.carbs / Math.max(1, selectedPalmSummary.targets.carbs)) * 100)) : carbsPercent}/>
           </div>
         </MetricWidgetCard>;
 	      case "water":
@@ -13953,7 +14432,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       case "nutrition":
         {
           const nutritionActual = Number(homeUsesPalmNutrition ? selectedPalmSummary.total : selectedNutritionTotals.calories) || 0;
-          const nutritionTarget = Math.max(1, Number(homeUsesPalmNutrition ? selectedPalmSummary.target : nutritionGoal.calories) || 0);
+          const nutritionTarget = Math.max(1, Number(homeUsesPalmNutrition ? selectedPalmSummary.target : activeNutritionGoal.calories) || 0);
           const nutritionPercent = Math.min(100, Math.max(0, Math.round((nutritionActual / nutritionTarget) * 100)));
           const nutritionRemaining = Math.max(0, nutritionTarget - nutritionActual);
           const nutritionUnit = homeUsesPalmNutrition ? "лад." : "ккал";
@@ -13964,21 +14443,21 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
             {
               label: "Белки",
               actual: homeUsesPalmNutrition ? selectedPalmSummary.actual.protein : selectedNutritionTotals.protein,
-              target: homeUsesPalmNutrition ? selectedPalmSummary.targets.protein : nutritionGoal.protein,
+              target: homeUsesPalmNutrition ? selectedPalmSummary.targets.protein : activeNutritionGoal.protein,
               tone: "protein",
               unit: homeUsesPalmNutrition ? "лад." : "г",
             },
             {
               label: "Жиры",
               actual: homeUsesPalmNutrition ? selectedPalmSummary.actual.fat : selectedNutritionTotals.fat,
-              target: homeUsesPalmNutrition ? selectedPalmSummary.targets.fat : nutritionGoal.fat,
+              target: homeUsesPalmNutrition ? selectedPalmSummary.targets.fat : activeNutritionGoal.fat,
               tone: "fat",
               unit: homeUsesPalmNutrition ? "лад." : "г",
             },
             {
               label: "Углеводы",
               actual: homeUsesPalmNutrition ? selectedPalmSummary.actual.carbs : selectedNutritionTotals.carbs,
-              target: homeUsesPalmNutrition ? selectedPalmSummary.targets.carbs : nutritionGoal.carbs,
+              target: homeUsesPalmNutrition ? selectedPalmSummary.targets.carbs : activeNutritionGoal.carbs,
               tone: "carbs",
               unit: homeUsesPalmNutrition ? "лад." : "г",
             },
@@ -14307,7 +14786,7 @@ function HomePage({ setActive, workouts = [], nutritionMeals, nutritionDay, nutr
       </div>
     </div>
     {widgetPickerOpen && <HomeWidgetSettingsModal enabledWidgets={homeWidgets} personalTrackerCount={personalTrackers.length} onAdd={addWidget} onClose={() => setWidgetPickerOpen(false)}/>} 
-    {weightSheetOpen && <WeightEditorSheet dateKey={selectedDateKey} measurements={selectedMeasurements} profile={profile} saving={profileSaving} onClose={() => setWeightSheetOpen(false)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => { setWeightSheetOpen(false); openAnalyticsFromHome("weight"); }}/>}
+    {weightSheetOpen && <WeightEditorSheet dateKey={selectedDateKey} measurements={selectedMeasurements} profile={activeProfile} saving={profileSaving} onClose={() => setWeightSheetOpen(false)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => { setWeightSheetOpen(false); openAnalyticsFromHome("weight"); }}/>}
     {waterSheetOpen && <WaterEditorSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setWaterSheetOpen(false)} onSave={onSaveHealthLog} onOpenAnalytics={() => { setWaterSheetOpen(false); openAnalyticsFromHome("water"); }}/>}
     {sleepSheetOpen && <SleepReportSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setSleepSheetOpen(false)} onSave={onSaveHealthLog} onOpenAnalytics={() => { setSleepSheetOpen(false); openAnalyticsFromHome("sleep"); }}/>}
     {stepsSheetOpen && <StepsEditorSheet dateKey={selectedDateKey} healthLog={selectedHealthLog} saving={healthSaving} onClose={() => setStepsSheetOpen(false)} onSave={onSaveHealthLog} onOpenAnalytics={() => { setStepsSheetOpen(false); openAnalyticsFromHome("steps"); }}/>}
@@ -15276,29 +15755,10 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
 
   const getWorkoutSetCount = (workout) => (workout?.exercises || []).reduce((sum, exercise) => sum + (exercise.sets || []).length, 0);
 
-  const weeklyWorkouts = useMemo(() => {
-    const start = weekStart.getTime();
-    const end = addLocalDays(weekStart, 7).getTime();
-    return workouts
-      .filter(workout => {
-        const time = parseDateKey(workout.date).getTime();
-        return time >= start && time < end;
-      });
-  }, [workouts, selectedDateKey]);
-
-  const isExpectedWeeklyWorkout = (workout = {}) => ["planned", "active", "completed"].includes(normalizeWorkoutStatus(workout.status));
-  const getExpectedWorkoutSets = (workout = {}) => {
-    const sets = getWorkoutSets(workout);
-    return normalizeWorkoutStatus(workout.status) === "completed"
-      ? sets.filter(set => getSetStatusGlobal(set) === "completed")
-      : sets;
-  };
-  const getExpectedWorkoutSetCount = (workout) => getExpectedWorkoutSets(workout).length;
-  const weeklyExpectedWorkouts = useMemo(() => weeklyWorkouts.filter(workout => isExpectedWeeklyWorkout(workout) && getExpectedWorkoutSetCount(workout) > 0), [weeklyWorkouts]);
-
-  const weeklySetCount = useMemo(() => {
-    return weeklyExpectedWorkouts.reduce((sum, workout) => sum + getExpectedWorkoutSetCount(workout), 0);
-  }, [weeklyExpectedWorkouts]);
+  const weeklyExpectedRange = useMemo(() => buildWorkoutDateRangeFromStart(weekStart, 7), [selectedDateKey]);
+  const weeklyExpectedWorkouts = useMemo(() => getExpectedWorkouts(workouts, weeklyExpectedRange), [workouts, weeklyExpectedRange]);
+  const weeklyExpectedStats = useMemo(() => getExpectedWorkoutStats(workouts, weeklyExpectedRange), [workouts, weeklyExpectedRange]);
+  const weeklySetCount = weeklyExpectedStats.setCount;
 
   const activeWorkout = useMemo(() => sortedWorkouts.find(workout => workout.status === "active") || null, [sortedWorkouts]);
 
@@ -15353,10 +15813,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   };
 
   const weeklyMuscleStats = useMemo(() => getMuscleSetStatsForWorkouts(weeklyExpectedWorkouts, { expectedOnly: true }), [weeklyExpectedWorkouts]);
-  const weeklyVolume = useMemo(() => weeklyExpectedWorkouts.reduce((sum, workout) => {
-    const completedOnly = normalizeWorkoutStatus(workout.status) === "completed";
-    return sum + Number(getWorkoutVolume(workout, completedOnly));
-  }, 0), [weeklyExpectedWorkouts]);
+  const weeklyVolume = weeklyExpectedStats.volume;
 
   const VolumeLoadBar = ({ count = 0, title = "Объем", subtitle = "подходы", experiencedAt = volumeStandards.workoutTotal, onClick, className = "" }) => {
     const level = getVolumeLoadLevel(count, experiencedAt);
@@ -16721,7 +17178,11 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     } catch (error) {
       console.error("Program workout save error", error);
       const createdIds = new Set(createdWorkouts.map(item => item.id));
-      setWorkouts(prev => prev.map(workout => createdIds.has(workout.id) ? { ...workout, isSaving: false, isSyncing: false, syncError: true } : workout));
+      setWorkouts(prev => replaceWorkoutsInList(
+        prev,
+        workout => createdIds.has(workout.id),
+        workout => ({ ...workout, isSaving: false, isSyncing: false, syncError: true })
+      ));
     } finally {
       setProgramSaving(false);
     }
@@ -16808,7 +17269,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     if (!workout) return;
     const id = workout.id;
     const patch = (item) => ({ ...item, title, updatedAt: new Date().toISOString() });
-    setWorkouts(prev => prev.map(item => item.id === id ? patch(item) : item));
+    setWorkouts(prev => replaceWorkoutInList(prev, id, patch));
     setSelectedWorkout(prev => prev?.id === id ? patch(prev) : prev);
     if (workout?.supabaseId) {
       const nextWorkout = patch(workout);
@@ -16834,7 +17295,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const ids = new Set(matches.map(item => item.id));
     const previous = workoutsRef.current;
     const patch = (item) => ({ ...item, title, updatedAt: new Date().toISOString() });
-    setWorkouts(prev => prev.map(item => ids.has(item.id) ? patch(item) : item));
+    setWorkouts(prev => replaceWorkoutsInList(prev, item => ids.has(item.id), patch));
     setSelectedWorkout(prev => prev && ids.has(prev.id) ? patch(prev) : prev);
     if (!canUseWorkoutApi || !target.supabaseId) return;
     try {
@@ -16867,7 +17328,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       markWorkoutDeletePending(workout);
       clearWorkoutSaveQueue(id);
       setWorkouts(prev => {
-        const next = prev.filter(item => item.id !== id);
+        const next = removeWorkoutFromList(prev, id);
         writeCachedWorkoutsForProfile(profile, next);
         return next;
       });
@@ -16890,7 +17351,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     }
     markWorkoutDeletePending(deleteTarget);
     setWorkouts(prev => {
-      const next = prev.filter(workout => workout.id !== id);
+      const next = removeWorkoutFromList(prev, id);
       writeCachedWorkoutsForProfile(profile, next);
       return next;
     });
@@ -17210,9 +17671,20 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
   const callWorkoutsApi = async (action, payload = {}) => {
     if (!canUseWorkoutApi) {
       logWorkoutPersistence(action, "skipped", { reason: "remote auth unavailable", payload });
+      emitOnlyPumpDomainEvent("workouts.persistence.skipped", {
+        action,
+        reason: "remote auth unavailable",
+        profileId: profile?.id || null,
+        payload,
+      });
       return null;
     }
     logWorkoutPersistence(action, "request", { payload });
+    emitOnlyPumpDomainEvent("workouts.persistence.request", {
+      action,
+      profileId: profile?.id || null,
+      payload,
+    });
     try {
       const response = await fetch(ONLYPUMP_WORKOUTS_API_URL, {
         method: "POST",
@@ -17232,12 +17704,35 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
       logWorkoutPersistence(action, "response", { status: response.status, result });
       if (!response.ok || result?.ok !== true || result?.error) {
         const message = formatWorkoutApiError(result?.error || result?.message) || `onlypump-workouts-api ${action} failed with ${response.status}`;
-        throw new Error(message);
+        emitOnlyPumpDomainEvent("workouts.persistence.failed", {
+          action,
+          status: response.status,
+          profileId: profile?.id || null,
+          error: message,
+          result,
+        });
+        const apiError = new Error(message);
+        apiError.__onlypumpDomainEventEmitted = true;
+        throw apiError;
       }
+      emitOnlyPumpDomainEvent("workouts.persistence.success", {
+        action,
+        status: response.status,
+        profileId: profile?.id || null,
+        result,
+      });
       return result;
     } catch (error) {
       logWorkoutPersistence(action, "failed", { payload, error });
       console.error("[WorkoutPersistence] save failed", { action, payload, error });
+      if (!error?.__onlypumpDomainEventEmitted) {
+        emitOnlyPumpDomainEvent("workouts.persistence.failed", {
+          action,
+          profileId: profile?.id || null,
+          error,
+          payload,
+        });
+      }
       throw error;
     }
   };
@@ -17915,23 +18410,47 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     pendingWorkoutPatchesRef.current[workout?.id]
   );
 
+  const replaceWorkoutInList = (items = [], workoutId, patcher) => (items || [])
+    .map(workout => workout?.id === workoutId ? patcher(workout) : workout);
+
+  const replaceWorkoutsInList = (items = [], matcher, patcher) => (items || [])
+    .map(workout => matcher(workout) ? patcher(workout) : workout);
+
+  const removeWorkoutFromList = (items = [], workoutId) => (items || [])
+    .filter(workout => workout?.id !== workoutId);
+
+  const orderWorkoutExercises = (exercises = []) => (exercises || [])
+    .map((exercise, index) => ({ ...exercise, order: index + 1 }));
+
+  const orderWorkoutSets = (sets = []) => (sets || [])
+    .map((set, index) => ({ ...set, order: index + 1 }));
+
+  const replaceExerciseInWorkout = (workout = {}, exerciseId, patcher) => ({
+    ...workout,
+    exercises: (workout.exercises || []).map(exercise => exercise?.id === exerciseId ? patcher(exercise) : exercise),
+  });
+
+  const replaceSetInExercise = (exercise = {}, setId, patcher) => ({
+    ...exercise,
+    sets: (exercise.sets || []).map(set => set?.id === setId ? patcher(set) : set),
+  });
+
+  const removeSetFromExercise = (exercise = {}, setId) => ({
+    ...exercise,
+    sets: orderWorkoutSets((exercise.sets || []).filter(set => set?.id !== setId)),
+  });
+
   const patchWorkoutInState = (workoutId, patcher) => {
-    setWorkouts(prev => prev.map(workout => workout.id === workoutId ? patcher(workout) : workout));
+    setWorkouts(prev => replaceWorkoutInList(prev, workoutId, patcher));
     setSelectedWorkout(prev => prev?.id === workoutId ? patcher(prev) : prev);
   };
 
   const patchExerciseInState = (workoutId, exerciseId, patcher) => {
-    patchWorkoutInState(workoutId, workout => ({
-      ...workout,
-      exercises: (workout.exercises || []).map(exercise => exercise.id === exerciseId ? patcher(exercise) : exercise),
-    }));
+    patchWorkoutInState(workoutId, workout => replaceExerciseInWorkout(workout, exerciseId, patcher));
   };
 
   const patchSetInState = (workoutId, exerciseId, setId, patcher) => {
-    patchExerciseInState(workoutId, exerciseId, exercise => ({
-      ...exercise,
-      sets: (exercise.sets || []).map(set => set.id === setId ? patcher(set) : set),
-    }));
+    patchExerciseInState(workoutId, exerciseId, exercise => replaceSetInExercise(exercise, setId, patcher));
   };
 
   const markWorkoutDirty = (workoutId, patch = {}) => {
@@ -19113,15 +19632,13 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     const exerciseForSettings = (workoutForSettings?.exercises || []).find(item => item.id === exerciseId);
     const nextValue = coerceSetFieldValue(field, value, exerciseForSettings);
     const patch = (workout) => ({
-      ...workout,
-      exercises: (workout.exercises || []).map(exercise => exercise.id === exerciseId ? {
-        ...exercise,
-        sets: (exercise.sets || []).map(set => set.id === setId ? applySetFieldValue(set, field, nextValue) : set),
-      } : exercise),
+      ...replaceExerciseInWorkout(workout, exerciseId, exercise => (
+        replaceSetInExercise(exercise, setId, set => applySetFieldValue(set, field, nextValue))
+      )),
       updatedAt: new Date().toISOString(),
     });
 
-    setWorkouts(prev => prev.map(workout => workout.id === workoutId ? patch(workout) : workout));
+    setWorkouts(prev => replaceWorkoutInList(prev, workoutId, patch));
     setSelectedWorkout(prev => prev?.id === workoutId ? patch(prev) : prev);
     const workout = workouts.find(item => item.id === workoutId) || selectedWorkout;
     if (!workout) return;
@@ -19145,7 +19662,7 @@ function WorkoutsPage({ workouts: controlledWorkouts, setWorkouts: controlledSet
     if (!selectedWorkout) return;
     const applyUpdate = (workout) => normalizeWorkoutSupersetMetadata(updater(workout));
     const nextSelectedWorkout = applyUpdate(selectedWorkout);
-    setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? applyUpdate(workout) : workout));
+    setWorkouts(prev => replaceWorkoutInList(prev, selectedWorkout.id, applyUpdate));
     setSelectedWorkout(nextSelectedWorkout);
     if (options.sync !== false) {
       const patch = buildWorkoutTreePatch(nextSelectedWorkout);
@@ -19663,7 +20180,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     const nextExercise = (nextWorkout.exercises || []).find(exercise => exercise.id === exerciseId);
     const measurementPayload = buildExerciseMeasurementSettingsPatchPayload(nextExercise, draft);
 
-    setWorkouts(prev => prev.map(workout => workout.id === currentWorkout.id ? nextWorkout : workout));
+    setWorkouts(prev => replaceWorkoutInList(prev, currentWorkout.id, () => nextWorkout));
     setSelectedWorkout(nextWorkout);
 
     if (measurementPayload && nextWorkout.supabaseId) {
@@ -19825,10 +20342,10 @@ const toggleExerciseMeasurementSetting = (field) => {
       setOpenMenu(null);
       const nextWorkout = {
         ...selectedWorkout,
-        exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
+        exercises: orderWorkoutExercises(nextExercises),
         updatedAt: new Date().toISOString(),
       };
-      setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? nextWorkout : workout));
+      setWorkouts(prev => replaceWorkoutInList(prev, selectedWorkout.id, () => nextWorkout));
       setSelectedWorkout(nextWorkout);
       const patchResult = await sendWorkoutPatch(selectedWorkout.id, {
         workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
@@ -19846,7 +20363,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     const nextIndex = Math.max(0, activeExerciseIndex - 1);
     updateSelectedWorkoutModel(workout => ({
       ...workout,
-      exercises: (workout.exercises || []).filter((_, index) => index !== activeExerciseIndex).map((exercise, index) => ({ ...exercise, order: index + 1 })),
+      exercises: orderWorkoutExercises((workout.exercises || []).filter((_, index) => index !== activeExerciseIndex)),
       updatedAt: new Date().toISOString(),
     }));
     const nextExercise = (selectedWorkout.exercises || []).filter((_, index) => index !== activeExerciseIndex)[nextIndex];
@@ -19873,10 +20390,10 @@ const toggleExerciseMeasurementSetting = (field) => {
       setOpenMenu(null);
       const nextWorkout = {
         ...selectedWorkout,
-        exercises: nextExercises.map((exercise, index) => ({ ...exercise, order: index + 1 })),
+        exercises: orderWorkoutExercises(nextExercises),
         updatedAt: new Date().toISOString(),
       };
-      setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? nextWorkout : workout));
+      setWorkouts(prev => replaceWorkoutInList(prev, selectedWorkout.id, () => nextWorkout));
       setSelectedWorkout(nextWorkout);
       const patchResult = await sendWorkoutPatch(selectedWorkout.id, {
         workout_updates: [buildWorkoutPatchPayload(nextWorkout)],
@@ -19893,7 +20410,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     }
     updateSelectedWorkoutModel(workout => ({
       ...workout,
-      exercises: (workout.exercises || []).filter(exercise => exercise.id !== exerciseId).map((exercise, index) => ({ ...exercise, order: index + 1 })),
+      exercises: orderWorkoutExercises((workout.exercises || []).filter(exercise => exercise.id !== exerciseId)),
       updatedAt: new Date().toISOString(),
     }));
     const nextIndex = Math.max(0, Math.min(removedIndex, nextExercises.length - 1));
@@ -19975,13 +20492,10 @@ const toggleExerciseMeasurementSetting = (field) => {
       setOpenMenu(null);
       const nextWorkout = {
         ...selectedWorkout,
-        exercises: (selectedWorkout.exercises || []).map((exercise, exerciseIndex) => exerciseIndex === activeExerciseIndex ? {
-          ...exercise,
-          sets: (exercise.sets || []).filter(set => set.id !== setId).map((set, index) => ({ ...set, order: index + 1 })),
-        } : exercise),
+        exercises: replaceExerciseInWorkout(selectedWorkout, currentExercise?.id, exercise => removeSetFromExercise(exercise, setId)).exercises,
         updatedAt: new Date().toISOString(),
       };
-      setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? nextWorkout : workout));
+      setWorkouts(prev => replaceWorkoutInList(prev, selectedWorkout.id, () => nextWorkout));
       setSelectedWorkout(nextWorkout);
       const nextExercise = (nextWorkout.exercises || [])[activeExerciseIndex];
       const patchResult = await sendWorkoutPatch(selectedWorkout.id, {
@@ -20005,13 +20519,10 @@ const toggleExerciseMeasurementSetting = (field) => {
       setOpenMenu(null);
       const nextWorkout = {
         ...selectedWorkout,
-        exercises: (selectedWorkout.exercises || []).map((exercise, exerciseIndex) => exerciseIndex === activeExerciseIndex ? {
-          ...exercise,
-          sets: (exercise.sets || []).filter(set => set.id !== setId).map((set, index) => ({ ...set, order: index + 1 })),
-        } : exercise),
+        exercises: replaceExerciseInWorkout(selectedWorkout, currentExercise?.id, exercise => removeSetFromExercise(exercise, setId)).exercises,
         updatedAt: new Date().toISOString(),
       };
-      setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? nextWorkout : workout));
+      setWorkouts(prev => replaceWorkoutInList(prev, selectedWorkout.id, () => nextWorkout));
       setSelectedWorkout(nextWorkout);
       const nextExercise = (nextWorkout.exercises || [])[activeExerciseIndex];
       const patchResult = await sendWorkoutPatch(selectedWorkout.id, {
@@ -20034,10 +20545,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     }
     updateSelectedWorkoutModel(workout => ({
       ...workout,
-      exercises: (workout.exercises || []).map((exercise, exerciseIndex) => exerciseIndex === activeExerciseIndex ? {
-        ...exercise,
-        sets: (exercise.sets || []).filter(set => set.id !== setId).map((set, index) => ({ ...set, order: index + 1 })),
-      } : exercise),
+      exercises: replaceExerciseInWorkout(workout, currentExercise?.id, exercise => removeSetFromExercise(exercise, setId)).exercises,
       updatedAt: new Date().toISOString(),
     }));
     setActiveSetId((remaining.find(set => getSetStatus(set) === "pending") || remaining[0] || null)?.id || null);
@@ -20408,7 +20916,7 @@ const toggleExerciseMeasurementSetting = (field) => {
         updatedAt: new Date().toISOString(),
       });
       const nextWorkout = patch(selectedWorkout);
-      setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? patch(workout) : workout));
+      setWorkouts(prev => replaceWorkoutInList(prev, selectedWorkout.id, patch));
       setSelectedWorkout(prev => prev ? patch(prev) : prev);
       const workoutPatch = buildWorkoutTreePatch(nextWorkout);
       if (workoutPatch) queueWorkoutPatch(selectedWorkout.id, workoutPatch);
@@ -20421,7 +20929,7 @@ const toggleExerciseMeasurementSetting = (field) => {
       updatedAt: new Date().toISOString(),
     });
 
-    setWorkouts(prev => prev.map(workout => workout.id === selectedWorkout.id ? patch(workout) : workout));
+    setWorkouts(prev => replaceWorkoutInList(prev, selectedWorkout.id, patch));
     setSelectedWorkout(prev => prev ? patch(prev) : prev);
   };
 
@@ -20587,7 +21095,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     });
     const nextWorkout = patch(workout);
     const firstTarget = getFirstWorkoutTarget(nextWorkout);
-    setWorkouts(prev => prev.map(item => item.id === workout.id ? patch(item) : item));
+    setWorkouts(prev => replaceWorkoutInList(prev, workout.id, patch));
     setSelectedWorkout(nextWorkout);
     setWorkoutViewMode("exercise");
     setActiveExerciseIndex(firstTarget.exerciseIndex);
@@ -21282,7 +21790,7 @@ const toggleExerciseMeasurementSetting = (field) => {
 
     if (!changed.length) return;
     const nextById = new Map(nextWorkouts.map(item => [item.id, item]));
-    setWorkouts(prev => prev.map(item => nextById.get(item.id) || item));
+    setWorkouts(prev => replaceWorkoutsInList(prev, item => nextById.has(item.id), item => nextById.get(item.id)));
     setSelectedWorkout(prev => prev ? (nextById.get(prev.id) || prev) : prev);
     changed.forEach(workout => {
       const patch = buildWorkoutTreePatch(workout);
@@ -21362,7 +21870,7 @@ const toggleExerciseMeasurementSetting = (field) => {
     };
     const summary = buildWorkoutCompletionSummary(nextWorkout, durationSeconds, calories);
 
-    setWorkouts(prev => prev.map(item => item.id === nextWorkout.id ? nextWorkout : item));
+    setWorkouts(prev => replaceWorkoutInList(prev, nextWorkout.id, () => nextWorkout));
     setSelectedWorkout(nextWorkout);
     setWorkoutViewMode("overview");
     stopRestTimer();
@@ -27346,17 +27854,12 @@ const workoutDurationMinutes = (workout = {}) => safeWorkoutModelNumber(workout.
 const workoutCaloriesValue = (workout = {}) => safeWorkoutModelNumber(workout.calories ?? workout.estimatedCaloriesBurned ?? workout.estimated_calories_burned, 0);
 const exerciseDistanceValue = (exercise = {}) => (exercise.sets || []).reduce((sum, set) => sum + safeWorkoutModelNumber(set.distanceValue ?? set.distance_value, 0), 0);
 const workoutDistanceValue = (workout = {}) => (workout.exercises || []).reduce((sum, exercise) => sum + exerciseDistanceValue(exercise), 0);
-const isCompletedWorkoutInRange = (workout, range) => normalizeWorkoutStatus(workout?.status) === "completed" && isDateKeyInRange(workoutDateKey(workout), range);
 const healthLogHasValue = (log = {}, key) => {
   const value = Number(log?.[key] || 0);
   return Number.isFinite(value) && value > 0;
 };
-const nutritionCaloriesValue = (day = {}) => safeWorkoutModelNumber(day?.totals?.calories ?? day?.calories_total ?? day?.caloriesTotal ?? day?.calories, 0);
-const nutritionDayHasAnalyticsData = (day = {}) => nutritionCaloriesValue(day) > 0 || nutritionDayHasFood(day);
-const measurementDateKey = (item = {}) => {
-  const source = item || {};
-  return normalizeDateKey(source.measurement_date || source.date, "");
-};
+const nutritionCaloriesValue = (day = {}) => safeWorkoutModelNumber(getNutritionTotalsFromDay(day).calories, 0);
+const nutritionDayHasAnalyticsData = (day = {}) => Object.values(getNutritionTotalsFromDay(day)).some(value => Number(value || 0) > 0) || nutritionDayHasFood(day);
 const mergeAnalyticsMeasurementRows = (rows = [], overlay = null) => {
   const overlayKey = measurementDateKey(overlay);
   const baseRows = Array.isArray(rows) ? rows : [];
@@ -27368,6 +27871,23 @@ const mergeAnalyticsMeasurementRows = (rows = [], overlay = null) => {
   ].sort((a, b) => measurementDateKey(a).localeCompare(measurementDateKey(b)));
 };
 
+const buildAnalyticsReadModel = ({
+  measurements = [],
+  healthLogs = [],
+  healthLog = null,
+  nutritionDays = [],
+  nutritionDay = null,
+  nutritionGoal = initialNutritionGoal,
+  measurementOverlay = null,
+  range = null,
+} = {}) => ({
+  measurements: mergeAnalyticsMeasurementRows(measurements, measurementOverlay)
+    .filter(row => measurementDateKey(row) && measurementRecordHasRealData(row))
+    .sort((a, b) => measurementDateKey(a).localeCompare(measurementDateKey(b))),
+  health_logs: getHealthAnalyticsRows({ healthLog, healthLogs }, range),
+  nutrition_days: getNutritionAnalyticsRows({ nutritionDay, nutritionDays, nutritionGoal }, range),
+});
+
 const averageDefined = (items = [], getter = item => item) => {
   const values = items.map(getter).map(Number).filter(value => Number.isFinite(value) && value > 0);
   if (!values.length) return 0;
@@ -27376,28 +27896,26 @@ const averageDefined = (items = [], getter = item => item) => {
 
 const buildAnalyticsStats = ({ workouts = [], healthLogs = [], healthLog = DEFAULT_HEALTH_LOG, nutritionDays = [], nutritionDay = null, measurements = {}, measurementRecords = [], profile = DEFAULT_PROFILE, selectedDateKey, period }) => {
   const range = analyticsPeriodRange(period, selectedDateKey);
-  const completed = workouts.filter(workout => isCompletedWorkoutInRange(workout, range));
+  const profileReadModel = buildProfileReadModel(profile || DEFAULT_PROFILE);
+  const completed = getActualWorkouts(workouts, range);
   const strengthWorkouts = completed.filter(workout => normalizeWorkoutType(workout.workoutType) === "strength");
   const activityWorkouts = completed.filter(workout => normalizeWorkoutType(workout.workoutType) !== "strength");
-  const healthByDate = new Map();
-  [...healthLogs, healthLog].filter(Boolean).forEach(log => {
-    const normalized = normalizeHealthLog(log, log.log_date || log.date || selectedDateKey);
-    const key = normalized.log_date || normalized.date;
-    if (key && isDateKeyInRange(key, range)) healthByDate.set(key, normalized);
+  const analyticsRows = buildAnalyticsReadModel({
+    measurements: measurementRecords,
+    healthLog,
+    healthLogs,
+    nutritionDay,
+    nutritionDays,
+    nutritionGoal: profileReadModel.nutritionGoal,
+    range,
   });
-  const healthRows = Array.from(healthByDate.values()).sort((a, b) => String(a.log_date || a.date).localeCompare(String(b.log_date || b.date)));
-  const nutritionByDate = new Map();
-  [...nutritionDays, nutritionDay].filter(Boolean).forEach(day => {
-    const key = normalizeDateKey(day.nutrition_date || day.date, "");
-    if (key && isDateKeyInRange(key, range) && nutritionDayHasAnalyticsData(day)) nutritionByDate.set(key, day);
-  });
-  const nutritionRows = Array.from(nutritionByDate.values()).sort((a, b) => String(a.nutrition_date || a.date).localeCompare(String(b.nutrition_date || b.date)));
-  const measurementRows = (measurementRecords || [])
-    .filter(item => measurementDateKey(item) && isDateKeyInRange(measurementDateKey(item), range))
-    .sort((a, b) => measurementDateKey(a).localeCompare(measurementDateKey(b)));
+  const healthRows = analyticsRows.health_logs;
+  const nutritionRows = analyticsRows.nutrition_days;
+  const measurementRows = analyticsRows.measurements;
   const latestMeasurement = measurementRows[measurementRows.length - 1] || {};
-  const sets = strengthWorkouts.flatMap(getWorkoutSets).filter(set => getSetStatusGlobal(set) === "completed").length;
-  const volume = strengthWorkouts.reduce((sum, workout) => sum + getWorkoutVolume(workout), 0);
+  const strengthStats = summarizeWorkoutSetList(strengthWorkouts, getWorkoutCompletedSets);
+  const sets = strengthStats.setCount;
+  const volume = strengthStats.volume;
   const calories = nutritionRows.reduce((sum, day) => sum + nutritionCaloriesValue(day), 0);
   const calorieAverage = period === "day" ? calories : calories / Math.max(1, nutritionRows.length);
   const waterAverage = averageDefined(healthRows, log => log.water_ml);
@@ -27594,10 +28112,11 @@ const nutritionPalmValueFromDay = (day = {}) => {
 
 const nutritionMetricValue = (item = {}, metricKey = "calories_total") => {
   if (metricKey === "palms_total") return nutritionPalmValueFromDay(item);
-  if (metricKey === "protein_total") return Number(item.protein_total ?? item.proteinTotal ?? item.totals?.protein ?? item.protein ?? 0);
-  if (metricKey === "fat_total") return Number(item.fat_total ?? item.fatTotal ?? item.totals?.fat ?? item.fat ?? 0);
-  if (metricKey === "carbs_total") return Number(item.carbs_total ?? item.carbsTotal ?? item.totals?.carbs ?? item.carbs ?? 0);
-  return Number(item.calories_total ?? item.caloriesTotal ?? item.totals?.calories ?? item.calories ?? 0);
+  const totals = getNutritionTotalsFromDay(item);
+  if (metricKey === "protein_total") return Number(totals.protein || 0);
+  if (metricKey === "fat_total") return Number(totals.fat || 0);
+  if (metricKey === "carbs_total") return Number(totals.carbs || 0);
+  return Number(totals.calories || 0);
 };
 
 const buildNutritionSeries = (days = [], metricKey = "calories_total") => days
@@ -28762,7 +29281,9 @@ function DefaultAnalyticsChart({ points = [], type = "line", unit = "", metricKe
 
 function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutritionDays = [], workouts, selectedDateKey, initialMetric = "", profile = DEFAULT_PROFILE, profileStatus = "local", telegramInitData = "", measurementOverlay = null, onClose, onOpenEditor, onOpenOverview }) {
   const typeConfig = analyticsTypeConfigs[type] || analyticsTypeConfigs.measurements;
-  const usePalmNutritionDetail = typeConfig.source === "nutrition" && profileUsesPalmNutrition(profile);
+  const profileReadModel = useMemo(() => buildProfileReadModel(profile || DEFAULT_PROFILE), [profile]);
+  const activeProfile = profileReadModel.profile;
+  const usePalmNutritionDetail = typeConfig.source === "nutrition" && profileReadModel.usesPalmNutrition;
   const metricOptions = usePalmNutritionDetail
     ? nutritionAnalyticsMetrics.filter(metric => metric.key === "palms_total")
     : (typeConfig.metrics.length ? typeConfig.metrics : measurementAnalyticsMetrics);
@@ -28775,13 +29296,20 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const metricConfig = metricOptions.find(item => item.key === metric) || metricOptions[0];
-  const canLoadRemote = typeConfig.source !== "training" && profileStatus === "verified" && Boolean(hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id);
-  const sourceMeasurements = mergeAnalyticsMeasurementRows(remoteData.measurements.length ? remoteData.measurements : measurements, measurementOverlay);
-  const sourceHealthLogs = remoteData.health_logs.length ? remoteData.health_logs : healthLogs;
-  const sourceNutritionDays = remoteData.nutrition_days.length ? remoteData.nutrition_days : nutritionDays;
+  const canLoadRemote = typeConfig.source !== "training" && profileStatus === "verified" && Boolean(hasOnlyPumpRemoteAuth(telegramInitData) && activeProfile?.id);
   const isNutritionAnalytics = typeConfig.source === "nutrition";
   const usesRollingChartRange = ["measurements", "health", "training"].includes(typeConfig.source) || isNutritionAnalytics;
-  const nutritionGoalForAnalytics = isNutritionAnalytics ? profileNutritionGoalFromProfile(profile || DEFAULT_PROFILE, initialNutritionGoal) : initialNutritionGoal;
+  const nutritionGoalForAnalytics = isNutritionAnalytics ? profileReadModel.nutritionGoal : initialNutritionGoal;
+  const detailSourceData = useMemo(() => buildAnalyticsReadModel({
+    measurements: remoteData.measurements.length ? remoteData.measurements : measurements,
+    healthLogs: remoteData.health_logs.length ? remoteData.health_logs : healthLogs,
+    nutritionDays: remoteData.nutrition_days.length ? remoteData.nutrition_days : nutritionDays,
+    nutritionGoal: nutritionGoalForAnalytics,
+    measurementOverlay,
+  }), [healthLogs, measurementOverlay, measurements, nutritionDays, nutritionGoalForAnalytics, remoteData]);
+  const sourceMeasurements = detailSourceData.measurements;
+  const sourceHealthLogs = detailSourceData.health_logs;
+  const sourceNutritionDays = detailSourceData.nutrition_days;
   const allPoints = typeConfig.source === "training"
     ? buildTrainingSeries(workouts, metric)
     : typeConfig.source === "health"
@@ -28827,7 +29355,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
       };
     }
 
-    const cached = readCachedAnalyticsForProfile(profile, type, metric, period, chartDateKey);
+    const cached = readCachedAnalyticsForProfile(activeProfile, type, metric, period, chartDateKey);
     if (cached) {
       setRemoteData(normalizeAnalyticsRemotePayload(cached));
     }
@@ -28852,7 +29380,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
         if (cancelled) return;
         const next = normalizeAnalyticsRemotePayload(result);
         setRemoteData(next);
-        writeCachedAnalyticsForProfile(profile, type, metric, period, chartDateKey, next);
+        writeCachedAnalyticsForProfile(activeProfile, type, metric, period, chartDateKey, next);
       } catch (error) {
         if (!cancelled) {
           console.error("onlypump-profile-api analytics error:", error);
@@ -28867,7 +29395,7 @@ function AnalyticsDetailSheet({ type, title, measurements, healthLogs, nutrition
     return () => {
       cancelled = true;
     };
-  }, [canLoadRemote, chartDateKey, metric, period, profile?.id, telegramInitData, type, usesRollingChartRange]);
+  }, [activeProfile?.id, activeProfile?.telegram_id, canLoadRemote, chartDateKey, metric, period, telegramInitData, type, usesRollingChartRange]);
 
   return <div onClick={onClose} className="onlypump-modal-layer fixed inset-0 z-[185] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
     <BottomSheetPanel onClose={onClose} onClick={(event) => event.stopPropagation()} className="onlypump-bottom-sheet w-full max-w-3xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-zinc-950/95 p-5 shadow-2xl shadow-black/70 backdrop-blur-2xl sm:rounded-[2rem]">
@@ -29470,7 +29998,10 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
   const [remotePeriodData, setRemotePeriodData] = useState({ measurements: [], health_logs: [], nutrition_days: [] });
   const [remotePeriodLoading, setRemotePeriodLoading] = useState(false);
   const [remotePeriodError, setRemotePeriodError] = useState("");
-  const initialCardSettings = useMemo(() => getProfileAnalyticsCardSettings(profile || DEFAULT_PROFILE), [profile?.id, profile?.telegram_id, JSON.stringify(profile?.analytics_cards_order || []), JSON.stringify(profile?.analytics_cards_hidden || [])]);
+  const profileReadModel = useMemo(() => buildProfileReadModel(profile || DEFAULT_PROFILE), [profile]);
+  const activeProfile = profileReadModel.profile;
+  const activeNutritionGoal = profileReadModel.nutritionGoal;
+  const initialCardSettings = useMemo(() => getProfileAnalyticsCardSettings(activeProfile), [activeProfile?.id, activeProfile?.telegram_id, JSON.stringify(activeProfile?.analytics_cards_order || []), JSON.stringify(activeProfile?.analytics_cards_hidden || [])]);
   const [cardOrder, setCardOrder] = useState(initialCardSettings.order);
   const [hiddenCards, setHiddenCards] = useState(initialCardSettings.hidden);
   const [cardPickerOpen, setCardPickerOpen] = useState(false);
@@ -29492,41 +30023,46 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     try { localStorage.setItem("onlypump-analytics-tonnage-collapsed", tonnageCollapsed ? "true" : "false"); } catch {}
   }, [tonnageCollapsed]);
 
-  const selectedHealthRecord = (healthLog?.log_date || healthLog?.date) === selectedDateKey
-    ? healthLog
-    : healthLogs.find(log => (log.log_date || log.date) === selectedDateKey);
-  const currentHealthLog = normalizeHealthLog(selectedHealthRecord || {}, selectedDateKey);
-  const selectedNutritionDayMatches = (nutritionDay?.date || nutritionDay?.nutrition_date) === selectedDateKey;
-  const selectedNutritionCalories = selectedNutritionDayMatches ? Number(nutritionDay?.totals?.calories ?? nutritionDay?.calories_total ?? 0) : 0;
+  const healthLogByDate = useMemo(() => buildHealthLogByDate({ healthLog, healthLogs }), [healthLog, healthLogs]);
+  const currentHealthLog = useMemo(() => getHealthLogForDate({
+    dateKey: selectedDateKey,
+    healthLogByDate,
+  }), [selectedDateKey, healthLogByDate]);
+  const selectedNutritionData = useMemo(() => getNutritionDataForDate({
+    dateKey: selectedDateKey,
+    nutritionDay,
+    nutritionGoal: activeNutritionGoal,
+    includeCache: false,
+  }), [activeNutritionGoal, nutritionDay, selectedDateKey]);
   const localMeasurementRecord = useMemo(() => ({
       measurement_date: selectedDateKey,
-      weight_kg: measurements?.weight || profile?.weight_kg,
-      body_fat_percent: measurements?.bodyFat || profile?.body_fat_percent,
-      neck_cm: measurements?.neck || profile?.neck_cm,
-      shoulders_cm: measurements?.shoulders || profile?.shoulders_cm,
-      chest_cm: measurements?.chest || profile?.chest_cm,
-      biceps_cm: measurements?.biceps || profile?.biceps_cm,
-      waist_cm: measurements?.waist || profile?.waist_cm,
-      abdomen_cm: measurements?.belly || profile?.abdomen_cm,
-      glutes_cm: measurements?.glutes || profile?.glutes_cm,
-      thigh_cm: measurements?.thigh || profile?.thigh_cm,
-      calf_cm: measurements?.calf || profile?.calf_cm,
-  }), [measurements, profile, selectedDateKey]);
+      weight_kg: measurements?.weight || activeProfile?.weight_kg,
+      body_fat_percent: measurements?.bodyFat || activeProfile?.body_fat_percent,
+      neck_cm: measurements?.neck || activeProfile?.neck_cm,
+      shoulders_cm: measurements?.shoulders || activeProfile?.shoulders_cm,
+      chest_cm: measurements?.chest || activeProfile?.chest_cm,
+      biceps_cm: measurements?.biceps || activeProfile?.biceps_cm,
+      waist_cm: measurements?.waist || activeProfile?.waist_cm,
+      abdomen_cm: measurements?.belly || activeProfile?.abdomen_cm,
+      glutes_cm: measurements?.glutes || activeProfile?.glutes_cm,
+      thigh_cm: measurements?.thigh || activeProfile?.thigh_cm,
+      calf_cm: measurements?.calf || activeProfile?.calf_cm,
+  }), [activeProfile, measurements, selectedDateKey]);
   const localMeasurementHasData = Object.entries(localMeasurementRecord).some(([key, value]) => key !== "measurement_date" && Number(value || 0) > 0);
-  const canLoadAnalyticsOverview = profileStatus === "verified" && profileHasTestAccess(profile) && Boolean(hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id);
+  const canLoadAnalyticsOverview = profileStatus === "verified" && profileHasTestAccess(activeProfile) && Boolean(hasOnlyPumpRemoteAuth(telegramInitData) && activeProfile?.id);
   const activeMeasurementOverlay = measurementDateKey(measurementOverlay) === selectedDateKey ? measurementOverlay : null;
   const analyticsMeasurementRows = useMemo(() => {
     const fallbackRows = localMeasurementHasData && (!canLoadAnalyticsOverview || remotePeriodError) ? [localMeasurementRecord] : [];
     const baseRows = remotePeriodData.measurements.length ? remotePeriodData.measurements : fallbackRows;
     return mergeAnalyticsMeasurementRows(baseRows, activeMeasurementOverlay);
   }, [activeMeasurementOverlay, canLoadAnalyticsOverview, localMeasurementHasData, localMeasurementRecord, remotePeriodData.measurements, remotePeriodError]);
-  const selectedNutritionRecord = selectedNutritionDayMatches && nutritionDayHasAnalyticsData(nutritionDay) ? {
-      ...nutritionDay,
+  const selectedNutritionRecord = selectedNutritionData.hasFood ? {
+      ...selectedNutritionData.day,
       nutrition_date: selectedDateKey,
-      calories_total: selectedNutritionCalories,
-      protein_total: Number(nutritionDay?.totals?.protein ?? nutritionDay?.protein_total ?? 0),
-      fat_total: Number(nutritionDay?.totals?.fat ?? nutritionDay?.fat_total ?? 0),
-      carbs_total: Number(nutritionDay?.totals?.carbs ?? nutritionDay?.carbs_total ?? 0),
+      calories_total: selectedNutritionData.totals.calories,
+      protein_total: selectedNutritionData.totals.protein,
+      fat_total: selectedNutritionData.totals.fat,
+      carbs_total: selectedNutritionData.totals.carbs,
     } : null;
 
   useEffect(() => {
@@ -29540,7 +30076,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       };
     }
 
-    const cached = readCachedAnalyticsForProfile(profile, "overview", "all", analyticsPeriod, selectedDateKey);
+    const cached = readCachedAnalyticsForProfile(activeProfile, "overview", "all", analyticsPeriod, selectedDateKey);
     if (cached) {
       setRemotePeriodData(normalizeAnalyticsRemotePayload(cached));
     } else {
@@ -29562,7 +30098,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
         if (cancelled) return;
         const next = normalizeAnalyticsRemotePayload(result);
         setRemotePeriodData(next);
-        writeCachedAnalyticsForProfile(profile, "overview", "all", analyticsPeriod, selectedDateKey, next);
+        writeCachedAnalyticsForProfile(activeProfile, "overview", "all", analyticsPeriod, selectedDateKey, next);
       } catch (error) {
         if (!cancelled) {
           console.error("onlypump-profile-api analytics overview error:", error);
@@ -29577,20 +30113,17 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     return () => {
       cancelled = true;
     };
-  }, [analyticsPeriod, canLoadAnalyticsOverview, profile?.id, selectedDateKey, telegramInitData]);
+  }, [activeProfile?.id, activeProfile?.telegram_id, analyticsPeriod, canLoadAnalyticsOverview, selectedDateKey, telegramInitData]);
 
-  const analyticsData = useMemo(() => {
-    const localHealthRows = (healthLogs.length ? healthLogs : [currentHealthLog])
-      .filter(Boolean)
-      .map(log => normalizeHealthLog(log, log.log_date || log.date || selectedDateKey));
-    return {
-      measurements: analyticsMeasurementRows,
-      health_logs: remotePeriodData.health_logs.length ? remotePeriodData.health_logs : localHealthRows,
-      nutrition_days: remotePeriodData.nutrition_days.length
-        ? remotePeriodData.nutrition_days
-        : (selectedNutritionRecord ? [selectedNutritionRecord] : []),
-    };
-  }, [analyticsMeasurementRows, currentHealthLog, healthLogs, remotePeriodData, selectedDateKey, selectedNutritionRecord]);
+  const analyticsData = useMemo(() => buildAnalyticsReadModel({
+    measurements: analyticsMeasurementRows,
+    healthLogs: remotePeriodData.health_logs.length ? remotePeriodData.health_logs : Array.from(healthLogByDate.values()),
+    healthLog: currentHealthLog,
+    nutritionDays: remotePeriodData.nutrition_days.length
+      ? remotePeriodData.nutrition_days
+      : (selectedNutritionRecord ? [selectedNutritionRecord] : []),
+    nutritionGoal: activeNutritionGoal,
+  }), [activeNutritionGoal, analyticsMeasurementRows, currentHealthLog, healthLogByDate, remotePeriodData, selectedNutritionRecord]);
   const selfAnalyticsTableData = useMemo(() => ({
     workouts,
     health_logs: analyticsData.health_logs.length ? analyticsData.health_logs : [currentHealthLog],
@@ -29606,10 +30139,10 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     nutritionDay,
     measurements,
     measurementRecords: analyticsData.measurements,
-    profile,
+    profile: activeProfile,
     selectedDateKey,
     period: analyticsPeriod,
-  }), [analyticsData, analyticsPeriod, currentHealthLog, measurements, nutritionDay, profile, selectedDateKey, workouts]);
+  }), [activeProfile, analyticsData, analyticsPeriod, currentHealthLog, measurements, nutritionDay, selectedDateKey, workouts]);
   const activityRows = useMemo(() => workoutTypeDefinitions.filter(type => type.id !== "strength").map(type => {
     const typeWorkouts = periodStats.activityWorkouts.filter(workout => normalizeWorkoutType(workout.workoutType) === type.id);
     return {
@@ -29679,7 +30212,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     const hidden = sanitizeAnalyticsHiddenCards(nextHidden);
     setCardOrder(order);
     setHiddenCards(hidden);
-    writeCachedAnalyticsCardSettings(profile || DEFAULT_PROFILE, order, hidden);
+    writeCachedAnalyticsCardSettings(activeProfile, order, hidden);
     onSaveAnalyticsCardSettings?.({ order, hidden });
   };
 
@@ -29804,7 +30337,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
   }, { opened: 0, total: 0 });
   const activityAchievementLabel = `${activityAchievementCount.opened}/${activityAchievementCount.total}`;
   const dataCounts = periodStats.dataCounts || {};
-  const analyticsUsesPalmNutrition = profileUsesPalmNutrition(profile);
+  const analyticsUsesPalmNutrition = profileReadModel.usesPalmNutrition;
   const analyticsCardTitle = (card) => card?.id === "calories" && analyticsUsesPalmNutrition ? "Ладони" : card?.title;
   const periodNutritionRows = (analyticsData.nutrition_days || []).filter(day => {
     const key = normalizeDateKey(day.nutrition_date || day.date, "");
@@ -29821,7 +30354,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     calories: { value: dataCounts.nutrition ? (analyticsUsesPalmNutrition ? palmLabel(periodPalmAverage) : Math.round(periodStats.calorieAverage || 0).toLocaleString("ru-RU")) : emptyAnalyticsValue, sub: dataCounts.nutrition ? (analyticsUsesPalmNutrition ? (analyticsPeriod === "day" ? "ладони за день" : "среднее ладоней за день") : (analyticsPeriod === "day" ? "питание за день" : "среднее за день")) : emptyAnalyticsSub, detail: "calories" },
     training: { value: dataCounts.workouts ? String(periodStats.sets) : emptyAnalyticsValue, sub: dataCounts.workouts ? `${loadLevel.label} · подходов ${periodName}` : emptyAnalyticsSub, detail: "training_load" },
     recovery: { value: dataCounts.recovery ? `${Math.round(periodStats.recoveryAverage)}%` : emptyAnalyticsValue, sub: dataCounts.recovery ? "среднее восстановление" : emptyAnalyticsSub, detail: "recovery" },
-    tonnage: { value: dataCounts.strength ? formatVolumeForProfile(periodStats.volume || 0, profile) : emptyAnalyticsValue, sub: dataCounts.strength ? `${periodStats.strengthWorkouts.length} силовых ${periodName}` : emptyAnalyticsSub, detail: "training_load" },
+    tonnage: { value: dataCounts.strength ? formatVolumeForProfile(periodStats.volume || 0, activeProfile) : emptyAnalyticsValue, sub: dataCounts.strength ? `${periodStats.strengthWorkouts.length} силовых ${periodName}` : emptyAnalyticsSub, detail: "training_load" },
     activities: { value: dataCounts.activities ? `${periodStats.activityWorkouts.length}` : emptyAnalyticsValue, sub: dataCounts.activities ? "кардио, йога, пилатес, стретчинг" : emptyAnalyticsSub, detail: null },
     weekSummary: { value: dataCounts.workouts ? `${periodStats.workoutsCount}` : emptyAnalyticsValue, sub: dataCounts.workouts ? `тренировок ${periodName}` : emptyAnalyticsSub, detail: null },
   };
@@ -29976,7 +30509,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
     if (cardId === "weekSummary") {
       return <Card key={cardId} className="p-5 xl:col-span-2">
         <h2 className="text-xl font-semibold">Вывод периода</h2>
-        <p className="mt-4 leading-7 text-zinc-300">{dataCounts.workouts ? `За период ${periodStats.range.label}: ${periodStats.workoutsCount} выполненных тренировок, ${periodStats.sets} силовых подходов, ${formatVolumeForProfile(periodStats.volume || 0, profile)} тоннажа, ${Math.round(periodStats.activityMinutes)} минут активностей.` : emptyAnalyticsSub}</p>
+        <p className="mt-4 leading-7 text-zinc-300">{dataCounts.workouts ? `За период ${periodStats.range.label}: ${periodStats.workoutsCount} выполненных тренировок, ${periodStats.sets} силовых подходов, ${formatVolumeForProfile(periodStats.volume || 0, activeProfile)} тоннажа, ${Math.round(periodStats.activityMinutes)} минут активностей.` : emptyAnalyticsSub}</p>
       </Card>;
     }
     const title = analyticsCardTitle(catalog);
@@ -29993,7 +30526,7 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       initialTab={mobileAnalyticsTab}
       onClose={closeMobileAnalytics}
       onOpenOverview={openAnalyticsOverview}
-      profile={profile}
+      profile={activeProfile}
       measurements={measurements}
       latestMeasurement={latestMeasurement}
       selectedDateKey={selectedDateKey}
@@ -30023,9 +30556,9 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       {visibleCardIds.map(renderAnalyticsCard)}
       {personalTrackers.map(renderPersonalTrackerAnalyticsCard)}
     </PageGrid>
-    {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} nutritionDays={analyticsData.nutrition_days} workouts={workouts} selectedDateKey={selectedDateKey} profile={profile} profileStatus={profileStatus} telegramInitData={telegramInitData} measurementOverlay={activeMeasurementOverlay} onClose={() => setDetail(null)} onOpenEditor={detail.type === "training_load" || analyticsPeriod !== "day" ? null : openEditorForDetail} onOpenOverview={openAnalyticsOverview}/>}
+    {detail && <AnalyticsDetailSheet type={detail.type} title={detail.title} measurements={analyticsData.measurements} healthLogs={analyticsData.health_logs.length ? analyticsData.health_logs : healthLogs} nutritionDays={analyticsData.nutrition_days} workouts={workouts} selectedDateKey={selectedDateKey} profile={activeProfile} profileStatus={profileStatus} telegramInitData={telegramInitData} measurementOverlay={activeMeasurementOverlay} onClose={() => setDetail(null)} onOpenEditor={detail.type === "training_load" || analyticsPeriod !== "day" ? null : openEditorForDetail} onOpenOverview={openAnalyticsOverview}/>}
     {tableViewOpen && <TrainerStudentDashboardSheet
-      student={profile}
+      student={activeProfile}
       telegramInitData={telegramInitData}
       initialData={selfAnalyticsTableData}
       initialMonthDate={selectedDateKey}
@@ -30033,8 +30566,8 @@ function AnalyticsPage({ workouts = [], profile = DEFAULT_PROFILE, measurements,
       onClose={() => setTableViewOpen(false)}
     />}
     {trackerDetail && <PersonalTrackerAnalyticsSheet tracker={trackerDetail} selectedDateKey={selectedDateKey} onClose={() => setTrackerDetail(null)}/>}
-    {editorType === "weight" && <WeightEditorSheet dateKey={selectedDateKey} measurements={latestMeasurement} profile={profile} saving={profileSaving} onClose={() => setEditorType(null)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => setEditorType(null)}/>}
-    {editorType === "measurement" && <MeasurementEditorSheet dateKey={selectedDateKey} metricKey={editorMetric || "waist_cm"} measurements={latestMeasurement} profile={profile} saving={profileSaving} onClose={() => setEditorType(null)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => setEditorType(null)}/>}
+    {editorType === "weight" && <WeightEditorSheet dateKey={selectedDateKey} measurements={latestMeasurement} profile={activeProfile} saving={profileSaving} onClose={() => setEditorType(null)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => setEditorType(null)}/>}
+    {editorType === "measurement" && <MeasurementEditorSheet dateKey={selectedDateKey} metricKey={editorMetric || "waist_cm"} measurements={latestMeasurement} profile={activeProfile} saving={profileSaving} onClose={() => setEditorType(null)} onSave={onSaveWeightMeasurement} onOpenAnalytics={() => setEditorType(null)}/>}
     {editorType === "water" && <WaterEditorSheet dateKey={selectedDateKey} healthLog={currentHealthLog} saving={healthSaving} onClose={() => setEditorType(null)} onSave={onSaveHealthLog} onOpenAnalytics={() => setEditorType(null)}/>}
     {editorType === "sleep" && <SleepReportSheet dateKey={selectedDateKey} healthLog={currentHealthLog} saving={healthSaving} onClose={() => setEditorType(null)} onSave={onSaveHealthLog} onOpenAnalytics={() => setEditorType(null)}/>}
     {editorType === "steps" && <StepsEditorSheet dateKey={selectedDateKey} healthLog={currentHealthLog} saving={healthSaving} onClose={() => setEditorType(null)} onSave={onSaveHealthLog} onOpenAnalytics={() => setEditorType(null)}/>}
@@ -33900,6 +34433,9 @@ function OnlyPumpPlatform() {
   const homeStateSaveTimerRef = useRef(null);
   const homeStateLocalVersionRef = useRef(0);
   const nutritionLoadingKeyRef = useRef("");
+  const dataInvariantWarningSignatureRef = useRef("");
+  const dataEntryWarningSignatureRef = useRef("");
+  const dataEntryStateRef = useRef({});
   const [supabaseClient, setSupabaseClient] = useState(null);
   const [telegramInitData, setTelegramInitData] = useState(telegramBootInitData);
   const [appLoading, setAppLoading] = useState(true);
@@ -33915,17 +34451,17 @@ function OnlyPumpPlatform() {
     restartOnlyPumpVisibleAnimations();
   }, [globalSelectedDateKey]);
   const homeLayoutMode = useOnlyPumpHomeLayoutMode();
-  const [workouts, setWorkouts] = useState([]);
+  const [workouts, setWorkoutsState] = useState([]);
   const workoutsStateRef = useRef([]);
   const [workoutsRefreshing, setWorkoutsRefreshing] = useState(false);
-  const [nutritionGoal, setNutritionGoal] = useState(initialNutritionGoal);
-  const [nutritionDay, setNutritionDay] = useState(() => buildLocalNutritionDay(formatDateKey(new Date()), initialNutritionGoal));
+  const [nutritionGoal, setNutritionGoalState] = useState(initialNutritionGoal);
+  const [nutritionDay, setNutritionDayState] = useState(() => buildLocalNutritionDay(formatDateKey(new Date()), initialNutritionGoal));
   const [nutritionMarkedDateKeys, setNutritionMarkedDateKeys] = useState([]);
   const [nutritionRefreshing, setNutritionRefreshing] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [themeSaving, setThemeSaving] = useState(false);
-  const [healthLog, setHealthLog] = useState(() => buildLocalHealthLog(formatDateKey(new Date())));
-  const [healthLogs, setHealthLogs] = useState([]);
+  const [healthLog, setHealthLogState] = useState(() => buildLocalHealthLog(formatDateKey(new Date())));
+  const [healthLogs, setHealthLogsState] = useState([]);
   const [healthSaving, setHealthSaving] = useState(false);
   const [healthRefreshing, setHealthRefreshing] = useState(false);
   const [analyticsIntent, setAnalyticsIntent] = useState(null);
@@ -33937,6 +34473,34 @@ function OnlyPumpPlatform() {
   useEffect(() => {
     workoutsStateRef.current = workouts;
   }, [workouts]);
+
+  const warnOnlyPumpDataEntryIssues = useCallback((domain, issues = [], meta = {}) => {
+    if (!issues.length) return;
+    const signature = `${domain}:${onlyPumpDataInvariantSignature(issues)}`;
+    if (dataEntryWarningSignatureRef.current === signature) return;
+    dataEntryWarningSignatureRef.current = signature;
+    console.warn(`[OnlyPumpDataEntry] ${domain} update has suspicious data`, {
+      count: issues.length,
+      issues: issues.slice(0, 12),
+      meta,
+    });
+  }, []);
+
+  const setWorkouts = useCallback((updater, meta = {}) => {
+    setWorkoutsState(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (next === prev) return prev;
+      if (!Array.isArray(next)) {
+        console.warn("[OnlyPumpDataEntry] blocked invalid workouts update", { meta, receivedType: typeof next });
+        return prev;
+      }
+      const normalized = next.map(workout => isOnlyPumpPlainObject(workout) ? normalizeWorkoutSupersetMetadata(workout) : workout);
+      const issues = [];
+      validateOnlyPumpWorkoutInvariant(normalized, issues);
+      warnOnlyPumpDataEntryIssues("workouts", issues, meta);
+      return normalized;
+    });
+  }, [warnOnlyPumpDataEntryIssues]);
 
   const hasProtectedWorkoutLocalState = (workout) => Boolean(
     workout?.pending ||
@@ -34228,7 +34792,7 @@ function OnlyPumpPlatform() {
     goalIntensityPercent: 10,
     deficitPercent: 10,
   });
-  const [measurements, setMeasurements] = useState({
+  const [measurements, setMeasurementsState] = useState({
     weight: "",
     bodyFat: "",
     neck: "",
@@ -34241,11 +34805,135 @@ function OnlyPumpPlatform() {
     thigh: "",
     calf: "",
   });
-  const [measurementRecords, setMeasurementRecords] = useState([]);
+  const [measurementRecords, setMeasurementRecordsState] = useState([]);
   const [measurementOverlay, setMeasurementOverlay] = useState(null);
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfileState] = useState(null);
   const [themeTick, setThemeTick] = useState(() => Date.now());
   const [profileStatus, setProfileStatus] = useState("local");
+
+  dataEntryStateRef.current = {
+    globalSelectedDateKey,
+    nutritionGoal,
+    nutritionDay,
+    healthLog,
+    healthLogs,
+    measurements,
+    measurementRecords,
+    profile,
+    profileStatus,
+  };
+
+  const setNutritionGoal = useCallback((updater, meta = {}) => {
+    setNutritionGoalState(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (!isOnlyPumpPlainObject(next)) {
+        console.warn("[OnlyPumpDataEntry] blocked invalid nutrition goal update", { meta, receivedType: typeof next });
+        return prev;
+      }
+      const normalized = normalizeNutritionGoalValues(next, prev || initialNutritionGoal);
+      const issues = [];
+      validateOnlyPumpNutritionInvariant({ nutritionDay: dataEntryStateRef.current.nutritionDay, nutritionGoal: normalized }, issues);
+      warnOnlyPumpDataEntryIssues("nutritionGoal", issues, meta);
+      return normalized;
+    });
+  }, [warnOnlyPumpDataEntryIssues]);
+
+  const setNutritionDay = useCallback((updater, meta = {}) => {
+    setNutritionDayState(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (!isOnlyPumpPlainObject(next)) {
+        console.warn("[OnlyPumpDataEntry] blocked invalid nutrition day update", { meta, receivedType: typeof next });
+        return prev;
+      }
+      const dateKey = nutritionDateKey(next) || nutritionDateKey(prev) || dataEntryStateRef.current.globalSelectedDateKey || formatDateKey(new Date());
+      const goal = dataEntryStateRef.current.nutritionGoal || initialNutritionGoal;
+      const normalized = normalizeNutritionDay(next, dateKey, goal);
+      const issues = [];
+      validateOnlyPumpNutritionInvariant({ nutritionDay: normalized, nutritionGoal: goal }, issues);
+      warnOnlyPumpDataEntryIssues("nutritionDay", issues, meta);
+      return normalized;
+    });
+  }, [warnOnlyPumpDataEntryIssues]);
+
+  const setHealthLog = useCallback((updater, meta = {}) => {
+    setHealthLogState(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (!isOnlyPumpPlainObject(next)) {
+        console.warn("[OnlyPumpDataEntry] blocked invalid health log update", { meta, receivedType: typeof next });
+        return prev;
+      }
+      const dateKey = healthLogDateKey(next) || healthLogDateKey(prev) || dataEntryStateRef.current.globalSelectedDateKey || formatDateKey(new Date());
+      const normalized = normalizeHealthLog(next, dateKey);
+      const issues = [];
+      validateOnlyPumpHealthInvariant({ healthLog: normalized, healthLogs: dataEntryStateRef.current.healthLogs }, issues);
+      warnOnlyPumpDataEntryIssues("healthLog", issues, meta);
+      return normalized;
+    });
+  }, [warnOnlyPumpDataEntryIssues]);
+
+  const setHealthLogs = useCallback((updater, meta = {}) => {
+    setHealthLogsState(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (!Array.isArray(next)) {
+        console.warn("[OnlyPumpDataEntry] blocked invalid health logs update", { meta, receivedType: typeof next });
+        return prev;
+      }
+      const fallbackDateKey = dataEntryStateRef.current.globalSelectedDateKey || formatDateKey(new Date());
+      const normalized = next.map(log => isOnlyPumpPlainObject(log) ? normalizeHealthLog(log, healthLogDateKey(log) || fallbackDateKey) : log);
+      const issues = [];
+      validateOnlyPumpHealthInvariant({ healthLog: dataEntryStateRef.current.healthLog, healthLogs: normalized }, issues);
+      warnOnlyPumpDataEntryIssues("healthLogs", issues, meta);
+      return normalized;
+    });
+  }, [warnOnlyPumpDataEntryIssues]);
+
+  const setMeasurements = useCallback((updater, meta = {}) => {
+    setMeasurementsState(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (!isOnlyPumpPlainObject(next)) {
+        console.warn("[OnlyPumpDataEntry] blocked invalid measurements update", { meta, receivedType: typeof next });
+        return prev;
+      }
+      const normalized = normalizeMeasurementValues(next, prev || {}, dataEntryStateRef.current.profile || DEFAULT_PROFILE);
+      const issues = [];
+      validateOnlyPumpMeasurementInvariant({ measurements: normalized, measurementRecords: dataEntryStateRef.current.measurementRecords }, issues);
+      warnOnlyPumpDataEntryIssues("measurements", issues, meta);
+      return normalized;
+    });
+  }, [warnOnlyPumpDataEntryIssues]);
+
+  const setMeasurementRecords = useCallback((updater, meta = {}) => {
+    setMeasurementRecordsState(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (!Array.isArray(next)) {
+        console.warn("[OnlyPumpDataEntry] blocked invalid measurement records update", { meta, receivedType: typeof next });
+        return prev;
+      }
+      const activeProfile = dataEntryStateRef.current.profile || DEFAULT_PROFILE;
+      const normalized = next.map(record => isOnlyPumpPlainObject(record) ? normalizeMeasurementValues(record, {}, activeProfile) : record);
+      const issues = [];
+      validateOnlyPumpMeasurementInvariant({ measurements: dataEntryStateRef.current.measurements, measurementRecords: normalized }, issues);
+      warnOnlyPumpDataEntryIssues("measurementRecords", issues, meta);
+      return normalized;
+    });
+  }, [warnOnlyPumpDataEntryIssues]);
+
+  const setProfile = useCallback((updater, meta = {}) => {
+    setProfileState(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (next === null) return null;
+      if (!isOnlyPumpPlainObject(next)) {
+        console.warn("[OnlyPumpDataEntry] blocked invalid profile update", { meta, receivedType: typeof next });
+        return prev;
+      }
+      const normalized = normalizeProfileRecord(next, prev || DEFAULT_PROFILE);
+      const issues = [];
+      validateOnlyPumpProfileInvariant({ profile: normalized, profileStatus: dataEntryStateRef.current.profileStatus }, issues);
+      warnOnlyPumpDataEntryIssues("profile", issues, meta);
+      return normalized;
+    });
+  }, [warnOnlyPumpDataEntryIssues]);
+
   const [lectureItems, setLectureItems] = useState(initialLectures);
   const [homeWidgets, setHomeWidgets] = useState(() => readCachedHomeWidgetsForProfile(DEFAULT_PROFILE, getOnlyPumpHomeLayoutMode()));
   const [personalTrackers, setPersonalTrackers] = useState(() => readCachedPersonalTrackersForProfile(profile || DEFAULT_PROFILE));
@@ -34336,6 +35024,12 @@ function OnlyPumpPlatform() {
   const handleSaveProfile = useCallback(async (payload, action = "update_profile") => {
     const payloadWithDate = { ...payload, current_date: globalSelectedDateKey, measurement_date: payload.measurement_date || globalSelectedDateKey };
     const targetsFromDate = formatDateKey(new Date());
+    emitOnlyPumpDomainEvent("profile.save.started", {
+      action,
+      profileId: profile?.id || null,
+      date: payloadWithDate.measurement_date || globalSelectedDateKey,
+      remote: profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData),
+    });
     if (profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData)) {
       setProfileSaving(true);
       try {
@@ -34347,12 +35041,23 @@ function OnlyPumpPlatform() {
         setProfileStatus("verified");
         if (typeof window !== "undefined") window.__ONLYPUMP_LAST_PROFILE_SAVE_ERROR__ = "";
         triggerOnlyPumpHaptic(savedProfile ? "success" : "error");
+        emitOnlyPumpDomainEvent(savedProfile ? "profile.save.success" : "profile.save.failed", {
+          action,
+          profileId: savedProfile?.id || profile?.id || null,
+          remote: true,
+        });
         return Boolean(savedProfile);
       } catch (error) {
         console.error("onlypump-profile-api error:", error);
         if (action === "update_profile" || action === "complete_onboarding") console.log("PROFILE MEASUREMENT ERROR", error);
         const message = profileSaveErrorMessage(error);
         if (typeof window !== "undefined") window.__ONLYPUMP_LAST_PROFILE_SAVE_ERROR__ = message;
+        emitOnlyPumpDomainEvent("profile.save.failed", {
+          action,
+          profileId: profile?.id || null,
+          remote: true,
+          error: message,
+        });
         triggerOnlyPumpHaptic("error");
         return { ok: false, error: message };
       } finally {
@@ -34378,6 +35083,11 @@ function OnlyPumpPlatform() {
     }, profile || DEFAULT_PROFILE);
     applyProfileState(localProfile, { updateNutritionDay: true, nutritionTargetsFromDate: targetsFromDate });
     clearCachedNutritionForProfileFromDate(localProfile, targetsFromDate);
+    emitOnlyPumpDomainEvent("profile.save.success", {
+      action,
+      profileId: localProfile?.id || null,
+      remote: false,
+    });
     triggerOnlyPumpHaptic("success");
     return true;
   }, [applyProfileState, globalSelectedDateKey, profile, profileStatus, telegramInitData]);
@@ -34539,6 +35249,11 @@ function OnlyPumpPlatform() {
     const dateKey = payload.date || payload.measurement_date || globalSelectedDateKey;
     const nextWeight = profileNumber(payload.weight_kg, profile?.weight_kg || measurements.weight || 0);
     const payloadWithDate = { ...payload, date: dateKey, measurement_date: dateKey };
+    emitOnlyPumpDomainEvent("measurement.weight.save.started", {
+      profileId: profile?.id || null,
+      date: dateKey,
+      remote: profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && Boolean(profile?.id),
+    });
     const optimisticMeasurements = progressMeasurementsFromRecord(payloadWithDate, { ...measurements, weight: nextWeight });
     const optimisticRecord = progressMeasurementFields.reduce((record, item) => {
       const value = optimisticMeasurements[item.field];
@@ -34553,6 +35268,11 @@ function OnlyPumpPlatform() {
     if (!(profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id)) {
       const localProfile = normalizeProfileRecord({ ...(profile || DEFAULT_PROFILE), ...payloadWithDate, weight_kg: nextWeight, source: profile?.source || "fallback" }, profile || DEFAULT_PROFILE);
       applyProfileState(localProfile);
+      emitOnlyPumpDomainEvent("measurement.weight.save.success", {
+        profileId: localProfile?.id || null,
+        date: dateKey,
+        remote: false,
+      });
       triggerOnlyPumpHaptic("success");
       return true;
     }
@@ -34573,9 +35293,20 @@ function OnlyPumpPlatform() {
         setMeasurementRecords(prev => mergeAnalyticsMeasurementRows(prev, { ...measurement, date: measurementDateKey(measurement) || dateKey, measurement_date: measurementDateKey(measurement) || dateKey }));
       }
       triggerOnlyPumpHaptic(savedProfile ? "success" : "error");
+      emitOnlyPumpDomainEvent(savedProfile ? "measurement.weight.save.success" : "measurement.weight.save.failed", {
+        profileId: savedProfile?.id || profile?.id || null,
+        date: dateKey,
+        remote: true,
+      });
       return Boolean(savedProfile);
     } catch (error) {
       console.error("onlypump-profile-api weight save error:", error);
+      emitOnlyPumpDomainEvent("measurement.weight.save.failed", {
+        profileId: profile?.id || null,
+        date: dateKey,
+        remote: true,
+        error,
+      });
       triggerOnlyPumpHaptic("error");
       return false;
     } finally {
@@ -34694,6 +35425,12 @@ function OnlyPumpPlatform() {
     const cleanPayload = { ...payload };
     delete cleanPayload.__silent;
     const dateKey = cleanPayload.date || cleanPayload.log_date || globalSelectedDateKey;
+    emitOnlyPumpDomainEvent("health.log.save.started", {
+      profileId: profile?.id || null,
+      date: dateKey,
+      silent: silentSave,
+      fieldKeys: Object.keys(cleanPayload),
+    });
     const currentDateLog = (healthLog?.log_date || healthLog?.date) === dateKey
       ? healthLog
       : healthLogs.find(log => (log.log_date || log.date) === dateKey);
@@ -34707,6 +35444,12 @@ function OnlyPumpPlatform() {
     }
 
     if (!(profileStatus === "verified" && profileHasTestAccess(profile) && hasOnlyPumpRemoteAuth(telegramInitData) && profile?.id)) {
+      emitOnlyPumpDomainEvent("health.log.save.success", {
+        profileId: profile?.id || null,
+        date: dateKey,
+        remote: false,
+        silent: silentSave,
+      });
       if (!silentSave) triggerOnlyPumpHaptic("success");
       return true;
     }
@@ -34721,10 +35464,23 @@ function OnlyPumpPlatform() {
 	      setHealthLogs(prev => mergeHealthLogLists(prev, logs || [], savedLog));
 	      writeCachedHealthForProfile(profile, dateKey, savedLog);
 	      writeCachedHealthLogsForProfile(profile, mergedLogs);
+	      emitOnlyPumpDomainEvent("health.log.save.success", {
+	        profileId: profile?.id || null,
+	        date: dateKey,
+	        remote: true,
+	        silent: silentSave,
+	      });
 	      if (!silentSave) triggerOnlyPumpHaptic("success");
 	      return true;
     } catch (error) {
       console.error("onlypump-profile-api health save error:", error);
+      emitOnlyPumpDomainEvent("health.log.save.failed", {
+        profileId: profile?.id || null,
+        date: dateKey,
+        remote: true,
+        silent: silentSave,
+        error,
+      });
       if (!silentSave) triggerOnlyPumpHaptic("error");
       return false;
     } finally {
@@ -34792,6 +35548,13 @@ function OnlyPumpPlatform() {
     const baseNutritionDay = nutritionDay?.date === dateKey ? nutritionDay : buildLocalNutritionDay(dateKey, nutritionGoal);
     const previousDay = baseNutritionDay;
     const previousMarkers = nutritionMarkedDateKeys;
+    emitOnlyPumpDomainEvent("nutrition.action.started", {
+      action,
+      profileId: profile?.id || null,
+      date: dateKey,
+      remote: canUseRemoteNutrition,
+      optimistic: shouldOptimisticallyUpdate,
+    });
 
     const applyNutritionDay = (nextDay, activeProfile = profile) => {
       const normalizedDay = recalculateNutritionDayLocal(nextDay);
@@ -34826,6 +35589,12 @@ function OnlyPumpPlatform() {
           return nextMarkers;
         });
         writeCachedNutritionForProfile(profile, updatedDay.date || dateKey, updatedDay);
+        emitOnlyPumpDomainEvent("nutrition.action.success", {
+          action,
+          profileId: profile?.id || null,
+          date: updatedDay.date || dateKey,
+          remote: true,
+        });
         triggerOnlyPumpHaptic("success");
         return result;
       } catch (error) {
@@ -34837,6 +35606,13 @@ function OnlyPumpPlatform() {
           writeCachedNutritionForProfile(profile, previousDay.date || dateKey, previousDay);
           writeCachedNutritionMarkersForProfile(profile, previousMarkers);
         }
+        emitOnlyPumpDomainEvent("nutrition.action.failed", {
+          action,
+          profileId: profile?.id || null,
+          date: dateKey,
+          remote: true,
+          error,
+        });
         triggerOnlyPumpHaptic("error");
         return { ok: false, error };
       } finally {
@@ -34846,6 +35622,12 @@ function OnlyPumpPlatform() {
 
     const localDay = applyLocalNutritionAction(baseNutritionDay, action, payloadWithDate);
     applyNutritionDay(localDay);
+    emitOnlyPumpDomainEvent("nutrition.action.success", {
+      action,
+      profileId: profile?.id || null,
+      date: localDay.date || dateKey,
+      remote: false,
+    });
     triggerOnlyPumpHaptic("success");
     return { ok: true, ...localDay };
   }, [globalSelectedDateKey, nutritionDay, nutritionGoal, nutritionMarkedDateKeys, profile, profileStatus, telegramInitData]);
@@ -34856,15 +35638,12 @@ function OnlyPumpPlatform() {
   }, [profile?.id, profile?.telegram_id]);
 
   const nutritionMeals = useMemo(() => deriveHomeMealsFromNutritionDay(nutritionDay), [nutritionDay]);
-  const pumpXpNutritionDays = useMemo(() => {
-    const byDate = new Map();
-    normalizeNutritionFilledDateKeys(nutritionMarkedDateKeys).forEach(dateKey => {
-      const cachedDay = profile ? readCachedNutritionForProfile(profile, dateKey) : null;
-      if (cachedDay) byDate.set(dateKey, normalizeNutritionDay(cachedDay, dateKey, nutritionGoal));
-    });
-    if (nutritionDay?.date) byDate.set(nutritionDay.date, normalizeNutritionDay(nutritionDay, nutritionDay.date, nutritionGoal));
-    return Array.from(byDate.values());
-  }, [profile?.id, profile?.telegram_id, JSON.stringify(nutritionMarkedDateKeys), nutritionDay, nutritionGoal]);
+  const pumpXpNutritionDays = useMemo(() => Array.from(buildNutritionDayByDate({
+    nutritionDay,
+    markedDateKeys: nutritionMarkedDateKeys,
+    profile,
+    nutritionGoal,
+  }).values()), [profile?.id, profile?.telegram_id, profile?.telegramId, JSON.stringify(nutritionMarkedDateKeys), nutritionDay, nutritionGoal]);
 	  const pumpXpSummary = useMemo(() => calculatePumpXp({
 	    workouts,
 	    nutritionDay,
@@ -34878,6 +35657,34 @@ function OnlyPumpPlatform() {
 	    profile: profile || DEFAULT_PROFILE,
     tutorialAwards: tourAwards,
 	  }), [workouts, nutritionDay, pumpXpNutritionDays, nutritionMarkedDateKeys, nutritionGoal, healthLog, healthLogs, personalTrackers, measurements, profile, tourAwards]);
+
+  useEffect(() => {
+    if (appLoading || profileLoading) return;
+    const issues = collectOnlyPumpDataInvariantIssues({
+      profile,
+      profileStatus,
+      workouts,
+      nutritionDay,
+      nutritionGoal,
+      healthLog,
+      healthLogs,
+      measurements,
+      measurementRecords,
+    });
+    const signature = onlyPumpDataInvariantSignature(issues);
+    if (typeof window !== "undefined") window.__ONLYPUMP_DATA_INVARIANTS__ = issues;
+    if (!issues.length) {
+      dataInvariantWarningSignatureRef.current = "";
+      return;
+    }
+    if (dataInvariantWarningSignatureRef.current === signature) return;
+    dataInvariantWarningSignatureRef.current = signature;
+    console.warn("[OnlyPumpDataInvariant] Подозрительная форма данных", {
+      count: issues.length,
+      issues: issues.slice(0, 20),
+      hint: "Полный список доступен в window.__ONLYPUMP_DATA_INVARIANTS__",
+    });
+  }, [appLoading, profileLoading, profile, profileStatus, workouts, nutritionDay, nutritionGoal, healthLog, healthLogs, measurements, measurementRecords]);
 
 	  const activeTourSteps = onlyPumpTourDefinitions[tourState.screen] || [];
 	  const activeTourStep = tourState.active ? activeTourSteps[tourState.stepIndex] : null;
