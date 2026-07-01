@@ -497,6 +497,10 @@ Acceptance criteria:
 - вынесена view model для экранов питания: итоги дня, macro rows, meal rows, palm rows и food unit preview;
 - создан `vite-shell/src/features/nutrition/ui/NutritionScreensPreview.jsx` для безопасного preview в Vite shell;
 - добавлен `pnpm run check:nutrition-screens`;
+- создан `vite-shell/src/features/analytics/domain/analyticsChartModel.js`;
+- вынесена view model для графиков аналитики: chart cards, SVG coordinates/path, labels, stats и long-period layout flag;
+- создан `vite-shell/src/features/analytics/ui/AnalyticsChartsPreview.jsx` для безопасного preview в Vite shell;
+- добавлен `pnpm run check:analytics-charts`;
 - legacy `index.html` пока не подключен к shared UI extraction.
 
 ## Branch and Commit Rules
