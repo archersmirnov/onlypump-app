@@ -252,6 +252,7 @@ Acceptance criteria:
 - вынесены чистые mapper/payload helpers для workout sets;
 - вынесены чистые mapper/payload helpers для workout exercises;
 - собраны tree-level mapper helpers для workout create/patch/update payloads;
+- вынесены read-mapper helpers для Supabase workout/exercise/set API response;
 - добавлен `pnpm run check:workouts`;
 - добавлен `pnpm run check:workout-mapper`;
 - legacy `index.html` пока не подключен к этим helpers.

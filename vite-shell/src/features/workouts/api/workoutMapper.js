@@ -1,6 +1,7 @@
 import {
   getExerciseSupersetGroupId,
   getSetStatus,
+  normalizeSupersetGroupId,
   normalizeWorkoutStatus,
   normalizeWorkoutSupersetMetadata,
   normalizeWorkoutType
@@ -22,6 +23,16 @@ export const DEFAULT_EXERCISE_MEASUREMENT_SETTINGS = Object.freeze({
   weightUnit: "kg",
   doubleCountInStatistics: false
 });
+
+export const WORKOUT_WEEKDAY_NAMES = Object.freeze([
+  "Воскресенье",
+  "Понедельник",
+  "Вторник",
+  "Среда",
+  "Четверг",
+  "Пятница",
+  "Суббота"
+]);
 
 export function safeWorkoutNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -96,6 +107,13 @@ export function normalizeWorkoutDateKey(value, fallbackDateKey = formatWorkoutDa
   return fallbackDateKey;
 }
 
+export function parseWorkoutDateKey(dateKey) {
+  const [year, month, day] = String(dateKey || "").split("-").map(Number);
+  if (year && month && day) return new Date(year, month - 1, day);
+  const fallback = new Date(dateKey);
+  return Number.isNaN(fallback.getTime()) ? new Date() : fallback;
+}
+
 export function getWorkoutDurationSeconds(workout = {}) {
   return Math.max(0, safeWorkoutNumber(workout.durationMinutes) * 60);
 }
@@ -105,6 +123,21 @@ export function getWorkoutEstimatedCalories(workout = {}) {
     workout.estimatedCaloriesBurned ?? workout.estimated_calories_burned ?? workout.calories,
     0
   );
+}
+
+export function getWorkoutCaloriesFromRecord(row = {}) {
+  return safeWorkoutNumber(row.estimated_calories_burned ?? row.calories ?? row.caloriesBurned, 0);
+}
+
+export function readWorkoutApiArray(result, key, aliases = []) {
+  const keys = [key, ...aliases];
+  const roots = [result, result?.data, result?.payload, result?.result].filter(Boolean);
+  for (const root of roots) {
+    for (const itemKey of keys) {
+      if (Array.isArray(root?.[itemKey])) return root[itemKey];
+    }
+  }
+  return [];
 }
 
 export function getWorkoutPatchTotals(workout = {}, getWorkoutTotals) {
@@ -356,6 +389,177 @@ export function mapSupabaseWorkoutSet(row = {}, index = 0) {
     restAfterSeconds: safeWorkoutNumber(row.rest_after_seconds ?? row.restAfterSeconds, 0),
     isCompleted: completed
   };
+}
+
+function resolveWorkoutExerciseImageUrl(row, systemSource, options) {
+  if (typeof options.getExerciseImageUrlFromSource === "function") {
+    return options.getExerciseImageUrlFromSource(row, systemSource);
+  }
+  return row.exercise_image_url || row.exerciseImageUrl || systemSource?.exerciseImageUrl || "";
+}
+
+function resolveWorkoutMuscleWorkImageKey(row, systemSource, options) {
+  if (row.muscle_work_image_key || row.muscleWorkImageKey) return row.muscle_work_image_key || row.muscleWorkImageKey;
+  if (typeof options.getOnlypumpMuscleWorkImageKey === "function") {
+    return options.getOnlypumpMuscleWorkImageKey({ ...(systemSource || {}), ...row });
+  }
+  return systemSource?.muscleWorkImageKey || systemSource?.muscle_work_image_key || "";
+}
+
+function resolveWorkoutMuscleWorkImageUrl(row, systemSource, options) {
+  if (typeof options.getMuscleWorkImageUrlFromSource === "function") {
+    return options.getMuscleWorkImageUrlFromSource(row, systemSource);
+  }
+  return row.muscle_work_image_url || row.muscleWorkImageUrl || systemSource?.muscleWorkImageUrl || "";
+}
+
+export function mapSupabaseWorkoutExercise(row = {}, index = 0, options = {}) {
+  const supersetGroupId = normalizeSupersetGroupId(row.superset_group_id || row.supersetGroupId || row.supersetId);
+  const sets = row.workout_sets || row.sets || row.workoutSets || [];
+  const exerciseName = row.exercise_name || row.name || row.exerciseName || "Упражнение";
+  const systemSource = typeof options.findSystemExerciseByName === "function"
+    ? options.findSystemExerciseByName(exerciseName)
+    : null;
+  const measurementSettings = getWorkoutExerciseMeasurementSettings({
+    ...(systemSource || {}),
+    ...row,
+    primaryMuscles: row.primary_muscles || row.primaryMuscles || systemSource?.primaryMuscles,
+    secondaryMuscles: row.secondary_muscles || row.secondaryMuscles || systemSource?.secondaryMuscles
+  }, options);
+
+  return {
+    id: `exercise-supabase-${row.id || index}`,
+    supabaseId: row.id || null,
+    order: safeWorkoutNumber(row.exercise_order ?? row.order, index + 1),
+    name: systemSource?.name || exerciseName,
+    muscleGroup: row.muscle_group || row.muscleGroup || systemSource?.muscleGroup || "Другое",
+    blockType: "обычное",
+    restSeconds: safeWorkoutNumber(row.rest_between_seconds ?? row.restSeconds, 120),
+    restAfterSeconds: safeWorkoutNumber(row.rest_after_seconds ?? row.restAfterSeconds, 0),
+    supersetId: supersetGroupId,
+    supersetGroupId,
+    supersetOrder: supersetGroupId ? safeWorkoutNumber(row.superset_order ?? row.supersetOrder, index + 1) : null,
+    isSuperset: Boolean(row.is_superset || supersetGroupId),
+    userProgramExerciseSettingId: row.user_program_exercise_setting_id || row.userProgramExerciseSettingId || null,
+    userProgramExerciseSettingClientId: row.user_program_exercise_setting_client_id || row.userProgramExerciseSettingClientId || null,
+    programTemplateExerciseId: row.program_template_exercise_id || row.programTemplateExerciseId || null,
+    programTemplateExerciseKey: row.program_template_exercise_key || row.programTemplateExerciseKey || null,
+    plannedSets: row.planned_sets ?? row.plannedSets ?? null,
+    plannedRepMin: row.planned_rep_min ?? row.plannedRepMin ?? null,
+    plannedRepMax: row.planned_rep_max ?? row.plannedRepMax ?? null,
+    plannedWeight: row.planned_weight ?? row.plannedWeight ?? null,
+    plannedReps: row.planned_reps ?? row.plannedReps ?? null,
+    progressionState: row.progression_state || row.progressionState || null,
+    ...measurementSettings,
+    description: row.description || row.exercise_description || systemSource?.description || "",
+    instruction: row.instruction || row.description || systemSource?.instruction || systemSource?.description || "",
+    techniqueDescription: row.technique_description || row.techniqueDescription || row.description || systemSource?.techniqueDescription || systemSource?.description || "",
+    exerciseImageUrl: resolveWorkoutExerciseImageUrl(row, systemSource, options),
+    muscleWorkImageKey: resolveWorkoutMuscleWorkImageKey(row, systemSource, options),
+    muscleWorkImageUrl: resolveWorkoutMuscleWorkImageUrl(row, systemSource, options),
+    muscleWorkVideoUrl: row.muscle_work_video_url || row.muscleWorkVideoUrl || "",
+    techniqueVideoUrl: row.technique_video_url || row.techniqueVideoUrl || "",
+    note: row.notes || "",
+    sets: [...sets]
+      .sort((a, b) => safeWorkoutNumber(a.set_order ?? a.order) - safeWorkoutNumber(b.set_order ?? b.order))
+      .map((set, setIndex) => mapSupabaseWorkoutSet(set, setIndex))
+  };
+}
+
+export function mapSupabaseWorkout(row = {}, index = 0, options = {}) {
+  const fallbackDateKey = options.fallbackDateKey ?? formatWorkoutDateKey(new Date());
+  const dateKey = normalizeWorkoutDateKey(row.workout_date || row.date, fallbackDateKey);
+  const date = parseWorkoutDateKey(dateKey);
+  const exercises = row.workout_exercises || row.exercises || row.workoutExercises || [];
+  const mappedExercises = [...exercises]
+    .sort((a, b) => safeWorkoutNumber(a.exercise_order ?? a.order) - safeWorkoutNumber(b.exercise_order ?? b.order))
+    .map((exercise, exerciseIndex) => mapSupabaseWorkoutExercise(exercise, exerciseIndex, options));
+  const derivedTotals = typeof options.getWorkoutTotals === "function"
+    ? options.getWorkoutTotals({ exercises: mappedExercises }) || {}
+    : getWorkoutPatchTotals(row);
+  const serverTotalSets = safeWorkoutNumber(row.total_sets ?? row.totalSets, 0);
+  const serverTotalVolume = safeWorkoutNumber(row.total_volume ?? row.totalVolume ?? row.totalVolumeKg, 0);
+  const status = normalizeWorkoutStatus(row.status);
+  const createdAt = row.created_at || row.createdAt || new Date().toISOString();
+  const startedAt = row.started_at || row.startedAt || (status === "active" ? createdAt : null);
+  const weekdayNames = options.weekdayNames || WORKOUT_WEEKDAY_NAMES;
+
+  return normalizeWorkoutSupersetMetadata({
+    id: `workout-supabase-${row.id || index}`,
+    supabaseId: row.id || null,
+    clientWorkoutId: row.client_workout_id || row.clientWorkoutId || null,
+    date: dateKey,
+    weekday: weekdayNames[date.getDay()] || "",
+    title: row.title || "Новая тренировка",
+    workoutType: normalizeWorkoutType(row.workout_type ?? row.workoutType),
+    programDayNumber: index + 1,
+    durationMinutes: safeWorkoutNumber(row.duration_minutes ?? row.durationMinutes ?? (row.duration_seconds !== undefined ? Number(row.duration_seconds) / 60 : undefined), 0),
+    totalVolumeKg: safeWorkoutNumber(derivedTotals.totalVolume ?? derivedTotals.total_volume, 0),
+    serverTotalSets,
+    serverTotalVolume,
+    calories: getWorkoutCaloriesFromRecord(row),
+    estimatedCaloriesBurned: getWorkoutCaloriesFromRecord(row),
+    status,
+    startedAt,
+    autoStoppedAt: row.auto_stopped_at || row.autoStoppedAt || null,
+    exercises: mappedExercises,
+    notes: row.notes || "",
+    templateId: row.template_id || row.templateId || null,
+    userProgramId: row.user_program_id || row.userProgramId || null,
+    userProgramClientId: row.user_program_client_id || row.userProgramClientId || null,
+    programTemplateWorkoutId: row.program_template_workout_id || row.programTemplateWorkoutId || null,
+    programTemplateWorkoutKey: row.program_template_workout_key || row.programTemplateWorkoutKey || null,
+    programWeekNumber: row.program_week_number ?? row.programWeekNumber ?? null,
+    programDayIndex: row.program_day_index ?? row.programDayIndex ?? null,
+    programName: row.program_name || row.programName || null,
+    programPlanMode: row.program_plan_mode || row.programPlanMode || null,
+    programDifficulty: row.program_difficulty || row.programDifficulty || null,
+    isProgramGenerated: Boolean(row.is_program_generated || row.isProgramGenerated),
+    createdAt,
+    updatedAt: row.updated_at || row.updatedAt || new Date().toISOString()
+  });
+}
+
+export function buildWorkoutTreeFromApi(result, options = {}) {
+  const apiWorkouts = readWorkoutApiArray(result, "workouts", ["workoutRows"]);
+  const apiExercises = readWorkoutApiArray(result, "workout_exercises", ["exercises", "workoutExercises", "exerciseRows"]);
+  const apiSets = readWorkoutApiArray(result, "workout_sets", ["sets", "workoutSets", "setRows"]);
+
+  if (!apiExercises.length && !apiSets.length) {
+    return apiWorkouts.map((workout, index) => mapSupabaseWorkout(workout, index, options));
+  }
+
+  const setsByExerciseId = apiSets.reduce((map, set) => {
+    const exerciseId = set?.workout_exercise_id || set?.workoutExerciseId || set?.exercise_id || set?.exerciseId;
+    if (!exerciseId) return map;
+    const key = String(exerciseId);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(set);
+    return map;
+  }, new Map());
+
+  const exercisesByWorkoutId = apiExercises.reduce((map, exercise) => {
+    const workoutId = exercise?.workout_id || exercise?.workoutId || exercise?.workout?.id;
+    if (!workoutId) return map;
+    const exerciseId = exercise?.id || exercise?.workout_exercise_id || exercise?.exercise_id;
+    const key = String(workoutId);
+    const setRows = exerciseId ? (setsByExerciseId.get(String(exerciseId)) || []) : [];
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push({
+      ...exercise,
+      workout_sets: setRows.length ? setRows : (exercise?.workout_sets || exercise?.sets || [])
+    });
+    return map;
+  }, new Map());
+
+  return apiWorkouts.map((workout, index) => {
+    const workoutId = workout?.id || workout?.workout_id || workout?.workoutId;
+    const exerciseRows = workoutId ? (exercisesByWorkoutId.get(String(workoutId)) || []) : [];
+    return mapSupabaseWorkout({
+      ...workout,
+      workout_exercises: exerciseRows.length ? exerciseRows : (workout?.workout_exercises || workout?.exercises || [])
+    }, index, options);
+  });
 }
 
 export function isPendingRemoteCreate(item = {}) {

@@ -12,18 +12,23 @@ import {
   buildWorkoutTreeCreatePayload,
   buildWorkoutTreePatch,
   buildWorkoutTreeUpdatePayload,
+  buildWorkoutTreeFromApi,
   formatWorkoutDateKey,
   getWorkoutDurationSeconds,
   getWorkoutExerciseMeasurementSettings,
   getWorkoutEstimatedCalories,
   getWorkoutPatchTotals,
+  getWorkoutCaloriesFromRecord,
   isPendingRemoteCreate,
   isProgramWorkout,
   isProgramWorkoutExercise,
+  mapSupabaseWorkout,
+  mapSupabaseWorkoutExercise,
   mapSupabaseWorkoutSet,
   normalizeWorkoutDateKey,
   optionalWorkoutNumber,
   pickSetActualNumber,
+  readWorkoutApiArray,
   safeWorkoutNumber
 } from "../src/features/workouts/api/index.js";
 
@@ -80,6 +85,10 @@ assert.equal(getWorkoutEstimatedCalories({ estimatedCaloriesBurned: 320 }), 320)
 assert.equal(getWorkoutEstimatedCalories({ estimated_calories_burned: 280 }), 280);
 assert.equal(getWorkoutEstimatedCalories({ calories: 190 }), 190);
 assert.equal(getWorkoutEstimatedCalories({}), 0);
+assert.equal(getWorkoutCaloriesFromRecord({ estimated_calories_burned: "225" }), 225);
+assert.equal(getWorkoutCaloriesFromRecord({ caloriesBurned: "120" }), 120);
+assert.deepEqual(readWorkoutApiArray({ data: { workouts: [1, 2] } }, "workouts"), [1, 2]);
+assert.deepEqual(readWorkoutApiArray({ payload: { workoutRows: [3] } }, "workouts", ["workoutRows"]), [3]);
 
 assert.deepEqual(
   getWorkoutPatchTotals({ totalSets: "5", totalVolumeKg: "1200" }),
@@ -576,5 +585,146 @@ assert.deepEqual(
     isCompleted: true
   }
 );
+
+const readMapperOptions = {
+  fallbackDateKey: "2026-07-01",
+  findSystemExerciseByName: (name) => name === "Lat Pulldown" ? {
+    name: "Lat Pulldown",
+    muscleGroup: "Back",
+    primaryMuscles: ["Back"],
+    secondaryMuscles: ["Biceps"],
+    exerciseImageUrl: "system-image.png",
+    muscleWorkImageKey: "system-muscles",
+    muscleWorkImageUrl: "system-muscles.png",
+    description: "system description"
+  } : null,
+  normalizeExerciseMeasurementSettings: (source) => ({
+    sourceExerciseId: source.source_exercise_id || null,
+    exerciseCategory: source.exercise_category || "strength",
+    primaryMuscles: source.primaryMuscles || source.primary_muscles || [],
+    secondaryMuscles: source.secondaryMuscles || source.secondary_muscles || [],
+    measurementMode: source.measurement_mode || "weight_reps",
+    distanceUnit: source.distance_unit || "km",
+    countsInMuscleStats: source.counts_in_muscle_stats ?? true,
+    measureWeightEnabled: source.measure_weight_enabled ?? true,
+    measureRepsEnabled: source.measure_reps_enabled ?? true,
+    measureTimeEnabled: source.measure_time_enabled ?? false,
+    measureRirEnabled: source.measure_rir_enabled ?? false,
+    measureRpeEnabled: source.measure_rpe_enabled ?? false,
+    weightUnit: source.weight_unit || "kg",
+    doubleCountInStatistics: source.double_count_in_statistics ?? false
+  }),
+  getWorkoutTotals: () => ({ totalSets: 2, totalVolume: 960 })
+};
+
+const mappedExercise = mapSupabaseWorkoutExercise({
+  id: "exercise-server-2",
+  exercise_name: "Lat Pulldown",
+  exercise_order: 2,
+  muscle_group: "Pull",
+  rest_between_seconds: "150",
+  rest_after_seconds: "20",
+  superset_group_id: supersetGroupId,
+  superset_order: "1",
+  is_superset: true,
+  user_program_exercise_setting_id: "setting-2",
+  planned_sets: 3,
+  primary_muscles: ["Back"],
+  secondary_muscles: ["Biceps"],
+  description: "row description",
+  notes: "row note",
+  workout_sets: [
+    { id: "set-b", set_order: 2, weight_kg: 50, reps: 8 },
+    { id: "set-a", set_order: 1, weight_kg: 45, reps: 10, is_completed: true }
+  ]
+}, 0, readMapperOptions);
+
+assert.equal(mappedExercise.id, "exercise-supabase-exercise-server-2");
+assert.equal(mappedExercise.supabaseId, "exercise-server-2");
+assert.equal(mappedExercise.name, "Lat Pulldown");
+assert.equal(mappedExercise.muscleGroup, "Pull");
+assert.equal(mappedExercise.restSeconds, 150);
+assert.equal(mappedExercise.restAfterSeconds, 20);
+assert.equal(mappedExercise.supersetGroupId, supersetGroupId);
+assert.equal(mappedExercise.supersetOrder, 1);
+assert.equal(mappedExercise.isSuperset, true);
+assert.equal(mappedExercise.userProgramExerciseSettingId, "setting-2");
+assert.equal(mappedExercise.plannedSets, 3);
+assert.deepEqual(mappedExercise.primaryMuscles, ["Back"]);
+assert.deepEqual(mappedExercise.secondaryMuscles, ["Biceps"]);
+assert.equal(mappedExercise.description, "row description");
+assert.equal(mappedExercise.exerciseImageUrl, "system-image.png");
+assert.equal(mappedExercise.muscleWorkImageKey, "system-muscles");
+assert.equal(mappedExercise.muscleWorkImageUrl, "system-muscles.png");
+assert.equal(mappedExercise.note, "row note");
+assert.equal(mappedExercise.sets[0].supabaseId, "set-a");
+assert.equal(mappedExercise.sets[1].supabaseId, "set-b");
+
+const mappedWorkout = mapSupabaseWorkout({
+  id: "workout-server-2",
+  client_workout_id: "client-workout-2",
+  workout_date: "2026-06-30",
+  title: "Loaded Pull",
+  workout_type: "strength",
+  status: "started",
+  duration_seconds: 1800,
+  total_sets: 2,
+  total_volume: 960,
+  estimated_calories_burned: 225,
+  created_at: "2026-06-30T18:00:00+00:00",
+  notes: "loaded workout",
+  user_program_id: "program-2",
+  program_name: "Loaded Program",
+  is_program_generated: true,
+  workout_exercises: [{
+    id: "exercise-server-3",
+    exercise_name: "Free Row",
+    exercise_order: 1,
+    workout_sets: [{ id: "set-server-3", set_order: 1, weight_kg: 60, reps: 8 }]
+  }]
+}, 0, readMapperOptions);
+
+assert.equal(mappedWorkout.id, "workout-supabase-workout-server-2");
+assert.equal(mappedWorkout.supabaseId, "workout-server-2");
+assert.equal(mappedWorkout.clientWorkoutId, "client-workout-2");
+assert.equal(mappedWorkout.date, "2026-06-30");
+assert.equal(mappedWorkout.weekday, "Вторник");
+assert.equal(mappedWorkout.title, "Loaded Pull");
+assert.equal(mappedWorkout.status, "active");
+assert.equal(mappedWorkout.startedAt, "2026-06-30T18:00:00+00:00");
+assert.equal(mappedWorkout.durationMinutes, 30);
+assert.equal(mappedWorkout.totalVolumeKg, 960);
+assert.equal(mappedWorkout.serverTotalSets, 2);
+assert.equal(mappedWorkout.serverTotalVolume, 960);
+assert.equal(mappedWorkout.calories, 225);
+assert.equal(mappedWorkout.notes, "loaded workout");
+assert.equal(mappedWorkout.userProgramId, "program-2");
+assert.equal(mappedWorkout.programName, "Loaded Program");
+assert.equal(mappedWorkout.isProgramGenerated, true);
+assert.equal(mappedWorkout.exercises.length, 1);
+
+const nestedTree = buildWorkoutTreeFromApi({
+  workouts: [{
+    id: "workout-nested-1",
+    workout_date: "2026-06-30",
+    workout_exercises: [{
+      id: "exercise-nested-1",
+      exercise_name: "Lat Pulldown",
+      workout_sets: [{ id: "set-nested-1", set_order: 1, weight_kg: 40, reps: 12 }]
+    }]
+  }]
+}, readMapperOptions);
+assert.equal(nestedTree.length, 1);
+assert.equal(nestedTree[0].exercises[0].sets[0].supabaseId, "set-nested-1");
+
+const flatTree = buildWorkoutTreeFromApi({
+  workouts: [{ id: "workout-flat-1", workout_date: "2026-06-30" }],
+  workout_exercises: [{ id: "exercise-flat-1", workout_id: "workout-flat-1", exercise_name: "Lat Pulldown" }],
+  workout_sets: [{ id: "set-flat-1", workout_exercise_id: "exercise-flat-1", set_order: 1, weight_kg: 30, reps: 15 }]
+}, readMapperOptions);
+assert.equal(flatTree.length, 1);
+assert.equal(flatTree[0].exercises.length, 1);
+assert.equal(flatTree[0].exercises[0].sets.length, 1);
+assert.equal(flatTree[0].exercises[0].sets[0].supabaseId, "set-flat-1");
 
 console.log("workout mapper checks passed");
