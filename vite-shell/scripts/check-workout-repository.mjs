@@ -5,6 +5,7 @@ import {
   buildWorkoutExerciseUpdateApiPayload,
   buildWorkoutDeletePayload,
   buildWorkoutLoadPayload,
+  buildWorkoutPassthroughPayload,
   buildWorkoutProfilePayload,
   buildWorkoutSetCreateApiPayload,
   buildWorkoutSetDeletePayload,
@@ -21,6 +22,7 @@ import {
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.load, "load");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.loadExerciseLibrary, "load_exercise_library");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.loadProgramTemplates, "load_program_templates");
+assert.equal(WORKOUT_REPOSITORY_ACTIONS.loadUserPrograms, "load_user_programs");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.createWorkoutTree, "create_workout_tree");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.createExercise, "create_exercise");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.updateExercise, "update_exercise");
@@ -28,12 +30,28 @@ assert.equal(WORKOUT_REPOSITORY_ACTIONS.deleteExercise, "delete_exercise");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.createSet, "create_set");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.updateSet, "update_set");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.deleteSet, "delete_set");
+assert.equal(WORKOUT_REPOSITORY_ACTIONS.saveProgramTemplate, "save_program_template");
+assert.equal(WORKOUT_REPOSITORY_ACTIONS.updateProgramTemplate, "update_program_template");
+assert.equal(WORKOUT_REPOSITORY_ACTIONS.shareProgramTemplate, "share_program_template");
+assert.equal(WORKOUT_REPOSITORY_ACTIONS.createUserProgram, "create_user_program");
+assert.equal(WORKOUT_REPOSITORY_ACTIONS.renameWorkoutScope, "rename_workout_scope");
+assert.equal(WORKOUT_REPOSITORY_ACTIONS.deleteWorkoutScope, "delete_workout_scope");
+assert.equal(WORKOUT_REPOSITORY_ACTIONS.deleteProgramScope, "delete_program_scope");
 assert.throws(() => requireWorkoutApiCaller(null), /requires callWorkoutsApi/);
 assert.equal(resolveWorkoutProfileId({ profile_id: "profile-a" }, "fallback"), "profile-a");
 assert.equal(resolveWorkoutProfileId({ profileId: "profile-b" }, "fallback"), "profile-b");
 assert.equal(resolveWorkoutProfileId({}, "fallback"), "fallback");
 assert.deepEqual(buildWorkoutProfilePayload({}, "profile-1", "load fixtures"), { profile_id: "profile-1" });
 assert.throws(() => buildWorkoutProfilePayload({}, null, "load fixtures"), /profile_id is required for load fixtures/);
+assert.deepEqual(buildWorkoutPassthroughPayload({ title: "Program" }, "profile-1", "save program"), {
+  title: "Program",
+  profile_id: "profile-1"
+});
+assert.deepEqual(buildWorkoutPassthroughPayload({ profile_id: "profile-2", title: "Program" }, "profile-1", "save program"), {
+  profile_id: "profile-2",
+  title: "Program"
+});
+assert.throws(() => buildWorkoutPassthroughPayload({ title: "Program" }, null, "save program"), /profile_id is required for save program/);
 assert.deepEqual(buildWorkoutLoadPayload({}, "profile-1"), { profile_id: "profile-1" });
 assert.throws(() => buildWorkoutLoadPayload(), /profile_id is required/);
 assert.deepEqual(buildWorkoutDeletePayload({ supabaseId: "workout-1" }, "profile-1"), {
@@ -142,7 +160,15 @@ const callWorkoutsApi = async (action, payload) => {
       templates: [{ id: "template-1", title: "Strength" }]
     };
   }
+  if (action === "load_user_programs") {
+    return {
+      user_programs: [{ id: "user-program-1", name: "Strength" }]
+    };
+  }
   if (action === "delete_workout") return { deleted_workout_ids: [payload.workout_id], deleted_count: 1 };
+  if (action === "delete_workout_scope" || action === "delete_program_scope") {
+    return { deleted_workout_ids: [payload.workout_id], deleted_count: 1 };
+  }
   return { ok: true, action, payload };
 };
 
@@ -244,5 +270,69 @@ const deletedSet = await repository.deleteSet(set);
 assert.equal(calls[13].action, "delete_set");
 assert.equal(calls[13].payload.set_id, "set-server-1");
 assert.equal(deletedSet.confirmed, true);
+
+const loadedUserPrograms = await repository.loadUserPrograms();
+assert.equal(calls.at(-1).action, "load_user_programs");
+assert.deepEqual(calls.at(-1).payload, { profile_id: "profile-1" });
+assert.equal(loadedUserPrograms.userPrograms[0].id, "user-program-1");
+
+const programPayload = {
+  program: { title: "Strength" },
+  workouts: [{ title: "Day 1" }]
+};
+
+const savedProgramTemplate = await repository.saveProgramTemplate(programPayload);
+assert.equal(calls.at(-1).action, "save_program_template");
+assert.equal(savedProgramTemplate.payload.profile_id, "profile-1");
+assert.equal(savedProgramTemplate.payload.program.title, "Strength");
+
+const updatedProgramTemplate = await repository.updateProgramTemplate({ ...programPayload, id: "template-1" });
+assert.equal(calls.at(-1).action, "update_program_template");
+assert.equal(updatedProgramTemplate.payload.id, "template-1");
+
+const sharedProgramTemplate = await repository.shareProgramTemplate({
+  template_key: "template-1",
+  visibility_scope: "selected",
+  target_profile_ids: ["student-1"]
+});
+assert.equal(calls.at(-1).action, "share_program_template");
+assert.equal(sharedProgramTemplate.payload.profile_id, "profile-1");
+
+const createdUserProgram = await repository.createUserProgram({
+  client_id: "program-client-1",
+  program: { title: "Strength" },
+  settings: { started_at: "2026-07-01" },
+  workouts: []
+});
+assert.equal(calls.at(-1).action, "create_user_program");
+assert.equal(createdUserProgram.payload.profile_id, "profile-1");
+
+const renamedScope = await repository.renameWorkoutScope({
+  id: "workout-server-1",
+  workout_id: "workout-server-1",
+  title: "Renamed",
+  scope: "repeat",
+  range: "all"
+});
+assert.equal(calls.at(-1).action, "rename_workout_scope");
+assert.equal(renamedScope.confirmed, true);
+
+const deletedWorkoutScope = await repository.deleteWorkoutScope({
+  id: "workout-server-1",
+  workout_id: "workout-server-1",
+  scope: "repeat",
+  range: "all"
+});
+assert.equal(calls.at(-1).action, "delete_workout_scope");
+assert.equal(deletedWorkoutScope.confirmed, true);
+
+const deletedProgramScope = await repository.deleteProgramScope({
+  id: "workout-server-1",
+  workout_id: "workout-server-1",
+  scope: "program",
+  range: "all"
+});
+assert.equal(calls.at(-1).action, "delete_program_scope");
+assert.equal(deletedProgramScope.confirmed, true);
 
 console.log("workout repository checks passed");

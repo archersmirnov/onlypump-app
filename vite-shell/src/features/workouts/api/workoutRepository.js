@@ -11,6 +11,7 @@ export const WORKOUT_REPOSITORY_ACTIONS = Object.freeze({
   load: "load",
   loadExerciseLibrary: "load_exercise_library",
   loadProgramTemplates: "load_program_templates",
+  loadUserPrograms: "load_user_programs",
   createWorkoutTree: "create_workout_tree",
   updateWorkoutTree: "update_workout_tree",
   saveWorkoutPatch: "save_workout_patch",
@@ -20,7 +21,14 @@ export const WORKOUT_REPOSITORY_ACTIONS = Object.freeze({
   deleteExercise: "delete_exercise",
   createSet: "create_set",
   updateSet: "update_set",
-  deleteSet: "delete_set"
+  deleteSet: "delete_set",
+  saveProgramTemplate: "save_program_template",
+  updateProgramTemplate: "update_program_template",
+  shareProgramTemplate: "share_program_template",
+  createUserProgram: "create_user_program",
+  renameWorkoutScope: "rename_workout_scope",
+  deleteWorkoutScope: "delete_workout_scope",
+  deleteProgramScope: "delete_program_scope"
 });
 
 const WORKOUT_DELETE_RESPONSE_ID_KEYS = Object.freeze([
@@ -57,6 +65,13 @@ export function buildWorkoutProfilePayload(input = {}, fallbackProfileId = null,
   const profileId = resolveWorkoutProfileId(input, fallbackProfileId);
   if (!profileId) throw new Error(`profile_id is required for ${label}`);
   return { profile_id: profileId };
+}
+
+export function buildWorkoutPassthroughPayload(input = {}, fallbackProfileId = null, label = "workout request") {
+  const source = input && typeof input === "object" ? input : {};
+  const profileId = resolveWorkoutProfileId(source, fallbackProfileId);
+  if (!profileId) throw new Error(`profile_id is required for ${label}`);
+  return { ...source, profile_id: profileId };
 }
 
 export function buildWorkoutLoadPayload(input = {}, fallbackProfileId = null) {
@@ -301,6 +316,18 @@ export function createWorkoutRepository({
       };
     },
 
+    async loadUserPrograms(input = {}, options = {}) {
+      const payload = buildWorkoutProfilePayload(input, options.profileId || profileId, "load user programs");
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.loadUserPrograms, payload);
+      const userPrograms = readWorkoutRepositoryArray(result, "user_programs", ["programs"]);
+      return {
+        payload,
+        result,
+        userPrograms,
+        programs: userPrograms
+      };
+    },
+
     async createWorkoutTree(workout, options = {}) {
       if (!workout) return null;
       const payload = buildWorkoutTreeCreatePayload(workout, { ...mapperOptions, ...(options.mapperOptions || {}) });
@@ -380,6 +407,48 @@ export function createWorkoutRepository({
       const payload = buildWorkoutSetDeletePayload(setOrId, options.profileId || profileId);
       const result = await call(WORKOUT_REPOSITORY_ACTIONS.deleteSet, payload);
       return { payload, result, confirmed: isWorkoutMutationResponseOk(result) };
+    },
+
+    async saveProgramTemplate(programPayload, options = {}) {
+      const payload = buildWorkoutPassthroughPayload(programPayload, options.profileId || profileId, "save program template");
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.saveProgramTemplate, payload);
+      return { payload, result };
+    },
+
+    async updateProgramTemplate(programPayload, options = {}) {
+      const payload = buildWorkoutPassthroughPayload(programPayload, options.profileId || profileId, "update program template");
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.updateProgramTemplate, payload);
+      return { payload, result };
+    },
+
+    async shareProgramTemplate(programPayload, options = {}) {
+      const payload = buildWorkoutPassthroughPayload(programPayload, options.profileId || profileId, "share program template");
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.shareProgramTemplate, payload);
+      return { payload, result };
+    },
+
+    async createUserProgram(programPayload, options = {}) {
+      const payload = buildWorkoutPassthroughPayload(programPayload, options.profileId || profileId, "create user program");
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.createUserProgram, payload);
+      return { payload, result };
+    },
+
+    async renameWorkoutScope(scopePayload, options = {}) {
+      const payload = buildWorkoutPassthroughPayload(scopePayload, options.profileId || profileId, "rename workout scope");
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.renameWorkoutScope, payload);
+      return { payload, result, confirmed: isWorkoutMutationResponseOk(result) };
+    },
+
+    async deleteWorkoutScope(scopePayload, options = {}) {
+      const payload = buildWorkoutPassthroughPayload(scopePayload, options.profileId || profileId, "delete workout scope");
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.deleteWorkoutScope, payload);
+      return { payload, result, confirmed: isWorkoutDeleteResponseConfirmed(result, payload.workout_id || payload.id || payload) };
+    },
+
+    async deleteProgramScope(scopePayload, options = {}) {
+      const payload = buildWorkoutPassthroughPayload(scopePayload, options.profileId || profileId, "delete program scope");
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.deleteProgramScope, payload);
+      return { payload, result, confirmed: isWorkoutDeleteResponseConfirmed(result, payload.workout_id || payload.id || payload) };
     }
   };
 }

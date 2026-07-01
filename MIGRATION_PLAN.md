@@ -305,6 +305,7 @@ Acceptance criteria:
 - добавлены методы `loadWorkouts`, `createWorkoutTree`, `updateWorkoutTree`, `saveWorkoutPatch`, `deleteWorkout`;
 - добавлены методы `createExercise`, `updateExercise`, `deleteExercise`, `createSet`, `updateSet`, `deleteSet`;
 - добавлены методы `loadExerciseLibrary`, `loadProgramTemplates`;
+- добавлены методы `loadUserPrograms`, `saveProgramTemplate`, `updateProgramTemplate`, `shareProgramTemplate`, `createUserProgram`, `renameWorkoutScope`, `deleteWorkoutScope`, `deleteProgramScope`;
 - добавлен `pnpm run check:workout-repository`;
 - legacy `index.html` пока не подключен к repository.
 
