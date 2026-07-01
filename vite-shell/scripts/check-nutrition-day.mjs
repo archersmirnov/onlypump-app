@@ -114,7 +114,7 @@ const normalizedItem = normalizeNutritionItem({
   protein_total: 1.5,
   fat_total: 3,
   carbs_total: 6,
-  selected_modifiers: [{ id: "__nutrition_entry_meta__", entry_meta: { fiber: 2.4 } }]
+  selected_modifiers: [{ id: "onlypump_nutrition_entry_meta", entry_meta: { fiber: 2.4 } }]
 });
 assert.equal(normalizedItem.foodName, "Овощной салат");
 assert.equal(normalizedItem.fiber, 2.4);

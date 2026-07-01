@@ -3,7 +3,7 @@ import {
   normalizeNutritionFilledDateKeys
 } from "../cache/index.js";
 
-export const NUTRITION_ENTRY_META_ID = "__nutrition_entry_meta__";
+export const NUTRITION_ENTRY_META_ID = "onlypump_nutrition_entry_meta";
 
 export const DEFAULT_NUTRITION_GOAL = {
   calories: 2800,

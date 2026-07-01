@@ -414,6 +414,9 @@ Acceptance criteria:
 - создан `vite-shell/src/features/nutrition/api/nutritionRepository.js`;
 - вынесен thin repository для nutrition actions: load, add/update/delete item, copy recent, favorite, manual totals;
 - добавлен `pnpm run check:nutrition-repository`;
+- создан `vite-shell/src/features/nutrition/domain/nutritionFood.js`;
+- вынесены helpers для food snapshot, classic units, visual units, palm-rule mapping, grams conversion, item totals и nutrition item payload;
+- добавлен `pnpm run check:nutrition-food`;
 - legacy `index.html` пока не подключен к nutrition helpers.
 
 ## Этап 9. Profile, Health, Progress Repository
