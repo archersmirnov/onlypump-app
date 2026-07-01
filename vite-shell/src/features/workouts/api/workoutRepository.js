@@ -1,4 +1,6 @@
 import {
+  buildWorkoutExerciseSupabasePayload,
+  buildWorkoutSetSupabasePayload,
   buildWorkoutTreeCreatePayload,
   buildWorkoutTreeFromApi,
   buildWorkoutTreePatch,
@@ -10,7 +12,13 @@ export const WORKOUT_REPOSITORY_ACTIONS = Object.freeze({
   createWorkoutTree: "create_workout_tree",
   updateWorkoutTree: "update_workout_tree",
   saveWorkoutPatch: "save_workout_patch",
-  deleteWorkout: "delete_workout"
+  deleteWorkout: "delete_workout",
+  createExercise: "create_exercise",
+  updateExercise: "update_exercise",
+  deleteExercise: "delete_exercise",
+  createSet: "create_set",
+  updateSet: "update_set",
+  deleteSet: "delete_set"
 });
 
 const WORKOUT_DELETE_RESPONSE_ID_KEYS = Object.freeze([
@@ -68,6 +76,118 @@ export function buildWorkoutDeletePayload(workoutOrId, fallbackProfileId = null)
   };
 }
 
+export function buildWorkoutExerciseCreateApiPayload(workoutId, exercise, options = {}) {
+  const profileId = resolveWorkoutProfileId(options, null);
+  const workoutSupabaseId = workoutId || options.workoutId || options.workout_id;
+  if (!profileId) throw new Error("profile_id is required to create exercise");
+  if (!workoutSupabaseId) throw new Error("workout_id is required to create exercise");
+  if (!exercise) throw new Error("exercise is required to create exercise");
+
+  const exercisePayload = buildWorkoutExerciseSupabasePayload(workoutSupabaseId, exercise, options.mapperOptions || {});
+  return {
+    profile_id: profileId,
+    workout_id: workoutSupabaseId,
+    exercise: exercisePayload,
+    ...exercisePayload
+  };
+}
+
+export function buildWorkoutExerciseUpdateApiPayload(workoutId, exercise, options = {}) {
+  const profileId = resolveWorkoutProfileId(options, null);
+  const workoutSupabaseId = workoutId || options.workoutId || options.workout_id;
+  const exerciseId = exercise?.supabaseId || exercise?.id || exercise?.exercise_id || exercise?.workout_exercise_id;
+  if (!profileId) throw new Error("profile_id is required to update exercise");
+  if (!workoutSupabaseId) throw new Error("workout_id is required to update exercise");
+  if (!exerciseId) throw new Error("exercise id is required to update exercise");
+
+  const exercisePayload = buildWorkoutExerciseSupabasePayload(workoutSupabaseId, exercise, options.mapperOptions || {});
+  return {
+    profile_id: profileId,
+    workout_id: workoutSupabaseId,
+    id: exerciseId,
+    exercise_id: exerciseId,
+    workout_exercise_id: exerciseId,
+    exercise: exercisePayload,
+    ...exercisePayload
+  };
+}
+
+export function buildWorkoutExerciseDeletePayload(exerciseOrId, fallbackProfileId = null) {
+  const exerciseId = typeof exerciseOrId === "string"
+    ? exerciseOrId
+    : exerciseOrId?.supabaseId || exerciseOrId?.id || exerciseOrId?.exercise_id || exerciseOrId?.workout_exercise_id;
+  const profileId = resolveWorkoutProfileId(
+    typeof exerciseOrId === "object" && exerciseOrId ? exerciseOrId : {},
+    fallbackProfileId
+  );
+
+  if (!profileId) throw new Error("profile_id is required to delete exercise");
+  if (!exerciseId) throw new Error("exercise id is required to delete exercise");
+
+  return {
+    profile_id: profileId,
+    id: exerciseId,
+    exercise_id: exerciseId,
+    workout_exercise_id: exerciseId
+  };
+}
+
+export function buildWorkoutSetCreateApiPayload(exerciseId, set, options = {}) {
+  const profileId = resolveWorkoutProfileId(options, null);
+  const exerciseSupabaseId = exerciseId || options.exerciseId || options.exercise_id || options.workoutExerciseId || options.workout_exercise_id;
+  if (!profileId) throw new Error("profile_id is required to create set");
+  if (!exerciseSupabaseId) throw new Error("workout_exercise_id is required to create set");
+  if (!set) throw new Error("set is required to create set");
+
+  const setPayload = buildWorkoutSetSupabasePayload(exerciseSupabaseId, set);
+  return {
+    profile_id: profileId,
+    workout_exercise_id: exerciseSupabaseId,
+    set: setPayload,
+    ...setPayload
+  };
+}
+
+export function buildWorkoutSetUpdateApiPayload(exerciseId, set, options = {}) {
+  const profileId = resolveWorkoutProfileId(options, null);
+  const exerciseSupabaseId = exerciseId || options.exerciseId || options.exercise_id || options.workoutExerciseId || options.workout_exercise_id;
+  const setId = set?.supabaseId || set?.id || set?.set_id || set?.workout_set_id;
+  if (!profileId) throw new Error("profile_id is required to update set");
+  if (!exerciseSupabaseId) throw new Error("workout_exercise_id is required to update set");
+  if (!setId) throw new Error("set id is required to update set");
+
+  const setPayload = buildWorkoutSetSupabasePayload(exerciseSupabaseId, set);
+  return {
+    profile_id: profileId,
+    workout_exercise_id: exerciseSupabaseId,
+    id: setId,
+    set_id: setId,
+    workout_set_id: setId,
+    set: setPayload,
+    ...setPayload
+  };
+}
+
+export function buildWorkoutSetDeletePayload(setOrId, fallbackProfileId = null) {
+  const setId = typeof setOrId === "string"
+    ? setOrId
+    : setOrId?.supabaseId || setOrId?.id || setOrId?.set_id || setOrId?.workout_set_id;
+  const profileId = resolveWorkoutProfileId(
+    typeof setOrId === "object" && setOrId ? setOrId : {},
+    fallbackProfileId
+  );
+
+  if (!profileId) throw new Error("profile_id is required to delete set");
+  if (!setId) throw new Error("set id is required to delete set");
+
+  return {
+    profile_id: profileId,
+    id: setId,
+    set_id: setId,
+    workout_set_id: setId
+  };
+}
+
 function readDeleteResponseArray(result, keys) {
   if (!result || typeof result !== "object") return [];
   for (const key of keys) {
@@ -114,6 +234,10 @@ export function isWorkoutDeleteResponseConfirmed(result, workoutOrId) {
   if (hasDeletedWorkoutResponseIds(result) && !deletedIds.size) return false;
   if (!deletedIds.size) return true;
   return getWorkoutDeleteKeys(workoutOrId).some((key) => deletedIds.has(String(key)));
+}
+
+export function isWorkoutMutationResponseOk(result) {
+  return Boolean(result) && result.ok !== false && result.success !== false && !result.error;
 }
 
 export function createWorkoutRepository({
@@ -167,6 +291,56 @@ export function createWorkoutRepository({
         result,
         confirmed: isWorkoutDeleteResponseConfirmed(result, workoutOrId)
       };
+    },
+
+    async createExercise(workoutId, exercise, options = {}) {
+      const payload = buildWorkoutExerciseCreateApiPayload(workoutId, exercise, {
+        ...options,
+        profileId: options.profileId || profileId,
+        mapperOptions: { ...mapperOptions, ...(options.mapperOptions || {}) }
+      });
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.createExercise, payload);
+      return { payload, result };
+    },
+
+    async updateExercise(workoutId, exercise, options = {}) {
+      const payload = buildWorkoutExerciseUpdateApiPayload(workoutId, exercise, {
+        ...options,
+        profileId: options.profileId || profileId,
+        mapperOptions: { ...mapperOptions, ...(options.mapperOptions || {}) }
+      });
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.updateExercise, payload);
+      return { payload, result };
+    },
+
+    async deleteExercise(exerciseOrId, options = {}) {
+      const payload = buildWorkoutExerciseDeletePayload(exerciseOrId, options.profileId || profileId);
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.deleteExercise, payload);
+      return { payload, result, confirmed: isWorkoutMutationResponseOk(result) };
+    },
+
+    async createSet(exerciseId, set, options = {}) {
+      const payload = buildWorkoutSetCreateApiPayload(exerciseId, set, {
+        ...options,
+        profileId: options.profileId || profileId
+      });
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.createSet, payload);
+      return { payload, result };
+    },
+
+    async updateSet(exerciseId, set, options = {}) {
+      const payload = buildWorkoutSetUpdateApiPayload(exerciseId, set, {
+        ...options,
+        profileId: options.profileId || profileId
+      });
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.updateSet, payload);
+      return { payload, result };
+    },
+
+    async deleteSet(setOrId, options = {}) {
+      const payload = buildWorkoutSetDeletePayload(setOrId, options.profileId || profileId);
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.deleteSet, payload);
+      return { payload, result, confirmed: isWorkoutMutationResponseOk(result) };
     }
   };
 }

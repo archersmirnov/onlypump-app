@@ -303,6 +303,7 @@ Acceptance criteria:
 - создан `vite-shell/src/features/workouts/api/workoutRepository.js`;
 - добавлен repository factory поверх текущих workout API actions;
 - добавлены методы `loadWorkouts`, `createWorkoutTree`, `updateWorkoutTree`, `saveWorkoutPatch`, `deleteWorkout`;
+- добавлены методы `createExercise`, `updateExercise`, `deleteExercise`, `createSet`, `updateSet`, `deleteSet`;
 - добавлен `pnpm run check:workout-repository`;
 - legacy `index.html` пока не подключен к repository.
 
