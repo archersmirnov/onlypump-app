@@ -1,6 +1,5 @@
 import {
-  buildNutritionFoodUnitPreview,
-  buildNutritionScreenSummary,
+  buildNutritionScreensViewModel,
   normalizeNutritionDay
 } from "../domain/index.js";
 
@@ -137,8 +136,9 @@ export function NutritionScreensPreview({
   foods = previewFoods,
   title = "Nutrition screens"
 }) {
-  const summary = buildNutritionScreenSummary(day, { goal: previewGoal });
-  const foodPreviews = foods.map((food) => buildNutritionFoodUnitPreview(food));
+  const viewModel = buildNutritionScreensViewModel({ day, foods }, { goal: previewGoal });
+  const summary = viewModel.summary;
+  const foodPreviews = viewModel.visibleFoodPreviews;
 
   return (
     <section className="nutrition-preview" aria-labelledby="nutrition-preview-title">
@@ -151,7 +151,7 @@ export function NutritionScreensPreview({
             приемы пищи, макросы и разрешенные меры продукта.
           </p>
         </div>
-        <span className="nutrition-preview__mode">{summary.trackingModeLabel}</span>
+        <span className="nutrition-preview__mode">{viewModel.selectedModeLabel}</span>
       </div>
 
       <div className="nutrition-preview__grid">

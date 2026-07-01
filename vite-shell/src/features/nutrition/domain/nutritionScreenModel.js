@@ -3,6 +3,7 @@ import {
   NUTRITION_EMPTY_TOTALS,
   NUTRITION_MEAL_TYPES,
   buildLocalNutritionDay,
+  normalizeNutritionDay,
   normalizeNutritionTrackingMode,
   nutritionDayHasFood,
   roundNutritionCalories,
@@ -10,12 +11,14 @@ import {
 } from "./nutritionDay.js";
 import {
   NUTRITION_VISUAL_UNITS,
+  PALM_RULE_CATEGORY_IDS,
   getAllowedFoodUnits,
   getDefaultVisualUnit,
   getValidatedVisualUnitGrams,
   getVisualUnitAmountOptions,
   inferNutritionCategory,
-  isPalmRuleFood
+  isPalmRuleFood,
+  normalizeNutritionCategory
 } from "./nutritionFood.js";
 
 export const NUTRITION_SCREEN_MODE_LABELS = Object.freeze({
@@ -39,6 +42,13 @@ export const NUTRITION_MACRO_DEFINITIONS = Object.freeze([
   { key: "carbs", label: "Углеводы", unit: "г" },
   { key: "fiber", label: "Клетчатка", unit: "г" }
 ]);
+
+export const NUTRITION_LIST_FILTER_LABELS = Object.freeze({
+  all: "Все",
+  recent: "Недавние",
+  frequent: "Частые",
+  favorites: "Избранные"
+});
 
 function clampPercent(value = 0) {
   return Math.min(100, Math.max(0, Math.round(Number(value || 0))));
@@ -190,5 +200,167 @@ export function buildNutritionFoodUnitPreview(foodItem = {}, profile = {}) {
         isDefault: unit.id === defaultVisualUnit
       };
     })
+  };
+}
+
+export function normalizeNutritionScreenMode(value = "", fallback = "calories") {
+  if (value === "palm_rule" || value === "hand_rule") return "palms";
+  return normalizeNutritionTrackingMode(value, fallback);
+}
+
+export function normalizeNutritionListFilter(value = "all") {
+  const normalized = String(value || "all").trim();
+  return NUTRITION_LIST_FILTER_LABELS[normalized] ? normalized : "all";
+}
+
+export function normalizeNutritionScreenCategory(value = "all") {
+  const normalized = String(value || "all").trim();
+  if (normalized === "all") return "all";
+  const category = normalizeNutritionCategory(normalized);
+  return NUTRITION_CATEGORY_LABELS[category] ? category : "all";
+}
+
+export function buildNutritionModeTabs(selectedMode = "calories") {
+  const mode = normalizeNutritionScreenMode(selectedMode);
+  return Object.entries(NUTRITION_SCREEN_MODE_LABELS).map(([id, label]) => ({
+    id,
+    label,
+    isActive: id === mode
+  }));
+}
+
+export function buildNutritionListFilterTabs(selectedFilter = "all") {
+  const filter = normalizeNutritionListFilter(selectedFilter);
+  return Object.entries(NUTRITION_LIST_FILTER_LABELS).map(([id, label]) => ({
+    id,
+    label,
+    isActive: id === filter
+  }));
+}
+
+export function buildNutritionCategoryTabs(foodPreviews = [], selectedCategory = "all") {
+  const category = normalizeNutritionScreenCategory(selectedCategory);
+  const counts = foodPreviews.reduce((acc, food) => {
+    acc[food.category] = Number(acc[food.category] || 0) + 1;
+    return acc;
+  }, {});
+
+  return [
+    {
+      id: "all",
+      label: "Все",
+      count: foodPreviews.length,
+      isActive: category === "all"
+    },
+    ...PALM_RULE_CATEGORY_IDS.map((id) => ({
+      id,
+      label: NUTRITION_CATEGORY_LABELS[id] || id,
+      count: Number(counts[id] || 0),
+      isActive: category === id
+    }))
+  ];
+}
+
+function normalizeNutritionScreenDay(source = {}, options = {}) {
+  const fallbackGoal = options.goal || DEFAULT_NUTRITION_GOAL;
+  const rawDay = source.day || source.nutritionDay || (
+    source.nutrition_day || source.nutrition_meals || source.meals ? source : null
+  );
+
+  if (rawDay?.totals && Array.isArray(rawDay?.meals)) return rawDay;
+  if (rawDay) return normalizeNutritionDay(rawDay, options.date || source.date || "", fallbackGoal);
+
+  return buildLocalNutritionDay(options.date || source.date || "", fallbackGoal);
+}
+
+function getNutritionScreenFoods(source = {}, options = {}) {
+  const candidates = [
+    options.foods,
+    source.foods,
+    source.foodItems,
+    source.food_items
+  ];
+
+  return candidates.find((items) => Array.isArray(items)) || [];
+}
+
+function getNutritionFoodSourceTypes(foodItem = {}) {
+  const sourceTypes = new Set(Array.isArray(foodItem.sourceTypes) ? foodItem.sourceTypes : []);
+  if (Array.isArray(foodItem.source_types)) foodItem.source_types.forEach((type) => sourceTypes.add(type));
+  if (foodItem.isRecent || foodItem.recent) sourceTypes.add("recent");
+  if (foodItem.isFrequent || foodItem.frequent || Number(foodItem.use_count || foodItem.useCount || 0) > 0) {
+    sourceTypes.add("frequent");
+  }
+  if (foodItem.isFavorite || foodItem.favorite || foodItem.favorite_id || foodItem.favoriteId) {
+    sourceTypes.add("favorites");
+  }
+  return [...sourceTypes];
+}
+
+function buildNutritionFoodPreviewForScreen(foodItem = {}, profile = {}) {
+  const preview = buildNutritionFoodUnitPreview(foodItem, profile);
+  const sourceTypes = getNutritionFoodSourceTypes(foodItem);
+  return {
+    ...preview,
+    sourceTypes,
+    isRecent: sourceTypes.includes("recent"),
+    isFrequent: sourceTypes.includes("frequent"),
+    isFavorite: sourceTypes.includes("favorites")
+  };
+}
+
+function nutritionFoodMatchesListFilter(foodPreview = {}, selectedFilter = "all") {
+  if (selectedFilter === "all") return true;
+  return Array.isArray(foodPreview.sourceTypes) && foodPreview.sourceTypes.includes(selectedFilter);
+}
+
+export function filterNutritionFoodPreviews(foodPreviews = [], options = {}) {
+  const selectedMode = normalizeNutritionScreenMode(options.selectedMode || options.mode || "calories");
+  const selectedCategory = normalizeNutritionScreenCategory(options.selectedCategory || options.category || "all");
+  const selectedFilter = normalizeNutritionListFilter(options.selectedFilter || options.filter || "all");
+
+  return foodPreviews.filter((food) => {
+    if (selectedMode === "palms" && !food.isPalmRuleFood) return false;
+    if (selectedCategory !== "all" && food.category !== selectedCategory) return false;
+    if (!nutritionFoodMatchesListFilter(food, selectedFilter)) return false;
+    return true;
+  });
+}
+
+export function buildNutritionScreensViewModel(source = {}, options = {}) {
+  const goal = options.goal || source.goal || DEFAULT_NUTRITION_GOAL;
+  const day = normalizeNutritionScreenDay(source, { ...options, goal });
+  const summary = buildNutritionScreenSummary(day, { goal });
+  const selectedMode = normalizeNutritionScreenMode(
+    options.selectedMode || options.mode || source.selectedMode || source.mode || summary.trackingMode,
+    summary.trackingMode
+  );
+  const selectedCategory = normalizeNutritionScreenCategory(options.selectedCategory || source.selectedCategory || "all");
+  const selectedFilter = normalizeNutritionListFilter(options.selectedFilter || source.selectedFilter || "all");
+  const foodPreviews = getNutritionScreenFoods(source, options)
+    .map((food) => buildNutritionFoodPreviewForScreen(food, options.profile || source.profile || {}));
+  const categorySource = selectedMode === "palms"
+    ? foodPreviews.filter((food) => food.isPalmRuleFood)
+    : foodPreviews;
+
+  return {
+    day,
+    summary,
+    goal,
+    selectedMode,
+    selectedModeLabel: NUTRITION_SCREEN_MODE_LABELS[selectedMode] || NUTRITION_SCREEN_MODE_LABELS.calories,
+    selectedCategory,
+    selectedFilter,
+    modeTabs: buildNutritionModeTabs(selectedMode),
+    categoryTabs: buildNutritionCategoryTabs(categorySource, selectedCategory),
+    listFilterTabs: buildNutritionListFilterTabs(selectedFilter),
+    foodPreviews,
+    visibleFoodPreviews: filterNutritionFoodPreviews(foodPreviews, {
+      selectedMode,
+      selectedCategory,
+      selectedFilter
+    }),
+    classicFoodsCount: foodPreviews.length,
+    palmRuleFoodsCount: foodPreviews.filter((food) => food.isPalmRuleFood).length
   };
 }

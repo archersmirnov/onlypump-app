@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import {
   buildNutritionFoodUnitPreview,
   buildNutritionScreenSummary,
+  buildNutritionScreensViewModel,
+  filterNutritionFoodPreviews,
   normalizeNutritionDay
 } from "../src/features/nutrition/domain/index.js";
 
@@ -121,10 +123,47 @@ assert.equal(unknown.defaultVisualUnit, "gram");
 assert.ok(!burger.unitRows.some((row) => row.id === "palm"));
 assert.ok(!unknown.unitRows.some((row) => row.id === "palm"));
 
+const screenModel = buildNutritionScreensViewModel({
+  day,
+  foods: [
+    { key: "chicken", name: "Куриная грудка", nutrition_category: "protein", default_grams: 110, isRecent: true },
+    { key: "rice", name: "Рис", nutrition_category: "carbs", default_grams: 90, use_count: 5 },
+    { key: "salad", name: "Овощной салат", nutrition_category: "vegetables", default_grams: 120, favorite_id: "fav-1" },
+    { key: "oil", name: "Оливковое масло", nutrition_category: "fats", default_grams: 10 },
+    { key: "burger", name: "Бургер", nutrition_category: "mixed", default_grams: 220 },
+    { key: "unknown", name: "Неизвестный продукт" }
+  ]
+}, { goal });
+
+assert.equal(screenModel.selectedMode, "calories");
+assert.equal(screenModel.selectedModeLabel, "Классика");
+assert.equal(screenModel.summary.foodItemsCount, 2);
+assert.equal(screenModel.visibleFoodPreviews.length, 6);
+assert.equal(screenModel.palmRuleFoodsCount, 4);
+assert.equal(screenModel.modeTabs.find((tab) => tab.id === "calories").isActive, true);
+assert.equal(screenModel.listFilterTabs.find((tab) => tab.id === "all").isActive, true);
+assert.equal(screenModel.categoryTabs.find((tab) => tab.id === "protein").count, 1);
+
+const palmScreenModel = buildNutritionScreensViewModel({
+  day,
+  foods: screenModel.foodPreviews
+}, {
+  goal,
+  selectedMode: "palm_rule",
+  selectedCategory: "protein"
+});
+assert.equal(palmScreenModel.selectedMode, "palms");
+assert.equal(palmScreenModel.selectedModeLabel, "Правило ладони");
+assert.deepEqual(palmScreenModel.visibleFoodPreviews.map((food) => food.key), ["chicken"]);
+assert.ok(!palmScreenModel.visibleFoodPreviews.some((food) => food.defaultVisualUnit === "serving"));
+assert.deepEqual(
+  filterNutritionFoodPreviews(screenModel.foodPreviews, { selectedMode: "palms", selectedFilter: "favorites" }).map((food) => food.key),
+  ["salad"]
+);
+
 assert.match(nutritionDomainIndexSource, /nutritionScreenModel\.js/);
 assert.doesNotMatch(nutritionIndexSource, /ui\/index\.js/);
-assert.match(previewSource, /buildNutritionScreenSummary/);
-assert.match(previewSource, /buildNutritionFoodUnitPreview/);
+assert.match(previewSource, /buildNutritionScreensViewModel/);
 assert.match(routesSource, /import \{ NutritionScreensPreview \} from "\.\.\/features\/nutrition\/ui\/index\.js"/);
 assert.match(routesSource, /id: "nutrition"/);
 assert.match(routesSource, /<NutritionScreensPreview/);
