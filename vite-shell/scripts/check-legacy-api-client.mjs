@@ -53,4 +53,25 @@ assert.deepEqual(JSON.parse(calls[0].options.body), {
 assert.equal(events[0].type, "nutrition.api.request");
 assert.equal(events.at(-1).type, "nutrition.api.success");
 
+const profileEvents = [];
+const profileFetchImpl = async () => ({
+  ok: false,
+  status: 403,
+  json: async () => ({ access_denied: true, profile: { id: "profile-1" } })
+});
+const profileAdapters = context.window.ONLYPUMP_LEGACY_API.createOnlyPumpLegacyApiAdapters({
+  endpoints: {
+    profile: "https://example.test/functions/v1/onlypump-profile-api"
+  },
+  publishableKey: "anon-key",
+  getAuthToken: () => "profile-token",
+  fetchImpl: profileFetchImpl,
+  emitDomainEvent: (type, details) => profileEvents.push({ type, details })
+});
+
+const profileResult = await profileAdapters.callOnlyPumpProfileApi("init-data", "load_profile", {});
+assert.equal(profileResult.access_denied, true);
+assert.equal(profileResult.profile.id, "profile-1");
+assert.equal(profileEvents.at(-1).type, "profile.api.access_denied");
+
 console.log("legacy api bridge checks passed");

@@ -176,7 +176,7 @@ Acceptance criteria:
 
 ## Этап 4. Shared API Client
 
-Статус: first nutrition wiring.
+Статус: profile and nutrition wiring.
 
 Цель: отделить общий вызов Edge Functions от UI и feature logic.
 
@@ -193,9 +193,10 @@ Acceptance criteria:
 - добавлены compatibility wrappers со старыми именами API-вызовов;
 - добавлен `pnpm run check:api` для проверки API-слоя без сети;
 - добавлен browser bridge `onlypump-legacy-api-client.js`;
-- legacy `index.html` подключён только к `callOnlyPumpNutritionApi`;
+- legacy `index.html` подключён к `callOnlyPumpNutritionApi`;
+- legacy `index.html` подключён к `callOnlyPumpProfileApi`;
 - статус и wiring gate описаны в `API_CLIENT_MIGRATION_STATUS.md`;
-- workouts/profile пока не подключены к новому API-слою.
+- workouts пока не подключены к новому API-слою.
 
 Кандидаты на перенос:
 

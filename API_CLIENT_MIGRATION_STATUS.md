@@ -7,11 +7,11 @@ legacy `index.html`.
 
 ## Статус
 
-Статус: first nutrition wiring.
+Статус: profile and nutrition wiring.
 
 Новый API-слой существует и проверяется отдельно. Legacy `index.html`
-подключен только к nutrition API через browser bridge. Workouts и profile всё
-ещё используют старые функции внутри `index.html`.
+подключен к profile и nutrition API через browser bridge. Workouts всё ещё
+использует старую функцию внутри `index.html`.
 
 ## Что уже готово
 
@@ -30,7 +30,6 @@ legacy `index.html`.
 ## Что намеренно не сделано
 
 - Workouts API не подключён к новому API-слою.
-- Profile API не подключён к новому API-слою.
 - Payload shape не менялся.
 - Action names не менялись.
 - Supabase URLs и Edge Functions не менялись.
