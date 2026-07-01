@@ -1,16 +1,25 @@
 import assert from "node:assert/strict";
 import {
+  createWorkoutDeleteIdentitySet,
   createWorkoutSyncController,
   createWorkoutPendingQueue,
+  filterPendingDeletedWorkouts,
   getWorkoutFailedState,
+  getWorkoutIdentityKeys,
   getWorkoutPatchItemId,
   getWorkoutQueuedState,
   getWorkoutSavedState,
   getWorkoutSendingState,
+  hasProtectedWorkoutLocalState,
+  isWorkoutDeletePending,
+  mergeRemoteWorkoutsWithProtectedLocalState,
   mergeWorkoutPatch,
   mergeWorkoutPatchById,
   mergeWorkoutPatchCreatesByClientId,
   requireWorkoutSyncRepository,
+  shouldPreserveCachedWorkoutsOnEmptyRemote,
+  shouldPreserveCurrentWorkoutsOnEmptyRemote,
+  shouldUseWorkoutCacheImmediately,
   uniqueWorkoutSyncIds,
   workoutPatchHasChanges,
   WORKOUT_PATCH_COLLECTION_KEYS
@@ -205,5 +214,52 @@ flushAllSync.queuePatch("workout-7", { workout_updates: [{ id: "workout-7" }] })
 const flushAllResults = await flushAllSync.flushAll();
 assert.equal(flushAllResults.length, 2);
 assert.deepEqual(flushAllResults.map((item) => item.ok), [true, true]);
+
+assert.deepEqual(
+  getWorkoutIdentityKeys({ id: "local-1", supabaseId: "server-1" }),
+  ["local:local-1", "supabase:server-1"]
+);
+
+const deletedIdentities = createWorkoutDeleteIdentitySet([{ id: "local-1", supabaseId: "server-1" }]);
+assert.equal(isWorkoutDeletePending({ supabaseId: "server-1" }, deletedIdentities), true);
+assert.deepEqual(
+  filterPendingDeletedWorkouts([{ id: "keep" }, { supabaseId: "server-1" }], deletedIdentities),
+  [{ id: "keep" }]
+);
+
+assert.equal(hasProtectedWorkoutLocalState({ isDirty: true }), true);
+assert.equal(hasProtectedWorkoutLocalState({ id: "plain" }), false);
+assert.equal(hasProtectedWorkoutLocalState({ id: "plain" }, { workout_updates: [{ id: "server-2" }] }), true);
+
+const mergedRemote = mergeRemoteWorkoutsWithProtectedLocalState(
+  [{ id: "remote-local", supabaseId: "server-2", title: "Remote" }],
+  [
+    { id: "local-dirty", supabaseId: "server-2", title: "Local dirty", isDirty: true },
+    { id: "local-pending-create", title: "Pending create", pending: true },
+    { id: "local-clean", supabaseId: "server-3", title: "Clean local" }
+  ],
+  { pendingPatches: { "local-dirty": { workout_updates: [{ id: "server-2" }] } } }
+);
+assert.equal(mergedRemote.length, 2);
+assert.equal(mergedRemote[0].id, "local-pending-create");
+assert.equal(mergedRemote[1].title, "Local dirty");
+assert.deepEqual(mergedRemote[1].pendingPatch, { workout_updates: [{ id: "server-2" }] });
+
+assert.equal(shouldUseWorkoutCacheImmediately({ cached: [{ id: "cached" }], canLoadRemote: false }), true);
+assert.equal(shouldUseWorkoutCacheImmediately({ cached: [{ id: "cached" }], canLoadRemote: true }), false);
+assert.equal(
+  shouldUseWorkoutCacheImmediately({ cached: [{ id: "cached" }], canLoadRemote: false, useCache: false }),
+  false
+);
+assert.equal(shouldPreserveCachedWorkoutsOnEmptyRemote({ loaded: [], cached: [{ id: "cached" }] }), true);
+assert.equal(
+  shouldPreserveCachedWorkoutsOnEmptyRemote({ loaded: [{ id: "remote" }], cached: [{ id: "cached" }] }),
+  false
+);
+assert.equal(shouldPreserveCurrentWorkoutsOnEmptyRemote({ mergedRemote: [], current: [{ id: "current" }] }), true);
+assert.equal(
+  shouldPreserveCurrentWorkoutsOnEmptyRemote({ mergedRemote: [{ id: "remote" }], current: [{ id: "current" }] }),
+  false
+);
 
 console.log("workout sync checks passed");
