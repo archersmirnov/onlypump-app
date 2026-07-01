@@ -251,6 +251,7 @@ Acceptance criteria:
 - вынесен первый чистый mapper для totals patch payload;
 - вынесены чистые mapper/payload helpers для workout sets;
 - вынесены чистые mapper/payload helpers для workout exercises;
+- собраны tree-level mapper helpers для workout create/patch/update payloads;
 - добавлен `pnpm run check:workouts`;
 - добавлен `pnpm run check:workout-mapper`;
 - legacy `index.html` пока не подключен к этим helpers.

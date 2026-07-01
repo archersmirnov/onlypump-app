@@ -3,15 +3,22 @@ import {
   buildWorkoutExerciseCreatePayload,
   buildWorkoutExercisePatchPayload,
   buildWorkoutExerciseSupabasePayload,
+  buildWorkoutPatchPayload,
   buildWorkoutSetCreatePayload,
   buildWorkoutSetPatchPayload,
   buildWorkoutSetSupabasePayload,
   buildWorkoutTotalsPatchPayload,
+  buildWorkoutSupabasePayload,
+  buildWorkoutTreeCreatePayload,
+  buildWorkoutTreePatch,
+  buildWorkoutTreeUpdatePayload,
   formatWorkoutDateKey,
   getWorkoutDurationSeconds,
   getWorkoutExerciseMeasurementSettings,
   getWorkoutEstimatedCalories,
   getWorkoutPatchTotals,
+  isPendingRemoteCreate,
+  isProgramWorkout,
   isProgramWorkoutExercise,
   mapSupabaseWorkoutSet,
   normalizeWorkoutDateKey,
@@ -307,6 +314,120 @@ assert.deepEqual(
     }]
   }
 );
+
+const workoutFixture = {
+  id: "workout-local-1",
+  supabaseId: "workout-server-1",
+  clientWorkoutId: "client-workout-1",
+  date: "2026-06-30T18:00:00+00:00",
+  title: "Pull",
+  status: "in_progress",
+  workoutType: "strength",
+  notes: "workout note",
+  durationMinutes: 50,
+  estimatedCaloriesBurned: 350,
+  startedAt: "2026-06-30T18:00:00+00:00",
+  autoStoppedAt: null,
+  repeatGroupId: "repeat-1",
+  sourceWorkoutId: "source-workout-1",
+  userProgramId: "program-1",
+  userProgramClientId: "program-client-1",
+  programTemplateWorkoutId: "template-workout-1",
+  programTemplateWorkoutKey: "template-workout-key-1",
+  programWeekNumber: 2,
+  programDayIndex: 1,
+  programName: "Program",
+  programPlanMode: "calendar",
+  programDifficulty: "medium",
+  exercises: [exerciseFixture]
+};
+const workoutPayloadOptions = {
+  ...exerciseMeasurementOptions,
+  profileId: "profile-1",
+  fallbackDateKey: "2026-07-01",
+  getWorkoutTotals: () => ({ totalSets: "7", totalVolume: "12345" })
+};
+
+assert.equal(isProgramWorkout(workoutFixture), true);
+assert.equal(isProgramWorkout({ title: "Free workout" }), false);
+assert.equal(isPendingRemoteCreate({ pending: true }), true);
+assert.equal(isPendingRemoteCreate({ isSaving: true }), true);
+assert.equal(isPendingRemoteCreate({ isSyncing: true }), true);
+assert.equal(isPendingRemoteCreate({}), false);
+
+const workoutSupabasePayload = buildWorkoutSupabasePayload(workoutFixture, workoutPayloadOptions);
+assert.equal(workoutSupabasePayload.profile_id, "profile-1");
+assert.equal(workoutSupabasePayload.client_workout_id, "client-workout-1");
+assert.equal(workoutSupabasePayload.workout_date, "2026-06-30");
+assert.equal(workoutSupabasePayload.status, "active");
+assert.equal(workoutSupabasePayload.total_sets, 7);
+assert.equal(workoutSupabasePayload.total_volume, 12345);
+assert.equal(workoutSupabasePayload.duration_seconds, 3000);
+assert.equal(workoutSupabasePayload.is_program_generated, true);
+assert.equal(workoutSupabasePayload.program_name, "Program");
+
+const workoutPatchPayload = buildWorkoutPatchPayload(workoutFixture, workoutPayloadOptions);
+assert.equal(workoutPatchPayload.id, "workout-server-1");
+assert.equal(workoutPatchPayload.workout_date, "2026-06-30");
+assert.equal(workoutPatchPayload.status, "active");
+assert.equal("profile_id" in workoutPatchPayload, false);
+assert.equal("client_workout_id" in workoutPatchPayload, false);
+assert.equal(buildWorkoutPatchPayload({ id: "local" }, workoutPayloadOptions), null);
+
+const createTreePayload = buildWorkoutTreeCreatePayload(
+  {
+    ...workoutFixture,
+    supabaseId: null,
+    exercises: [{
+      ...exerciseFixture,
+      supabaseId: null,
+      supersetGroupId: null,
+      sets: [{ id: "set-local-1", order: 1, weight: 80, reps: 10, status: "completed" }]
+    }]
+  },
+  workoutPayloadOptions
+);
+assert.equal(createTreePayload.workout.title, "Pull");
+assert.equal(createTreePayload.workout.duration_seconds, 3000);
+assert.equal("profile_id" in createTreePayload.workout, false);
+assert.equal(createTreePayload.exercises.length, 1);
+assert.equal(createTreePayload.exercises[0].client_id, "exercise-local-1");
+assert.equal(createTreePayload.exercises[0].sets.length, 1);
+assert.equal(createTreePayload.exercises[0].sets[0].client_id, "set-local-1");
+
+const patchTreePayload = buildWorkoutTreePatch(
+  {
+    ...workoutFixture,
+    exercises: [
+      {
+        ...exerciseFixture,
+        supersetGroupId: null,
+        sets: [
+          { id: "set-saved-local", supabaseId: "set-server-1", order: 1, weight: 90, reps: 8 },
+          { id: "set-create-local", pending: true, order: 2, weight: 80, reps: 10 },
+          { id: "set-upsert-local", order: 3, weight: 70, reps: 12 }
+        ]
+      },
+      { id: "exercise-create-local", pending: true, name: "New pending", sets: [] },
+      { id: "exercise-upsert-local", name: "New upsert", sets: [] }
+    ]
+  },
+  workoutPayloadOptions
+);
+assert.equal(patchTreePayload.workout_updates.length, 1);
+assert.equal(patchTreePayload.exercise_updates.length, 1);
+assert.equal(patchTreePayload.set_updates.length, 1);
+assert.equal(patchTreePayload.exercise_creates.length, 1);
+assert.equal(patchTreePayload.exercise_upserts.length, 1);
+assert.equal(patchTreePayload.set_creates.length, 1);
+assert.equal(patchTreePayload.set_upserts.length, 1);
+assert.equal(buildWorkoutTreePatch({ id: "local-only" }, workoutPayloadOptions), null);
+
+const updateTreePayload = buildWorkoutTreeUpdatePayload(workoutFixture, workoutPayloadOptions);
+assert.equal(updateTreePayload.workout.id, "workout-server-1");
+assert.equal(updateTreePayload.exercises[0].client_id, "exercise-local-1");
+assert.equal(updateTreePayload.exercises[0].id, "exercise-server-1");
+assert.equal(updateTreePayload.exercises[0].sets.length, 1);
 
 assert.deepEqual(
   buildWorkoutSetSupabasePayload("exercise-1", {

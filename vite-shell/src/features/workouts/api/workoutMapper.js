@@ -1,4 +1,10 @@
-import { getExerciseSupersetGroupId, getSetStatus, normalizeWorkoutType } from "../domain/index.js";
+import {
+  getExerciseSupersetGroupId,
+  getSetStatus,
+  normalizeWorkoutStatus,
+  normalizeWorkoutSupersetMetadata,
+  normalizeWorkoutType
+} from "../domain/index.js";
 
 export const DEFAULT_EXERCISE_MEASUREMENT_SETTINGS = Object.freeze({
   sourceExerciseId: null,
@@ -113,6 +119,63 @@ export function getWorkoutPatchTotals(workout = {}, getWorkoutTotals) {
   return {
     totalSets: safeWorkoutNumber(workout.totalSets ?? workout.total_sets, 0),
     totalVolume: safeWorkoutNumber(workout.totalVolume ?? workout.total_volume ?? workout.totalVolumeKg, 0)
+  };
+}
+
+export function isProgramWorkout(workout = {}) {
+  return Boolean(
+    workout?.isProgramGenerated
+    || workout?.userProgramId
+    || workout?.userProgramClientId
+    || workout?.programName
+  );
+}
+
+export function buildWorkoutSupabasePayload(workout = {}, options = {}) {
+  const totals = getWorkoutPatchTotals(workout, options.getWorkoutTotals);
+  const workoutDateKey = normalizeWorkoutDateKey(
+    workout?.date || workout?.workout_date,
+    options.fallbackDateKey
+  );
+  const programWorkout = isProgramWorkout(workout);
+
+  return {
+    profile_id: options.profileId ?? workout.profileId ?? workout.profile_id,
+    client_workout_id: workout?.clientWorkoutId || workout?.client_workout_id || workout?.id,
+    workout_date: workoutDateKey,
+    title: workout?.title || "Новая тренировка",
+    status: normalizeWorkoutStatus(workout?.status),
+    workout_type: normalizeWorkoutType(workout?.workoutType ?? workout?.workout_type),
+    notes: workout?.notes || "",
+    total_sets: totals.totalSets,
+    total_volume: totals.totalVolume,
+    duration_seconds: getWorkoutDurationSeconds(workout),
+    estimated_calories_burned: getWorkoutEstimatedCalories(workout),
+    started_at: workout?.startedAt || workout?.started_at || null,
+    auto_stopped_at: workout?.autoStoppedAt || workout?.auto_stopped_at || null,
+    repeat_group_id: workout?.repeatGroupId || workout?.repeat_group_id || undefined,
+    source_workout_id: workout?.sourceWorkoutId || workout?.source_workout_id || undefined,
+    ...(programWorkout ? {
+      user_program_id: workout?.userProgramId || workout?.user_program_id || undefined,
+      user_program_client_id: workout?.userProgramClientId || workout?.user_program_client_id || undefined,
+      program_template_workout_id: workout?.programTemplateWorkoutId || workout?.program_template_workout_id || undefined,
+      program_template_workout_key: workout?.programTemplateWorkoutKey || workout?.program_template_workout_key || undefined,
+      program_week_number: workout?.programWeekNumber ?? workout?.program_week_number,
+      program_day_index: workout?.programDayIndex ?? workout?.program_day_index,
+      program_name: workout?.programName || workout?.program_name || undefined,
+      program_plan_mode: workout?.programPlanMode || workout?.program_plan_mode || undefined,
+      program_difficulty: workout?.programDifficulty || workout?.program_difficulty || undefined,
+      is_program_generated: true
+    } : {})
+  };
+}
+
+export function buildWorkoutPatchPayload(workout = {}, options = {}) {
+  if (!workout?.supabaseId) return null;
+  const { profile_id, client_workout_id, ...workoutPayload } = buildWorkoutSupabasePayload(workout, options);
+  return {
+    id: workout.supabaseId,
+    ...workoutPayload
   };
 }
 
@@ -292,5 +355,87 @@ export function mapSupabaseWorkoutSet(row = {}, index = 0) {
     restSeconds: safeWorkoutNumber(row.rest_seconds ?? row.restSeconds, 120),
     restAfterSeconds: safeWorkoutNumber(row.rest_after_seconds ?? row.restAfterSeconds, 0),
     isCompleted: completed
+  };
+}
+
+export function isPendingRemoteCreate(item = {}) {
+  return Boolean(item?.pending || item?.isSaving || item?.isSyncing);
+}
+
+export function buildWorkoutTreePatch(workout = {}, options = {}) {
+  if (!workout?.supabaseId) return null;
+  const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
+  const exercises = normalizedWorkout.exercises || [];
+  const savedExercises = exercises.filter((exercise) => exercise.supabaseId);
+  const missingExercises = exercises.filter((exercise) => !exercise.supabaseId);
+
+  return {
+    workout_updates: [buildWorkoutPatchPayload(normalizedWorkout, options)].filter(Boolean),
+    exercise_updates: savedExercises.map((exercise) => buildWorkoutExercisePatchPayload(exercise, options)).filter(Boolean),
+    set_updates: savedExercises.flatMap((exercise) => (
+      exercise.sets || []
+    ).filter((set) => set.supabaseId).map(buildWorkoutSetPatchPayload).filter(Boolean)),
+    exercise_creates: missingExercises
+      .filter(isPendingRemoteCreate)
+      .map((exercise) => buildWorkoutExerciseCreatePayload(normalizedWorkout.supabaseId, exercise, options))
+      .filter(Boolean),
+    exercise_upserts: missingExercises
+      .filter((exercise) => !isPendingRemoteCreate(exercise))
+      .map((exercise) => buildWorkoutExerciseCreatePayload(normalizedWorkout.supabaseId, exercise, options))
+      .filter(Boolean),
+    set_creates: savedExercises.flatMap((exercise) => (
+      exercise.sets || []
+    )
+      .filter((set) => !set.supabaseId && isPendingRemoteCreate(set))
+      .map((set) => buildWorkoutSetCreatePayload(exercise.supabaseId, exercise.id, set))
+      .filter(Boolean)),
+    set_upserts: savedExercises.flatMap((exercise) => (
+      exercise.sets || []
+    )
+      .filter((set) => !set.supabaseId && !isPendingRemoteCreate(set))
+      .map((set) => buildWorkoutSetCreatePayload(exercise.supabaseId, exercise.id, set))
+      .filter(Boolean))
+  };
+}
+
+export function buildWorkoutTreeCreatePayload(workout = {}, options = {}) {
+  const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
+  const { profile_id, ...workoutPayload } = buildWorkoutSupabasePayload(normalizedWorkout, options);
+
+  return {
+    workout: {
+      ...workoutPayload,
+      duration_seconds: getWorkoutDurationSeconds(normalizedWorkout)
+    },
+    exercises: (normalizedWorkout.exercises || []).map((exercise) => {
+      const { workout_id, ...exercisePayload } = buildWorkoutExerciseSupabasePayload(null, exercise, options);
+      return {
+        client_id: exercise.id,
+        ...exercisePayload,
+        sets: (exercise.sets || []).map((set) => {
+          const { workout_exercise_id, ...setPayload } = buildWorkoutSetSupabasePayload(null, set);
+          return {
+            client_id: set.id,
+            ...setPayload
+          };
+        })
+      };
+    })
+  };
+}
+
+export function buildWorkoutTreeUpdatePayload(workout = {}, options = {}) {
+  const normalizedWorkout = normalizeWorkoutSupersetMetadata(workout);
+
+  return {
+    workout: buildWorkoutPatchPayload(normalizedWorkout, options),
+    exercises: (normalizedWorkout.exercises || []).map((exercise) => ({
+      client_id: exercise.id,
+      ...buildWorkoutExercisePatchPayload(exercise, options),
+      sets: (exercise.sets || []).map((set) => ({
+        client_id: set.id,
+        ...buildWorkoutSetPatchPayload(set)
+      }))
+    }))
   };
 }
