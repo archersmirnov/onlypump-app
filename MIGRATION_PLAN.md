@@ -493,6 +493,10 @@ Acceptance criteria:
 - вынесены каталог Home widgets, размеры, default order, nutrition exclusivity rules и helpers cache/layout;
 - создан `vite-shell/src/features/home/ui/HomeWidgetsPreview.jsx` для безопасного preview в Vite shell;
 - добавлен `pnpm run check:home-widgets`;
+- создан `vite-shell/src/features/nutrition/domain/nutritionScreenModel.js`;
+- вынесена view model для экранов питания: итоги дня, macro rows, meal rows, palm rows и food unit preview;
+- создан `vite-shell/src/features/nutrition/ui/NutritionScreensPreview.jsx` для безопасного preview в Vite shell;
+- добавлен `pnpm run check:nutrition-screens`;
 - legacy `index.html` пока не подключен к shared UI extraction.
 
 ## Branch and Commit Rules

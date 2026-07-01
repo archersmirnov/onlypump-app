@@ -1,5 +1,6 @@
 import { EDGE_FUNCTION_ENDPOINTS } from "./shared/api/index.js";
 import { HomeWidgetsPreview } from "./features/home/index.js";
+import { NutritionScreensPreview } from "./features/nutrition/ui/index.js";
 import { ShellStatusPanel } from "./shared/ui/index.js";
 
 const migrationChecks = [
@@ -22,6 +23,7 @@ export default function App() {
           checks={migrationChecks}
         />
         <HomeWidgetsPreview />
+        <NutritionScreensPreview />
       </div>
     </main>
   );

@@ -17,11 +17,12 @@
     "check:nutrition-day": "node scripts/check-nutrition-day.mjs",
     "check:nutrition-repository": "node scripts/check-nutrition-repository.mjs",
     "check:nutrition-food": "node scripts/check-nutrition-food.mjs",
+    "check:nutrition-screens": "node scripts/check-nutrition-screens.mjs",
     "check:profile-repository": "node scripts/check-profile-repository.mjs",
     "check:analytics-domain": "node scripts/check-analytics-domain.mjs",
     "check:shared-ui": "node scripts/check-shared-ui.mjs",
     "check:home-widgets": "node scripts/check-home-widgets.mjs",
-    "check": "pnpm run check:api && pnpm run check:legacy-api && pnpm run check:workouts && pnpm run check:workout-mapper && pnpm run check:workout-repository && pnpm run check:workout-sync && pnpm run check:nutrition-cache && pnpm run check:nutrition-day && pnpm run check:nutrition-repository && pnpm run check:nutrition-food && pnpm run check:profile-repository && pnpm run check:analytics-domain && pnpm run check:shared-ui && pnpm run check:home-widgets && pnpm run build"
+    "check": "pnpm run check:api && pnpm run check:legacy-api && pnpm run check:workouts && pnpm run check:workout-mapper && pnpm run check:workout-repository && pnpm run check:workout-sync && pnpm run check:nutrition-cache && pnpm run check:nutrition-day && pnpm run check:nutrition-repository && pnpm run check:nutrition-food && pnpm run check:nutrition-screens && pnpm run check:profile-repository && pnpm run check:analytics-domain && pnpm run check:shared-ui && pnpm run check:home-widgets && pnpm run build"
   },
   "dependencies": {
     "react": "^19.2.7",
