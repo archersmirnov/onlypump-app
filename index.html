@@ -5307,6 +5307,7 @@ const getOnlypumpBuiltInExerciseVideoUrl = (name = "", items, index) => {
 const getOnlypumpBuiltInExerciseTechniqueVideoUrl = (name = "") => getOnlypumpBuiltInExerciseVideoUrl(name, onlypumpBuiltInExerciseTechniqueVideoUrls, onlypumpBuiltInExerciseTechniqueVideoUrlsByKey);
 const getOnlypumpBuiltInExerciseMuscleWorkVideoUrl = (name = "") => getOnlypumpBuiltInExerciseVideoUrl(name, onlypumpBuiltInExerciseMuscleWorkVideoUrls, onlypumpBuiltInExerciseMuscleWorkVideoUrlsByKey);
 const ONLYPUMP_EXERCISE_IMAGE_BASE_URL = "assets/exercises/";
+const ONLYPUMP_EXERCISE_ANIMATED_MEDIA_BASE_URL = "https://pub-72336e635a6d4124950bcb6ebe96035b.r2.dev/";
 const ONLYPUMP_EXERCISE_MUSCLE_IMAGE_BASE_URL = "assets/muscles/";
 const onlypumpMuscleWorkImageFilesBySex = Object.freeze({
   male: Object.freeze({
@@ -5463,54 +5464,54 @@ const onlypumpBuiltInExerciseMuscleWorkImageFileAliases = Object.freeze({
   "GHR ГИПЕРЭЕКСТЕНЗИЯ": "GHR ГИПЕРЭКСТЕНЗИЯ",
 });
 const onlypumpBuiltInExerciseMuscleWorkImageFilesByKey = Object.freeze(Object.fromEntries(Object.entries(onlypumpBuiltInExerciseMuscleWorkImageFiles).map(([name, file]) => [normalizeExerciseDescriptionKey(name), file])));
-const onlypumpAvailableExerciseGifFiles = Object.freeze([
-  "bolgarskiy-prised-yag.gif",
-  "frantsuzskiy-zhim-v-krossovere-stoya.gif",
-  "frantsuzskiy-zhim.gif",
-  "frontalnaya-tyaga-po-odnoy.gif",
-  "ghr-giperekstenziya.gif",
-  "goblet-prised.gif",
-  "gorizontalnaya-shirokaya-tyaga.gif",
-  "gorizontalnaya-tyaga.gif",
-  "kik-bek-stoya.gif",
-  "kik-bek.gif",
-  "obratnyy-zhim-nogoy-v-trenazhere.gif",
-  "otvedeniya-beder-sidya.gif",
-  "otvedeniya-bedra-s-nizhnego-bloka.gif",
-  "otvedeniya-v-bloke.gif",
-  "podem-ganteley-na-bitseps.gif",
-  "podem-na-noski-s-gantelyu.gif",
-  "podem-na-noski-sidya.gif",
-  "podem-na-noski-stoya.gif",
-  "podem-nog.gif",
-  "prised-mayatnik.gif",
-  "prised-sidya-v-gakke.gif",
-  "prised-so-shtangoy-na-grudi.gif",
-  "prised-v-gakke.gif",
-  "privedeniya-v-krossovere.gif",
-  "pulover-s-verkhnego-bloka.gif",
-  "razgibaniya-goleni.gif",
-  "razgibaniya-predplechiy-kosichka.gif",
-  "rumynskaya-tyaga.gif",
-  "sgibaniya-goleni-sidya.gif",
-  "sgibaniya-s-gantelyami-lezha-s-uporom.gif",
-  "sgibaniya-s-nizhnego-bloka.gif",
-  "skruchivaniya-lezha.gif",
-  "stanovaya-tyaga.gif",
-  "t-tyaga.gif",
-  "vertikalnaya-tyaga-po-odnoy.gif",
-  "yagodichnyy-most-na-odnoy.png.gif",
-  "yagodichnyy-most-v-smite.gif",
-  "yagodichnyy-most-v-trenazhere.gif",
-  "yagodichnyy-most.gif",
-  "zhim-brusev.gif",
-  "zhim-ganteley-sidya.gif",
-  "zhim-shtangi-lezha-na-naklonnoy.gif",
-  "zhim-sidya-v-smite.gif",
-  "zhim-v-bloke.gif",
-  "zhim-v-trenazhere-sidya.gif",
+const onlypumpAvailableExerciseAnimatedMediaFiles = Object.freeze([
+  "bolgarskiy-prised-yag.webp",
+  "frantsuzskiy-zhim-v-krossovere-stoya.webp",
+  "frantsuzskiy-zhim.webp",
+  "frontalnaya-tyaga-po-odnoy.webp",
+  "ghr-giperekstenziya.webp",
+  "goblet-prised.webp",
+  "gorizontalnaya-shirokaya-tyaga.webp",
+  "gorizontalnaya-tyaga.webp",
+  "kik-bek-stoya.webp",
+  "kik-bek.webp",
+  "obratnyy-zhim-nogoy-v-trenazhere.webp",
+  "otvedeniya-beder-sidya.webp",
+  "otvedeniya-bedra-s-nizhnego-bloka.webp",
+  "otvedeniya-v-bloke.webp",
+  "podem-ganteley-na-bitseps.webp",
+  "podem-na-noski-s-gantelyu.webp",
+  "podem-na-noski-sidya.webp",
+  "podem-na-noski-stoya.webp",
+  "podem-nog.webp",
+  "prised-mayatnik.webp",
+  "prised-sidya-v-gakke.webp",
+  "prised-so-shtangoy-na-grudi.webp",
+  "prised-v-gakke.webp",
+  "privedeniya-v-krossovere.webp",
+  "pulover-s-verkhnego-bloka.webp",
+  "razgibaniya-goleni.webp",
+  "razgibaniya-predplechiy-kosichka.webp",
+  "rumynskaya-tyaga.webp",
+  "sgibaniya-goleni-sidya.webp",
+  "sgibaniya-s-gantelyami-lezha-s-uporom.webp",
+  "sgibaniya-s-nizhnego-bloka.webp",
+  "skruchivaniya-lezha.webp",
+  "stanovaya-tyaga.webp",
+  "t-tyaga.webp",
+  "vertikalnaya-tyaga-po-odnoy.webp",
+  "yagodichnyy-most-na-odnoy.webp",
+  "yagodichnyy-most-v-smite.webp",
+  "yagodichnyy-most-v-trenazhere.webp",
+  "yagodichnyy-most.webp",
+  "zhim-brusev.webp",
+  "zhim-ganteley-sidya.webp",
+  "zhim-shtangi-lezha-na-naklonnoy.webp",
+  "zhim-sidya-v-smite.webp",
+  "zhim-v-bloke.webp",
+  "zhim-v-trenazhere-sidya.webp",
 ]);
-const onlypumpAvailableExerciseGifFileByKey = Object.freeze(Object.fromEntries(onlypumpAvailableExerciseGifFiles.map(file => [String(file || "").toLowerCase(), file])));
+const onlypumpAvailableExerciseAnimatedMediaFileByKey = Object.freeze(Object.fromEntries(onlypumpAvailableExerciseAnimatedMediaFiles.map(file => [String(file || "").toLowerCase(), file])));
 const getOnlypumpBuiltInExerciseMuscleWorkImageFile = (name = "") => {
   const rawName = String(name || "").trim();
   const aliasName = onlypumpBuiltInExerciseMuscleWorkImageFileAliases[rawName] || rawName;
@@ -5559,13 +5560,13 @@ const getOnlypumpExerciseFileNameFromUrl = (url = "") => {
     return value.split("/").pop() || "";
   }
 };
-const getOnlypumpExerciseGifFileForImageUrl = (url = "") => {
+const getOnlypumpExerciseAnimatedMediaFileForImageUrl = (url = "") => {
   if (!isOnlypumpExercisePhotoUrl(url)) return "";
   const fileName = getOnlypumpExerciseFileNameFromUrl(url);
   if (!fileName) return "";
-  const gifName = fileName.replace(/\.[^.]+$/, ".gif");
-  const appendedGifName = `${fileName}.gif`;
-  return onlypumpAvailableExerciseGifFileByKey[gifName.toLowerCase()] || onlypumpAvailableExerciseGifFileByKey[appendedGifName.toLowerCase()] || "";
+  const mediaName = fileName.replace(/\.[^.]+$/, ".webp");
+  const appendedMediaName = `${fileName}.webp`;
+  return onlypumpAvailableExerciseAnimatedMediaFileByKey[mediaName.toLowerCase()] || onlypumpAvailableExerciseAnimatedMediaFileByKey[appendedMediaName.toLowerCase()] || "";
 };
 const getExerciseImageUrlFromSource = (source = {}, systemSource = {}) => {
   const legacyMuscleImageUrl = source.muscleWorkImageUrl || source.muscle_work_image_url || "";
@@ -5573,11 +5574,11 @@ const getExerciseImageUrlFromSource = (source = {}, systemSource = {}) => {
 };
 const getExerciseMedia = (source = {}, systemSource = {}) => {
   const pngSrc = getExerciseImageUrlFromSource(source, systemSource);
-  const gifSrc = source.exerciseGifUrl || source.exercise_gif_url || "";
-  const gifFileName = gifSrc ? "" : getOnlypumpExerciseGifFileForImageUrl(pngSrc);
-  const resolvedGifSrc = gifSrc || (gifFileName ? ONLYPUMP_EXERCISE_IMAGE_BASE_URL + gifFileName : "");
-  if (resolvedGifSrc) {
-    return { src: resolvedGifSrc, type: "gif", aspectRatio: "3/4", fallbackSrc: pngSrc };
+  const animatedSrc = source.exerciseGifUrl || source.exercise_gif_url || "";
+  const animatedFileName = animatedSrc ? "" : getOnlypumpExerciseAnimatedMediaFileForImageUrl(pngSrc);
+  const resolvedAnimatedSrc = animatedSrc || (animatedFileName ? ONLYPUMP_EXERCISE_ANIMATED_MEDIA_BASE_URL + animatedFileName : "");
+  if (resolvedAnimatedSrc) {
+    return { src: resolvedAnimatedSrc, type: "gif", aspectRatio: "3/4", fallbackSrc: pngSrc };
   }
   return { src: pngSrc, type: "png", aspectRatio: "1/1", fallbackSrc: "" };
 };
