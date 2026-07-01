@@ -13,6 +13,7 @@ pnpm run dev
 pnpm run build
 pnpm run check:api
 pnpm run check:legacy-api
+pnpm run check:workouts
 ```
 
 If the local shell cannot find `node`, run the same commands with the bundled
@@ -48,3 +49,6 @@ and the current `load_profile` access-denied exception.
 
 Run `pnpm run check:legacy-api` to verify the browser bridge used by legacy
 `index.html`.
+
+Run `pnpm run check:workouts` to verify the first extracted pure workout
+normalization helpers. These helpers are not wired into legacy `index.html` yet.

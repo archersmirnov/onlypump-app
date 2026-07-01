@@ -221,6 +221,8 @@ Acceptance criteria:
 
 ## Этап 5. Workouts Mapper
 
+Статус: started, not wired.
+
 Цель: отделить преобразования данных тренировок от UI.
 
 Предполагаемые файлы:
@@ -239,6 +241,13 @@ Acceptance criteria:
 - `normalizeWorkoutStatus`;
 - `normalizeWorkoutType`;
 - `normalizeWorkoutSupersetMetadata`.
+
+Начато:
+
+- создан `vite-shell/src/features/workouts/domain/workoutNormalize.js`;
+- вынесены чистые helpers для workout status/type/set completion;
+- добавлен `pnpm run check:workouts`;
+- legacy `index.html` пока не подключен к этим helpers.
 
 Запрещено:
 
