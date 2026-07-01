@@ -484,6 +484,13 @@ Acceptance criteria:
 - в нем самый высокий риск persistence regression;
 - сначала нужен безопасный API/repository/mapper/sync слой.
 
+Начато:
+
+- создан `vite-shell/src/shared/ui/ShellStatusPanel.jsx`;
+- текущая Vite-shell status panel вынесена из `App.jsx` в shared UI;
+- добавлен `pnpm run check:shared-ui`;
+- legacy `index.html` пока не подключен к shared UI extraction.
+
 ## Branch and Commit Rules
 
 Перед каждым шагом:
