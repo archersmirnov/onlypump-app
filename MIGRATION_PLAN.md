@@ -357,6 +357,8 @@ Acceptance criteria:
 - создан `vite-shell/src/features/workouts/sync/workoutCache.js`;
 - вынесены helpers для ключей, чтения, записи и очистки workout cache через инъекцию storage;
 - добавлены структурированные sync events и нормализация ошибок для понятных logs;
+- создан `vite-shell/src/features/workouts/sync/workoutLoadSync.js`;
+- вынесена server-first загрузка тренировок с cache fallback, pending delete filter и protected local merge;
 - добавлен `pnpm run check:workout-sync`;
 - legacy `index.html` пока не подключен к sync helpers.
 

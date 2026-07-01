@@ -7,9 +7,12 @@ import {
   filterPendingDeletedWorkouts,
   getPrimaryWorkoutCacheKey,
   getWorkoutCacheKeys,
+  loadWorkoutsWithSyncPolicy,
   readCachedWorkoutsForProfile,
   readWorkoutCacheEntry,
+  requireWorkoutLoadRepository,
   removeCachedWorkoutsForProfile,
+  resolveWorkoutLoadResponseProfile,
   writeCachedWorkoutsForProfile,
   getWorkoutFailedState,
   getWorkoutIdentityKeys,
@@ -148,6 +151,7 @@ queue.clearAll();
 assert.deepEqual(queue.ids(), []);
 
 assert.throws(() => requireWorkoutSyncRepository(null), /requires repository\.saveWorkoutPatch/);
+assert.throws(() => requireWorkoutLoadRepository(null), /requires repository\.loadWorkouts/);
 assert.deepEqual(summarizeWorkoutSyncPatch({
   workout_updates: [{ id: "workout-1" }],
   set_updates: [{ id: "set-1" }, { id: "set-2" }],
@@ -174,6 +178,13 @@ assert.deepEqual(createWorkoutSyncEvent("failed", {
   pendingPatchSummary: {},
   error: { message: "nope" }
 });
+assert.deepEqual(
+  resolveWorkoutLoadResponseProfile(
+    { result: { profile: { id: "server-profile" } } },
+    { id: "fallback-profile" }
+  ),
+  { id: "server-profile" }
+);
 
 const stateByWorkoutId = new Map();
 const stateEvents = [];
@@ -356,5 +367,85 @@ assert.deepEqual(readWorkoutCacheEntry({ email: "person@example.com" }, { storag
 assert.deepEqual(writeCachedWorkoutsForProfile({ id: "empty" }, [], { storage, skipEmpty: true }), []);
 removeCachedWorkoutsForProfile({ id: "profile-1", email: "person@example.com" }, { storage });
 assert.deepEqual(storage.dump(), {});
+
+const loadStorage = createMemoryStorage();
+writeCachedWorkoutsForProfile(
+  { id: "profile-load" },
+  [{ id: "cached-1", supabaseId: "server-cached", title: "Cached" }],
+  { storage: loadStorage }
+);
+
+const cacheOnlyLoad = await loadWorkoutsWithSyncPolicy({
+  repository: {
+    async loadWorkouts() {
+      throw new Error("remote should not be called");
+    }
+  },
+  profile: { id: "profile-load" },
+  storage: loadStorage,
+  canLoadRemote: false
+});
+assert.equal(cacheOnlyLoad.source, "cache");
+assert.deepEqual(cacheOnlyLoad.workouts.map((workout) => workout.title), ["Cached"]);
+
+const loadEvents = [];
+const remoteLoad = await loadWorkoutsWithSyncPolicy({
+  repository: {
+    async loadWorkouts() {
+      return {
+        result: { profile: { id: "profile-canonical" } },
+        workouts: [
+          { id: "remote-local", supabaseId: "server-2", title: "Remote" },
+          { id: "deleted-local", supabaseId: "server-deleted", title: "Deleted" }
+        ]
+      };
+    }
+  },
+  profile: { id: "profile-load" },
+  currentWorkouts: [
+    { id: "local-dirty", supabaseId: "server-2", title: "Local dirty", isDirty: true }
+  ],
+  pendingPatches: { "local-dirty": { workout_updates: [{ id: "server-2" }] } },
+  pendingDeletedWorkoutIds: ["server-deleted"],
+  storage: loadStorage,
+  onEvent: (event) => loadEvents.push(event)
+});
+assert.equal(remoteLoad.ok, true);
+assert.equal(remoteLoad.source, "remote");
+assert.deepEqual(remoteLoad.workouts.map((workout) => workout.title), ["Local dirty"]);
+assert.equal(loadEvents.at(-1).phase, "load:remote");
+assert.equal(loadEvents.at(-1).remoteCount, 1);
+assert.deepEqual(readCachedWorkoutsForProfile({ id: "profile-load" }, { storage: loadStorage }), remoteLoad.workouts);
+assert.deepEqual(readCachedWorkoutsForProfile({ id: "profile-canonical" }, { storage: loadStorage }), remoteLoad.workouts);
+
+const emptyRemoteStorage = createMemoryStorage();
+writeCachedWorkoutsForProfile({ id: "profile-empty" }, [{ id: "old-cached" }], { storage: emptyRemoteStorage });
+const emptyRemoteLoad = await loadWorkoutsWithSyncPolicy({
+  repository: {
+    async loadWorkouts() {
+      return { workouts: [] };
+    }
+  },
+  profile: { id: "profile-empty" },
+  storage: emptyRemoteStorage
+});
+assert.equal(emptyRemoteLoad.source, "remote");
+assert.deepEqual(emptyRemoteLoad.workouts, []);
+assert.deepEqual(readCachedWorkoutsForProfile({ id: "profile-empty" }, { storage: emptyRemoteStorage }), []);
+
+writeCachedWorkoutsForProfile({ id: "profile-fallback" }, [{ id: "cached-fallback" }], { storage: emptyRemoteStorage });
+const failedRemoteLoad = await loadWorkoutsWithSyncPolicy({
+  repository: {
+    async loadWorkouts() {
+      throw new Error("remote down");
+    }
+  },
+  profile: { id: "profile-fallback" },
+  storage: emptyRemoteStorage
+});
+assert.equal(failedRemoteLoad.ok, false);
+assert.equal(failedRemoteLoad.fallback, true);
+assert.equal(failedRemoteLoad.source, "cache_fallback");
+assert.deepEqual(failedRemoteLoad.workouts, [{ id: "cached-fallback" }]);
 
 console.log("workout sync checks passed");
