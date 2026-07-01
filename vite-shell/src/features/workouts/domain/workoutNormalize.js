@@ -17,6 +17,8 @@ export const WORKOUT_TYPE_BY_ID = Object.freeze(
   Object.fromEntries(WORKOUT_TYPE_DEFINITIONS.map((item) => [item.id, item]))
 );
 
+export const ONLYPUMP_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export function normalizeWorkoutStatus(status) {
   const value = String(status || "").trim().toLowerCase();
   if (["planned", "scheduled", "plan"].includes(value)) return WORKOUT_STATUS.planned;
@@ -65,4 +67,51 @@ export function getExerciseCompletion(exercise = {}) {
 export function getFirstActiveSetId(exercise = {}) {
   const sets = exercise?.sets || [];
   return (sets.find((set) => getSetStatus(set) === "pending") || sets[0] || null)?.id || null;
+}
+
+export function normalizeSupersetGroupId(value) {
+  const id = String(value || "").trim();
+  return ONLYPUMP_UUID_PATTERN.test(id) ? id : null;
+}
+
+export function getExerciseSupersetGroupId(exercise = {}) {
+  return normalizeSupersetGroupId(
+    exercise.supersetGroupId || exercise.supersetId || exercise.superset_group_id
+  );
+}
+
+export function normalizeWorkoutSupersetMetadata(workout) {
+  if (!workout) return workout;
+  const exercises = workout.exercises || [];
+  const groupCounts = exercises.reduce((acc, exercise) => {
+    const groupId = getExerciseSupersetGroupId(exercise);
+    if (groupId) acc[groupId] = (acc[groupId] || 0) + 1;
+    return acc;
+  }, {});
+  const groupOrders = {};
+
+  return {
+    ...workout,
+    exercises: exercises.map((exercise) => {
+      const groupId = getExerciseSupersetGroupId(exercise);
+      if (!groupId || groupCounts[groupId] < 2) {
+        return {
+          ...exercise,
+          supersetId: null,
+          supersetGroupId: null,
+          supersetOrder: null,
+          isSuperset: false
+        };
+      }
+
+      groupOrders[groupId] = (groupOrders[groupId] || 0) + 1;
+      return {
+        ...exercise,
+        supersetId: groupId,
+        supersetGroupId: groupId,
+        supersetOrder: groupOrders[groupId],
+        isSuperset: true
+      };
+    })
+  };
 }

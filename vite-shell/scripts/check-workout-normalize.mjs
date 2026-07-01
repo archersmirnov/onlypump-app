@@ -7,7 +7,9 @@ import {
   getWorkoutTypeMeta,
   isCompletedSet,
   isWorkingSet,
+  normalizeSupersetGroupId,
   normalizeWorkoutStatus,
+  normalizeWorkoutSupersetMetadata,
   normalizeWorkoutType
 } from "../src/features/workouts/domain/index.js";
 
@@ -63,5 +65,40 @@ const workout = { exercises: [exercise] };
 const completedSets = getCompletedSetsFromWorkout(workout);
 assert.equal(completedSets.length, 3);
 assert.equal(completedSets[0].__exercise.id, "exercise-1");
+
+const supersetGroupId = "11111111-1111-4111-8111-111111111111";
+assert.equal(normalizeSupersetGroupId(supersetGroupId), supersetGroupId);
+assert.equal(normalizeSupersetGroupId("not-a-uuid"), null);
+
+const supersetWorkout = normalizeWorkoutSupersetMetadata({
+  id: "workout-1",
+  exercises: [
+    { id: "solo", supersetGroupId },
+    { id: "invalid", supersetGroupId: "not-a-uuid", isSuperset: true },
+    { id: "a", superset_group_id: supersetGroupId },
+    { id: "b", supersetId: supersetGroupId }
+  ]
+});
+
+assert.equal(supersetWorkout.exercises[0].isSuperset, true);
+assert.equal(supersetWorkout.exercises[0].supersetOrder, 1);
+assert.equal(supersetWorkout.exercises[1].isSuperset, false);
+assert.equal(supersetWorkout.exercises[1].supersetGroupId, null);
+assert.equal(supersetWorkout.exercises[2].isSuperset, true);
+assert.equal(supersetWorkout.exercises[2].supersetOrder, 2);
+assert.equal(supersetWorkout.exercises[3].isSuperset, true);
+assert.equal(supersetWorkout.exercises[3].supersetOrder, 3);
+assert.equal(supersetWorkout.exercises[3].supersetId, supersetGroupId);
+
+const singleSupersetWorkout = normalizeWorkoutSupersetMetadata({
+  exercises: [{ id: "single", supersetGroupId: "22222222-2222-4222-8222-222222222222" }]
+});
+assert.deepEqual(singleSupersetWorkout.exercises[0], {
+  id: "single",
+  supersetGroupId: null,
+  supersetId: null,
+  supersetOrder: null,
+  isSuperset: false
+});
 
 console.log("workout normalize checks passed");

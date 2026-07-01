@@ -246,6 +246,7 @@ Acceptance criteria:
 
 - создан `vite-shell/src/features/workouts/domain/workoutNormalize.js`;
 - вынесены чистые helpers для workout status/type/set completion;
+- добавлен `normalizeWorkoutSupersetMetadata`;
 - добавлен `pnpm run check:workouts`;
 - legacy `index.html` пока не подключен к этим helpers.
 
