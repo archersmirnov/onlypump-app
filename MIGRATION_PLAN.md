@@ -190,6 +190,7 @@ Acceptance criteria:
 
 - файлы созданы внутри `vite-shell/src/shared/api/`;
 - сохранена текущая форма запроса `initData/action/payload`;
+- добавлены compatibility wrappers со старыми именами API-вызовов;
 - модуль пока не подключен к legacy `index.html`.
 
 Кандидаты на перенос:

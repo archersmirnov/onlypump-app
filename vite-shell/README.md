@@ -30,6 +30,9 @@ live next to the current app without changing runtime behavior.
   `[object Object]`.
 - `src/shared/api/edgeFunctionClient.js` keeps the existing request shape:
   `initData`, `action`, `payload`.
+- `src/shared/api/legacyApiAdapters.js` exposes compatibility wrappers with the
+  old names: `callOnlyPumpProfileApi`, `callOnlyPumpWorkoutsApi`,
+  `callOnlyPumpNutritionApi`.
 - Profile `load_profile` keeps the current `access_denied + profile` exception.
 
 These modules are not wired into the legacy `index.html` yet.
