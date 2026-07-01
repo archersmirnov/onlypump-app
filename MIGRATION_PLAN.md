@@ -408,6 +408,9 @@ Acceptance criteria:
 - создан `vite-shell/src/features/nutrition/cache/nutritionCache.js`;
 - вынесены helpers для ключей, чтения, записи, markers и очистки nutrition cache;
 - добавлен `pnpm run check:nutrition-cache`;
+- создан `vite-shell/src/features/nutrition/domain/nutritionDay.js`;
+- вынесены helpers нормализации nutrition day, meals/items, manual totals, food markers и day totals;
+- добавлен `pnpm run check:nutrition-day`;
 - legacy `index.html` пока не подключен к nutrition helpers.
 
 ## Этап 9. Profile, Health, Progress Repository
