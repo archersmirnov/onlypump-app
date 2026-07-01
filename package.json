@@ -1,0 +1,10 @@
+{
+  "name": "onlypump-static-preview",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node dev-server.mjs",
+    "start": "npm run dev",
+    "preview": "npm run dev"
+  }
+}
