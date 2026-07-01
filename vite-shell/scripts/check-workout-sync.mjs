@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   createWorkoutDeleteIdentitySet,
+  createWorkoutSyncEvent,
   createWorkoutSyncController,
   createWorkoutPendingQueue,
   filterPendingDeletedWorkouts,
@@ -18,6 +19,7 @@ import {
   getWorkoutSendingState,
   hasProtectedWorkoutLocalState,
   isWorkoutDeletePending,
+  normalizeWorkoutSyncError,
   mergeRemoteWorkoutsWithProtectedLocalState,
   mergeWorkoutPatch,
   mergeWorkoutPatchById,
@@ -26,6 +28,7 @@ import {
   shouldPreserveCachedWorkoutsOnEmptyRemote,
   shouldPreserveCurrentWorkoutsOnEmptyRemote,
   shouldUseWorkoutCacheImmediately,
+  summarizeWorkoutSyncPatch,
   uniqueWorkoutSyncIds,
   workoutPatchHasChanges,
   WORKOUT_PATCH_COLLECTION_KEYS
@@ -145,6 +148,32 @@ queue.clearAll();
 assert.deepEqual(queue.ids(), []);
 
 assert.throws(() => requireWorkoutSyncRepository(null), /requires repository\.saveWorkoutPatch/);
+assert.deepEqual(summarizeWorkoutSyncPatch({
+  workout_updates: [{ id: "workout-1" }],
+  set_updates: [{ id: "set-1" }, { id: "set-2" }],
+  deleted_set_ids: []
+}), {
+  workout_updates: 1,
+  set_updates: 2
+});
+assert.equal(normalizeWorkoutSyncError(new Error("network down")).message, "network down");
+assert.equal(normalizeWorkoutSyncError({ error: "not allowed", status: 403 }).message, "not allowed");
+assert.deepEqual(createWorkoutSyncEvent("failed", {
+  workoutId: "workout-1",
+  patch: { set_updates: [{ id: "set-1" }] },
+  error: "nope",
+  ok: false
+}), {
+  domain: "workouts.sync",
+  phase: "failed",
+  workoutId: "workout-1",
+  skipped: false,
+  ok: false,
+  hasNewerPatch: false,
+  patchSummary: { set_updates: 1 },
+  pendingPatchSummary: {},
+  error: { message: "nope" }
+});
 
 const stateByWorkoutId = new Map();
 const stateEvents = [];
@@ -156,6 +185,7 @@ const makeApplyWorkoutState = () => (workoutId, patcher, meta) => {
 };
 
 const repositoryCalls = [];
+const syncEvents = [];
 const repository = {
   async saveWorkoutPatch(workout, options = {}) {
     repositoryCalls.push({ workout, options });
@@ -166,6 +196,7 @@ const repository = {
 const sync = createWorkoutSyncController({
   repository,
   applyWorkoutState: makeApplyWorkoutState(),
+  onEvent: (event) => syncEvents.push(event),
   now: () => "2026-07-01T01:00:00.000Z"
 });
 
@@ -183,10 +214,13 @@ assert.equal(repositoryCalls[0].options.prebuiltPatch.set_updates[0].id, "set-3"
 assert.equal(sync.hasPendingPatch("workout-3"), false);
 assert.equal(stateByWorkoutId.get("workout-3").isDirty, false);
 assert.equal(stateByWorkoutId.get("workout-3").lastSavedAt, "2026-07-01T01:00:00.000Z");
+assert.deepEqual(syncEvents.map((event) => event.phase), ["queued", "sending", "saved"]);
+assert.deepEqual(syncEvents[0].patchSummary, { set_updates: 1 });
 
 const skipped = await sync.flushPatch("missing-workout");
 assert.equal(skipped.ok, true);
 assert.equal(skipped.skipped, true);
+assert.equal(syncEvents.at(-1).phase, "skipped");
 
 const failingSync = createWorkoutSyncController({
   repository: {
@@ -194,7 +228,10 @@ const failingSync = createWorkoutSyncController({
       throw new Error("network down");
     }
   },
-  applyWorkoutState: makeApplyWorkoutState()
+  applyWorkoutState: makeApplyWorkoutState(),
+  onEvent: () => {
+    throw new Error("logger failed");
+  }
 });
 failingSync.queuePatch("workout-4", { workout_updates: [{ id: "workout-4", title: "Failed" }] });
 const failedFlush = await failingSync.flushPatch("workout-4");

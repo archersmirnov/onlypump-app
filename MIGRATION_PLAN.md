@@ -356,6 +356,7 @@ Acceptance criteria:
 - вынесены helpers для protected local state, pending deletes и cache fallback policy;
 - создан `vite-shell/src/features/workouts/sync/workoutCache.js`;
 - вынесены helpers для ключей, чтения, записи и очистки workout cache через инъекцию storage;
+- добавлены структурированные sync events и нормализация ошибок для понятных logs;
 - добавлен `pnpm run check:workout-sync`;
 - legacy `index.html` пока не подключен к sync helpers.
 

@@ -24,13 +24,74 @@ export function isWorkoutSyncSuccess(value) {
   return Boolean(result) && result.ok !== false && result.success !== false && !result.error;
 }
 
+export function summarizeWorkoutSyncPatch(patch = {}) {
+  if (!patch || typeof patch !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(patch)
+      .filter(([, value]) => Array.isArray(value) && value.length)
+      .map(([key, value]) => [key, value.length])
+  );
+}
+
+export function normalizeWorkoutSyncError(error) {
+  if (!error) return { message: "Unknown workout sync error" };
+  if (typeof error === "string") return { message: error };
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    };
+  }
+  if (typeof error === "object") {
+    return {
+      name: error.name || error.code || "WorkoutSyncError",
+      message: error.message || error.error || JSON.stringify(error),
+      code: error.code,
+      status: error.status,
+      details: error.details,
+      hint: error.hint
+    };
+  }
+  return { message: String(error) };
+}
+
+export function createWorkoutSyncEvent(phase, details = {}) {
+  return {
+    domain: "workouts.sync",
+    phase,
+    workoutId: details.workoutId || null,
+    skipped: Boolean(details.skipped),
+    ok: details.ok,
+    hasNewerPatch: Boolean(details.hasNewerPatch),
+    patchSummary: summarizeWorkoutSyncPatch(details.patch),
+    pendingPatchSummary: summarizeWorkoutSyncPatch(details.pendingPatch),
+    error: details.error ? normalizeWorkoutSyncError(details.error) : null
+  };
+}
+
+export function notifyWorkoutSyncEvent(onEvent, event) {
+  if (typeof onEvent !== "function") return event;
+  try {
+    onEvent(event);
+  } catch {
+    // Sync must not fail because an observer failed to log.
+  }
+  return event;
+}
+
 export function createWorkoutSyncController({
   repository,
   pendingQueue = createWorkoutPendingQueue(),
   applyWorkoutState = null,
+  onEvent = null,
   now = () => new Date().toISOString()
 } = {}) {
   const workoutRepository = requireWorkoutSyncRepository(repository);
+  const emitSyncEvent = (phase, details = {}) => notifyWorkoutSyncEvent(
+    onEvent,
+    createWorkoutSyncEvent(phase, details)
+  );
 
   const applyQueuedState = (workoutId, patch) => applyWorkoutSyncState(
     applyWorkoutState,
@@ -63,7 +124,10 @@ export function createWorkoutSyncController({
   return {
     queuePatch(workoutId, patch) {
       const queuedPatch = pendingQueue.queue(workoutId, patch);
-      if (queuedPatch) applyQueuedState(workoutId, queuedPatch);
+      if (queuedPatch) {
+        applyQueuedState(workoutId, queuedPatch);
+        emitSyncEvent("queued", { workoutId, patch: queuedPatch });
+      }
       return queuedPatch;
     },
 
@@ -86,10 +150,12 @@ export function createWorkoutSyncController({
     async flushPatch(workoutId) {
       const patch = pendingQueue.get(workoutId);
       if (!workoutId || !workoutPatchHasChanges(patch)) {
+        emitSyncEvent("skipped", { workoutId, patch: patch || null, skipped: true, ok: true });
         return { ok: true, skipped: true, workoutId, patch: patch || null };
       }
 
       applySendingState(workoutId, patch);
+      emitSyncEvent("sending", { workoutId, patch });
 
       try {
         const response = await workoutRepository.saveWorkoutPatch(null, { prebuiltPatch: patch });
@@ -106,6 +172,14 @@ export function createWorkoutSyncController({
           applyQueuedState(workoutId, pendingPatchAfterSave);
         }
 
+        emitSyncEvent("saved", {
+          workoutId,
+          patch,
+          pendingPatch: hasNewerPatch ? pendingPatchAfterSave : null,
+          hasNewerPatch,
+          ok: true
+        });
+
         return {
           ok: true,
           workoutId,
@@ -116,6 +190,7 @@ export function createWorkoutSyncController({
         };
       } catch (error) {
         applyFailedState(workoutId, patch, error);
+        emitSyncEvent("failed", { workoutId, patch, error, ok: false });
         return {
           ok: false,
           workoutId,
