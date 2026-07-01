@@ -11,7 +11,8 @@
     "check:legacy-api": "node scripts/check-legacy-api-client.mjs",
     "check:workouts": "node scripts/check-workout-normalize.mjs",
     "check:workout-mapper": "node scripts/check-workout-mapper.mjs",
-    "check": "pnpm run check:api && pnpm run check:legacy-api && pnpm run check:workouts && pnpm run check:workout-mapper && pnpm run build"
+    "check:workout-repository": "node scripts/check-workout-repository.mjs",
+    "check": "pnpm run check:api && pnpm run check:legacy-api && pnpm run check:workouts && pnpm run check:workout-mapper && pnpm run check:workout-repository && pnpm run build"
   },
   "dependencies": {
     "react": "^19.2.7",

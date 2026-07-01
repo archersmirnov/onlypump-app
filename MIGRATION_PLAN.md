@@ -271,6 +271,8 @@ Acceptance criteria:
 
 ## Этап 6. Workouts Repository
 
+Статус: started, not wired.
+
 Цель: собрать операции backend persistence в одном слое.
 
 Предполагаемые файлы:
@@ -295,6 +297,14 @@ Acceptance criteria:
 - `loadProgramTemplates`;
 - `saveProgramTemplate`;
 - `createUserProgram`.
+
+Начато:
+
+- создан `vite-shell/src/features/workouts/api/workoutRepository.js`;
+- добавлен repository factory поверх текущих workout API actions;
+- добавлены методы `loadWorkouts`, `createWorkoutTree`, `updateWorkoutTree`, `saveWorkoutPatch`, `deleteWorkout`;
+- добавлен `pnpm run check:workout-repository`;
+- legacy `index.html` пока не подключен к repository.
 
 Запрещено:
 
