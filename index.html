@@ -34703,12 +34703,19 @@ function OnlyPumpPlatform() {
   const loadWorkoutsForProfile = useCallback(async (activeProfile, initData, options = {}) => {
     if (!activeProfile) return [];
     const cached = readCachedWorkoutsForProfile(activeProfile);
-    if (cached.length && options.useCache !== false) {
+    const canLoadRemoteWorkouts = hasOnlyPumpRemoteAuth(initData) && Boolean(activeProfile.id);
+    const useCachedWorkoutsImmediately = cached.length && options.useCache !== false && !canLoadRemoteWorkouts;
+    const applyCachedWorkoutsFallback = () => {
+      const mergedCached = mergeRemoteWorkoutsWithProtectedLocalState(cached);
+      setWorkouts(mergedCached);
+      return mergedCached;
+    };
+    if (useCachedWorkoutsImmediately) {
       console.log("Workouts cache loaded", { key: getWorkoutsCacheKey(activeProfile), count: cached.length });
-      setWorkouts(mergeRemoteWorkoutsWithProtectedLocalState(cached));
+      applyCachedWorkoutsFallback();
     }
 
-    if (!hasOnlyPumpRemoteAuth(initData) || !activeProfile.id) return cached;
+    if (!canLoadRemoteWorkouts) return cached;
     setWorkoutsRefreshing(true);
     try {
       const result = await callOnlyPumpWorkoutsApi(initData, "load", { profile_id: activeProfile.id });
@@ -34751,10 +34758,11 @@ function OnlyPumpPlatform() {
           response_profile_id: responseProfile?.id,
           cached_count: cached.length,
         });
+        const mergedCached = applyCachedWorkoutsFallback();
         if (responseProfile?.id || responseProfile?.telegram_id) {
           writeCachedWorkoutsForProfile(responseProfile, cached, { skipEmpty: true });
         }
-        return cached;
+        return mergedCached;
       }
       const mergedLoaded = mergeRemoteWorkoutsWithProtectedLocalState(loaded);
       setWorkouts(mergedLoaded);
@@ -34777,7 +34785,7 @@ function OnlyPumpPlatform() {
         writeCachedWorkoutsForProfile(activeProfile, mergedRescued, { skipEmpty: true });
         return mergedRescued;
       }
-      return cached;
+      return cached.length ? applyCachedWorkoutsFallback() : cached;
     } finally {
       setWorkoutsRefreshing(false);
     }
