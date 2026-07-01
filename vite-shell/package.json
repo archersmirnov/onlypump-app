@@ -12,7 +12,8 @@
     "check:workouts": "node scripts/check-workout-normalize.mjs",
     "check:workout-mapper": "node scripts/check-workout-mapper.mjs",
     "check:workout-repository": "node scripts/check-workout-repository.mjs",
-    "check": "pnpm run check:api && pnpm run check:legacy-api && pnpm run check:workouts && pnpm run check:workout-mapper && pnpm run check:workout-repository && pnpm run build"
+    "check:workout-sync": "node scripts/check-workout-sync.mjs",
+    "check": "pnpm run check:api && pnpm run check:legacy-api && pnpm run check:workouts && pnpm run check:workout-mapper && pnpm run check:workout-repository && pnpm run check:workout-sync && pnpm run build"
   },
   "dependencies": {
     "react": "^19.2.7",

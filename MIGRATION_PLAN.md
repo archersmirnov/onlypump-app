@@ -325,6 +325,8 @@ Acceptance criteria:
 
 ## Этап 7. Workouts Sync
 
+Статус: started, not wired.
+
 Цель: отделить autosave/pending/retry/cache policy от экрана.
 
 Предполагаемые файлы:
@@ -341,6 +343,15 @@ Acceptance criteria:
 - dirty state merge;
 - cache fallback policy;
 - flush/retry.
+
+Начато:
+
+- создан `vite-shell/src/features/workouts/sync/workoutPendingQueue.js`;
+- вынесены чистые helpers для merge pending patches;
+- вынесены helpers для queued/sending/saved/failed workout state;
+- добавлен in-memory pending queue без таймеров, API и UI side effects;
+- добавлен `pnpm run check:workout-sync`;
+- legacy `index.html` пока не подключен к sync helpers.
 
 Запрещено:
 
