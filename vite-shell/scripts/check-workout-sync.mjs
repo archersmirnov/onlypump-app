@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import {
+  createWorkoutAutosaveEvent,
+  createWorkoutAutosaveScheduler,
   createWorkoutDeleteIdentitySet,
   createWorkoutSyncEvent,
   createWorkoutSyncController,
@@ -10,6 +12,7 @@ import {
   loadWorkoutsWithSyncPolicy,
   readCachedWorkoutsForProfile,
   readWorkoutCacheEntry,
+  requireWorkoutAutosaveSyncController,
   requireWorkoutLoadRepository,
   removeCachedWorkoutsForProfile,
   resolveWorkoutLoadResponseProfile,
@@ -51,6 +54,32 @@ function createMemoryStorage() {
     },
     dump() {
       return Object.fromEntries(store.entries());
+    }
+  };
+}
+
+function createManualTimers() {
+  const timers = new Map();
+  let nextId = 1;
+  return {
+    setTimer(callback, delayMs) {
+      const id = nextId;
+      nextId += 1;
+      timers.set(id, { callback, delayMs });
+      return id;
+    },
+    clearTimer(id) {
+      timers.delete(id);
+    },
+    size() {
+      return timers.size;
+    },
+    async runAll() {
+      const entries = Array.from(timers.entries());
+      timers.clear();
+      for (const [, timer] of entries) {
+        await timer.callback();
+      }
     }
   };
 }
@@ -151,7 +180,20 @@ queue.clearAll();
 assert.deepEqual(queue.ids(), []);
 
 assert.throws(() => requireWorkoutSyncRepository(null), /requires repository\.saveWorkoutPatch/);
+assert.throws(() => requireWorkoutAutosaveSyncController(null), /requires queuePatch/);
 assert.throws(() => requireWorkoutLoadRepository(null), /requires repository\.loadWorkouts/);
+assert.deepEqual(createWorkoutAutosaveEvent("scheduled", {
+  workoutId: "workout-1",
+  delayMs: 700,
+  patch: { set_updates: [{ id: "set-1" }] }
+}), {
+  domain: "workouts.autosave",
+  phase: "scheduled",
+  workoutId: "workout-1",
+  delayMs: 700,
+  patchSummary: { set_updates: 1 },
+  result: null
+});
 assert.deepEqual(summarizeWorkoutSyncPatch({
   workout_updates: [{ id: "workout-1" }],
   set_updates: [{ id: "set-1" }, { id: "set-2" }],
@@ -286,6 +328,49 @@ flushAllSync.queuePatch("workout-7", { workout_updates: [{ id: "workout-7" }] })
 const flushAllResults = await flushAllSync.flushAll();
 assert.equal(flushAllResults.length, 2);
 assert.deepEqual(flushAllResults.map((item) => item.ok), [true, true]);
+
+const autosaveTimers = createManualTimers();
+const autosaveRepositoryCalls = [];
+const autosaveEvents = [];
+const autosaveSync = createWorkoutSyncController({
+  repository: {
+    async saveWorkoutPatch(workout, options = {}) {
+      autosaveRepositoryCalls.push({ workout, options });
+      return { result: { ok: true } };
+    }
+  }
+});
+const autosave = createWorkoutAutosaveScheduler({
+  syncController: autosaveSync,
+  setTimer: autosaveTimers.setTimer,
+  clearTimer: autosaveTimers.clearTimer,
+  onEvent: (event) => autosaveEvents.push(event)
+});
+autosave.queuePatch("workout-autosave", { set_updates: [{ id: "set-auto", reps: 8 }] });
+assert.equal(autosave.hasTimer("workout-autosave"), true);
+assert.equal(autosaveTimers.size(), 1);
+autosave.queuePatch("workout-autosave", { set_updates: [{ id: "set-auto", weight_kg: 50 }] });
+assert.equal(autosaveTimers.size(), 1);
+await autosaveTimers.runAll();
+assert.equal(autosave.hasTimer("workout-autosave"), false);
+assert.equal(autosaveRepositoryCalls.length, 1);
+assert.deepEqual(autosaveRepositoryCalls[0].options.prebuiltPatch.set_updates, [{ id: "set-auto", reps: 8, weight_kg: 50 }]);
+assert.equal(autosaveEvents.some((event) => event.phase === "scheduled"), true);
+assert.equal(autosaveEvents.some((event) => event.phase === "flushed"), true);
+
+autosave.queuePatch("workout-cancel", { workout_updates: [{ id: "workout-cancel" }] });
+assert.deepEqual(autosave.pendingTimerIds(), ["workout-cancel"]);
+assert.deepEqual(autosave.cancelAll(), ["workout-cancel"]);
+assert.deepEqual(autosave.pendingTimerIds(), []);
+
+const immediateResult = await autosave.queuePatch(
+  "workout-immediate",
+  { workout_updates: [{ id: "workout-immediate" }] },
+  { immediate: true }
+);
+assert.deepEqual(immediateResult.workout_updates, [{ id: "workout-immediate" }]);
+assert.equal(autosave.hasTimer("workout-immediate"), false);
+assert.equal(autosaveSync.hasPendingPatch("workout-immediate"), false);
 
 assert.deepEqual(
   getWorkoutIdentityKeys({ id: "local-1", supabaseId: "server-1" }),

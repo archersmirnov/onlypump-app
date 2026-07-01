@@ -359,6 +359,8 @@ Acceptance criteria:
 - добавлены структурированные sync events и нормализация ошибок для понятных logs;
 - создан `vite-shell/src/features/workouts/sync/workoutLoadSync.js`;
 - вынесена server-first загрузка тренировок с cache fallback, pending delete filter и protected local merge;
+- создан `vite-shell/src/features/workouts/sync/workoutAutosave.js`;
+- вынесен debounce/autosave scheduler поверх sync-controller без React и UI side effects;
 - добавлен `pnpm run check:workout-sync`;
 - legacy `index.html` пока не подключен к sync helpers.
 
