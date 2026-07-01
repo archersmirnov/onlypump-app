@@ -411,6 +411,9 @@ Acceptance criteria:
 - создан `vite-shell/src/features/nutrition/domain/nutritionDay.js`;
 - вынесены helpers нормализации nutrition day, meals/items, manual totals, food markers и day totals;
 - добавлен `pnpm run check:nutrition-day`;
+- создан `vite-shell/src/features/nutrition/api/nutritionRepository.js`;
+- вынесен thin repository для nutrition actions: load, add/update/delete item, copy recent, favorite, manual totals;
+- добавлен `pnpm run check:nutrition-repository`;
 - legacy `index.html` пока не подключен к nutrition helpers.
 
 ## Этап 9. Profile, Health, Progress Repository
