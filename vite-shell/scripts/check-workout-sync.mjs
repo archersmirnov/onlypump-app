@@ -4,6 +4,12 @@ import {
   createWorkoutSyncController,
   createWorkoutPendingQueue,
   filterPendingDeletedWorkouts,
+  getPrimaryWorkoutCacheKey,
+  getWorkoutCacheKeys,
+  readCachedWorkoutsForProfile,
+  readWorkoutCacheEntry,
+  removeCachedWorkoutsForProfile,
+  writeCachedWorkoutsForProfile,
   getWorkoutFailedState,
   getWorkoutIdentityKeys,
   getWorkoutPatchItemId,
@@ -24,6 +30,24 @@ import {
   workoutPatchHasChanges,
   WORKOUT_PATCH_COLLECTION_KEYS
 } from "../src/features/workouts/sync/index.js";
+
+function createMemoryStorage() {
+  const store = new Map();
+  return {
+    getItem(key) {
+      return store.has(key) ? store.get(key) : null;
+    },
+    setItem(key, value) {
+      store.set(key, String(value));
+    },
+    removeItem(key) {
+      store.delete(key);
+    },
+    dump() {
+      return Object.fromEntries(store.entries());
+    }
+  };
+}
 
 assert.equal(WORKOUT_PATCH_COLLECTION_KEYS.includes("set_updates"), true);
 assert.deepEqual(uniqueWorkoutSyncIds(["a", "a", "", null, "b"]), ["a", "b"]);
@@ -261,5 +285,39 @@ assert.equal(
   shouldPreserveCurrentWorkoutsOnEmptyRemote({ mergedRemote: [{ id: "remote" }], current: [{ id: "current" }] }),
   false
 );
+
+assert.deepEqual(getWorkoutCacheKeys({
+  telegram_id: "300449251",
+  telegramId: "300449251",
+  id: "profile-1",
+  email: "Archer_S@BK.RU "
+}), [
+  "onlypump_workouts_cache_300449251",
+  "onlypump_workouts_cache_profile-1",
+  "onlypump_workouts_cache_email_archer_s@bk.ru",
+  "onlypump_workouts_cache_local"
+]);
+assert.equal(getPrimaryWorkoutCacheKey({ id: "profile-1" }), "onlypump_workouts_cache_profile-1");
+
+const storage = createMemoryStorage();
+const cacheKeys = writeCachedWorkoutsForProfile(
+  { id: "profile-1", email: "person@example.com" },
+  [{ id: "workout-1" }],
+  { storage }
+);
+assert.deepEqual(cacheKeys, [
+  "onlypump_workouts_cache_profile-1",
+  "onlypump_workouts_cache_email_person@example.com",
+  "onlypump_workouts_cache_local"
+]);
+assert.deepEqual(readCachedWorkoutsForProfile({ id: "profile-1" }, { storage }), [{ id: "workout-1" }]);
+assert.deepEqual(readWorkoutCacheEntry({ email: "person@example.com" }, { storage }), {
+  key: "onlypump_workouts_cache_email_person@example.com",
+  workouts: [{ id: "workout-1" }]
+});
+
+assert.deepEqual(writeCachedWorkoutsForProfile({ id: "empty" }, [], { storage, skipEmpty: true }), []);
+removeCachedWorkoutsForProfile({ id: "profile-1", email: "person@example.com" }, { storage });
+assert.deepEqual(storage.dump(), {});
 
 console.log("workout sync checks passed");

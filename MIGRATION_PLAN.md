@@ -354,6 +354,8 @@ Acceptance criteria:
 - добавлен sync-controller для `queuePatch`, `flushPatch`, `flushAll`, `retryPatch` поверх repository;
 - создан `vite-shell/src/features/workouts/sync/workoutCachePolicy.js`;
 - вынесены helpers для protected local state, pending deletes и cache fallback policy;
+- создан `vite-shell/src/features/workouts/sync/workoutCache.js`;
+- вынесены helpers для ключей, чтения, записи и очистки workout cache через инъекцию storage;
 - добавлен `pnpm run check:workout-sync`;
 - legacy `index.html` пока не подключен к sync helpers.
 
