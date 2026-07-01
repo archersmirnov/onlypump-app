@@ -9,6 +9,8 @@ import {
 
 export const WORKOUT_REPOSITORY_ACTIONS = Object.freeze({
   load: "load",
+  loadExerciseLibrary: "load_exercise_library",
+  loadProgramTemplates: "load_program_templates",
   createWorkoutTree: "create_workout_tree",
   updateWorkoutTree: "update_workout_tree",
   saveWorkoutPatch: "save_workout_patch",
@@ -51,10 +53,14 @@ export function resolveWorkoutProfileId(input = {}, fallbackProfileId = null) {
   return input.profile_id || input.profileId || fallbackProfileId || null;
 }
 
-export function buildWorkoutLoadPayload(input = {}, fallbackProfileId = null) {
+export function buildWorkoutProfilePayload(input = {}, fallbackProfileId = null, label = "workout request") {
   const profileId = resolveWorkoutProfileId(input, fallbackProfileId);
-  if (!profileId) throw new Error("profile_id is required to load workouts");
+  if (!profileId) throw new Error(`profile_id is required for ${label}`);
   return { profile_id: profileId };
+}
+
+export function buildWorkoutLoadPayload(input = {}, fallbackProfileId = null) {
+  return buildWorkoutProfilePayload(input, fallbackProfileId, "load workouts");
 }
 
 export function buildWorkoutDeletePayload(workoutOrId, fallbackProfileId = null) {
@@ -240,6 +246,15 @@ export function isWorkoutMutationResponseOk(result) {
   return Boolean(result) && result.ok !== false && result.success !== false && !result.error;
 }
 
+export function readWorkoutRepositoryArray(result, primaryKey, fallbackKeys = []) {
+  if (!result || typeof result !== "object") return [];
+  for (const key of [primaryKey, ...fallbackKeys].filter(Boolean)) {
+    const value = result[key];
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+}
+
 export function createWorkoutRepository({
   callWorkoutsApi,
   profileId = null,
@@ -259,6 +274,30 @@ export function createWorkoutRepository({
         payload,
         result,
         workouts: buildWorkoutTreeFromApi(result, { ...mapperOptions, ...(options.mapperOptions || {}) })
+      };
+    },
+
+    async loadExerciseLibrary(input = {}, options = {}) {
+      const payload = buildWorkoutProfilePayload(input, options.profileId || profileId, "load exercise library");
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.loadExerciseLibrary, payload);
+      const exercises = readWorkoutRepositoryArray(result, "exercise_library", ["exercises", "items"]);
+      return {
+        payload,
+        result,
+        exercises,
+        exerciseLibrary: exercises
+      };
+    },
+
+    async loadProgramTemplates(input = {}, options = {}) {
+      const payload = buildWorkoutProfilePayload(input, options.profileId || profileId, "load program templates");
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.loadProgramTemplates, payload);
+      const templates = readWorkoutRepositoryArray(result, "program_templates", ["templates"]);
+      return {
+        payload,
+        result,
+        templates,
+        programTemplates: templates
       };
     },
 

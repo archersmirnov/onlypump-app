@@ -304,6 +304,7 @@ Acceptance criteria:
 - добавлен repository factory поверх текущих workout API actions;
 - добавлены методы `loadWorkouts`, `createWorkoutTree`, `updateWorkoutTree`, `saveWorkoutPatch`, `deleteWorkout`;
 - добавлены методы `createExercise`, `updateExercise`, `deleteExercise`, `createSet`, `updateSet`, `deleteSet`;
+- добавлены методы `loadExerciseLibrary`, `loadProgramTemplates`;
 - добавлен `pnpm run check:workout-repository`;
 - legacy `index.html` пока не подключен к repository.
 

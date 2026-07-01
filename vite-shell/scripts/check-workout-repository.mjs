@@ -5,18 +5,22 @@ import {
   buildWorkoutExerciseUpdateApiPayload,
   buildWorkoutDeletePayload,
   buildWorkoutLoadPayload,
+  buildWorkoutProfilePayload,
   buildWorkoutSetCreateApiPayload,
   buildWorkoutSetDeletePayload,
   buildWorkoutSetUpdateApiPayload,
   createWorkoutRepository,
   isWorkoutDeleteResponseConfirmed,
   isWorkoutMutationResponseOk,
+  readWorkoutRepositoryArray,
   requireWorkoutApiCaller,
   resolveWorkoutProfileId,
   WORKOUT_REPOSITORY_ACTIONS
 } from "../src/features/workouts/api/index.js";
 
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.load, "load");
+assert.equal(WORKOUT_REPOSITORY_ACTIONS.loadExerciseLibrary, "load_exercise_library");
+assert.equal(WORKOUT_REPOSITORY_ACTIONS.loadProgramTemplates, "load_program_templates");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.createWorkoutTree, "create_workout_tree");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.createExercise, "create_exercise");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.updateExercise, "update_exercise");
@@ -28,6 +32,8 @@ assert.throws(() => requireWorkoutApiCaller(null), /requires callWorkoutsApi/);
 assert.equal(resolveWorkoutProfileId({ profile_id: "profile-a" }, "fallback"), "profile-a");
 assert.equal(resolveWorkoutProfileId({ profileId: "profile-b" }, "fallback"), "profile-b");
 assert.equal(resolveWorkoutProfileId({}, "fallback"), "fallback");
+assert.deepEqual(buildWorkoutProfilePayload({}, "profile-1", "load fixtures"), { profile_id: "profile-1" });
+assert.throws(() => buildWorkoutProfilePayload({}, null, "load fixtures"), /profile_id is required for load fixtures/);
 assert.deepEqual(buildWorkoutLoadPayload({}, "profile-1"), { profile_id: "profile-1" });
 assert.throws(() => buildWorkoutLoadPayload(), /profile_id is required/);
 assert.deepEqual(buildWorkoutDeletePayload({ supabaseId: "workout-1" }, "profile-1"), {
@@ -53,6 +59,9 @@ assert.equal(isWorkoutDeleteResponseConfirmed({ error: "bad" }, "workout-1"), fa
 assert.equal(isWorkoutMutationResponseOk({ ok: true }), true);
 assert.equal(isWorkoutMutationResponseOk({ success: false }), false);
 assert.equal(isWorkoutMutationResponseOk({ error: "bad" }), false);
+assert.deepEqual(readWorkoutRepositoryArray({ exercise_library: [{ id: "exercise-1" }] }, "exercise_library", ["exercises"]), [{ id: "exercise-1" }]);
+assert.deepEqual(readWorkoutRepositoryArray({ exercises: [{ id: "exercise-2" }] }, "exercise_library", ["exercises"]), [{ id: "exercise-2" }]);
+assert.deepEqual(readWorkoutRepositoryArray(null, "items"), []);
 
 const exercise = {
   id: "exercise-local-1",
@@ -123,6 +132,16 @@ const callWorkoutsApi = async (action, payload) => {
       }]
     };
   }
+  if (action === "load_exercise_library") {
+    return {
+      exercise_library: [{ id: "library-1", exercise_name: "Row" }]
+    };
+  }
+  if (action === "load_program_templates") {
+    return {
+      templates: [{ id: "template-1", title: "Strength" }]
+    };
+  }
   if (action === "delete_workout") return { deleted_workout_ids: [payload.workout_id], deleted_count: 1 };
   return { ok: true, action, payload };
 };
@@ -143,6 +162,18 @@ assert.equal(loaded.workouts.length, 1);
 assert.equal(loaded.workouts[0].supabaseId, "workout-server-1");
 assert.equal(loaded.workouts[0].exercises[0].sets[0].supabaseId, "set-server-1");
 
+const loadedExerciseLibrary = await repository.loadExerciseLibrary();
+assert.equal(calls[1].action, "load_exercise_library");
+assert.deepEqual(calls[1].payload, { profile_id: "profile-1" });
+assert.equal(loadedExerciseLibrary.exercises.length, 1);
+assert.equal(loadedExerciseLibrary.exerciseLibrary[0].id, "library-1");
+
+const loadedProgramTemplates = await repository.loadProgramTemplates();
+assert.equal(calls[2].action, "load_program_templates");
+assert.deepEqual(calls[2].payload, { profile_id: "profile-1" });
+assert.equal(loadedProgramTemplates.templates.length, 1);
+assert.equal(loadedProgramTemplates.programTemplates[0].id, "template-1");
+
 const workout = {
   id: "workout-local-1",
   supabaseId: "workout-server-1",
@@ -158,29 +189,29 @@ const workout = {
 };
 
 const created = await repository.createWorkoutTree({ ...workout, supabaseId: null });
-assert.equal(calls[1].action, "create_workout_tree");
+assert.equal(calls[3].action, "create_workout_tree");
 assert.equal(created.payload.workout.title, "Pull");
 assert.equal(created.payload.exercises[0].client_id, "exercise-local-1");
 
 const updated = await repository.updateWorkoutTree(workout);
-assert.equal(calls[2].action, "update_workout_tree");
+assert.equal(calls[4].action, "update_workout_tree");
 assert.equal(updated.payload.workout.id, "workout-server-1");
 
 assert.equal(await repository.updateWorkoutTree({ id: "local-only" }), null);
 
 const saved = await repository.saveWorkoutPatch(workout);
-assert.equal(calls[3].action, "save_workout_patch");
+assert.equal(calls[5].action, "save_workout_patch");
 assert.equal(saved.payload.workout_updates[0].id, "workout-server-1");
 
 const savedPrebuilt = await repository.saveWorkoutPatch(null, {
   prebuiltPatch: { workout_updates: [{ id: "workout-server-1" }] }
 });
-assert.equal(calls[4].action, "save_workout_patch");
+assert.equal(calls[6].action, "save_workout_patch");
 assert.deepEqual(savedPrebuilt.payload, { workout_updates: [{ id: "workout-server-1" }] });
 
 const deleted = await repository.deleteWorkout(workout);
-assert.equal(calls[5].action, "delete_workout");
-assert.deepEqual(calls[5].payload, {
+assert.equal(calls[7].action, "delete_workout");
+assert.deepEqual(calls[7].payload, {
   profile_id: "profile-1",
   id: "workout-server-1",
   workout_id: "workout-server-1"
@@ -188,30 +219,30 @@ assert.deepEqual(calls[5].payload, {
 assert.equal(deleted.confirmed, true);
 
 const createdExercise = await repository.createExercise("workout-server-1", exercise);
-assert.equal(calls[6].action, "create_exercise");
+assert.equal(calls[8].action, "create_exercise");
 assert.equal(createdExercise.payload.exercise_name, "Row");
 assert.equal(createdExercise.payload.exercise.workout_id, "workout-server-1");
 
 const updatedExercise = await repository.updateExercise("workout-server-1", exercise);
-assert.equal(calls[7].action, "update_exercise");
+assert.equal(calls[9].action, "update_exercise");
 assert.equal(updatedExercise.payload.id, "exercise-server-1");
 
 const deletedExercise = await repository.deleteExercise(exercise);
-assert.equal(calls[8].action, "delete_exercise");
-assert.equal(calls[8].payload.exercise_id, "exercise-server-1");
+assert.equal(calls[10].action, "delete_exercise");
+assert.equal(calls[10].payload.exercise_id, "exercise-server-1");
 assert.equal(deletedExercise.confirmed, true);
 
 const createdSet = await repository.createSet("exercise-server-1", set);
-assert.equal(calls[9].action, "create_set");
+assert.equal(calls[11].action, "create_set");
 assert.equal(createdSet.payload.set.workout_exercise_id, "exercise-server-1");
 
 const updatedSet = await repository.updateSet("exercise-server-1", set);
-assert.equal(calls[10].action, "update_set");
+assert.equal(calls[12].action, "update_set");
 assert.equal(updatedSet.payload.id, "set-server-1");
 
 const deletedSet = await repository.deleteSet(set);
-assert.equal(calls[11].action, "delete_set");
-assert.equal(calls[11].payload.set_id, "set-server-1");
+assert.equal(calls[13].action, "delete_set");
+assert.equal(calls[13].payload.set_id, "set-server-1");
 assert.equal(deletedSet.confirmed, true);
 
 console.log("workout repository checks passed");
