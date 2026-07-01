@@ -501,6 +501,10 @@ Acceptance criteria:
 - вынесена view model для графиков аналитики: chart cards, SVG coordinates/path, labels, stats и long-period layout flag;
 - создан `vite-shell/src/features/analytics/ui/AnalyticsChartsPreview.jsx` для безопасного preview в Vite shell;
 - добавлен `pnpm run check:analytics-charts`;
+- создан `vite-shell/src/features/workouts/domain/workoutScreenModel.js`;
+- вынесена view model для экрана тренировок: calendar days, workout cards, week summary, exercise rows и set rows;
+- создан `vite-shell/src/features/workouts/ui/WorkoutsPreview.jsx` для безопасного preview в Vite shell;
+- добавлен `pnpm run check:workouts-ui`;
 - legacy `index.html` пока не подключен к shared UI extraction.
 
 ## Branch and Commit Rules
