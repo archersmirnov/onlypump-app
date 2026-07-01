@@ -431,6 +431,15 @@ Acceptance criteria:
 - profile updates;
 - theme/settings/home state updates.
 
+Начато:
+
+- создан `vite-shell/src/features/profile/domain/profileData.js`;
+- вынесены helpers для health logs, sleep/recovery, measurement records и progress measurement normalization;
+- создан `vite-shell/src/features/profile/api/profileRepository.js`;
+- вынесен thin repository для profile actions, health log, progress measurement и measurement history;
+- добавлен `pnpm run check:profile-repository`;
+- legacy `index.html` пока не подключен к profile helpers.
+
 ## Этап 10. Analytics Services
 
 Цель: отделить расчеты аналитики и графиков от UI.

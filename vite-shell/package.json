@@ -17,7 +17,8 @@
     "check:nutrition-day": "node scripts/check-nutrition-day.mjs",
     "check:nutrition-repository": "node scripts/check-nutrition-repository.mjs",
     "check:nutrition-food": "node scripts/check-nutrition-food.mjs",
-    "check": "pnpm run check:api && pnpm run check:legacy-api && pnpm run check:workouts && pnpm run check:workout-mapper && pnpm run check:workout-repository && pnpm run check:workout-sync && pnpm run check:nutrition-cache && pnpm run check:nutrition-day && pnpm run check:nutrition-repository && pnpm run check:nutrition-food && pnpm run build"
+    "check:profile-repository": "node scripts/check-profile-repository.mjs",
+    "check": "pnpm run check:api && pnpm run check:legacy-api && pnpm run check:workouts && pnpm run check:workout-mapper && pnpm run check:workout-repository && pnpm run check:workout-sync && pnpm run check:nutrition-cache && pnpm run check:nutrition-day && pnpm run check:nutrition-repository && pnpm run check:nutrition-food && pnpm run check:profile-repository && pnpm run build"
   },
   "dependencies": {
     "react": "^19.2.7",
