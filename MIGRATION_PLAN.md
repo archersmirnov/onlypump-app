@@ -511,6 +511,33 @@ Acceptance criteria:
 - добавлен `pnpm run check:students-dashboard`;
 - legacy `index.html` пока не подключен к shared UI extraction.
 
+## Этап 12. Vite Shell Integration Planning
+
+Статус: started.
+
+Файл:
+
+- `VITE_SHELL_INTEGRATION_PLAN.md`
+
+Цель:
+
+- зафиксировать, как `vite-shell` будет подключаться к реальному приложению;
+- не переключать production на Vite одним большим шагом;
+- переносить сначала read-only экраны;
+- оставить workouts write-flow последним.
+
+Граница этапа:
+
+- меняется только документация;
+- `index.html` не меняется;
+- Supabase/API не меняются;
+- workout persistence не трогается.
+
+Следующий безопасный шаг:
+
+- добавить в `vite-shell` маленький navigation/route registry для preview-экранов,
+  чтобы проверять вынесенные экраны по одному.
+
 ## Branch and Commit Rules
 
 Перед каждым шагом:
@@ -559,11 +586,13 @@ Commit style:
 
 ## Recommended Next Concrete Step
 
-После этого плана следующий шаг:
+Текущий следующий шаг после integration planning:
 
-1. Проверить Node/npm.
-2. Подготовить Vite shell.
-3. Сохранить legacy app как `index.legacy.html`.
-4. Не переносить workout logic.
+1. Не менять `index.html`.
+2. Не трогать workout persistence.
+3. Добавить route registry/navigation только внутри `vite-shell`.
+4. Запустить `pnpm run check`.
+5. После проверки сделать отдельный commit.
 
-Перед этим можно сделать отдельный safety commit с этим планом.
+Untracked exercise GIF assets коммитить отдельным решением, не смешивать с
+архитектурной миграцией.
