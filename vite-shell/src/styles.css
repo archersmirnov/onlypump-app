@@ -54,6 +54,14 @@ body {
   line-height: 1.6;
 }
 
+.shell__meta {
+  margin: 18px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .shell__checks {
   display: grid;
   gap: 10px;

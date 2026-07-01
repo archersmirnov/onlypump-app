@@ -17,6 +17,8 @@
 - `16285a8 Stable backup before architecture migration` - полный рабочий снимок;
 - `87b29e6 Ignore local system files` - Git-гигиена;
 - `bb1b051 Document current architecture map` - карта текущей архитектуры.
+- `265a0d9 Document migration plan` - план миграции;
+- `708d6c4 Add Vite shell` - отдельная Vite/React-оболочка.
 
 Ключевые защитные документы:
 
@@ -113,7 +115,7 @@
 
 ## Этап 2. Migration Plan
 
-Статус: current.
+Статус: done.
 
 Файл:
 
@@ -135,6 +137,8 @@ Acceptance criteria:
 - есть запреты на смешивание слоев.
 
 ## Этап 3. Vite Shell Without App Rewrite
+
+Статус: done.
 
 Цель: завести современную сборочную оболочку, не переписывая приложение.
 
@@ -172,6 +176,8 @@ Acceptance criteria:
 
 ## Этап 4. Shared API Client
 
+Статус: current.
+
 Цель: отделить общий вызов Edge Functions от UI и feature logic.
 
 Предполагаемые файлы:
@@ -179,6 +185,12 @@ Acceptance criteria:
 - `src/shared/api/edgeFunctionClient.js`;
 - `src/shared/api/apiErrors.js`;
 - `src/shared/api/endpoints.js`.
+
+Начато:
+
+- файлы созданы внутри `vite-shell/src/shared/api/`;
+- сохранена текущая форма запроса `initData/action/payload`;
+- модуль пока не подключен к legacy `index.html`.
 
 Кандидаты на перенос:
 

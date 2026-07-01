@@ -1,8 +1,12 @@
+import { EDGE_FUNCTION_ENDPOINTS } from "./shared/api/index.js";
+
 const migrationChecks = [
   "Текущий index.html не изменен",
   "Новый React/Vite слой живет отдельно",
-  "Следующие переносы будут маленькими и проверяемыми"
+  "Общий API-модуль подключен без запросов к серверу"
 ];
+
+const apiModulesCount = Object.keys(EDGE_FUNCTION_ENDPOINTS).length;
 
 export default function App() {
   return (
@@ -14,6 +18,7 @@ export default function App() {
           Это отдельная оболочка для постепенной миграции. Рабочее приложение
           пока остается в корневом index.html.
         </p>
+        <p className="shell__meta">API endpoints prepared: {apiModulesCount}</p>
         <ul className="shell__checks">
           {migrationChecks.map((item) => (
             <li key={item}>{item}</li>
