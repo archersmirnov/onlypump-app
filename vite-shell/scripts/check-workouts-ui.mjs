@@ -155,7 +155,10 @@ assert.doesNotMatch(workoutsIndexSource, /ui\/index\.js/);
 assert.match(workoutsIndexSource, /api\/index\.js/);
 assert.match(workoutsIndexSource, /sync\/index\.js/);
 assert.match(previewSource, /buildWorkoutsScreenViewModel/);
-assert.match(appSource, /import \{ WorkoutsPreview \} from "\.\/features\/workouts\/ui\/index\.js"/);
-assert.match(appSource, /<WorkoutsPreview/);
+const routesSource = await readFile(new URL("../src/app/previewRoutes.jsx", import.meta.url), "utf8");
+assert.match(routesSource, /import \{ WorkoutsPreview \} from "\.\.\/features\/workouts\/ui\/index\.js"/);
+assert.match(routesSource, /id: "workouts"/);
+assert.match(routesSource, /<WorkoutsPreview/);
+assert.match(appSource, /getVisiblePreviewRoutes/);
 
 console.log("workouts ui checks passed");

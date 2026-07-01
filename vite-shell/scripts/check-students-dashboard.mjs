@@ -151,8 +151,9 @@ assert(panelSummary.invitesCount === 3, "panel summary should count invites");
 assert(panelSummary.activeInvitesCount === 2, "panel summary should treat missing invite active as true");
 assert(panelSummary.students.length === 3, "panel summary should include student cards");
 
-const appSource = await readFile(resolve(root, "src/App.jsx"), "utf8");
-assert(appSource.includes("StudentsTrainerPreview"), "App should render StudentsTrainerPreview");
+const routesSource = await readFile(resolve(root, "src/app/previewRoutes.jsx"), "utf8");
+assert(routesSource.includes("StudentsTrainerPreview"), "Preview routes should render StudentsTrainerPreview");
+assert(routesSource.includes('id: "students"'), "Preview routes should register students route");
 
 const previewSource = await readFile(resolve(root, "src/features/students/ui/StudentsTrainerPreview.jsx"), "utf8");
 assert(previewSource.includes("buildStudentsDashboardViewModel"), "Students preview should use dashboard model");

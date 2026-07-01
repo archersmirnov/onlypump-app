@@ -82,6 +82,47 @@ body {
   font-weight: 700;
 }
 
+.shell-routes {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 16px 20px;
+  box-shadow: 0 20px 60px rgba(17, 24, 39, 0.06);
+}
+
+.shell-routes__eyebrow {
+  margin: 0 0 12px;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.shell-routes__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.shell-routes__tab {
+  min-height: 38px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  padding: 0 14px;
+  color: #4b5563;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.shell-routes__tab--active {
+  border-color: #ef4444;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .home-preview {
   border: 1px solid #e5e7eb;
   border-radius: 8px;

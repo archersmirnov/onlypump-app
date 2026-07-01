@@ -6,7 +6,7 @@ import {
   normalizeNutritionDay
 } from "../src/features/nutrition/domain/index.js";
 
-const appSource = await readFile(new URL("../src/App.jsx", import.meta.url), "utf8");
+const routesSource = await readFile(new URL("../src/app/previewRoutes.jsx", import.meta.url), "utf8");
 const nutritionIndexSource = await readFile(new URL("../src/features/nutrition/index.js", import.meta.url), "utf8");
 const nutritionDomainIndexSource = await readFile(new URL("../src/features/nutrition/domain/index.js", import.meta.url), "utf8");
 const previewSource = await readFile(new URL("../src/features/nutrition/ui/NutritionScreensPreview.jsx", import.meta.url), "utf8");
@@ -125,7 +125,8 @@ assert.match(nutritionDomainIndexSource, /nutritionScreenModel\.js/);
 assert.doesNotMatch(nutritionIndexSource, /ui\/index\.js/);
 assert.match(previewSource, /buildNutritionScreenSummary/);
 assert.match(previewSource, /buildNutritionFoodUnitPreview/);
-assert.match(appSource, /import \{ NutritionScreensPreview \} from "\.\/features\/nutrition\/ui\/index\.js"/);
-assert.match(appSource, /<NutritionScreensPreview/);
+assert.match(routesSource, /import \{ NutritionScreensPreview \} from "\.\.\/features\/nutrition\/ui\/index\.js"/);
+assert.match(routesSource, /id: "nutrition"/);
+assert.match(routesSource, /<NutritionScreensPreview/);
 
 console.log("nutrition screens checks passed");

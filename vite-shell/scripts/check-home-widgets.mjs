@@ -15,7 +15,7 @@ import {
   writeCachedHomeWidgetsForProfile
 } from "../src/features/home/domain/index.js";
 
-const appSource = await readFile(new URL("../src/App.jsx", import.meta.url), "utf8");
+const routesSource = await readFile(new URL("../src/app/previewRoutes.jsx", import.meta.url), "utf8");
 const homeIndexSource = await readFile(new URL("../src/features/home/index.js", import.meta.url), "utf8");
 const previewSource = await readFile(new URL("../src/features/home/ui/HomeWidgetsPreview.jsx", import.meta.url), "utf8");
 
@@ -80,7 +80,8 @@ assert.deepEqual(readCachedHomeWidgetsForProfile(profile, { storage, layoutMode:
 assert.match(homeIndexSource, /domain\/index\.js/);
 assert.match(homeIndexSource, /ui\/index\.js/);
 assert.match(previewSource, /buildHomeWidgetPreviewItems/);
-assert.match(appSource, /import \{ HomeWidgetsPreview \} from "\.\/features\/home\/index\.js"/);
-assert.match(appSource, /<HomeWidgetsPreview/);
+assert.match(routesSource, /import \{ HomeWidgetsPreview \} from "\.\.\/features\/home\/index\.js"/);
+assert.match(routesSource, /id: "home"/);
+assert.match(routesSource, /<HomeWidgetsPreview/);
 
 console.log("home widgets checks passed");

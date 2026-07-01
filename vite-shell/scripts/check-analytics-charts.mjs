@@ -10,7 +10,7 @@ import {
   formatAnalyticsChartValue
 } from "../src/features/analytics/domain/index.js";
 
-const appSource = await readFile(new URL("../src/App.jsx", import.meta.url), "utf8");
+const routesSource = await readFile(new URL("../src/app/previewRoutes.jsx", import.meta.url), "utf8");
 const analyticsIndexSource = await readFile(new URL("../src/features/analytics/index.js", import.meta.url), "utf8");
 const analyticsDomainIndexSource = await readFile(new URL("../src/features/analytics/domain/index.js", import.meta.url), "utf8");
 const previewSource = await readFile(new URL("../src/features/analytics/ui/AnalyticsChartsPreview.jsx", import.meta.url), "utf8");
@@ -93,7 +93,8 @@ assert.equal(monthModel.isWideLayout, false);
 assert.match(analyticsDomainIndexSource, /analyticsChartModel\.js/);
 assert.doesNotMatch(analyticsIndexSource, /ui\/index\.js/);
 assert.match(previewSource, /buildAnalyticsChartsViewModel/);
-assert.match(appSource, /import \{ AnalyticsChartsPreview \} from "\.\/features\/analytics\/ui\/index\.js"/);
-assert.match(appSource, /<AnalyticsChartsPreview/);
+assert.match(routesSource, /import \{ AnalyticsChartsPreview \} from "\.\.\/features\/analytics\/ui\/index\.js"/);
+assert.match(routesSource, /id: "analytics"/);
+assert.match(routesSource, /<AnalyticsChartsPreview/);
 
 console.log("analytics charts checks passed");
