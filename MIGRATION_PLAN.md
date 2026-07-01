@@ -385,6 +385,8 @@ Acceptance criteria:
 
 ## Этап 8. Nutrition Repository and Mapper
 
+Статус: started, not wired.
+
 Цель: отделить питание после стабилизации workout слоя.
 
 Кандидаты:
@@ -400,6 +402,13 @@ Acceptance criteria:
 - менять Supabase schema;
 - менять историю питания;
 - менять palm-rule UI без отдельного шага.
+
+Начато:
+
+- создан `vite-shell/src/features/nutrition/cache/nutritionCache.js`;
+- вынесены helpers для ключей, чтения, записи, markers и очистки nutrition cache;
+- добавлен `pnpm run check:nutrition-cache`;
+- legacy `index.html` пока не подключен к nutrition helpers.
 
 ## Этап 9. Profile, Health, Progress Repository
 
