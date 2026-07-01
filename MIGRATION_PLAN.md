@@ -271,7 +271,7 @@ Acceptance criteria:
 
 ## Этап 6. Workouts Repository
 
-Статус: started, not wired.
+Статус: done, not wired.
 
 Цель: собрать операции backend persistence в одном слое.
 
@@ -306,6 +306,8 @@ Acceptance criteria:
 - добавлены методы `createExercise`, `updateExercise`, `deleteExercise`, `createSet`, `updateSet`, `deleteSet`;
 - добавлены методы `loadExerciseLibrary`, `loadProgramTemplates`;
 - добавлены методы `loadUserPrograms`, `saveProgramTemplate`, `updateProgramTemplate`, `shareProgramTemplate`, `createUserProgram`, `renameWorkoutScope`, `deleteWorkoutScope`, `deleteProgramScope`;
+- добавлены методы `createWorkout`, `updateWorkout`, `loadExerciseHistory`;
+- финальная сверка покрыла прямые workout API actions из legacy `index.html`;
 - добавлен `pnpm run check:workout-repository`;
 - legacy `index.html` пока не подключен к repository.
 

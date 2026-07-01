@@ -3,6 +3,7 @@ import {
   buildWorkoutExerciseCreateApiPayload,
   buildWorkoutExerciseDeletePayload,
   buildWorkoutExerciseUpdateApiPayload,
+  buildWorkoutCreateApiPayload,
   buildWorkoutDeletePayload,
   buildWorkoutLoadPayload,
   buildWorkoutPassthroughPayload,
@@ -10,6 +11,7 @@ import {
   buildWorkoutSetCreateApiPayload,
   buildWorkoutSetDeletePayload,
   buildWorkoutSetUpdateApiPayload,
+  buildWorkoutUpdateApiPayload,
   createWorkoutRepository,
   isWorkoutDeleteResponseConfirmed,
   isWorkoutMutationResponseOk,
@@ -23,7 +25,10 @@ assert.equal(WORKOUT_REPOSITORY_ACTIONS.load, "load");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.loadExerciseLibrary, "load_exercise_library");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.loadProgramTemplates, "load_program_templates");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.loadUserPrograms, "load_user_programs");
+assert.equal(WORKOUT_REPOSITORY_ACTIONS.exerciseHistory, "exercise_history");
+assert.equal(WORKOUT_REPOSITORY_ACTIONS.createWorkout, "create_workout");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.createWorkoutTree, "create_workout_tree");
+assert.equal(WORKOUT_REPOSITORY_ACTIONS.updateWorkout, "update_workout");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.createExercise, "create_exercise");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.updateExercise, "update_exercise");
 assert.equal(WORKOUT_REPOSITORY_ACTIONS.deleteExercise, "delete_exercise");
@@ -96,6 +101,39 @@ const set = {
   reps: 10
 };
 
+const workout = {
+  id: "workout-local-1",
+  supabaseId: "workout-server-1",
+  date: "2026-06-30",
+  title: "Pull",
+  status: "active",
+  durationMinutes: 45,
+  exercises: [{
+    ...exercise,
+    name: "Row",
+    sets: [set]
+  }]
+};
+
+const workoutCreatePayload = buildWorkoutCreateApiPayload(workout, {
+  profileId: "profile-1",
+  mapperOptions: { getWorkoutTotals: () => ({ totalSets: 1, totalVolume: 400 }) }
+});
+assert.equal(workoutCreatePayload.profile_id, "profile-1");
+assert.equal(workoutCreatePayload.workout.profile_id, "profile-1");
+assert.equal(workoutCreatePayload.workout.title, "Pull");
+assert.equal(workoutCreatePayload.title, "Pull");
+assert.throws(() => buildWorkoutCreateApiPayload(workout), /profile_id is required/);
+
+const workoutUpdatePayload = buildWorkoutUpdateApiPayload(workout, {
+  profileId: "profile-1",
+  mapperOptions: { getWorkoutTotals: () => ({ totalSets: 1, totalVolume: 400 }) }
+});
+assert.equal(workoutUpdatePayload.id, "workout-server-1");
+assert.equal(workoutUpdatePayload.workout_id, "workout-server-1");
+assert.equal(workoutUpdatePayload.workout.title, "Pull");
+assert.throws(() => buildWorkoutUpdateApiPayload({ id: "" }, { profileId: "profile-1" }), /workout id is required/);
+
 const exerciseCreatePayload = buildWorkoutExerciseCreateApiPayload("workout-server-1", exercise, { profileId: "profile-1" });
 assert.equal(exerciseCreatePayload.profile_id, "profile-1");
 assert.equal(exerciseCreatePayload.workout_id, "workout-server-1");
@@ -165,6 +203,11 @@ const callWorkoutsApi = async (action, payload) => {
       user_programs: [{ id: "user-program-1", name: "Strength" }]
     };
   }
+  if (action === "exercise_history") {
+    return {
+      history: [{ workout_id: "workout-server-1", exercise_name: payload.exercise_name }]
+    };
+  }
   if (action === "delete_workout") return { deleted_workout_ids: [payload.workout_id], deleted_count: 1 };
   if (action === "delete_workout_scope" || action === "delete_program_scope") {
     return { deleted_workout_ids: [payload.workout_id], deleted_count: 1 };
@@ -199,20 +242,6 @@ assert.equal(calls[2].action, "load_program_templates");
 assert.deepEqual(calls[2].payload, { profile_id: "profile-1" });
 assert.equal(loadedProgramTemplates.templates.length, 1);
 assert.equal(loadedProgramTemplates.programTemplates[0].id, "template-1");
-
-const workout = {
-  id: "workout-local-1",
-  supabaseId: "workout-server-1",
-  date: "2026-06-30",
-  title: "Pull",
-  status: "active",
-  durationMinutes: 45,
-  exercises: [{
-    ...exercise,
-    name: "Row",
-    sets: [set]
-  }]
-};
 
 const created = await repository.createWorkoutTree({ ...workout, supabaseId: null });
 assert.equal(calls[3].action, "create_workout_tree");
@@ -275,6 +304,24 @@ const loadedUserPrograms = await repository.loadUserPrograms();
 assert.equal(calls.at(-1).action, "load_user_programs");
 assert.deepEqual(calls.at(-1).payload, { profile_id: "profile-1" });
 assert.equal(loadedUserPrograms.userPrograms[0].id, "user-program-1");
+
+const loadedExerciseHistory = await repository.loadExerciseHistory({
+  exercise_name: "Row",
+  muscle_group: "Back"
+});
+assert.equal(calls.at(-1).action, "exercise_history");
+assert.equal(calls.at(-1).payload.profile_id, "profile-1");
+assert.equal(loadedExerciseHistory.history[0].exercise_name, "Row");
+
+const createdWorkout = await repository.createWorkout(workout);
+assert.equal(calls.at(-1).action, "create_workout");
+assert.equal(createdWorkout.payload.workout.title, "Pull");
+assert.equal(createdWorkout.payload.profile_id, "profile-1");
+
+const updatedWorkout = await repository.updateWorkout(workout);
+assert.equal(calls.at(-1).action, "update_workout");
+assert.equal(updatedWorkout.payload.id, "workout-server-1");
+assert.equal(updatedWorkout.payload.workout.title, "Pull");
 
 const programPayload = {
   program: { title: "Strength" },

@@ -1,6 +1,7 @@
 import {
   buildWorkoutExerciseSupabasePayload,
   buildWorkoutSetSupabasePayload,
+  buildWorkoutSupabasePayload,
   buildWorkoutTreeCreatePayload,
   buildWorkoutTreeFromApi,
   buildWorkoutTreePatch,
@@ -12,7 +13,10 @@ export const WORKOUT_REPOSITORY_ACTIONS = Object.freeze({
   loadExerciseLibrary: "load_exercise_library",
   loadProgramTemplates: "load_program_templates",
   loadUserPrograms: "load_user_programs",
+  exerciseHistory: "exercise_history",
+  createWorkout: "create_workout",
   createWorkoutTree: "create_workout_tree",
+  updateWorkout: "update_workout",
   updateWorkoutTree: "update_workout_tree",
   saveWorkoutPatch: "save_workout_patch",
   deleteWorkout: "delete_workout",
@@ -76,6 +80,33 @@ export function buildWorkoutPassthroughPayload(input = {}, fallbackProfileId = n
 
 export function buildWorkoutLoadPayload(input = {}, fallbackProfileId = null) {
   return buildWorkoutProfilePayload(input, fallbackProfileId, "load workouts");
+}
+
+export function buildWorkoutCreateApiPayload(workout, options = {}) {
+  const profileId = resolveWorkoutProfileId(options, null);
+  if (!profileId) throw new Error("profile_id is required to create workout");
+  if (!workout) throw new Error("workout is required to create workout");
+  const workoutPayload = buildWorkoutSupabasePayload(workout, { ...options.mapperOptions, profileId });
+  return {
+    profile_id: profileId,
+    workout: workoutPayload,
+    ...workoutPayload
+  };
+}
+
+export function buildWorkoutUpdateApiPayload(workout, options = {}) {
+  const profileId = resolveWorkoutProfileId(options, null);
+  const workoutId = workout?.supabaseId || workout?.id || workout?.workout_id;
+  if (!profileId) throw new Error("profile_id is required to update workout");
+  if (!workoutId) throw new Error("workout id is required to update workout");
+  const workoutPayload = buildWorkoutSupabasePayload(workout, { ...options.mapperOptions, profileId });
+  return {
+    profile_id: profileId,
+    id: workoutId,
+    workout_id: workoutId,
+    workout: workoutPayload,
+    ...workoutPayload
+  };
 }
 
 export function buildWorkoutDeletePayload(workoutOrId, fallbackProfileId = null) {
@@ -328,10 +359,42 @@ export function createWorkoutRepository({
       };
     },
 
+    async loadExerciseHistory(input = {}, options = {}) {
+      const payload = buildWorkoutPassthroughPayload(input, options.profileId || profileId, "load exercise history");
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.exerciseHistory, payload);
+      const history = readWorkoutRepositoryArray(result, "history", ["exercise_history", "records", "items"]);
+      return {
+        payload,
+        result,
+        history,
+        records: history
+      };
+    },
+
+    async createWorkout(workout, options = {}) {
+      const payload = buildWorkoutCreateApiPayload(workout, {
+        ...options,
+        profileId: options.profileId || profileId,
+        mapperOptions: { ...mapperOptions, ...(options.mapperOptions || {}) }
+      });
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.createWorkout, payload);
+      return { payload, result };
+    },
+
     async createWorkoutTree(workout, options = {}) {
       if (!workout) return null;
       const payload = buildWorkoutTreeCreatePayload(workout, { ...mapperOptions, ...(options.mapperOptions || {}) });
       const result = await call(WORKOUT_REPOSITORY_ACTIONS.createWorkoutTree, payload);
+      return { payload, result };
+    },
+
+    async updateWorkout(workout, options = {}) {
+      const payload = buildWorkoutUpdateApiPayload(workout, {
+        ...options,
+        profileId: options.profileId || profileId,
+        mapperOptions: { ...mapperOptions, ...(options.mapperOptions || {}) }
+      });
+      const result = await call(WORKOUT_REPOSITORY_ACTIONS.updateWorkout, payload);
       return { payload, result };
     },
 
