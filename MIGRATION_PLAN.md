@@ -325,7 +325,7 @@ Acceptance criteria:
 
 ## Этап 7. Workouts Sync
 
-Статус: started, not wired.
+Статус: done, not wired.
 
 Цель: отделить autosave/pending/retry/cache policy от экрана.
 
@@ -344,7 +344,7 @@ Acceptance criteria:
 - cache fallback policy;
 - flush/retry.
 
-Начато:
+Сделано:
 
 - создан `vite-shell/src/features/workouts/sync/workoutPendingQueue.js`;
 - вынесены чистые helpers для merge pending patches;
@@ -363,6 +363,12 @@ Acceptance criteria:
 - вынесен debounce/autosave scheduler поверх sync-controller без React и UI side effects;
 - добавлен `pnpm run check:workout-sync`;
 - legacy `index.html` пока не подключен к sync helpers.
+
+Граница этапа:
+
+- новый sync-слой готов как проверяемая инфраструктура;
+- рабочий `index.html` не менялся и не подключался к этим модулям;
+- подключение legacy-экрана к sync helpers будет отдельным явным шагом после стабилизации сервисных слоев.
 
 Запрещено:
 
