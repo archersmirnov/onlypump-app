@@ -23,8 +23,13 @@ body {
   padding: 32px;
 }
 
+.shell__stack {
+  display: grid;
+  width: min(100%, 960px);
+  gap: 20px;
+}
+
 .shell__panel {
-  width: min(100%, 720px);
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #ffffff;
@@ -75,4 +80,116 @@ body {
   padding: 10px 0 10px 14px;
   color: #1f2937;
   font-weight: 700;
+}
+
+.home-preview {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(17, 24, 39, 0.06);
+}
+
+.home-preview__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.home-preview__eyebrow {
+  margin: 0 0 8px;
+  color: #ef4444;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.home-preview h2 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.home-preview p {
+  margin: 10px 0 0;
+  color: #4b5563;
+  line-height: 1.55;
+}
+
+.home-preview__count {
+  border-radius: 999px;
+  background: #fee2e2;
+  padding: 8px 12px;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.home-widget-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.home-widget-card {
+  min-height: 112px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  padding: 14px;
+}
+
+.home-widget-card--compact {
+  grid-column: span 1;
+}
+
+.home-widget-card--square {
+  grid-column: span 2;
+}
+
+.home-widget-card--tall {
+  grid-column: span 2;
+  min-height: 236px;
+}
+
+.home-widget-card--wide,
+.home-widget-card--banner {
+  grid-column: span 4;
+}
+
+.home-widget-card__size {
+  display: inline-flex;
+  border-radius: 999px;
+  background: #111827;
+  padding: 4px 8px;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.home-widget-card h3 {
+  margin: 12px 0 0;
+  font-size: 17px;
+}
+
+.home-widget-card p {
+  margin-top: 8px;
+  font-size: 14px;
+}
+
+@media (max-width: 720px) {
+  .shell {
+    padding: 18px;
+  }
+
+  .home-widget-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-widget-card--wide,
+  .home-widget-card--banner {
+    grid-column: span 2;
+  }
 }
