@@ -2287,6 +2287,7 @@
   }
   </script>
   <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+  <script src="./onlypump-legacy-api-client.js"></script>
   <script>
     if (window.Babel?.registerPreset && window.Babel?.availablePresets?.react) {
       Babel.registerPreset("onlypump-classic", function () {
@@ -8084,6 +8085,20 @@ const callOnlyPumpWorkoutsApi = async (initData, action, payload = {}) => {
 };
 
 const callOnlyPumpNutritionApi = async (initData, action, payload = {}) => {
+  const legacyApi = window.ONLYPUMP_LEGACY_API;
+  if (legacyApi?.createOnlyPumpLegacyApiAdapters) {
+    const adapters = legacyApi.createOnlyPumpLegacyApiAdapters({
+      endpoints: {
+        nutrition: ONLYPUMP_NUTRITION_API_URL,
+      },
+      publishableKey: SUPABASE_PUBLISHABLE_KEY,
+      getAuthToken: getOnlyPumpApiAuthToken,
+      emitDomainEvent: emitOnlyPumpDomainEvent,
+    });
+    if (adapters?.callOnlyPumpNutritionApi) {
+      return adapters.callOnlyPumpNutritionApi(initData, action, payload);
+    }
+  }
   emitOnlyPumpDomainEvent("nutrition.api.request", { action, payload });
   const response = await fetch(ONLYPUMP_NUTRITION_API_URL, {
     method: "POST",

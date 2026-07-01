@@ -7,10 +7,11 @@ legacy `index.html`.
 
 ## Статус
 
-Статус: prepared, not wired.
+Статус: first nutrition wiring.
 
-Новый API-слой существует и проверяется отдельно, но рабочее приложение всё ещё
-использует старые функции внутри `index.html`.
+Новый API-слой существует и проверяется отдельно. Legacy `index.html`
+подключен только к nutrition API через browser bridge. Workouts и profile всё
+ещё используют старые функции внутри `index.html`.
 
 ## Что уже готово
 
@@ -22,10 +23,14 @@ legacy `index.html`.
   - `callOnlyPumpWorkoutsApi`;
   - `callOnlyPumpNutritionApi`.
 - `vite-shell/scripts/check-shared-api.mjs` - быстрая проверка без сети.
+- `onlypump-legacy-api-client.js` - browser bridge для legacy `index.html`.
+- `vite-shell/scripts/check-legacy-api-client.mjs` - проверка browser bridge без
+  сети.
 
 ## Что намеренно не сделано
 
-- Новый API-слой не подключён к `index.html`.
+- Workouts API не подключён к новому API-слою.
+- Profile API не подключён к новому API-слою.
 - Payload shape не менялся.
 - Action names не менялись.
 - Supabase URLs и Edge Functions не менялись.
@@ -39,6 +44,7 @@ legacy `index.html`.
 ```sh
 cd vite-shell
 pnpm run check:api
+pnpm run check:legacy-api
 pnpm run build
 ```
 
@@ -46,6 +52,7 @@ pnpm run build
 
 ```sh
 PATH=/Users/Artur/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH pnpm run check:api
+PATH=/Users/Artur/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH pnpm run check:legacy-api
 PATH=/Users/Artur/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH pnpm run build
 ```
 

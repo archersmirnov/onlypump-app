@@ -12,6 +12,7 @@ pnpm install
 pnpm run dev
 pnpm run build
 pnpm run check:api
+pnpm run check:legacy-api
 ```
 
 If the local shell cannot find `node`, run the same commands with the bundled
@@ -44,3 +45,6 @@ See `../API_CLIENT_MIGRATION_STATUS.md` before wiring them into legacy code.
 Run `pnpm run check:api` to verify the shared API module without network calls.
 It checks endpoint names, request shape, legacy event names, readable API errors,
 and the current `load_profile` access-denied exception.
+
+Run `pnpm run check:legacy-api` to verify the browser bridge used by legacy
+`index.html`.
