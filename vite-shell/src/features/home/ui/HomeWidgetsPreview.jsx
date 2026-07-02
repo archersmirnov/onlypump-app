@@ -1,15 +1,25 @@
 import {
   DEFAULT_HOME_WIDGETS,
-  buildHomeWidgetsViewModel
+  buildHomeWidgetsViewModel,
+  buildHomeWidgetsViewModelFromHomeSnapshotGlobal
 } from "../domain/index.js";
 
 export function HomeWidgetsPreview({
-  widgets = DEFAULT_HOME_WIDGETS,
+  widgets,
   source = {},
+  globalSource = globalThis,
+  useLegacySnapshot = true,
   title = "Home widgets",
   lead = "Первый вынесенный слой домашнего экрана: каталог, размеры и порядок виджетов живут отдельно от legacy index.html."
 }) {
-  const viewModel = buildHomeWidgetsViewModel(source, { widgets });
+  const fallbackWidgets = widgets || DEFAULT_HOME_WIDGETS;
+  const fallbackViewModel = buildHomeWidgetsViewModel(source, { widgets: fallbackWidgets });
+  const snapshotViewModel = useLegacySnapshot
+    ? buildHomeWidgetsViewModelFromHomeSnapshotGlobal(globalSource, widgets ? { widgets } : {})
+    : null;
+  const viewModel = snapshotViewModel?.snapshotBridge?.hasSnapshot
+    ? snapshotViewModel
+    : fallbackViewModel;
   const items = viewModel.items;
 
   return (

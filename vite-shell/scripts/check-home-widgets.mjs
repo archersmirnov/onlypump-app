@@ -172,6 +172,8 @@ assert.deepEqual(readCachedHomeWidgetsForProfile(profile, { storage, layoutMode:
 assert.match(homeIndexSource, /domain\/index\.js/);
 assert.match(homeIndexSource, /ui\/index\.js/);
 assert.match(previewSource, /buildHomeWidgetsViewModel/);
+assert.match(previewSource, /buildHomeWidgetsViewModelFromHomeSnapshotGlobal/);
+assert.match(previewSource, /snapshotBridge\?\.hasSnapshot/);
 assert.match(routesSource, /import \{ HomeWidgetsPreview \} from "\.\.\/features\/home\/index\.js"/);
 assert.match(routesSource, /HOME_WIDGETS_READ_ONLY_PREVIEW_SOURCE/);
 assert.match(routesSource, /id: "home"/);

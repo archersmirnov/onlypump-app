@@ -88,6 +88,9 @@
 - общий preview остается доступен;
 - добавлена проверка, что Vite shell не подключен к корневому `index.html` и
   preview-слой не тянет workout write-flow.
+- Home preview умеет read-only читать legacy snapshot из
+  `window.__ONLYPUMP_HOME_SNAPSHOT__`, если он доступен в текущем окне, и
+  откатывается на preview-source, если snapshot недоступен.
 
 ## Следующий безопасный шаг
 
