@@ -7121,6 +7121,71 @@ const clearOnlyPumpAnalyticsSnapshot = () => {
   delete window[ONLYPUMP_ANALYTICS_SNAPSHOT_GLOBAL];
 };
 
+const ONLYPUMP_NUTRITION_SNAPSHOT_GLOBAL = "__ONLYPUMP_NUTRITION_SNAPSHOT__";
+const ONLYPUMP_NUTRITION_SNAPSHOT_VERSION = 1;
+
+const buildOnlyPumpNutritionSnapshot = ({
+  profile = DEFAULT_PROFILE,
+  selectedDateKey,
+  nutritionDay = null,
+  nutritionMarkedDateKeys = [],
+  nutritionGoal = initialNutritionGoal,
+  foods = [],
+  selectedMode = "calories",
+  selectedCategory = "all",
+  selectedFilter = "all",
+} = {}) => {
+  const activeProfile = profile || DEFAULT_PROFILE;
+  const activeNutritionGoal = nutritionGoal || initialNutritionGoal;
+  const safeDateKey = normalizeDateKey(selectedDateKey, "") || formatDateKey(new Date());
+  const nutritionDayByDate = buildNutritionDayByDate({
+    nutritionDay,
+    markedDateKeys: nutritionMarkedDateKeys,
+    profile: activeProfile,
+    nutritionGoal: activeNutritionGoal,
+    includeCache: true,
+  });
+  const selectedNutritionData = getNutritionDataForDate({
+    dateKey: safeDateKey,
+    dayByDate: nutritionDayByDate,
+    profile: activeProfile,
+    nutritionGoal: activeNutritionGoal,
+  });
+
+  return {
+    version: ONLYPUMP_NUTRITION_SNAPSHOT_VERSION,
+    selectedDateKey: safeDateKey,
+    selectedMode,
+    selectedCategory,
+    selectedFilter,
+    profile: activeProfile,
+    source: {
+      day: selectedNutritionData.day || nutritionDay,
+      foods: Array.isArray(foods) ? foods : [],
+      goal: activeNutritionGoal,
+      profile: activeProfile,
+      selectedMode,
+      selectedCategory,
+      selectedFilter,
+      selectedDateKey: safeDateKey,
+    },
+  };
+};
+
+const publishOnlyPumpNutritionSnapshot = (snapshot) => {
+  if (typeof window === "undefined") return;
+  window[ONLYPUMP_NUTRITION_SNAPSHOT_GLOBAL] = {
+    version: ONLYPUMP_NUTRITION_SNAPSHOT_VERSION,
+    updatedAt: new Date().toISOString(),
+    snapshot,
+  };
+};
+
+const clearOnlyPumpNutritionSnapshot = () => {
+  if (typeof window === "undefined") return;
+  delete window[ONLYPUMP_NUTRITION_SNAPSHOT_GLOBAL];
+};
+
 const safeWorkoutModelNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -26113,6 +26178,46 @@ function NutritionPage({ nutritionDay, setNutritionDay, nutritionGoal, setNutrit
     if (!query) return source.slice(0, activeEyeballTab === "all" ? 80 : 40);
     return source.filter(item => getFoodSearchText(item).includes(query)).slice(0, 90);
   }, [activeEyeballFoods, activeEyeballTab, activePalmRuleCategory, foodSearch, usePalmPicker]);
+
+  const nutritionSnapshotFoods = useMemo(() => filteredFoods.map(item => {
+    if (activeEyeballTab === "all") return item;
+    return {
+      ...item,
+      sourceTypes: [activeEyeballTab],
+      isRecent: activeEyeballTab === "recent",
+      isFrequent: activeEyeballTab === "frequent",
+      isFavorite: activeEyeballTab === "favorites",
+    };
+  }), [filteredFoods, activeEyeballTab]);
+
+  useEffect(() => {
+    publishOnlyPumpNutritionSnapshot(buildOnlyPumpNutritionSnapshot({
+      profile,
+      selectedDateKey,
+      nutritionDay: day,
+      nutritionMarkedDateKeys,
+      nutritionGoal: goal,
+      foods: nutritionSnapshotFoods,
+      selectedMode: foodPickerEntryMode,
+      selectedCategory: usePalmPicker ? activePalmRuleCategory : "all",
+      selectedFilter: activeEyeballTab,
+    }));
+
+    return () => {
+      clearOnlyPumpNutritionSnapshot();
+    };
+  }, [
+    profile,
+    selectedDateKey,
+    day,
+    nutritionMarkedDateKeys,
+    goal,
+    nutritionSnapshotFoods,
+    foodPickerEntryMode,
+    usePalmPicker,
+    activePalmRuleCategory,
+    activeEyeballTab,
+  ]);
 
   const favoriteKeys = new Set((day.favorites || []).map(item => item.foodKey));
   const draftServingGrams = foodDraft ? getFoodDraftServingGrams(foodDraft, profile) : 0;

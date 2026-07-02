@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
+  NUTRITION_LEGACY_SNAPSHOT_GLOBAL,
+  buildNutritionScreensViewModelFromLegacySnapshotGlobal,
   buildNutritionFoodUnitPreview,
   buildNutritionScreenSummary,
   buildNutritionScreensViewModel,
@@ -12,6 +14,7 @@ const routesSource = await readFile(new URL("../src/app/previewRoutes.jsx", impo
 const nutritionIndexSource = await readFile(new URL("../src/features/nutrition/index.js", import.meta.url), "utf8");
 const nutritionDomainIndexSource = await readFile(new URL("../src/features/nutrition/domain/index.js", import.meta.url), "utf8");
 const previewSource = await readFile(new URL("../src/features/nutrition/ui/NutritionScreensPreview.jsx", import.meta.url), "utf8");
+const legacyIndexSource = await readFile(new URL("../../index.html", import.meta.url), "utf8");
 
 const goal = {
   calories: 2000,
@@ -161,11 +164,53 @@ assert.deepEqual(
   ["salad"]
 );
 
+const emptyBridgeModel = buildNutritionScreensViewModelFromLegacySnapshotGlobal({}, {
+  selectedDateKey: "2026-07-01"
+});
+assert.equal(emptyBridgeModel.snapshotBridge.hasSnapshot, false);
+assert.equal(emptyBridgeModel.day.date, "2026-07-01");
+
+const bridgedNutritionModel = buildNutritionScreensViewModelFromLegacySnapshotGlobal({
+  [NUTRITION_LEGACY_SNAPSHOT_GLOBAL]: {
+    version: 1,
+    updatedAt: "2026-07-02T08:00:00.000Z",
+    snapshot: {
+      selectedDateKey: "2026-07-01",
+      selectedMode: "palm_rule",
+      selectedCategory: "protein",
+      selectedFilter: "recent",
+      source: {
+        day,
+        goal,
+        profile: { gender: "male", heightCm: 180, weightKg: 80 },
+        selectedMode: "palm_rule",
+        selectedCategory: "protein",
+        selectedFilter: "recent",
+        foods: [
+          { key: "chicken", name: "Куриная грудка", nutrition_category: "protein", default_grams: 110, sourceTypes: ["recent"] },
+          { key: "rice", name: "Рис", nutrition_category: "carbs", default_grams: 90, sourceTypes: ["recent"] },
+          { key: "salad", name: "Овощной салат", nutrition_category: "vegetables", default_grams: 120, sourceTypes: ["favorites"] }
+        ]
+      }
+    }
+  }
+});
+assert.equal(bridgedNutritionModel.snapshotBridge.hasSnapshot, true);
+assert.equal(bridgedNutritionModel.snapshotBridge.updatedAt, "2026-07-02T08:00:00.000Z");
+assert.equal(bridgedNutritionModel.selectedMode, "palms");
+assert.equal(bridgedNutritionModel.selectedCategory, "protein");
+assert.equal(bridgedNutritionModel.selectedFilter, "recent");
+assert.deepEqual(bridgedNutritionModel.visibleFoodPreviews.map((food) => food.key), ["chicken"]);
+
 assert.match(nutritionDomainIndexSource, /nutritionScreenModel\.js/);
+assert.match(nutritionDomainIndexSource, /nutritionSnapshotBridge\.js/);
 assert.doesNotMatch(nutritionIndexSource, /ui\/index\.js/);
 assert.match(previewSource, /buildNutritionScreensViewModel/);
 assert.match(routesSource, /import \{ NutritionScreensPreview \} from "\.\.\/features\/nutrition\/ui\/index\.js"/);
 assert.match(routesSource, /id: "nutrition"/);
 assert.match(routesSource, /<NutritionScreensPreview/);
+assert.match(legacyIndexSource, /__ONLYPUMP_NUTRITION_SNAPSHOT__/);
+assert.match(legacyIndexSource, /buildOnlyPumpNutritionSnapshot/);
+assert.match(legacyIndexSource, /publishOnlyPumpNutritionSnapshot/);
 
 console.log("nutrition screens checks passed");
