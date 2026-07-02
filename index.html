@@ -7054,6 +7054,73 @@ const clearOnlyPumpHomeSnapshot = () => {
   delete window[ONLYPUMP_HOME_SNAPSHOT_GLOBAL];
 };
 
+const ONLYPUMP_ANALYTICS_SNAPSHOT_GLOBAL = "__ONLYPUMP_ANALYTICS_SNAPSHOT__";
+const ONLYPUMP_ANALYTICS_SNAPSHOT_VERSION = 1;
+
+const buildOnlyPumpAnalyticsSnapshot = ({
+  profile = DEFAULT_PROFILE,
+  selectedDateKey,
+  workouts = [],
+  nutritionDay = null,
+  nutritionMarkedDateKeys = [],
+  nutritionGoal = initialNutritionGoal,
+  measurements = {},
+  measurementRecords = [],
+  healthLog = {},
+  healthLogs = [],
+} = {}) => {
+  const activeProfile = profile || DEFAULT_PROFILE;
+  const activeNutritionGoal = nutritionGoal || initialNutritionGoal;
+  const safeDateKey = normalizeDateKey(selectedDateKey, "") || formatDateKey(new Date());
+  const measurementByDate = buildMeasurementByDate({
+    measurements,
+    measurementRecords,
+    profile: activeProfile,
+  });
+  const nutritionDayByDate = buildNutritionDayByDate({
+    nutritionDay,
+    markedDateKeys: nutritionMarkedDateKeys,
+    profile: activeProfile,
+    nutritionGoal: activeNutritionGoal,
+    includeCache: true,
+  });
+  const healthLogByDate = buildHealthLogByDate({ healthLog, healthLogs });
+  const analyticsReadModel = buildAnalyticsReadModel({
+    measurements: Array.from(measurementByDate.values()),
+    healthLogs: Array.from(healthLogByDate.values()),
+    nutritionDays: Array.from(nutritionDayByDate.values()),
+    nutritionGoal: activeNutritionGoal,
+  });
+
+  return {
+    version: ONLYPUMP_ANALYTICS_SNAPSHOT_VERSION,
+    selectedDateKey: safeDateKey,
+    period: "year",
+    title: "Графики",
+    profile: activeProfile,
+    source: {
+      measurements: analyticsReadModel.measurements,
+      healthLogs: analyticsReadModel.health_logs,
+      nutritionDays: analyticsReadModel.nutrition_days,
+      workouts: Array.isArray(workouts) ? workouts : [],
+    },
+  };
+};
+
+const publishOnlyPumpAnalyticsSnapshot = (snapshot) => {
+  if (typeof window === "undefined") return;
+  window[ONLYPUMP_ANALYTICS_SNAPSHOT_GLOBAL] = {
+    version: ONLYPUMP_ANALYTICS_SNAPSHOT_VERSION,
+    updatedAt: new Date().toISOString(),
+    snapshot,
+  };
+};
+
+const clearOnlyPumpAnalyticsSnapshot = () => {
+  if (typeof window === "undefined") return;
+  delete window[ONLYPUMP_ANALYTICS_SNAPSHOT_GLOBAL];
+};
+
 const safeWorkoutModelNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -35825,6 +35892,39 @@ function OnlyPumpPlatform() {
     globalSelectedDateKey,
     homeWidgets,
     personalTrackers,
+    workouts,
+    nutritionDay,
+    nutritionMarkedDateKeys,
+    nutritionGoal,
+    measurements,
+    measurementRecords,
+    healthLog,
+    healthLogs,
+  ]);
+
+  useEffect(() => {
+    if (appLoading || profileLoading || accessGateStatus || !profile) {
+      clearOnlyPumpAnalyticsSnapshot();
+      return;
+    }
+    publishOnlyPumpAnalyticsSnapshot(buildOnlyPumpAnalyticsSnapshot({
+      profile,
+      selectedDateKey: globalSelectedDateKey,
+      workouts,
+      nutritionDay,
+      nutritionMarkedDateKeys,
+      nutritionGoal,
+      measurements,
+      measurementRecords,
+      healthLog,
+      healthLogs,
+    }));
+  }, [
+    appLoading,
+    profileLoading,
+    accessGateStatus,
+    profile,
+    globalSelectedDateKey,
     workouts,
     nutritionDay,
     nutritionMarkedDateKeys,

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
+  ANALYTICS_LEGACY_SNAPSHOT_GLOBAL,
   buildAnalyticsChartCard,
   buildAnalyticsChartsViewModel,
   buildAnalyticsChartsScreenViewModel,
+  buildAnalyticsChartsScreenViewModelFromLegacySnapshotGlobal,
   buildAnalyticsChartCoordinates,
   buildAnalyticsChartLabels,
   buildAnalyticsChartPeriodTabs,
@@ -17,6 +19,7 @@ const routesSource = await readFile(new URL("../src/app/previewRoutes.jsx", impo
 const analyticsIndexSource = await readFile(new URL("../src/features/analytics/index.js", import.meta.url), "utf8");
 const analyticsDomainIndexSource = await readFile(new URL("../src/features/analytics/domain/index.js", import.meta.url), "utf8");
 const previewSource = await readFile(new URL("../src/features/analytics/ui/AnalyticsChartsPreview.jsx", import.meta.url), "utf8");
+const legacyIndexSource = await readFile(new URL("../../index.html", import.meta.url), "utf8");
 
 assert.equal(formatAnalyticsChartValue(84.25, "кг"), "84.3 кг");
 assert.equal(formatAnalyticsChartDateLabel("2026-07-01", "year"), "июл");
@@ -118,7 +121,34 @@ assert.equal(screenModel.selectedPeriodLabel, "6 месяцев");
 assert.equal(screenModel.isWideLayout, true);
 assert.equal(screenModel.periodTabs.find((tab) => tab.id === "sixMonths").isActive, true);
 
+const emptyBridgeModel = buildAnalyticsChartsScreenViewModelFromLegacySnapshotGlobal({}, {
+  period: "year",
+  selectedDateKey: "2026-07-01",
+});
+assert.equal(emptyBridgeModel.snapshotBridge.hasSnapshot, false);
+
+const fakeAnalyticsGlobal = {
+  [ANALYTICS_LEGACY_SNAPSHOT_GLOBAL]: {
+    version: 1,
+    updatedAt: "2026-07-02T07:00:00.000Z",
+    snapshot: {
+      selectedDateKey: "2026-07-01",
+      period: "year",
+      title: "Графики",
+      source,
+    },
+  },
+};
+const bridgedAnalyticsModel = buildAnalyticsChartsScreenViewModelFromLegacySnapshotGlobal(fakeAnalyticsGlobal);
+assert.equal(bridgedAnalyticsModel.snapshotBridge.hasSnapshot, true);
+assert.equal(bridgedAnalyticsModel.snapshotBridge.updatedAt, "2026-07-02T07:00:00.000Z");
+assert.equal(bridgedAnalyticsModel.title, "Графики");
+assert.equal(bridgedAnalyticsModel.period, "year");
+assert.equal(bridgedAnalyticsModel.chartsWithData, 4);
+assert.equal(bridgedAnalyticsModel.charts.find((chart) => chart.key === "steps").stats.avgLabel, "9000 шагов");
+
 assert.match(analyticsDomainIndexSource, /analyticsChartModel\.js/);
+assert.match(analyticsDomainIndexSource, /analyticsSnapshotBridge\.js/);
 assert.doesNotMatch(analyticsIndexSource, /ui\/index\.js/);
 assert.match(previewSource, /buildAnalyticsChartsScreenViewModel/);
 assert.doesNotMatch(previewSource, /buildAnalyticsChartsViewModel/);
@@ -127,5 +157,8 @@ assert.match(previewSource, /model\.rangeLabel/);
 assert.match(routesSource, /import \{ AnalyticsChartsPreview \} from "\.\.\/features\/analytics\/ui\/index\.js"/);
 assert.match(routesSource, /id: "analytics"/);
 assert.match(routesSource, /<AnalyticsChartsPreview/);
+assert.match(legacyIndexSource, /__ONLYPUMP_ANALYTICS_SNAPSHOT__/);
+assert.match(legacyIndexSource, /buildOnlyPumpAnalyticsSnapshot/);
+assert.match(legacyIndexSource, /publishOnlyPumpAnalyticsSnapshot/);
 
 console.log("analytics charts checks passed");
