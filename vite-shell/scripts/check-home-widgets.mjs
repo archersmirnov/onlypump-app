@@ -3,10 +3,12 @@ import { readFile } from "node:fs/promises";
 import {
   DEFAULT_HOME_WIDGETS,
   HOME_LAYOUT_DESKTOP,
+  HOME_LEGACY_SNAPSHOT_GLOBAL,
   buildHomeWidgetPreviewItems,
   buildHomeWidgetValueModel,
   buildHomeWidgetsViewModel,
   buildHomeWidgetsViewModelFromLegacySnapshot,
+  buildHomeWidgetsViewModelFromHomeSnapshotGlobal,
   buildHomeWidgetsAfterAdding,
   buildHomeWidgetsAfterRemoving,
   enforceHomeWidgetRules,
@@ -110,6 +112,38 @@ assert.equal(legacySnapshotModel.items.find((item) => item.id === "metricSets").
 assert.equal(legacySnapshotModel.items.find((item) => item.id === "metricCalories").valueLabel, "2140 ккал");
 assert.equal(legacySnapshotModel.items.find((item) => item.id === "metricProtein").valueLabel, "156 г");
 assert.equal(legacySnapshotModel.items.find((item) => item.id === "metricRecovery").valueLabel, "82 %");
+
+const emptyBridgeModel = buildHomeWidgetsViewModelFromHomeSnapshotGlobal({}, {
+  layoutMode: HOME_LAYOUT_DESKTOP,
+});
+assert.equal(emptyBridgeModel.snapshotBridge.hasSnapshot, false);
+
+const fakeLegacyGlobal = {
+  [HOME_LEGACY_SNAPSHOT_GLOBAL]: {
+    version: 1,
+    updatedAt: "2026-07-02T07:00:00.000Z",
+    snapshot: {
+      selectedDateKey: "2026-07-02",
+      profile: {
+        home_widgets_order: {
+          desktop: ["metricWeight", "metricCalories", "metricRecovery"],
+        },
+      },
+      measurement: { weight_kg: 83.5 },
+      nutritionTotals: { calories: 2050 },
+      healthLog: { recovery_score: 79 },
+    },
+  },
+};
+const bridgedHomeModel = buildHomeWidgetsViewModelFromHomeSnapshotGlobal(fakeLegacyGlobal, {
+  layoutMode: HOME_LAYOUT_DESKTOP,
+});
+assert.equal(bridgedHomeModel.snapshotBridge.hasSnapshot, true);
+assert.equal(bridgedHomeModel.snapshotBridge.updatedAt, "2026-07-02T07:00:00.000Z");
+assert.deepEqual(bridgedHomeModel.widgets, ["metricWeight", "metricCalories", "metricRecovery"]);
+assert.equal(bridgedHomeModel.items.find((item) => item.id === "metricWeight").valueLabel, "83.5 кг");
+assert.equal(bridgedHomeModel.items.find((item) => item.id === "metricCalories").valueLabel, "2050 ккал");
+assert.equal(bridgedHomeModel.items.find((item) => item.id === "metricRecovery").valueLabel, "79 %");
 
 const storageValue = homeWidgetsStorageWithLayout(
   { mobile: ["metricWeight"], desktop: ["workout"] },
