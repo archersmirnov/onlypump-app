@@ -23,6 +23,7 @@ import {
 const routesSource = await readFile(new URL("../src/app/previewRoutes.jsx", import.meta.url), "utf8");
 const homeIndexSource = await readFile(new URL("../src/features/home/index.js", import.meta.url), "utf8");
 const previewSource = await readFile(new URL("../src/features/home/ui/HomeWidgetsPreview.jsx", import.meta.url), "utf8");
+const legacyIndexSource = await readFile(new URL("../../index.html", import.meta.url), "utf8");
 
 assert.deepEqual(DEFAULT_HOME_WIDGETS, [
   "metricWeight",
@@ -175,5 +176,8 @@ assert.match(routesSource, /import \{ HomeWidgetsPreview \} from "\.\.\/features
 assert.match(routesSource, /HOME_WIDGETS_READ_ONLY_PREVIEW_SOURCE/);
 assert.match(routesSource, /id: "home"/);
 assert.match(routesSource, /<HomeWidgetsPreview/);
+assert.match(legacyIndexSource, /__ONLYPUMP_HOME_SNAPSHOT__/);
+assert.match(legacyIndexSource, /buildOnlyPumpHomeSnapshot/);
+assert.match(legacyIndexSource, /publishOnlyPumpHomeSnapshot/);
 
 console.log("home widgets checks passed");
