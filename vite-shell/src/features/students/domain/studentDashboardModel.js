@@ -3,6 +3,11 @@ export const STUDENT_DASHBOARD_VIEW_MODES = Object.freeze({
   control: "control"
 });
 
+export const STUDENT_DASHBOARD_VIEW_MODE_LABELS = Object.freeze({
+  list: "Мои ученики",
+  control: "Контроль"
+});
+
 export const STUDENT_ACTIVITY_ITEMS = Object.freeze([
   { key: "opened_app", label: "Заходил" },
   { key: "entered_data", label: "Данные" },
@@ -20,6 +25,12 @@ export const STUDENT_ROLE_LABELS = Object.freeze({
 });
 
 const ASSIGNABLE_ROLES = Object.freeze(["admin", "trainer", "student", "user"]);
+
+function normalizeStudentDashboardViewMode(viewMode = STUDENT_DASHBOARD_VIEW_MODES.list) {
+  return Object.values(STUDENT_DASHBOARD_VIEW_MODES).includes(viewMode)
+    ? viewMode
+    : STUDENT_DASHBOARD_VIEW_MODES.list;
+}
 
 function parseBoolean(value, fallback = false) {
   if (value === true || value === false) return value;
@@ -221,9 +232,7 @@ export function buildStudentsDashboardSummary(cards = []) {
 }
 
 export function buildStudentsDashboardViewModel(students = [], options = {}) {
-  const viewMode = Object.values(STUDENT_DASHBOARD_VIEW_MODES).includes(options.viewMode)
-    ? options.viewMode
-    : STUDENT_DASHBOARD_VIEW_MODES.list;
+  const viewMode = normalizeStudentDashboardViewMode(options.viewMode);
   const allCards = (Array.isArray(students) ? students : []).map(buildStudentCardModel);
   const visibleCards = filterAndSortStudentCards(students, { query: options.query, viewMode });
 
@@ -240,6 +249,17 @@ export function buildStudentsDashboardViewModel(students = [], options = {}) {
   };
 }
 
+export function buildStudentDashboardModeTabs(selectedViewMode = STUDENT_DASHBOARD_VIEW_MODES.list, models = {}) {
+  const selectedMode = normalizeStudentDashboardViewMode(selectedViewMode);
+
+  return Object.values(STUDENT_DASHBOARD_VIEW_MODES).map((viewMode) => ({
+    id: viewMode,
+    label: STUDENT_DASHBOARD_VIEW_MODE_LABELS[viewMode],
+    count: models[viewMode]?.visibleSummary?.total ?? models[viewMode]?.summary?.total ?? 0,
+    isActive: viewMode === selectedMode
+  }));
+}
+
 export function buildTrainerAccessPanelSummary(panel = {}) {
   const students = Array.isArray(panel.students) ? panel.students.map(buildStudentCardModel) : [];
   const users = Array.isArray(panel.users) ? panel.users : [];
@@ -254,5 +274,79 @@ export function buildTrainerAccessPanelSummary(panel = {}) {
     activeInvitesCount: activeInvites,
     students,
     studentSummary: buildStudentsDashboardSummary(students)
+  };
+}
+
+export function buildStudentsTrainerDashboardViewModel(students = [], panel = {}, options = {}) {
+  const selectedDateKey = options.selectedDateKey || "";
+  const title = options.title || "Students / Trainer dashboards";
+  const controlModel = buildStudentsDashboardViewModel(students, {
+    viewMode: STUDENT_DASHBOARD_VIEW_MODES.control,
+    query: options.query,
+    selectedDateKey
+  });
+  const listModel = buildStudentsDashboardViewModel(students, {
+    viewMode: STUDENT_DASHBOARD_VIEW_MODES.list,
+    query: options.query,
+    selectedDateKey
+  });
+  const trainerSummary = buildTrainerAccessPanelSummary(panel);
+  const selectedViewMode = normalizeStudentDashboardViewMode(options.viewMode || STUDENT_DASHBOARD_VIEW_MODES.control);
+
+  return {
+    eyebrow: options.eyebrow || "UI Extraction",
+    title,
+    description:
+      options.description ||
+      "Ученики, контроль и тренерская сводка получают готовые card models без прямого доступа к profile API и таблицам.",
+    selectedDateKey,
+    selectedViewMode,
+    modeTabs: buildStudentDashboardModeTabs(selectedViewMode, {
+      [STUDENT_DASHBOARD_VIEW_MODES.control]: controlModel,
+      [STUDENT_DASHBOARD_VIEW_MODES.list]: listModel
+    }),
+    studentCountLabel: `${controlModel.summary.total} ученика`,
+    controlPanel: {
+      title: STUDENT_DASHBOARD_VIEW_MODE_LABELS.control,
+      dateLabel: selectedDateKey || "сегодня",
+      cards: controlModel.cards,
+      emptyLabel: controlModel.isFilteredEmpty ? "По фильтру учеников нет." : "Ученики пока не подключены."
+    },
+    studentsPanel: {
+      title: STUDENT_DASHBOARD_VIEW_MODE_LABELS.list,
+      countLabel: String(trainerSummary.students.length),
+      cards: listModel.cards,
+      emptyLabel: listModel.isFilteredEmpty ? "По фильтру учеников нет." : "Ученики пока не подключены."
+    },
+    summaryCards: [
+      {
+        id: "activity",
+        value: `${controlModel.summary.averageActivityScore}/${STUDENT_ACTIVITY_ITEMS.length}`,
+        label: "средний контроль"
+      },
+      {
+        id: "full-control",
+        value: controlModel.summary.fullControlCount,
+        label: "закрыли день"
+      },
+      {
+        id: "invites",
+        value: `${trainerSummary.activeInvitesCount}/${trainerSummary.invitesCount}`,
+        label: "активные ссылки"
+      },
+      {
+        id: "pending",
+        value: trainerSummary.pendingUsersCount,
+        label: "ожидают доступ"
+      }
+    ],
+    controlModel,
+    listModel,
+    trainerSummary,
+    persistenceBoundary: {
+      isReadOnly: true,
+      label: "Read-only trainer dashboard model",
+      description: "Preview-модель не меняет роли, доступы, приглашения и данные учеников."
+    }
   };
 }

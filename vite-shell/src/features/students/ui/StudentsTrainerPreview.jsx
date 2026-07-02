@@ -1,6 +1,5 @@
 import {
-  buildStudentsDashboardViewModel,
-  buildTrainerAccessPanelSummary
+  buildStudentsTrainerDashboardViewModel
 } from "../domain/index.js";
 
 const previewStudents = [
@@ -137,62 +136,73 @@ export function StudentsTrainerPreview({
   selectedDateKey = "2026-07-01",
   title = "Students / Trainer dashboards"
 }) {
-  const controlModel = buildStudentsDashboardViewModel(students, {
-    viewMode: "control",
-    selectedDateKey
+  const model = buildStudentsTrainerDashboardViewModel(students, panel, {
+    selectedDateKey,
+    title
   });
-  const listModel = buildStudentsDashboardViewModel(students, {
-    viewMode: "list",
-    selectedDateKey
-  });
-  const trainerSummary = buildTrainerAccessPanelSummary(panel);
 
   return (
     <section className="students-preview" aria-labelledby="students-preview-title">
       <div className="students-preview__header">
         <div>
-          <p className="students-preview__eyebrow">UI Extraction</p>
-          <h2 id="students-preview-title">{title}</h2>
-          <p>
-            Ученики, контроль и тренерская сводка получают готовые card models
-            без прямого доступа к profile API и таблицам.
-          </p>
+          <p className="students-preview__eyebrow">{model.eyebrow}</p>
+          <h2 id="students-preview-title">{model.title}</h2>
+          <p>{model.description}</p>
         </div>
-        <span className="students-preview__mode">{controlModel.summary.total} ученика</span>
+        <span className="students-preview__mode">{model.studentCountLabel}</span>
+      </div>
+
+      <div className="students-preview__toolbar">
+        <div className="students-preview-tabs" aria-label="Режимы учеников">
+          {model.modeTabs.map((tab) => (
+            <span key={tab.id} className={tab.isActive ? "is-active" : ""}>
+              {tab.label}
+              <b>{tab.count}</b>
+            </span>
+          ))}
+        </div>
+        <span>{model.selectedDateKey}</span>
       </div>
 
       <div className="students-preview__summary">
-        <span><b>{controlModel.summary.averageActivityScore}/5</b><small>средний контроль</small></span>
-        <span><b>{controlModel.summary.fullControlCount}</b><small>закрыли день</small></span>
-        <span><b>{trainerSummary.activeInvitesCount}/{trainerSummary.invitesCount}</b><small>активные ссылки</small></span>
-        <span><b>{trainerSummary.pendingUsersCount}</b><small>ожидают доступ</small></span>
+        {model.summaryCards.map((item) => (
+          <span key={item.id}><b>{item.value}</b><small>{item.label}</small></span>
+        ))}
       </div>
 
       <div className="students-preview__grid">
         <article className="students-preview-panel students-preview-panel--control">
           <div className="students-preview-panel__topline">
-            <span>Контроль</span>
-            <strong>{selectedDateKey}</strong>
+            <span>{model.controlPanel.title}</span>
+            <strong>{model.controlPanel.dateLabel}</strong>
           </div>
           <div className="students-preview-list">
-            {controlModel.cards.map((card) => (
+            {model.controlPanel.cards.map((card) => (
               <StudentsControlCard key={card.id} card={card} />
             ))}
+            {model.controlPanel.cards.length === 0 ? (
+              <p className="students-preview__empty">{model.controlPanel.emptyLabel}</p>
+            ) : null}
           </div>
         </article>
 
         <article className="students-preview-panel">
           <div className="students-preview-panel__topline">
-            <span>Мои ученики</span>
-            <strong>{trainerSummary.students.length}</strong>
+            <span>{model.studentsPanel.title}</span>
+            <strong>{model.studentsPanel.countLabel}</strong>
           </div>
           <div className="students-preview-list">
-            {listModel.cards.map((card) => (
+            {model.studentsPanel.cards.map((card) => (
               <StudentAnalyticsCard key={card.id} card={card} />
             ))}
+            {model.studentsPanel.cards.length === 0 ? (
+              <p className="students-preview__empty">{model.studentsPanel.emptyLabel}</p>
+            ) : null}
           </div>
         </article>
       </div>
+
+      <p className="students-preview__boundary">{model.persistenceBoundary.description}</p>
     </section>
   );
 }

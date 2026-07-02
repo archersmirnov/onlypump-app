@@ -2,10 +2,12 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   STUDENT_ACTIVITY_ITEMS,
+  buildStudentDashboardModeTabs,
   buildStudentActivityMarks,
   buildStudentAnalyticsSummary,
   buildStudentCardModel,
   buildStudentsDashboardSummary,
+  buildStudentsTrainerDashboardViewModel,
   buildStudentsDashboardViewModel,
   buildTrainerAccessPanelSummary,
   filterAndSortStudentCards,
@@ -140,6 +142,13 @@ const visibleSummary = buildStudentsDashboardSummary(model.cards);
 assert(visibleSummary.analytics.workouts === 7, "summary should add workouts");
 assert(visibleSummary.analytics.totalSets === 72, "summary should add sets");
 
+const modeTabs = buildStudentDashboardModeTabs("control", {
+  control: model,
+  list: buildStudentsDashboardViewModel(students, { viewMode: "list" })
+});
+assert(modeTabs.find((tab) => tab.id === "control").isActive, "control tab should be active");
+assert(modeTabs.find((tab) => tab.id === "list").label === "Мои ученики", "list tab label should be localized");
+
 const panelSummary = buildTrainerAccessPanelSummary({
   users: [{ access_status: "pending" }, { access_status: "allowed" }],
   invites: [{ is_active: true }, { is_active: false }, {}],
@@ -151,13 +160,41 @@ assert(panelSummary.invitesCount === 3, "panel summary should count invites");
 assert(panelSummary.activeInvitesCount === 2, "panel summary should treat missing invite active as true");
 assert(panelSummary.students.length === 3, "panel summary should include student cards");
 
+const trainerDashboard = buildStudentsTrainerDashboardViewModel(students, {
+  users: [{ access_status: "pending" }, { access_status: "allowed" }],
+  invites: [{ is_active: true }, { is_active: false }, {}],
+  students
+}, {
+  selectedDateKey: "2026-07-01",
+  title: "Ученики"
+});
+assert(trainerDashboard.title === "Ученики", "trainer dashboard should expose title");
+assert(trainerDashboard.studentCountLabel === "3 ученика", "trainer dashboard should expose count label");
+assert(trainerDashboard.modeTabs.length === 2, "trainer dashboard should expose mode tabs");
+assert(trainerDashboard.summaryCards.length === 4, "trainer dashboard should expose four summary cards");
+assert(trainerDashboard.controlPanel.cards.length === 3, "trainer dashboard should expose control cards");
+assert(trainerDashboard.studentsPanel.cards.length === 3, "trainer dashboard should expose student list cards");
+assert(trainerDashboard.persistenceBoundary.isReadOnly, "trainer dashboard should be read-only");
+assert(
+  trainerDashboard.persistenceBoundary.description.includes("не меняет"),
+  "trainer dashboard boundary should describe no writes"
+);
+
 const routesSource = await readFile(resolve(root, "src/app/previewRoutes.jsx"), "utf8");
 assert(routesSource.includes("StudentsTrainerPreview"), "Preview routes should render StudentsTrainerPreview");
 assert(routesSource.includes('id: "students"'), "Preview routes should register students route");
 
 const previewSource = await readFile(resolve(root, "src/features/students/ui/StudentsTrainerPreview.jsx"), "utf8");
-assert(previewSource.includes("buildStudentsDashboardViewModel"), "Students preview should use dashboard model");
-assert(previewSource.includes("buildTrainerAccessPanelSummary"), "Students preview should use trainer panel summary");
+assert(
+  previewSource.includes("buildStudentsTrainerDashboardViewModel"),
+  "Students preview should use trainer dashboard view model"
+);
+assert(previewSource.includes("model.modeTabs"), "Students preview should render mode tabs from model");
+assert(previewSource.includes("model.summaryCards"), "Students preview should render summary cards from model");
+assert(
+  previewSource.includes("model.persistenceBoundary.description"),
+  "Students preview should expose read-only boundary"
+);
 
 const studentsIndexSource = await readFile(resolve(root, "src/features/students/index.js"), "utf8");
 assert(studentsIndexSource.includes("./domain/index.js"), "feature index should expose domain only");
