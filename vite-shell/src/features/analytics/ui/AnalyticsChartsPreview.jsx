@@ -1,6 +1,6 @@
 import {
   ANALYTICS_PERIODS,
-  buildAnalyticsChartsViewModel
+  buildAnalyticsChartsScreenViewModel
 } from "../domain/index.js";
 
 const previewSource = {
@@ -111,20 +111,31 @@ export function AnalyticsChartsPreview({
   selectedDateKey = "2026-07-01",
   title = "Analytics charts"
 }) {
-  const model = buildAnalyticsChartsViewModel(source, { period, selectedDateKey });
+  const model = buildAnalyticsChartsScreenViewModel(source, { period, selectedDateKey, title });
 
   return (
     <section className="analytics-preview" aria-labelledby="analytics-preview-title">
       <div className="analytics-preview__header">
         <div>
-          <p className="analytics-preview__eyebrow">UI Extraction</p>
-          <h2 id="analytics-preview-title">{title}</h2>
-          <p>
-            Карточки графиков получают готовые chartPoints, stats, period range
-            и long-period layout flag из analytics domain.
-          </p>
+          <p className="analytics-preview__eyebrow">{model.eyebrow}</p>
+          <h2 id="analytics-preview-title">{model.title}</h2>
+          <p>{model.description}</p>
         </div>
-        <span className="analytics-preview__mode">{model.isWideLayout ? "wide layout" : "compact layout"}</span>
+        <span className="analytics-preview__mode">{model.layoutLabel}</span>
+      </div>
+
+      <div className="analytics-preview__toolbar" aria-label="Analytics period controls">
+        <div className="analytics-preview__period-tabs" aria-label="Periods">
+          {model.periodTabs.map((tab) => (
+            <span
+              key={tab.id}
+              className={`analytics-preview__period-tab${tab.isActive ? " analytics-preview__period-tab--active" : ""}`}
+            >
+              {tab.label}
+            </span>
+          ))}
+        </div>
+        <span className="analytics-preview__range">{model.rangeLabel}</span>
       </div>
 
       <div className={`analytics-preview__grid${model.isWideLayout ? " analytics-preview__grid--wide" : ""}`}>

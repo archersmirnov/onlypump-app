@@ -10,7 +10,8 @@ import {
   getAnalyticsChartSvgWidth,
   isLongAnalyticsChartPeriod,
   normalizeAnalyticsPeriod,
-  parseAnalyticsDateKeyLocal
+  parseAnalyticsDateKeyLocal,
+  shiftAnalyticsChartDivisionDate
 } from "./analyticsData.js";
 
 export const ANALYTICS_CHART_DEFINITIONS = Object.freeze([
@@ -52,6 +53,21 @@ const CHART_HEIGHT = 160;
 const CHART_PADDING = Object.freeze({ top: 16, right: 16, bottom: 24, left: 34 });
 const SHORT_MONTH_LABELS_RU = Object.freeze(["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]);
 
+export const ANALYTICS_CHART_PERIOD_OPTIONS = Object.freeze([
+  ANALYTICS_PERIODS.week,
+  ANALYTICS_PERIODS.month,
+  ANALYTICS_PERIODS.sixMonths,
+  ANALYTICS_PERIODS.year
+]);
+
+export const ANALYTICS_CHART_PERIOD_LABELS = Object.freeze({
+  [ANALYTICS_PERIODS.day]: "День",
+  [ANALYTICS_PERIODS.week]: "Неделя",
+  [ANALYTICS_PERIODS.month]: "Месяц",
+  [ANALYTICS_PERIODS.sixMonths]: "6 месяцев",
+  [ANALYTICS_PERIODS.year]: "Год"
+});
+
 export function formatAnalyticsChartValue(value = 0, unit = "") {
   const numericValue = Number(value || 0);
   const rounded = Math.round(numericValue * 10) / 10;
@@ -66,6 +82,40 @@ export function formatAnalyticsChartDateLabel(dateKey = "", period = ANALYTICS_P
     return SHORT_MONTH_LABELS_RU[date.getMonth()] || "";
   }
   return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+}
+
+export function formatAnalyticsChartRangeDate(dateKey = "", includeYear = false) {
+  const date = parseAnalyticsDateKeyLocal(dateKey);
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = SHORT_MONTH_LABELS_RU[date.getMonth()] || "";
+  return includeYear ? `${day} ${month} ${date.getFullYear()}` : `${day} ${month}`;
+}
+
+export function formatAnalyticsChartRangeLabel(range = {}, period = ANALYTICS_PERIODS.month) {
+  const normalizedPeriod = normalizeAnalyticsPeriod(period);
+  const startKey = range.startKey || "";
+  const endKey = range.endKey || "";
+  if (!startKey || !endKey) return "";
+  if (startKey === endKey) return formatAnalyticsChartRangeDate(endKey, true);
+
+  const start = parseAnalyticsDateKeyLocal(startKey);
+  const end = parseAnalyticsDateKeyLocal(endKey);
+  const isLongPeriod = normalizedPeriod === ANALYTICS_PERIODS.sixMonths || normalizedPeriod === ANALYTICS_PERIODS.year;
+  const includeStartYear = isLongPeriod || start.getFullYear() !== end.getFullYear();
+  return `${formatAnalyticsChartRangeDate(startKey, includeStartYear)} - ${formatAnalyticsChartRangeDate(endKey, true)}`;
+}
+
+export function buildAnalyticsChartPeriodTabs(period = ANALYTICS_PERIODS.month, options = ANALYTICS_CHART_PERIOD_OPTIONS) {
+  const selectedPeriod = normalizeAnalyticsPeriod(period);
+  return (Array.isArray(options) ? options : ANALYTICS_CHART_PERIOD_OPTIONS).map((option) => {
+    const id = normalizeAnalyticsPeriod(option);
+    return {
+      id,
+      label: ANALYTICS_CHART_PERIOD_LABELS[id] || id,
+      isActive: id === selectedPeriod,
+      isLongPeriod: isLongAnalyticsChartPeriod(id)
+    };
+  });
 }
 
 export function buildAnalyticsChartCoordinates(points = [], width = 430, height = CHART_HEIGHT) {
@@ -179,15 +229,32 @@ export function buildAnalyticsChartCard(definition = {}, source = {}, options = 
 export function buildAnalyticsChartsViewModel(source = {}, options = {}) {
   const period = normalizeAnalyticsPeriod(options.period || ANALYTICS_PERIODS.month);
   const selectedDateKey = options.selectedDateKey || "";
+  const range = getAnalyticsChartRollingRange(period, selectedDateKey);
   const charts = (options.definitions || ANALYTICS_CHART_DEFINITIONS)
     .map((definition) => buildAnalyticsChartCard(definition, source, { period, selectedDateKey }));
 
   return {
     period,
+    selectedPeriodLabel: ANALYTICS_CHART_PERIOD_LABELS[period] || period,
     selectedDateKey,
-    range: getAnalyticsChartRollingRange(period, selectedDateKey),
+    range,
+    rangeLabel: formatAnalyticsChartRangeLabel(range, period),
+    previousDateKey: shiftAnalyticsChartDivisionDate(selectedDateKey, period, -1),
+    nextDateKey: shiftAnalyticsChartDivisionDate(selectedDateKey, period, 1),
+    periodTabs: buildAnalyticsChartPeriodTabs(period, options.periodOptions),
     isWideLayout: isLongAnalyticsChartPeriod(period),
+    layoutLabel: isLongAnalyticsChartPeriod(period) ? "wide layout" : "compact layout",
     charts,
-    chartsWithData: charts.filter((chart) => chart.hasData).length
+    chartsWithData: charts.filter((chart) => chart.hasData).length,
+    hasAnyData: charts.some((chart) => chart.hasData)
+  };
+}
+
+export function buildAnalyticsChartsScreenViewModel(source = {}, options = {}) {
+  return {
+    eyebrow: "UI Extraction",
+    title: options.title || "Analytics charts",
+    description: "Карточки графиков получают готовые chartPoints, stats, period range и long-period layout flag из analytics domain.",
+    ...buildAnalyticsChartsViewModel(source, options)
   };
 }
