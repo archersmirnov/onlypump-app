@@ -94,21 +94,30 @@ export function WorkoutsPreview({
   selectedDateKey = "2026-07-01",
   title = "Workouts UI"
 }) {
-  const model = buildWorkoutsScreenViewModel(workouts, { selectedDateKey });
-  const primaryWorkout = model.selectedWorkoutCards[0] || null;
+  const model = buildWorkoutsScreenViewModel(workouts, { selectedDateKey, title });
+  const primaryWorkout = model.filteredSelectedWorkoutCards[0] || model.selectedWorkoutCards[0] || null;
 
   return (
     <section className="workouts-preview" aria-labelledby="workouts-preview-title">
       <div className="workouts-preview__header">
         <div>
-          <p className="workouts-preview__eyebrow">UI Extraction</p>
-          <h2 id="workouts-preview-title">{title}</h2>
-          <p>
-            Экран тренировок получает готовые calendar days, week summary,
-            workout cards и exercise rows без прямого доступа к persistence.
-          </p>
+          <p className="workouts-preview__eyebrow">{model.eyebrow}</p>
+          <h2 id="workouts-preview-title">{model.title}</h2>
+          <p>{model.description}</p>
         </div>
-        <span className="workouts-preview__mode">{model.selectedWorkoutCards.length} в выбранный день</span>
+        <span className="workouts-preview__mode">{model.selectedWorkoutCountLabel}</span>
+      </div>
+
+      <div className="workouts-preview__toolbar">
+        <div className="workouts-preview-tabs" aria-label="Фильтры тренировок">
+          {model.filterTabs.map((tab) => (
+            <span key={tab.id} className={tab.isActive ? "is-active" : ""}>
+              {tab.label}
+              <b>{tab.count}</b>
+            </span>
+          ))}
+        </div>
+        <span className="workouts-preview__range">{model.weekSummary.rangeLabel}</span>
       </div>
 
       <div className="workouts-preview__calendar">
@@ -124,7 +133,7 @@ export function WorkoutsPreview({
       <div className="workouts-preview__grid">
         <article className="workouts-preview-card workouts-preview-card--summary">
           <div className="workouts-preview-card__topline">
-            <span>Объем недели</span>
+            <span>Объем недели · {model.weekSummary.rangeLabel}</span>
             <strong>{model.weekSummary.workoutsCount} тренировок</strong>
           </div>
           <div className="workouts-preview__sets">
@@ -141,7 +150,7 @@ export function WorkoutsPreview({
             <strong>{model.selectedDateKey}</strong>
           </div>
           <div className="workouts-preview__cards">
-            {model.selectedWorkoutCards.map((workout) => (
+            {model.filteredSelectedWorkoutCards.map((workout) => (
               <div key={workout.id} className="workouts-preview-workout">
                 <span style={{ background: workout.typeColor }} />
                 <div>
@@ -151,6 +160,9 @@ export function WorkoutsPreview({
                 <b>{workout.typeLabel}</b>
               </div>
             ))}
+            {model.filteredSelectedWorkoutCards.length === 0 ? (
+              <p className="workouts-preview__empty">В выбранном фильтре тренировок нет.</p>
+            ) : null}
           </div>
         </article>
 
@@ -176,6 +188,8 @@ export function WorkoutsPreview({
           </div>
         </article>
       </div>
+
+      <p className="workouts-preview__boundary">{model.persistenceBoundary.description}</p>
     </section>
   );
 }

@@ -15,6 +15,30 @@ export const WORKOUT_SCREEN_STATUS_LABELS = Object.freeze({
 
 export const WORKOUT_SCREEN_DAY_LABELS = Object.freeze(["ВС", "ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ"]);
 
+export const WORKOUT_SCREEN_FILTERS = Object.freeze(["all", "planned", "active", "completed"]);
+
+export const WORKOUT_SCREEN_FILTER_LABELS = Object.freeze({
+  all: "Все",
+  planned: "Запланированные",
+  active: "В процессе",
+  completed: "Выполненные"
+});
+
+const WORKOUT_SCREEN_MONTH_LABELS = Object.freeze([
+  "янв",
+  "фев",
+  "мар",
+  "апр",
+  "май",
+  "июн",
+  "июл",
+  "авг",
+  "сен",
+  "окт",
+  "ноя",
+  "дек"
+]);
+
 function toWorkoutDate(value, fallback = new Date()) {
   const match = String(value || "").match(/\d{4}-\d{2}-\d{2}/);
   if (match) {
@@ -43,10 +67,47 @@ export function addWorkoutScreenDays(dateKey, amount = 0) {
   return formatWorkoutScreenDateKey(date);
 }
 
+export function formatWorkoutScreenRangeLabel(startDateKey, endDateKey) {
+  const start = toWorkoutDate(startDateKey);
+  const end = toWorkoutDate(endDateKey);
+  const startLabel = `${String(start.getDate()).padStart(2, "0")} ${WORKOUT_SCREEN_MONTH_LABELS[start.getMonth()]}`;
+  const endLabel = `${String(end.getDate()).padStart(2, "0")} ${WORKOUT_SCREEN_MONTH_LABELS[end.getMonth()]}`;
+
+  if (start.getFullYear() === end.getFullYear()) {
+    return `${startLabel} - ${endLabel} ${end.getFullYear()}`;
+  }
+
+  return `${startLabel} ${start.getFullYear()} - ${endLabel} ${end.getFullYear()}`;
+}
+
 export function getWorkoutScreenDateKey(workout = {}) {
   return formatWorkoutScreenDateKey(
     workout.date || workout.workout_date || workout.scheduled_date || workout.createdAt || workout.created_at
   );
+}
+
+export function normalizeWorkoutScreenFilter(filter = "all") {
+  const normalized = String(filter || "all").trim();
+  return WORKOUT_SCREEN_FILTERS.includes(normalized) ? normalized : "all";
+}
+
+export function filterWorkoutScreenCards(cards = [], filter = "all") {
+  const selectedFilter = normalizeWorkoutScreenFilter(filter);
+  const workoutCards = Array.isArray(cards) ? cards : [];
+  if (selectedFilter === "all") return workoutCards;
+  return workoutCards.filter((card) => card.status === selectedFilter);
+}
+
+export function buildWorkoutScreenFilterTabs(selectedFilter = "all", cards = []) {
+  const normalizedFilter = normalizeWorkoutScreenFilter(selectedFilter);
+  const workoutCards = Array.isArray(cards) ? cards : [];
+
+  return WORKOUT_SCREEN_FILTERS.map((filter) => ({
+    id: filter,
+    label: WORKOUT_SCREEN_FILTER_LABELS[filter],
+    count: filterWorkoutScreenCards(workoutCards, filter).length,
+    isActive: filter === normalizedFilter
+  }));
 }
 
 export function buildWorkoutCalendarDays(selectedDateKey = formatWorkoutScreenDateKey(new Date()), visibleDays = 7) {
@@ -169,6 +230,7 @@ export function buildWorkoutWeekSummary(workouts = [], selectedDateKey = formatW
   return {
     startDateKey,
     endDateKey,
+    rangeLabel: formatWorkoutScreenRangeLabel(startDateKey, endDateKey),
     workoutsCount: plannedOrCompleted.length,
     completedWorkoutsCount: completedCards.length,
     totalSets,
@@ -180,20 +242,38 @@ export function buildWorkoutWeekSummary(workouts = [], selectedDateKey = formatW
 
 export function buildWorkoutsScreenViewModel(workouts = [], options = {}) {
   const selectedDateKey = formatWorkoutScreenDateKey(options.selectedDateKey || new Date());
+  const selectedFilter = normalizeWorkoutScreenFilter(options.selectedFilter);
   const calendarDays = buildWorkoutCalendarDays(selectedDateKey, options.visibleDays || 7);
   const cardsByDate = groupWorkoutCardsByDate(workouts);
   const selectedWorkoutCards = cardsByDate.get(selectedDateKey) || [];
+  const filteredSelectedWorkoutCards = filterWorkoutScreenCards(selectedWorkoutCards, selectedFilter);
+  const activeWorkout = selectedWorkoutCards.find((card) => card.status === "active") || null;
 
   return {
+    eyebrow: options.eyebrow || "UI Extraction",
+    title: options.title || "Workouts UI",
+    description:
+      options.description ||
+      "Экран тренировок получает готовые calendar days, week summary, workout cards и exercise rows без прямого доступа к сохранению.",
     selectedDateKey,
+    selectedFilter,
     calendarDays: calendarDays.map((day) => ({
       ...day,
       workoutsCount: (cardsByDate.get(day.dateKey) || []).length,
       hasWorkouts: (cardsByDate.get(day.dateKey) || []).length > 0
     })),
     selectedWorkoutCards,
-    activeWorkout: selectedWorkoutCards.find((card) => card.status === "active") || null,
+    filteredSelectedWorkoutCards,
+    filterTabs: buildWorkoutScreenFilterTabs(selectedFilter, selectedWorkoutCards),
+    selectedWorkoutCountLabel: `${selectedWorkoutCards.length} в выбранный день`,
+    activeWorkout,
+    activeWorkoutLabel: activeWorkout ? `В процессе: ${activeWorkout.title}` : "Активных тренировок в выбранный день нет",
     weekSummary: buildWorkoutWeekSummary(workouts, selectedDateKey),
-    totalWorkoutsCount: Array.isArray(workouts) ? workouts.length : 0
+    totalWorkoutsCount: Array.isArray(workouts) ? workouts.length : 0,
+    persistenceBoundary: {
+      isReadOnly: true,
+      label: "Read-only UI model",
+      description: "Preview-модель не создает, не удаляет и не сохраняет тренировки."
+    }
   };
 }
