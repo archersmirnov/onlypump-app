@@ -6,6 +6,7 @@ import {
   buildHomeWidgetPreviewItems,
   buildHomeWidgetValueModel,
   buildHomeWidgetsViewModel,
+  buildHomeWidgetsViewModelFromLegacySnapshot,
   buildHomeWidgetsAfterAdding,
   buildHomeWidgetsAfterRemoving,
   enforceHomeWidgetRules,
@@ -75,6 +76,40 @@ assert.equal(readOnlyModel.items.find((item) => item.id === "metricProtein").val
 assert.equal(readOnlyModel.items.find((item) => item.id === "metricRecovery").valueLabel, "76 %");
 assert.equal(readOnlyModel.items.find((item) => item.id === "metricSleep").valueLabel, "7 ч 35 мин");
 assert.equal(buildHomeWidgetValueModel("metricWeight", {}).hasValue, false);
+
+const legacySnapshotModel = buildHomeWidgetsViewModelFromLegacySnapshot({
+  globalSelectedDateKey: "2026-07-02",
+  profile: {
+    id: "profile-1",
+    home_widgets_order: {
+      desktop: ["metricWeight", "metricTonnage", "metricSets", "metricCalories", "metricProtein", "metricRecovery"],
+    },
+  },
+  measurementRecords: [
+    { measurement_date: "2026-06-30", weight_kg: 80.4, body_fat_percent: 17.8 },
+    { measurement_date: "2026-07-02", weight_kg: 81.2, body_fat_percent: 18.1 },
+  ],
+  workoutSummary: { completedVolume: 12500, completedSets: 42 },
+  nutritionTotals: { calories: 2140, protein: 156 },
+  healthLog: { recovery_score: 82, sleep_duration_minutes: 435 },
+}, {
+  layoutMode: HOME_LAYOUT_DESKTOP,
+});
+assert.equal(legacySnapshotModel.selectedDateKey, "2026-07-02");
+assert.deepEqual(legacySnapshotModel.widgets, [
+  "metricWeight",
+  "metricTonnage",
+  "metricSets",
+  "metricCalories",
+  "metricProtein",
+  "metricRecovery",
+]);
+assert.equal(legacySnapshotModel.items.find((item) => item.id === "metricWeight").valueLabel, "81.2 кг");
+assert.equal(legacySnapshotModel.items.find((item) => item.id === "metricTonnage").valueLabel, "12500 кг");
+assert.equal(legacySnapshotModel.items.find((item) => item.id === "metricSets").valueLabel, "42 подходов");
+assert.equal(legacySnapshotModel.items.find((item) => item.id === "metricCalories").valueLabel, "2140 ккал");
+assert.equal(legacySnapshotModel.items.find((item) => item.id === "metricProtein").valueLabel, "156 г");
+assert.equal(legacySnapshotModel.items.find((item) => item.id === "metricRecovery").valueLabel, "82 %");
 
 const storageValue = homeWidgetsStorageWithLayout(
   { mobile: ["metricWeight"], desktop: ["workout"] },
